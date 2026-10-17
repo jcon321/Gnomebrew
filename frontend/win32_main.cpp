@@ -159,8 +159,19 @@ namespace
 			Send(MouseEvent(InputEvent::Type::DoubleClick, lparam));
 			return 0;
 		case WM_LBUTTONUP:
-			ReleaseCapture();
+			if (!(wparam & MK_RBUTTON))
+				ReleaseCapture();
 			Send(MouseEvent(InputEvent::Type::MouseUp, lparam));
+			return 0;
+		case WM_RBUTTONDOWN:
+		case WM_RBUTTONDBLCLK:
+			SetCapture(window);
+			Send(MouseEvent(InputEvent::Type::RightDown, lparam));
+			return 0;
+		case WM_RBUTTONUP:
+			if (!(wparam & MK_LBUTTON))
+				ReleaseCapture();
+			Send(MouseEvent(InputEvent::Type::RightUp, lparam));
 			return 0;
 		case WM_MOUSEWHEEL: {
 			InputEvent event;
@@ -188,6 +199,9 @@ namespace
 			case VK_BACK: Send(KeyEvent(InputEvent::Key::Backspace)); break;
 			case VK_UP: Send(KeyEvent(InputEvent::Key::Up)); break;
 			case VK_DOWN: Send(KeyEvent(InputEvent::Key::Down)); break;
+			case VK_LEFT: Send(KeyEvent(InputEvent::Key::Left)); break;
+			case VK_RIGHT: Send(KeyEvent(InputEvent::Key::Right)); break;
+			case VK_F9: Send(KeyEvent(InputEvent::Key::F9)); break;
 			case VK_PRIOR: Send(KeyEvent(InputEvent::Key::PageUp)); break;
 			case VK_NEXT: Send(KeyEvent(InputEvent::Key::PageDown)); break;
 			default: break;

@@ -77,6 +77,7 @@ add_library(eqfrontend STATIC
     frontend/sidl.cpp
     frontend/charselect_view.cpp
     frontend/charcreate.cpp
+    frontend/zone_view.cpp
 )
 target_include_directories(eqfrontend PUBLIC frontend)
 target_link_libraries(eqfrontend PUBLIC eqcore eqrender)

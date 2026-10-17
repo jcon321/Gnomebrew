@@ -3,14 +3,21 @@
 //
 //   scene_preview EQDIR OUT.png [--zone NAME] [--at X Y Z] [--heading H] [--pitch P] [--frames N] [--size WxH]
 //   scene_preview EQDIR OUT.png --char RACE GENDER CLASS [--face F] [--equip M,M,...] [--camera H] [--frames N] [--size WxH]
+//   scene_preview EQDIR OUT.png --player RACE GENDER --zone NAME --at X Y Z [--heading H] [--face F] [--equip M,M,...]
+//                 [--orbit H] [--pitch P] [--first-person] [--zoom NOTCHES] [--fog START END RRGGBB] [--sky N] [--frames N] [--size WxH]
 //
 // The first form flies a free camera through a zone: X Y Z are server
 // coordinates (/loc order is Y X Z), heading is 0..512. The second renders the
 // character select scene for a race/gender/class, with the camera at heading H.
+// The third is the in-zone view (ZoneView): that character standing at X Y Z
+// (the server's position, model center height) with the chase camera turned
+// --orbit from behind them, or first person. --fog and --sky stand in for
+// OP_NewZone (default: the client's fallback fog, 500 to 600 in grey, sky 1).
 // --frames renders N times and prints the average frame time. --size picks the
 // image size (default 640x480).
 
 #include "charselect_view.h"
+#include "zone_view.h"
 #include "png_writer.h"
 #include "rasterizer.h"
 #include "sky.h"
@@ -62,6 +69,52 @@ namespace
 		printf("wrote %s\n", out.c_str());
 		return 0;
 	}
+
+	int InZone(const std::string &eq_dir, const std::string &out, const ZoneInfo &info, const render::CharacterAppearance &appearance,
+		float x, float y, float z, float heading, float orbit, float pitch, bool first_person, int zoom, int frames, int Width, int Height)
+	{
+		auto t0 = std::chrono::steady_clock::now();
+		ZoneView view(eq_dir);
+		view.StartLoading(info);
+		while (!view.Loaded())
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		if (!view.Error().empty()) {
+			fprintf(stderr, "%s\n", view.Error().c_str());
+			return 1;
+		}
+		printf("loaded %s in %.0f ms\n", view.ZoneName().c_str(),
+			std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+
+		std::vector<uint32_t> pixels(static_cast<size_t>(Width) * Height);
+		Canvas canvas(pixels.data(), Width, Height, Width);
+		view.SetPlayer(appearance);
+		view.SetPlayerPosition(x, y, z, heading);
+		if (first_person)
+			view.CycleCamera();
+		view.Orbit(orbit);
+		view.Pitch(pitch);
+		if (zoom) {
+			view.Render(canvas, 0); // places the character, which sets the starting distance
+			view.Zoom(zoom);
+		}
+		double total = 0;
+		for (int f = 0; f < frames; ++f) {
+			auto start = std::chrono::steady_clock::now();
+			view.Render(canvas, 1000 + f);
+			total += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+			if (f == 0 && view.Model())
+				printf("model %s: %zu triangles, height %.2f, feet at %.2f, %.2f, %.2f (WLD)\n", view.Model()->Code().c_str(),
+					view.Model()->TriangleCount(), view.Model()->MaxZ() - view.Model()->MinZ(), view.Feet().x, view.Feet().y,
+					view.Feet().z);
+		}
+		printf("%zu triangles drawn, %.1f ms per frame\n", view.TrianglesDrawn(), total / frames);
+		if (!WritePng(out, pixels, Width, Height)) {
+			fprintf(stderr, "couldn't write %s\n", out.c_str());
+			return 1;
+		}
+		printf("wrote %s\n", out.c_str());
+		return 0;
+	}
 }
 
 int main(int argc, char **argv)
@@ -78,9 +131,32 @@ int main(int argc, char **argv)
 	render::CharacterAppearance appearance;
 	int class_id = 1;
 	float camera_heading = 0;
+	bool player = false, first_person = false;
+	float orbit = 0;
+	int zoom = 0;
+	ZoneInfo info;
+	info.sky = 1;
 	for (int i = 3; i < argc; ++i) {
 		std::string arg = argv[i];
-		if (arg == "--char" && i + 3 < argc) {
+		if (arg == "--player" && i + 2 < argc) {
+			player = true;
+			appearance.race = static_cast<uint16_t>(atoi(argv[++i]));
+			appearance.gender = static_cast<uint8_t>(atoi(argv[++i]));
+		}
+		else if (arg == "--orbit" && i + 1 < argc)
+			orbit = static_cast<float>(atof(argv[++i]));
+		else if (arg == "--zoom" && i + 1 < argc)
+			zoom = atoi(argv[++i]);
+		else if (arg == "--first-person")
+			first_person = true;
+		else if (arg == "--fog" && i + 3 < argc) {
+			info.fog_start = static_cast<float>(atof(argv[++i]));
+			info.fog_end = static_cast<float>(atof(argv[++i]));
+			info.fog_color = static_cast<uint32_t>(strtoul(argv[++i], nullptr, 16));
+		}
+		else if (arg == "--sky" && i + 1 < argc)
+			info.sky = static_cast<uint8_t>(atoi(argv[++i]));
+		else if (arg == "--char" && i + 3 < argc) {
 			character = true;
 			appearance.race = static_cast<uint16_t>(atoi(argv[++i]));
 			appearance.gender = static_cast<uint8_t>(atoi(argv[++i]));
@@ -115,6 +191,14 @@ int main(int argc, char **argv)
 			sscanf(argv[++i], "%dx%d", &width, &height);
 	}
 
+	if (player) {
+		info.short_name = zone;
+		bool have_heading = false;
+		for (int i = 3; i < argc; ++i)
+			have_heading = have_heading || std::string(argv[i]) == "--heading";
+		return InZone(eq_dir, out, info, appearance, server_x, server_y, server_z, have_heading ? heading : 0, orbit, pitch,
+			first_person, zoom, frames, width, height);
+	}
 	if (character)
 		return CharacterSelect(eq_dir, out, appearance, static_cast<uint8_t>(class_id), camera_heading, frames, width, height);
 

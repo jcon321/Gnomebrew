@@ -209,7 +209,7 @@ namespace render
 		}
 		model->m_skeleton = std::move(skeleton);
 		if (model->m_max_z > model->m_min_z)
-			model->m_scale = RaceHeight(appearance.race) / (model->m_max_z - model->m_min_z);
+			model->m_scale = (appearance.height > 0 ? appearance.height : RaceHeight(appearance.race)) / (model->m_max_z - model->m_min_z);
 		model->m_min_z *= model->m_scale;
 		model->m_max_z *= model->m_scale;
 		model->m_head_z *= model->m_scale;

@@ -37,10 +37,17 @@ struct ZoneProfile
 	int32_t platinum = 0, gold = 0, silver = 0, copper = 0;
 };
 
+// OP_NewZone (NewZone_Struct, 572 bytes), with the fallbacks CEverQuest::HandleWorldMessage
+// applies when it copies the header into instEQZoneInfo.
 struct ZoneInfo
 {
 	std::string short_name;
 	std::string long_name;
+	uint8_t zone_type = 0;
+	uint32_t fog_color = 0xc0c0c0; // 0x00RRGGBB
+	float fog_start = 500, fog_end = 600;
+	float min_clip = 50, max_clip = 2400;
+	uint8_t sky = 0;                 // sky.s3d type; 0 = no sky
 	float safe_x = 0, safe_y = 0, safe_z = 0;
 };
 
@@ -57,10 +64,14 @@ struct ZoneSpawn
 	uint16_t pet_owner = 0;
 	int16_t hp = 0;          // percent for everything but ourselves
 	float x = 0, y = 0, z = 0;
-	uint8_t heading = 0;
+	float heading = 0;       // 0..512, counterclockwise from north (spawn packets send 256ths)
 	uint8_t gm = 0;
 	uint8_t anon = 0;
 	uint8_t afk = 0;
+	float size = 0;          // model height; 0 = the race's default
+	uint8_t face = 0;
+	uint16_t equipment[9] = {}; // material per slot: head, chest, arms, wrists, hands, legs, feet, primary, secondary
+	uint32_t colors[9] = {};    // 0xFFRRGGBB when tinted
 
 	std::string DisplayName() const; // "a rat", like the client's CleanName
 };
@@ -123,6 +134,9 @@ public:
 	const ZoneProfile &Profile() const { return m_profile; }
 	const ZoneInfo &Info() const { return m_info; }
 	const std::map<uint16_t, ZoneSpawn> &Spawns() const { return m_spawns; }
+	// Our own spawn from OP_ZoneEntry (ServerZoneEntry_Struct): appearance, size, position.
+	// Set before the ZoneInfo event.
+	const ZoneSpawn &Self() const { return m_self; }
 	uint16_t MySpawnId() const { return m_my_id; }
 	uint64_t CampRemainingMs() const;
 
@@ -139,6 +153,7 @@ private:
 	ZoneProfile m_profile;
 	ZoneInfo m_info;
 	std::map<uint16_t, ZoneSpawn> m_spawns;
+	ZoneSpawn m_self;
 	uint16_t m_my_id = 0;
 	bool m_have_profile = false;
 	bool m_have_zone_entry = false;

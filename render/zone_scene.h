@@ -40,6 +40,8 @@ namespace render
 		void Draw(Rasterizer &rasterizer, uint64_t now_ms) const;
 		// Highest solid surface at or below `from` (searching down to `from.z - depth`).
 		bool FloorBelow(const Vec3 &from, float depth, float &floor_z) const;
+		// The first solid surface on the segment from `from` to `to`, as a fraction of its length.
+		bool SegmentHit(const Vec3 &from, const Vec3 &to, float &fraction) const;
 
 		size_t TriangleCount() const;
 		size_t ObjectCount() const { return m_object_count; }

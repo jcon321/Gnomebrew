@@ -7,10 +7,10 @@ A from-scratch EQMac (TAKP-era) client. Two programs share one core:
   world and shows character select, built from the install's SIDL UI files
   (`uifiles/default/EQUI_CharacterSelect.xml`), over the 3D character select scene: the
   `load2` zone with the selected character standing in their class's room while the camera
-  circles them. Enter World connects to the zone. In place
-  of the in-zone 3D view (not written yet) the zone screen shows your character, the nearest spawns,
-  a 2D radar, and the chat log with a /say line, plus a CAMP button for a proper camp-out.
-  Character creation in the GUI isn't written yet.
+  circles them. Empty slots open character creation. Enter World connects to the zone and
+  draws it in 3D with your character standing where the server put them, under a chase camera
+  (F9: first person). Over the view are your details, the nearest spawns, a 2D radar, and the chat
+  log with a /say line, plus a CAMP button for a proper camp-out. Moving isn't written yet.
 - **`eqclient`** (console, Linux and Windows): logs in, authenticates to world, lists
   characters, can create a test character (`--create`), and with `--char` and `--zone` enters
   the zone, lists nearby spawns, can `--say` something, then camps out. Used for testing
@@ -88,7 +88,7 @@ LastCharSel=0
   (the front-end strings), `uifiles/default` (the SIDL UI for character select),
   `eqstr_en.txt` (the server message strings), and for the 3D character select scene
   `load2.s3d`, `load2_obj.s3d`, `sky.s3d` and `global_chr.s3d` / `global4_chr.s3d` /
-  `global7_chr.s3d`. Only assets are read from it; the client never loads or reads `eqgame.exe`.
+  `global7_chr.s3d`, and in the zone `<zone>.s3d` and `<zone>_obj.s3d`. Only assets are read from it; the client never loads or reads `eqgame.exe`.
   Nothing from the install is copied into this repo. If `EQDir` isn't
   set, the GUI tries the current folder, then the exe's folder.
 - `Server` is the login server. It isn't read from `eqhost.txt`, so you can't hit the live TAKP
@@ -96,7 +96,7 @@ LastCharSel=0
 - `Width` and `Height` are the game resolution, which is the window's size (default 1920x1080).
   Character select is drawn at this size, like eqgame: the SIDL windows at their real pixel size, the
   3D scene filling the rest. A window that doesn't fit the screen's work area is shrunk to fit.
-- eqmain's screens (start, login, server select, and the zone stand-in for now) are 640x480 art. They're
+- eqmain's screens (start, login, server select) are 640x480 art. They're
   drawn at their native size in the middle of the window, black around them, not scaled.
 - `LastCharSel` is the character select slot to start on. Like the real client's `[Defaults]
   LastCharSel`, it's saved as you select characters (written when the GUI exits).
@@ -140,10 +140,14 @@ checking layout and flow without Windows.
 ```
 build/scene_preview EQDIR OUT.png --char RACE GENDER CLASS [--face F] [--equip M,M,...] [--camera H] [--frames N] [--size WxH]
 build/scene_preview EQDIR OUT.png [--zone NAME] [--at X Y Z] [--heading H] [--pitch P] [--frames N] [--size WxH]
+build/scene_preview EQDIR OUT.png --player RACE GENDER --zone NAME --at X Y Z [--heading H] [--face F] [--equip M,M,...]
+                    [--orbit H] [--pitch P] [--first-person] [--fog START END RRGGBB] [--sky N] [--frames N] [--size WxH]
 ```
 
 `scene_preview` renders the 3D view to a PNG: the character select scene for any race, gender,
-class, face and armor, or a free camera anywhere in a zone (server coordinates, heading 0..512).
+class, face and armor, a free camera anywhere in a zone (server coordinates, heading 0..512), or
+the in-zone view with a character standing at a server position (`--fog` and `--sky` stand in for
+the zone's `OP_NewZone`).
 `--frames N` times N renders.
 
 ## How the front end was recovered
@@ -264,6 +268,35 @@ combination. Every race, class, deity and start zone combination the client allo
 doesn't know).
 
 Not yet: the real client's messages use `CConfirmationDialog`; these use the front end's dialog.
+
+## In the zone
+
+`frontend/zone_view.cpp` is the world display `CDisplay::StartWorldDisplay` (@004a849e) sets up once
+`OP_NewZone` is in, loaded on a background thread while the zone handshake carries on:
+
+- **Zone:** `<zone>.s3d`, the objects `objects.wld` places from `<zone>_obj.s3d`, and the `lights.wld`
+  point lights, the same loader as character select.
+- **Fog and far plane:** `CEverQuest::HandleWorldMessage` copies `OP_NewZone` into `instEQZoneInfo`. A
+  zone without fog gets grey fog from 500 to 600, and the clip range is at least 50.
+  `CEverQuest::SetTimedFog` and `CDisplay::SetFog` use `fog_minclip[0]` to `fog_maxclip[0]` in the zone's
+  fog color, and the yon (far plane) is the fog's end. Past it you see the sky, or the fog color.
+- **Sky:** only when the zone's `sky` isn't 0 and the yon is at least 101, as `RealRender_World` checks
+  (`sky.s3d` `LAYER<sky>1` / `LAYER<sky>3`). Time of day isn't applied yet.
+- **Our character:** dressed from `OP_ZoneEntry` (`ServerZoneEntry_Struct`, 356 bytes, not encrypted):
+  race, gender, face, the nine equipment materials and tints, and the size the model is scaled to. The
+  server's z is the model's center, `size / 5 * 3.125` over the feet (`Mob::CalcZOffset`). The feet go there
+  and then settle onto the floor right below. Headings in the profile and `OP_ZoneEntry` are 0..512;
+  spawn packets send them as a byte (0..256).
+- **Camera:** a chase camera behind and above the character, looking at their head. It comes in when a
+  wall or the floor is in the way (tested over a box around the camera, so surfaces it backs into at a
+  shallow angle don't cut into the view), and hides the model once it's inside them. The wheel zooms
+  from first person out to 200 units, `DoCamAi`'s limit: out of first person into the chase camera, and
+  back in past 3 units. Holding the right button and dragging looks around. F9 switches between first
+  person and the chase camera. Until the character can move, Left/Right turn the camera and Page Up/Down
+  tilt it.
+
+The zone screen fills the window: the 3D view, with the chat at the bottom left, our details and the
+nearest spawns at the top left, and the radar at the top right.
 
 ## Protocol
 

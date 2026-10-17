@@ -220,6 +220,42 @@ namespace render
 		return found;
 	}
 
+	bool ZoneScene::SegmentHit(const Vec3 &from, const Vec3 &to, float &fraction) const
+	{
+		// Moller-Trumbore against every solid triangle, both sides.
+		Vec3 d = to - from;
+		Vec3 low{std::min(from.x, to.x), std::min(from.y, to.y), std::min(from.z, to.z)};
+		Vec3 high{std::max(from.x, to.x), std::max(from.y, to.y), std::max(from.z, to.z)};
+		bool found = false;
+		fraction = 1;
+		for (size_t i = 0; i + 2 < m_collision.size(); i += 3) {
+			const Vec3 &a = m_collision[i], &b = m_collision[i + 1], &c = m_collision[i + 2];
+			if (std::max({a.x, b.x, c.x}) < low.x || std::min({a.x, b.x, c.x}) > high.x || std::max({a.y, b.y, c.y}) < low.y ||
+				std::min({a.y, b.y, c.y}) > high.y || std::max({a.z, b.z, c.z}) < low.z || std::min({a.z, b.z, c.z}) > high.z)
+				continue;
+			Vec3 e1 = b - a, e2 = c - a;
+			Vec3 p = Cross(d, e2);
+			float det = Dot(e1, p);
+			if (std::fabs(det) < 1e-8f)
+				continue;
+			float inv = 1 / det;
+			Vec3 s = from - a;
+			float u = Dot(s, p) * inv;
+			if (u < 0 || u > 1)
+				continue;
+			Vec3 q = Cross(s, e1);
+			float v = Dot(d, q) * inv;
+			if (v < 0 || u + v > 1)
+				continue;
+			float t = Dot(e2, q) * inv;
+			if (t >= 0 && t < fraction) {
+				fraction = t;
+				found = true;
+			}
+		}
+		return found;
+	}
+
 	size_t ZoneScene::TriangleCount() const
 	{
 		size_t count = 0;

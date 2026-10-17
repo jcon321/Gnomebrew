@@ -12,8 +12,8 @@
 
 struct InputEvent
 {
-	enum class Type { MouseMove, MouseDown, MouseUp, DoubleClick, Wheel, Char, Key };
-	enum class Key { None, Enter, Escape, Tab, Backspace, Up, Down, PageUp, PageDown };
+	enum class Type { MouseMove, MouseDown, MouseUp, DoubleClick, RightDown, RightUp, Wheel, Char, Key };
+	enum class Key { None, Enter, Escape, Tab, Backspace, Up, Down, Left, Right, PageUp, PageDown, F9 };
 
 	Type type = Type::MouseMove;
 	int x = 0, y = 0;     // mouse position, front-end pixels

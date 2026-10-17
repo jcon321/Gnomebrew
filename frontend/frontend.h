@@ -18,6 +18,7 @@
 #include "sidl.h"
 #include "world_client.h"
 #include "zone_session.h"
+#include "zone_view.h"
 #include "widgets.h"
 
 #include <functional>
@@ -62,9 +63,9 @@ public:
 	void Update(uint64_t now_ms);
 	void Render(Canvas &canvas, uint64_t now_ms);
 
-	// The window's size. eqmain's screens are 640x480 art (and the zone screen is a 640x480
-	// stand-in), drawn at their native size in the middle of the window; character select
-	// fills it, like eqgame, with the SIDL windows at their real pixel size.
+	// The window's size. eqmain's screens are 640x480 art, drawn at their native size in the
+	// middle of the window; character select and the zone fill it, like eqgame, with the SIDL
+	// windows at their real pixel size.
 	void SetGameResolution(int width, int height);
 	int ScreenWidth() const { return m_game_width; }
 	int ScreenHeight() const { return m_game_height; }
@@ -81,6 +82,7 @@ public:
 	int LastCharacter() const { return m_config.last_character; } // the slot to remember (LastCharSel)
 	const ZoneSession &Zone() const { return m_zone; }
 	const CharacterSelectView *CharacterScene() const { return m_charselect_view.get(); }
+	const ZoneView *ZoneScene() const { return m_zone_view.get(); }
 	CharacterCreation *Creation() { return m_creation.get(); }
 	// For tools: the window-pixel center of a visible SIDL control on character select or creation.
 	bool ControlCenter(const std::string &screen_id, int &x, int &y) const;
@@ -192,7 +194,7 @@ private:
 	std::unique_ptr<CharacterCreation> m_creation;
 	bool m_creating = false; // waiting for the world server's answer
 
-	// zone (stand-in for the 3D view)
+	// zone: the 3D view with the chat, our character's details and a radar over it
 	struct LogLine
 	{
 		std::string text;
@@ -202,6 +204,10 @@ private:
 	InputField m_chat_input;
 	Button m_camp;
 	std::string m_time_of_day;
+	std::unique_ptr<ZoneView> m_zone_view;
+	bool m_zone_error_logged = false;
+	bool m_mouse_look = false; // right button held: dragging turns and tilts the camera
+	int m_look_x = 0, m_look_y = 0;
 
 	LoginSession m_session;
 	WorldSession m_world;

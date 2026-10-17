@@ -24,6 +24,7 @@ namespace render
 		uint8_t face = 0;
 		uint32_t equip[EquipSlots] = {}; // material per slot (0 none, 1 leather, 2 chain, 3 plate, ...)
 		uint32_t tint[EquipSlots] = {};  // 0xFFRRGGBB when tinted
+		float height = 0;                // the spawn's size; 0 = the race's default
 	};
 
 	// Three-letter model code for a playable race ("HUM", "IKF", ...), or empty.

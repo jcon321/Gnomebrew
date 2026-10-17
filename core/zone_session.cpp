@@ -16,6 +16,7 @@ namespace
 	constexpr uint16_t AppearanceSpawnId = 0x10; // SpawnAppearance type that tells the client its spawn id
 	constexpr size_t SpawnSize = 224;            // Mac::structs::Spawn_Struct
 	constexpr size_t ProfileSize = 8460;         // Mac::structs::PlayerProfile_Struct
+	constexpr size_t ZoneEntrySize = 356;        // ServerZoneEntry_Struct
 
 	uint64_t NowMs()
 	{
@@ -58,11 +59,14 @@ namespace
 	ZoneSpawn ParseSpawn(const std::vector<uint8_t> &d, size_t o)
 	{
 		ZoneSpawn s;
-		s.heading = d[o + 5];
+		s.heading = d[o + 5] * 2.0f;
 		s.y = static_cast<float>(Read<int16_t>(d, o + 7));
 		s.x = static_cast<float>(Read<int16_t>(d, o + 9));
 		s.z = static_cast<float>(Read<int16_t>(d, o + 11)) / 10.0f;
 		s.pet_owner = Read<uint16_t>(d, o + 18);
+		s.size = Read<float>(d, o + 28);
+		for (int k = 0; k < 9; ++k)
+			s.colors[k] = Read<uint32_t>(d, o + 40 + k * 4);
 		s.id = Read<uint16_t>(d, o + 76);
 		s.hp = Read<int16_t>(d, o + 80);
 		s.race = Read<uint16_t>(d, o + 84);
@@ -73,8 +77,40 @@ namespace
 		s.anon = d[o + 95];
 		s.afk = d[o + 96];
 		s.gm = d[o + 99];
+		s.face = d[o + 103];
+		for (int k = 0; k < 9; ++k)
+			s.equipment[k] = Read<uint16_t>(d, o + 104 + k * 2);
 		s.name = CString(d, o + 127, 64);
 		s.surname = CString(d, o + 191, 32);
+		return s;
+	}
+
+	// ServerZoneEntry_Struct (eq_packet_structs.h), 356 bytes: our own spawn, sent as is.
+	ZoneSpawn ParseZoneEntry(const std::vector<uint8_t> &d)
+	{
+		ZoneSpawn s;
+		s.name = CString(d, 5, 64);
+		s.y = Read<float>(d, 76);
+		s.x = Read<float>(d, 80);
+		s.z = Read<float>(d, 84);
+		s.heading = Read<float>(d, 88);
+		s.pet_owner = Read<uint16_t>(d, 154);
+		s.npc = d[172];
+		s.class_id = d[173];
+		s.race = Read<uint16_t>(d, 174);
+		s.gender = d[176];
+		s.level = d[177];
+		s.face = d[183];
+		for (int k = 0; k < 9; ++k) {
+			s.equipment[k] = Read<uint16_t>(d, 184 + k * 2);
+			s.colors[k] = Read<uint32_t>(d, 204 + k * 4);
+		}
+		s.size = Read<float>(d, 244);
+		s.gm = d[269];
+		s.anon = d[280];
+		s.afk = d[283];
+		s.surname = CString(d, 304, 32);
+		s.hp = 100;
 		return s;
 	}
 }
@@ -189,6 +225,7 @@ bool ZoneSession::Begin(const std::string &host, uint16_t port, const std::strin
 	m_profile = ZoneProfile{};
 	m_info = ZoneInfo{};
 	m_spawns.clear();
+	m_self = ZoneSpawn{};
 	m_my_id = 0;
 	m_have_profile = m_have_zone_entry = m_sent_req_new_zone = m_sent_exp_zonein = false;
 
@@ -218,7 +255,7 @@ void ZoneSession::SendPosition()
 	uint8_t update[15] = {};
 	int16_t y = static_cast<int16_t>(m_profile.y), x = static_cast<int16_t>(m_profile.x);
 	int16_t z = static_cast<int16_t>(m_profile.z * 10.0f);
-	uint8_t heading = static_cast<uint8_t>(m_profile.heading);
+	uint8_t heading = static_cast<uint8_t>(static_cast<int>(m_profile.heading / 2) & 0xff); // 512ths -> 256ths
 	memcpy(update, &m_my_id, 2);
 	update[3] = heading;
 	memcpy(update + 5, &y, 2);
@@ -306,17 +343,51 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		events.push_back({Event::Type::Profile});
 		break;
 	}
-	case ZoneOp::ZoneEntry:
-		// ServerZoneEntry_Struct (356 bytes): our own spawn record.
+	case ZoneOp::ZoneEntry: {
+		// ServerZoneEntry_Struct: our own spawn record.
+		if (data.size() >= ZoneEntrySize) {
+			m_self = ParseZoneEntry(data);
+			char line[160];
+			snprintf(line, sizeof(line), "[zone]    our spawn: race %u gender %u face %u size %.2f at (%.1f, %.1f, %.1f) heading %.0f",
+				m_self.race, m_self.gender, m_self.face, m_self.size, m_self.x, m_self.y, m_self.z, m_self.heading);
+			Log(line);
+		}
 		m_have_zone_entry = true;
 		break;
+	}
 	case ZoneOp::NewZone: {
 		m_info.short_name = CString(data, 64, 32);
 		m_info.long_name = CString(data, 96, 278);
+		m_info.zone_type = Read<uint8_t>(data, 374);
+		m_info.fog_color = (Read<uint8_t>(data, 375) << 16) | (Read<uint8_t>(data, 379) << 8) | Read<uint8_t>(data, 383);
+		m_info.fog_start = Read<float>(data, 388);
+		m_info.fog_end = Read<float>(data, 404);
+		m_info.sky = Read<uint8_t>(data, 474);
+		m_info.min_clip = Read<float>(data, 508);
+		m_info.max_clip = Read<float>(data, 512);
+		// HandleWorldMessage's fallbacks: no fog means grey fog from 500 to 600, and the clip
+		// range is at least 50, out to four times the fog when it's missing or too close.
+		if (m_info.fog_start == 0 && m_info.fog_end == 0) {
+			m_info.fog_start = 500;
+			m_info.fog_end = 600;
+			m_info.fog_color = 0xc0c0c0;
+		}
+		if (m_info.min_clip < 50)
+			m_info.min_clip = 50;
+		if (m_info.max_clip < 51)
+			m_info.max_clip = m_info.fog_end * 4;
+		if (m_info.max_clip < m_info.min_clip)
+			m_info.max_clip = m_info.min_clip * 4;
 		m_info.safe_y = Read<float>(data, 488);
 		m_info.safe_x = Read<float>(data, 492);
 		m_info.safe_z = Read<float>(data, 496);
-		Log("[zone]    zone: " + m_info.long_name + " (" + m_info.short_name + ")");
+		{
+			char line[400];
+			snprintf(line, sizeof(line), "[zone]    zone: %s (%s), sky %u, fog #%06x %.0f..%.0f, clip %.0f..%.0f", m_info.long_name.c_str(),
+				m_info.short_name.c_str(), m_info.sky, m_info.fog_color, m_info.fog_start, m_info.fog_end, m_info.min_clip,
+				m_info.max_clip);
+			Log(line);
+		}
 		events.push_back({Event::Type::ZoneInfo});
 		Send(ZoneOp::ReqClientSpawn, nullptr, 0, "OP_ReqClientSpawn");
 		break;
@@ -361,7 +432,7 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 			auto it = m_spawns.find(Read<uint16_t>(data, o));
 			if (it == m_spawns.end())
 				continue;
-			it->second.heading = data[o + 3];
+			it->second.heading = data[o + 3] * 2.0f;
 			it->second.y = static_cast<float>(Read<int16_t>(data, o + 5));
 			it->second.x = static_cast<float>(Read<int16_t>(data, o + 7));
 			it->second.z = static_cast<float>(Read<int16_t>(data, o + 9)) / 10.0f;

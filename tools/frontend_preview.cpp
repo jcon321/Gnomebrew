@@ -329,8 +329,22 @@ int main(int argc, char **argv)
 				h.Snapshot("8-enter-world");
 				return 1;
 			}
+			h.RunUntil([&] { return frontend.ZoneScene() && frontend.ZoneScene()->Loaded(); }, 15000);
 			h.RunUntil([] { return false; }, 1500); // let spawn updates and messages arrive
 			h.Snapshot("8-zone");
+			if (const ZoneView *view = frontend.ZoneScene()) {
+				printf("[preview] zone view: %s %s, %zu triangles drawn\n", view->ZoneName().c_str(),
+					view->Error().empty() ? "loaded" : view->Error().c_str(), view->TrianglesDrawn());
+				if (view->Model())
+					printf("[preview] our model %s, feet at %.2f, %.2f, %.2f (WLD)\n", view->Model()->Code().c_str(),
+						view->Feet().x, view->Feet().y, view->Feet().z);
+			}
+			h.Key(InputEvent::Key::F9);
+			h.Snapshot("8-zone-first-person");
+			h.Key(InputEvent::Key::F9);
+			for (int i = 0; i < 16; ++i)
+				h.Key(InputEvent::Key::Left);
+			h.Snapshot("8-zone-turned");
 			h.Type("hello from the GUI");
 			h.Key(InputEvent::Key::Enter);
 			h.RunUntil([] { return false; }, 1500);
