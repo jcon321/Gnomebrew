@@ -28,6 +28,13 @@ namespace
 		return (channel((color >> 16) & 0xff, scale.x) << 16) | (channel((color >> 8) & 0xff, scale.y) << 8) |
 		       channel(color & 0xff, scale.z);
 	}
+
+	// CDisplay::ProcessAnimation: walking and running play faster the faster you go, at
+	// 1 + half the horizontal velocity per tick (about 1.75x at a normal run).
+	float MoveAnimationRate(float velocity)
+	{
+		return 1 + velocity * 0.5f;
+	}
 }
 
 ZoneView::ZoneView(std::string eq_dir) : m_eq_dir(std::move(eq_dir)) {}
@@ -248,22 +255,37 @@ void ZoneView::ChooseAnimation(float ms)
 {
 	// What the character is doing picks the animation, as EQPlayer's animation tracks do:
 	// L01 walk (backwards for back), L02 run, L03/L04 jump running/standing, L05 falling, P01 idle.
-	std::string animation = "P01";
+	std::string animation;
 	bool reversed = false;
 	float rate = 1;
 	float speed = m_movement.Speed();
+	const render::Vec3 &velocity = m_movement.Velocity();
 	if (!m_movement.OnGround()) {
-		if (m_movement.Velocity().z > 0)
-			animation = speed != 0 ? "L03" : "L04";
-		else
+		// ProcessAnimation only falls once we're dropping fast: below -3.2 a tick while moving,
+		// -2.25 standing still, more than a jump ever gets to. Until then a jump plays on, and
+		// stepping off a ledge keeps walking or running.
+		bool moving = std::fabs(velocity.x) >= 0.001f || std::fabs(velocity.y) >= 0.001f;
+		if (velocity.z < (moving ? -3.2f : -2.25f))
 			animation = "L05";
+		else if (m_animation == "L03" || m_animation == "L04")
+			animation = m_animation;
+		else if (velocity.z > 0)
+			animation = speed != 0 ? "L03" : "L04";
 	}
-	else if (speed > 0)
-		animation = speed >= m_movement.RunSpeed() ? "L02" : "L01";
-	else if (speed < 0) {
-		animation = "L01";
-		reversed = true;
+	if (animation.empty()) {
+		if (speed > 0)
+			animation = speed >= m_movement.RunSpeed() ? "L02" : "L01";
+		else if (speed < 0) {
+			animation = "L01";
+			reversed = true;
+		}
+		else if (m_movement.Strafe() != 0)
+			animation = "L01"; // ProcessAnimation walks while we're moving but not running
+		else
+			animation = "P01";
 	}
+	if (animation == "L01" || animation == "L02")
+		rate = MoveAnimationRate(std::sqrt(velocity.x * velocity.x + velocity.y * velocity.y));
 	if (m_model && !m_model->HasAnimation(animation))
 		animation = animation == "L03" || animation == "L04" || animation == "L05" ? "P01" : animation;
 	if (animation != m_animation) {
@@ -271,6 +293,7 @@ void ZoneView::ChooseAnimation(float ms)
 		m_animation_ms = 0;
 	}
 	m_animation_reversed = reversed;
+	m_animation_rate = rate;
 	m_animation_ms += ms * rate;
 	// Jumps and falls hold their last frame instead of looping.
 	if (m_model && (animation == "L03" || animation == "L04" || animation == "L05")) {
@@ -278,6 +301,74 @@ void ZoneView::ChooseAnimation(float ms)
 		if (length > 0)
 			m_animation_ms = std::min(m_animation_ms, length - 1);
 	}
+}
+
+ZoneView::DebugStats ZoneView::Stats() const
+{
+	DebugStats stats;
+	stats.triangles = m_triangles_drawn;
+	stats.spawns = m_actors.size();
+	for (const auto &[id, actor] : m_actors) {
+		stats.spawns_built += actor.model ? 1 : 0;
+		stats.spawns_drawn += actor.drawn ? 1 : 0;
+	}
+	stats.models_cached = m_model_cache.size();
+	stats.heading = m_heading;
+	stats.velocity = m_movement.Velocity();
+	stats.on_ground = m_movement.OnGround();
+	stats.animation = m_animation;
+	stats.animation_rate = m_animation_rate;
+	stats.view = m_view;
+	stats.camera_distance = m_distance;
+	stats.camera_pitch = m_pitch;
+	stats.feet_z = m_feet.z;
+	if (m_placed)
+		stats.have_floor = m_zone.FloorBelow(m_feet + render::Vec3{0, 0, 2}, 1000, stats.floor_z);
+	stats.zone_triangles = m_zone.TriangleCount();
+	stats.zone_objects = m_zone.ObjectCount();
+	stats.light = Lighting();
+	return stats;
+}
+
+bool ZoneView::SpawnStats(uint16_t id, SpawnDebug &out) const
+{
+	auto it = m_actors.find(id);
+	if (it == m_actors.end())
+		return false;
+	const SpawnActor &actor = it->second;
+	out = SpawnDebug{};
+	if (actor.model)
+		out.model = actor.model->Code();
+	out.animation = actor.animation;
+	out.animation_rate = actor.animation_rate;
+	out.drawn = actor.drawn;
+	out.camera_distance = actor.distance;
+	return true;
+}
+
+uint16_t ZoneView::PickSpawn(int x, int y) const
+{
+	// A box over each drawn model on screen, from its feet to the top of its head and a third of
+	// its height either side.
+	uint16_t best = 0;
+	float best_distance = 0;
+	for (const auto &[id, actor] : m_actors) {
+		if (!actor.drawn || !actor.model)
+			continue;
+		float height = actor.model->MaxZ() - actor.model->MinZ();
+		float fx, fy, tx, ty;
+		if (!m_rasterizer.Project(actor.feet, fx, fy) || !m_rasterizer.Project(actor.feet + render::Vec3{0, 0, height}, tx, ty))
+			continue;
+		float half = std::max(6.0f, (fy - ty) / 3);
+		float center = (fx + tx) / 2;
+		if (x < center - half || x > center + half || y < ty - 4 || y > fy + 4)
+			continue;
+		if (best == 0 || actor.distance < best_distance) {
+			best = id;
+			best_distance = actor.distance;
+		}
+	}
+	return best;
 }
 
 ZoneMovement ZoneView::Movement() const
@@ -307,8 +398,8 @@ render::Camera ZoneView::MakeCamera(float &distance) const
 	camera.horizontal_fov = render::Pi / 2;
 	camera.near_plane = 0.3f;
 	// CDisplay::SetFog: the yon is the fog's end; everything past it is the sky or the fog color.
-	camera.far_plane = std::max(m_info.fog_end, 50.0f);
-	camera.fog = true;
+	camera.far_plane = FarPlane();
+	camera.fog = !m_debug_draw.no_fog;
 	camera.fog_start = m_info.fog_start;
 	camera.fog_end = camera.far_plane;
 	// The fog darkens with the light (at night it fades into the dark, not into daylight grey).
@@ -399,6 +490,57 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 	}
 	m_triangles_drawn = m_rasterizer.TriangleCount();
 	m_rasterizer.Finish(canvas.Row(0), canvas.Stride(), sky ? ScaleColor(m_sky.HorizonColor(), sky_tint) : camera.fog_color);
+	DrawDebugOverlays(canvas);
+}
+
+float ZoneView::FarPlane() const
+{
+	float far_plane = std::max(m_info.fog_end, 50.0f);
+	return m_debug_draw.no_fog ? std::max(far_plane, m_info.max_clip) : far_plane;
+}
+
+void ZoneView::DrawDebugOverlays(Canvas &canvas) const
+{
+	uint32_t *pixels = canvas.Row(0);
+	int stride = canvas.Stride(), width = canvas.Width(), height = canvas.Height();
+	auto line = [&](const render::Vec3 &a, const render::Vec3 &b, uint32_t color) {
+		float ax, ay, bx, by;
+		if (m_rasterizer.Project(a, ax, ay) && m_rasterizer.Project(b, bx, by))
+			render::DrawLine(pixels, stride, width, height, ax, ay, bx, by, color);
+	};
+	if (m_debug_draw.wireframe) {
+		// Everything drawn (after Finish, so name tags still hide behind walls), as outlines on black.
+		canvas.Fill({0, 0, width, height}, 0x000000);
+		m_rasterizer.DrawEdges(pixels, stride, 0x40a060);
+	}
+	if (m_debug_draw.walls && m_placed) {
+		// What MoveHorizontally stops at: solid triangles steeper than a walkable slope, within reach.
+		const float reach = 40;
+		const auto &solid = m_zone.SolidTriangles();
+		for (size_t i = 0; i + 2 < solid.size(); i += 3) {
+			const render::Vec3 &a = solid[i], &b = solid[i + 1], &c = solid[i + 2];
+			render::Vec3 center = (a + b + c) * (1.0f / 3);
+			if (std::fabs(center.x - m_feet.x) > reach || std::fabs(center.y - m_feet.y) > reach ||
+				std::fabs(center.z - m_feet.z) > reach)
+				continue;
+			render::Vec3 normal = render::Normalize(render::Cross(b - a, c - a));
+			if (std::fabs(normal.z) >= 0.7f)
+				continue;
+			line(a, b, 0xff4040);
+			line(b, c, 0xff4040);
+			line(c, a, 0xff4040);
+		}
+	}
+	if (m_debug_draw.floor && m_placed) {
+		// A cross on the floor right under us, and a post from it up to our feet.
+		float floor_z;
+		if (m_zone.FloorBelow(m_feet + render::Vec3{0, 0, 2}, 1000, floor_z)) {
+			render::Vec3 floor{m_feet.x, m_feet.y, floor_z + 0.05f};
+			line(floor - render::Vec3{2, 0, 0}, floor + render::Vec3{2, 0, 0}, 0xffe040);
+			line(floor - render::Vec3{0, 2, 0}, floor + render::Vec3{0, 2, 0}, 0xffe040);
+			line(floor, m_feet, 0xffe040);
+		}
+	}
 }
 
 // ---------------------------------------------------------------- other spawns
@@ -469,9 +611,11 @@ void ZoneView::PoseSpawn(SpawnActor &actor, const ZoneSpawn &spawn, uint64_t now
 		animation = "D05";
 		hold = true;
 	}
-	else if (spawn.speed != 0 || moving > 0.05f) {
+	float rate = 1;
+	if (animation != "D05" && (spawn.speed != 0 || moving > 0.05f)) {
 		float speed = spawn.speed != 0 ? std::fabs(spawn.speed) : moving / 2.13f; // velocity -> speed at steady state
 		animation = speed >= spawn.run_speed * 0.9f ? "L02" : "L01";
+		rate = MoveAnimationRate(moving > 0.05f ? moving : speed * 2.13f);
 	}
 	if (actor.model && !actor.model->HasAnimation(animation))
 		animation = "P01";
@@ -482,7 +626,8 @@ void ZoneView::PoseSpawn(SpawnActor &actor, const ZoneSpawn &spawn, uint64_t now
 		actor.animation_ms = 0;
 	}
 	actor.hold_last_frame = hold;
-	actor.animation_ms += ms;
+	actor.animation_rate = rate;
+	actor.animation_ms += ms * rate;
 	if (hold && actor.model) {
 		double length = actor.model->AnimationMs(animation);
 		if (length > 0)
@@ -492,7 +637,7 @@ void ZoneView::PoseSpawn(SpawnActor &actor, const ZoneSpawn &spawn, uint64_t now
 
 void ZoneView::DrawSpawns()
 {
-	float far_plane = std::max(m_info.fog_end, 50.0f);
+	float far_plane = FarPlane();
 	for (auto &[id, actor] : m_actors) {
 		actor.drawn = false;
 		if (!actor.model)

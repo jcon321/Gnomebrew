@@ -15,7 +15,7 @@ struct InputEvent
 	// Key comes with each press (and auto-repeat), KeyUp when it's let go. FocusLost: the window
 	// lost the keyboard, so every held key counts as released.
 	enum class Type { MouseMove, MouseDown, MouseUp, DoubleClick, RightDown, RightUp, Wheel, Char, Key, KeyUp, FocusLost };
-	enum class Key { None, Enter, Escape, Tab, Backspace, Up, Down, Left, Right, PageUp, PageDown, F9, W, A, S, D, R, Space };
+	enum class Key { None, Enter, Escape, Tab, Backspace, Up, Down, Left, Right, PageUp, PageDown, F9, F11, W, A, S, D, R, Space };
 
 	Type type = Type::MouseMove;
 	int x = 0, y = 0;     // mouse position, front-end pixels

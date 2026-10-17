@@ -4,10 +4,14 @@
 //   CEverQuest::ProcessControls (@0053f337)  keys -> MovementSpeed / MovementSpeedHeading
 //     forward runs at MovementForwardSpeedMultiplier (the zone entry's runspeed, 0.7) or walks
 //     at MovementBackwardSpeedMultiplier (walkspeed, 0.46); back is always the walk speed.
-//     Turning speeds up by one heading unit per frame, to 12 per tick.
+//     Turning speeds up by one heading unit per frame, to 12 per tick. In mouse look, left and
+//     right strafe instead (Zeal_strafe_direction / Zeal_strafe_speed, 2 x encum_factor).
 //   process_physics (@0054d964)  time in 50 ms ticks; the speed pushes along the heading,
 //     and the velocity is damped: on the ground v = v * 0.625 + push * 0.8 (StartWorldDisplay's
 //     MovementFriction1/2), in the air there's no push and v *= 0.99; gravity is the zone's.
+//     A strafe pushes a quarter turn to the side at half the run (or walk) speed, on top of
+//     the forward push, or at strafe speed x that standing still: running and strafing is
+//     about 12% faster than running.
 //   DoMainLoop's jump: MovementSpeedZ += 1.65 * JumpHeightModifier (1.35), pushed 1 along the heading.
 // The real client applies the damping once per frame; here it's scaled to the frame's length,
 // which gives the same speeds (about 30 units a second running) at any frame rate.
@@ -26,6 +30,7 @@ namespace render
 struct MoveControls
 {
 	bool forward = false, back = false, left = false, right = false;
+	bool strafe = false; // mouse look: left and right strafe instead of turning
 	bool run = true;
 	bool jump = false; // start a jump if we're on the ground
 };
@@ -43,6 +48,7 @@ public:
 	float Heading() const { return m_heading; }
 	float Speed() const { return m_speed; }               // MovementSpeed
 	float HeadingSpeed() const { return m_heading_speed; } // MovementSpeedHeading
+	float Strafe() const { return m_strafe; }              // sideways push: + left, - right
 	const render::Vec3 &Velocity() const { return m_velocity; } // per tick, world space
 	bool OnGround() const { return m_on_ground; }
 	float RunSpeed() const { return m_run_speed; }
@@ -60,6 +66,7 @@ private:
 
 	float m_speed = 0;
 	float m_heading_speed = 0;
+	float m_strafe = 0;
 	float m_turn_ramp = 0;
 	render::Vec3 m_velocity;
 	bool m_on_ground = true;

@@ -17,6 +17,7 @@
 // --walk runs forward that long first (turning left -1 or right 1 with --turn). --npc RACE GENDER
 // SIZE X Y Z HEADING (repeatable) stands a spawn there. --time HOUR MINUTE sets Norrath's time (hour
 // 1..24, 1 is midnight) for the zone's time type (--time-type, default 2: outdoors).
+// --debug-draw wireframe,nofog,walls,floor turns on the debug menu's render toggles.
 // --frames renders N times and prints the average frame time. --size picks the
 // image size (default 640x480).
 
@@ -77,7 +78,8 @@ namespace
 
 	int InZone(const std::string &eq_dir, const std::string &out, const ZoneInfo &info, const render::CharacterAppearance &appearance,
 		float x, float y, float z, float heading, float orbit, float pitch, bool first_person, int zoom, int walk_ms, int turn, int frames,
-		int Width, int Height, const std::map<uint16_t, ZoneSpawn> &spawns, int game_hour, float game_minute)
+		int Width, int Height, const std::map<uint16_t, ZoneSpawn> &spawns, int game_hour, float game_minute,
+		const ZoneView::DebugDraw &debug_draw)
 	{
 		auto t0 = std::chrono::steady_clock::now();
 		ZoneView view(eq_dir);
@@ -93,6 +95,7 @@ namespace
 
 		std::vector<uint32_t> pixels(static_cast<size_t>(Width) * Height);
 		Canvas canvas(pixels.data(), Width, Height, Width);
+		view.SetDebugDraw(debug_draw);
 		view.SetPlayer(appearance, 0.46f, 0.7f);
 		view.SetPlayerPosition(x, y, z, heading);
 		if (game_hour > 0)
@@ -143,6 +146,9 @@ namespace
 					view.Feet().z);
 		}
 		printf("%zu triangles drawn, %.1f ms per frame\n", view.TrianglesDrawn(), total / frames);
+		ZoneView::DebugStats stats = view.Stats();
+		if (stats.have_floor)
+			printf("feet at z %.2f, floor %.2f below them\n", stats.feet_z, stats.feet_z - stats.floor_z);
 		if (!WritePng(out, pixels, Width, Height)) {
 			fprintf(stderr, "couldn't write %s\n", out.c_str());
 			return 1;
@@ -172,6 +178,7 @@ int main(int argc, char **argv)
 	std::map<uint16_t, ZoneSpawn> spawns;
 	int game_hour = 0;
 	float game_minute = 0;
+	ZoneView::DebugDraw debug_draw;
 	ZoneInfo info;
 	info.sky = 1;
 	info.time_type = 2;
@@ -194,6 +201,13 @@ int main(int argc, char **argv)
 			spawn.z = static_cast<float>(atof(argv[++i]));
 			spawn.heading = static_cast<float>(atof(argv[++i]));
 			spawns[spawn.id] = spawn;
+		}
+		else if (arg == "--debug-draw" && i + 1 < argc) {
+			std::string list = argv[++i];
+			debug_draw.wireframe = list.find("wireframe") != std::string::npos;
+			debug_draw.no_fog = list.find("nofog") != std::string::npos;
+			debug_draw.walls = list.find("walls") != std::string::npos;
+			debug_draw.floor = list.find("floor") != std::string::npos;
 		}
 		else if (arg == "--time" && i + 2 < argc) {
 			game_hour = atoi(argv[++i]);
@@ -259,7 +273,7 @@ int main(int argc, char **argv)
 		for (int i = 3; i < argc; ++i)
 			have_heading = have_heading || std::string(argv[i]) == "--heading";
 		return InZone(eq_dir, out, info, appearance, server_x, server_y, server_z, have_heading ? heading : 0, orbit, pitch,
-			first_person, zoom, walk_ms, turn, frames, width, height, spawns, game_hour, game_minute);
+			first_person, zoom, walk_ms, turn, frames, width, height, spawns, game_hour, game_minute, debug_draw);
 	}
 	if (character)
 		return CharacterSelect(eq_dir, out, appearance, static_cast<uint8_t>(class_id), camera_heading, frames, width, height);

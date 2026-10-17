@@ -90,6 +90,44 @@ public:
 	// For the preview tool.
 	const render::CharacterModel *Model() const { return m_model.get(); }
 	size_t TrianglesDrawn() const { return m_triangles_drawn; }
+	// For the debug menu: what the last frame drew, and how we're moving and looking.
+	struct DebugStats
+	{
+		size_t triangles = 0;
+		size_t spawns_drawn = 0, spawns_built = 0, spawns = 0; // models drawn, built, spawns tracked
+		size_t models_cached = 0;                               // distinct spawn models loaded
+		float heading = 0;                                      // 0..512, 0 north, 128 west
+		render::Vec3 velocity;                                  // per tick, world space
+		bool on_ground = true;
+		std::string animation;
+		float animation_rate = 1;
+		CameraView view = CameraView::Chase;
+		float camera_distance = 0, camera_pitch = 0;
+		bool have_floor = false;
+		float feet_z = 0, floor_z = 0;                          // world z of our feet and the floor under them
+		size_t zone_triangles = 0, zone_objects = 0;
+		DayLight light;
+	};
+	DebugStats Stats() const;
+	// One spawn as we show it; false when we aren't tracking it.
+	struct SpawnDebug
+	{
+		std::string model; // actor tag, empty without a model
+		std::string animation;
+		float animation_rate = 1;
+		bool drawn = false;
+		float camera_distance = 0;
+	};
+	bool SpawnStats(uint16_t id, SpawnDebug &out) const;
+	// The spawn drawn under a window pixel, nearest first (after Render); 0 for none.
+	uint16_t PickSpawn(int x, int y) const;
+	// Debug drawing: triangle outlines instead of the scene, no fog (out to the zone's max clip),
+	// collision walls near us outlined, and a marker on the floor under our feet.
+	struct DebugDraw
+	{
+		bool wireframe = false, no_fog = false, walls = false, floor = false;
+	};
+	void SetDebugDraw(const DebugDraw &draw) { m_debug_draw = draw; }
 	const render::Vec3 &Feet() const { return m_feet; }
 
 private:
@@ -101,6 +139,8 @@ private:
 	void PoseSpawn(SpawnActor &actor, const ZoneSpawn &spawn, uint64_t now_ms);
 	std::shared_ptr<render::CharacterModel> SpawnModel(const ZoneSpawn &spawn);
 	void DrawSpawns();
+	float FarPlane() const; // the fog's end, or the zone's max clip with the debug menu's no fog
+	void DrawDebugOverlays(Canvas &canvas) const;
 	void ChooseAnimation(float ms);
 	render::Camera MakeCamera(float &distance) const; // distance: the chase camera's, after walls pull it in
 
@@ -130,6 +170,8 @@ private:
 	uint64_t m_last_move_ms = 0;
 	std::string m_animation = "P01";
 	double m_animation_ms = 0;
+	float m_animation_rate = 1;
+	DebugDraw m_debug_draw;
 	bool m_animation_reversed = false;
 
 	// Other spawns: models shared by everyone who looks the same, built once they're in range.
@@ -140,6 +182,7 @@ private:
 		render::Vec3 feet;
 		float heading = 0;
 		std::string animation = "P01";
+		float animation_rate = 1;
 		bool hold_last_frame = false;
 		double animation_ms = 0;
 		uint64_t last_ms = 0;

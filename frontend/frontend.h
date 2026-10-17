@@ -13,6 +13,7 @@
 #include "charcreate.h"
 #include "charselect_view.h"
 #include "creation_rules.h"
+#include "debug_menu.h"
 #include "eqtext.h"
 #include "login_client.h"
 #include "sidl.h"
@@ -200,7 +201,7 @@ private:
 	std::unique_ptr<CharacterCreation> m_creation;
 	bool m_creating = false; // waiting for the world server's answer
 
-	// zone: the 3D view with the chat, our character's details and a radar over it
+	// zone: the 3D view with the chat and the debug menu over it
 	struct LogLine
 	{
 		std::string text;
@@ -212,6 +213,7 @@ private:
 	std::string m_time_of_day;
 	std::unique_ptr<ZoneView> m_zone_view;
 	bool m_zone_error_logged = false;
+	DebugMenu m_debug;
 	struct HeldKeys
 	{
 		bool up = false, down = false, left = false, right = false, w = false, a = false, s = false, d = false;
@@ -225,6 +227,8 @@ private:
 	bool m_mouse_turn = false, m_mouse_pan = false;
 	bool m_mouse_grabbed = false;
 	int m_look_x = 0, m_look_y = 0;
+	bool m_world_click = false; // the left button went down on the world
+	int m_click_travel = 0;     // pixels the mouse moved since, to tell a click from a drag
 
 	LoginSession m_session;
 	WorldSession m_world;

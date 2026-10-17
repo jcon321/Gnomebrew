@@ -11,6 +11,7 @@
 // Struct layouts are from EQMacEmu's common/patches/mac_structs.h and common/eq_packet_structs.h.
 
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <map>
 #include <memory>
@@ -19,6 +20,7 @@
 
 class EqStr;
 class RdpSession;
+struct RdpStats;
 
 struct ZoneProfile
 {
@@ -167,6 +169,30 @@ public:
 	// Norrath's time: OP_TimeOfDay's hour (1..24) and minute, carried on at 20 game seconds a
 	// second as EQWorldData::AdvanceTime does. False until the zone has sent it.
 	bool GameTime(int &hour, float &minute) const;
+	// The zone connection's round trip and traffic; false when there's no connection.
+	bool NetworkStats(RdpStats &out) const;
+
+	// For the debug menu. The packets sent and received lately, newest last; a run of the same
+	// opcode the same way is one record with a count.
+	struct PacketRecord
+	{
+		uint64_t ms = 0; // NowMs() of the latest
+		bool outgoing = false;
+		uint16_t opcode = 0;
+		size_t size = 0; // of the latest
+		uint32_t count = 1;
+	};
+	const std::deque<PacketRecord> &RecentPackets() const { return m_recent_packets; }
+	// Our position as the server last heard it: the latest OP_ClientUpdate, decoded the way the
+	// zone reads it (whole units across, tenths up, heading in 256ths).
+	struct SentPosition
+	{
+		uint64_t ms = 0; // 0: none yet
+		float y = 0, x = 0, z = 0, heading = 0;
+		uint32_t count = 0; // updates sent this zone
+	};
+	const SentPosition &LastSent() const { return m_last_sent; }
+	static uint64_t Now(); // the clock behind PacketRecord::ms, SentPosition::ms and ZoneSpawn::updated_ms
 
 private:
 	void Log(const std::string &line);
@@ -175,6 +201,8 @@ private:
 	void SendPosition();
 	void SendMovement(uint64_t now_ms);
 	void HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std::vector<Event> &events);
+	void RecordPacket(bool outgoing, uint16_t opcode, size_t size);
+	void RecordSent(const uint8_t *update); // a 15-byte SpawnPositionUpdate_Struct
 
 	std::unique_ptr<RdpSession> m_session;
 	State m_state = State::Idle;
@@ -200,6 +228,8 @@ private:
 	uint64_t m_last_update_ms = 0, m_last_tick_ms = 0;
 	uint8_t m_last_update[13] = {};
 	int m_identical_updates = 0;
+	std::deque<PacketRecord> m_recent_packets;
+	SentPosition m_last_sent;
 	std::function<void(const std::string &)> m_log;
 	bool m_verbose = false;
 	const EqStr *m_eqstr = nullptr;

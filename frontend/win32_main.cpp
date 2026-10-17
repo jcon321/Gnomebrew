@@ -147,6 +147,7 @@ namespace
 		case VK_LEFT: return InputEvent::Key::Left;
 		case VK_RIGHT: return InputEvent::Key::Right;
 		case VK_F9: return InputEvent::Key::F9;
+		case VK_F11: return InputEvent::Key::F11;
 		case VK_PRIOR: return InputEvent::Key::PageUp;
 		case VK_NEXT: return InputEvent::Key::PageDown;
 		case VK_SPACE: return InputEvent::Key::Space;

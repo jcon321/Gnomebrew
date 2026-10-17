@@ -188,6 +188,25 @@ void RdpSession::Close(uint32_t linger_ms)
 	m_connection = nullptr;
 }
 
+bool RdpSession::Stats(RdpStats &out) const
+{
+	if (!m_connection)
+		return false;
+	rdplib_connection_perf_stats_t perf{};
+	rdplib_connection_counters_t counters{};
+	if (rdplib_connection_get_perf_stats(m_connection, &perf) != RDPLIB_OK ||
+		rdplib_connection_get_counters(m_connection, &counters) != RDPLIB_OK)
+		return false;
+	out.rtt_ms = perf.rtt_mean_ms;
+	out.rtt_deviation_ms = perf.rtt_deviation_ms;
+	out.bytes_in = static_cast<uint64_t>(counters.reliable_bytes_rx) + counters.unreliable_bytes_rx;
+	out.bytes_out = static_cast<uint64_t>(counters.reliable_bytes_tx) + counters.unreliable_bytes_tx;
+	out.packets_in = static_cast<uint64_t>(counters.reliable_packets_rx) + counters.unreliable_packets_rx;
+	out.packets_out = static_cast<uint64_t>(counters.reliable_packets_tx) + counters.unreliable_packets_tx;
+	out.resent = counters.reliable_packets_retransmitted;
+	return true;
+}
+
 const char *OpcodeName(uint16_t opcode, bool world)
 {
 	const OpcodeEntry *table = world ? WorldOpcodes : LoginOpcodes;

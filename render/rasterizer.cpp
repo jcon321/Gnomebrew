@@ -573,4 +573,45 @@ namespace render
 		m_workers->Run(static_cast<int>(m_bins.size()),
 			[&](int strip) { RasterizeStrip(strip, pixels, stride, clear_color, clear); });
 	}
+
+	void DrawLine(uint32_t *pixels, int stride, int width, int height, float x0, float y0, float x1, float y1, uint32_t color)
+	{
+		// Liang-Barsky against the surface, then one pixel a step along the longer axis.
+		float t0 = 0, t1 = 1, dx = x1 - x0, dy = y1 - y0;
+		const float p[4] = {-dx, dx, -dy, dy};
+		const float q[4] = {x0, width - 1 - x0, y0, height - 1 - y0};
+		for (int i = 0; i < 4; ++i) {
+			if (p[i] == 0) {
+				if (q[i] < 0)
+					return;
+				continue;
+			}
+			float t = q[i] / p[i];
+			if (p[i] < 0)
+				t0 = std::max(t0, t);
+			else
+				t1 = std::min(t1, t);
+			if (t0 > t1)
+				return;
+		}
+		float ax = x0 + t0 * dx, ay = y0 + t0 * dy, bx = x0 + t1 * dx, by = y0 + t1 * dy;
+		int steps = static_cast<int>(std::max(std::fabs(bx - ax), std::fabs(by - ay)));
+		float sx = steps ? (bx - ax) / steps : 0, sy = steps ? (by - ay) / steps : 0;
+		for (int i = 0; i <= steps; ++i, ax += sx, ay += sy) {
+			int px = static_cast<int>(ax + 0.5f), py = static_cast<int>(ay + 0.5f);
+			if (px >= 0 && py >= 0 && px < width && py < height)
+				pixels[static_cast<size_t>(py) * stride + px] = color;
+		}
+	}
+
+	void Rasterizer::DrawEdges(uint32_t *pixels, int stride, uint32_t color) const
+	{
+		for (const ScreenTriangle &t : m_triangles) {
+			if (t.background)
+				continue;
+			DrawLine(pixels, stride, m_width, m_height, t.x[0], t.y[0], t.x[1], t.y[1], color);
+			DrawLine(pixels, stride, m_width, m_height, t.x[1], t.y[1], t.x[2], t.y[2], color);
+			DrawLine(pixels, stride, m_width, m_height, t.x[2], t.y[2], t.x[0], t.y[0], color);
+		}
+	}
 }

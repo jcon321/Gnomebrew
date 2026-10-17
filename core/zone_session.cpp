@@ -241,7 +241,47 @@ bool ZoneSession::Send(uint16_t opcode, const void *body, size_t size, const std
 {
 	if (!what.empty())
 		Log("[zone] -> " + what);
-	return m_session && m_session->Send(opcode, body, size, reliable);
+	if (!m_session)
+		return false;
+	RecordPacket(true, opcode, size);
+	return m_session->Send(opcode, body, size, reliable);
+}
+
+uint64_t ZoneSession::Now()
+{
+	return NowMs();
+}
+
+void ZoneSession::RecordPacket(bool outgoing, uint16_t opcode, size_t size)
+{
+	constexpr size_t MaxRecords = 64;
+	uint64_t now = NowMs();
+	if (!m_recent_packets.empty()) {
+		PacketRecord &last = m_recent_packets.back();
+		if (last.outgoing == outgoing && last.opcode == opcode) {
+			last.ms = now;
+			last.size = size;
+			++last.count;
+			return;
+		}
+	}
+	m_recent_packets.push_back({now, outgoing, opcode, size, 1});
+	if (m_recent_packets.size() > MaxRecords)
+		m_recent_packets.pop_front();
+}
+
+void ZoneSession::RecordSent(const uint8_t *update)
+{
+	int16_t y, x, z;
+	memcpy(&y, update + 5, 2);
+	memcpy(&x, update + 7, 2);
+	memcpy(&z, update + 9, 2);
+	m_last_sent.ms = NowMs();
+	m_last_sent.y = y;
+	m_last_sent.x = x;
+	m_last_sent.z = z / 10.0f;
+	m_last_sent.heading = update[3] * 2.0f;
+	++m_last_sent.count;
 }
 
 bool ZoneSession::Begin(const std::string &host, uint16_t port, const std::string &character)
@@ -257,6 +297,8 @@ bool ZoneSession::Begin(const std::string &host, uint16_t port, const std::strin
 	m_movement = ZoneMovement{};
 	m_have_movement = m_movement_dirty = false;
 	m_identical_updates = 0;
+	m_recent_packets.clear();
+	m_last_sent = SentPosition{};
 
 	m_session = std::make_unique<RdpSession>();
 	if (!m_session->Connect(host, port)) {
@@ -290,7 +332,8 @@ void ZoneSession::SendPosition()
 	memcpy(update + 5, &y, 2);
 	memcpy(update + 7, &x, 2);
 	memcpy(update + 9, &z, 2);
-	Send(ZoneOp::ClientUpdate, update, sizeof(update), "OP_ClientUpdate");
+	if (Send(ZoneOp::ClientUpdate, update, sizeof(update), "OP_ClientUpdate"))
+		RecordSent(update);
 }
 
 bool ZoneSession::Say(const std::string &text)
@@ -388,7 +431,8 @@ void ZoneSession::SendMovement(uint64_t now_ms)
 	uint8_t update[15];
 	memcpy(update, &m_my_id, 2);
 	memcpy(update + 2, body, sizeof(body));
-	Send(ZoneOp::ClientUpdate, update, sizeof(update), m_verbose ? "OP_ClientUpdate" : "");
+	if (Send(ZoneOp::ClientUpdate, update, sizeof(update), m_verbose ? "OP_ClientUpdate" : ""))
+		RecordSent(update);
 	m_movement_dirty = false;
 	m_last_update_ms = now_ms;
 }
@@ -400,6 +444,11 @@ bool ZoneSession::Camp()
 	m_state = State::Camping;
 	m_camp_started_ms = NowMs();
 	return Send(ZoneOp::Camp, nullptr, 0, "OP_Camp");
+}
+
+bool ZoneSession::NetworkStats(RdpStats &out) const
+{
+	return m_session && m_session->Stats(out);
 }
 
 bool ZoneSession::GameTime(int &hour, float &minute) const
@@ -737,6 +786,7 @@ void ZoneSession::Pump(int timeout_ms, std::vector<Event> &events)
 		}
 		if (m_verbose)
 			HexDump(packet.data);
+		RecordPacket(false, packet.opcode, packet.data.size());
 		HandlePacket(packet.opcode, packet.data, events);
 		if (m_state == State::Failed || m_state == State::LoggedOut)
 			return;

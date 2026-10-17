@@ -46,6 +46,7 @@ namespace render
 		bool SegmentHit(const Vec3 &from, const Vec3 &to, float &fraction, Vec3 *normal = nullptr) const;
 
 		size_t TriangleCount() const;
+		const std::vector<Vec3> &SolidTriangles() const { return m_collision; } // 3 vertices each
 		size_t ObjectCount() const { return m_object_count; }
 		const std::vector<std::string> &Warnings() const { return m_warnings; }
 

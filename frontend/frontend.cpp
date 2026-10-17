@@ -1,6 +1,7 @@
 #include "frontend.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cctype>
@@ -588,6 +589,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		if (m_zone.GameTime(hour, minute))
 			m_zone_view->SetGameTime(hour, minute);
 		m_zone_view->UpdateSpawns(m_zone.Spawns(), m_zone.MySpawnId(), now_ms);
+		m_zone_view->SetDebugDraw(m_debug.Drawing());
 		bool jumped = m_zone_view->Move(ZoneControls(), now_ms, m_mouse_turn || m_mouse_pan);
 		if (m_zone_view->Placed())
 			m_zone.SetMovement(m_zone_view->Movement());
@@ -1150,40 +1152,8 @@ namespace
 	constexpr uint32_t ZoneGrey = 0xa0a0a0;
 	constexpr uint32_t ZoneDim = 0x606060;
 	constexpr uint32_t ZoneYellow = 0xf0e070;
-	constexpr int RadarSize = 220;
-	constexpr float RadarRange = 300.0f; // world units from the center to the edge
-	constexpr int PanelWidth = 215, PanelHeight = 340; // our details and the nearest spawns, top left
 	constexpr int ChatWidth = 620;
 	constexpr size_t MaxLogLines = 200;
-
-	struct Nearby
-	{
-		float distance;
-		const ZoneSpawn *spawn;
-	};
-
-	std::vector<Nearby> SortedByDistance(const ZoneSession &zone)
-	{
-		const ZoneProfile &me = zone.Profile();
-		std::vector<Nearby> out;
-		for (const auto &entry : zone.Spawns()) {
-			if (entry.first == zone.MySpawnId())
-				continue;
-			float dx = entry.second.x - me.x, dy = entry.second.y - me.y;
-			out.push_back({std::sqrt(dx * dx + dy * dy), &entry.second});
-		}
-		std::sort(out.begin(), out.end(), [](const Nearby &a, const Nearby &b) { return a.distance < b.distance; });
-		return out;
-	}
-
-	uint32_t SpawnColor(const ZoneSpawn &spawn)
-	{
-		if (spawn.npc == 0)
-			return 0x40c0ff; // players
-		if (spawn.npc == 1)
-			return spawn.pet_owner ? 0xc080ff : 0xff8040;
-		return 0x808080; // corpses
-	}
 
 	uint32_t NameColor(const ZoneSpawn &spawn)
 	{
@@ -1218,6 +1188,7 @@ void FrontEnd::EnterZoneScreen()
 	m_time_of_day.clear();
 	m_zone_view.reset();
 	m_zone_error_logged = false;
+	m_debug.Reset();
 	m_mouse_turn = m_mouse_pan = m_mouse_grabbed = false;
 	m_keys = HeldKeys{};
 	m_jump_requested = false;
@@ -1345,6 +1316,7 @@ MoveControls FrontEnd::ZoneControls()
 		controls.back = m_keys.down || m_keys.s;
 		controls.left = m_keys.left || m_keys.a;
 		controls.right = m_keys.right || m_keys.d;
+		controls.strafe = m_mouse_turn;
 		controls.jump = m_jump_requested;
 	}
 	controls.run = m_run;
@@ -1354,6 +1326,9 @@ MoveControls FrontEnd::ZoneControls()
 
 void FrontEnd::ZoneEvent(const InputEvent &event)
 {
+	// The debug menu's stat card takes clicks on it, unless a drag is holding the mouse.
+	if (event.IsMouse() && !m_mouse_turn && !m_mouse_pan && m_debug.OnMouse(event))
+		return;
 	switch (event.type) {
 	case InputEvent::Type::Wheel:
 		// Out of first person into the chase camera and back, as well as closer and farther.
@@ -1380,7 +1355,16 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 				m_look_y = event.y;
 			}
 			m_mouse_pan = true;
+			m_world_click = true;
+			m_click_travel = 0;
 		}
+		break;
+	case InputEvent::Type::MouseUp:
+		// A click that didn't drag picks the debug menu's target: a spawn under the cursor, or
+		// nobody (back to the nearest).
+		if (m_world_click && m_click_travel <= 3 && m_zone_view)
+			m_debug.SelectTarget(m_zone_view->PickSpawn(event.x, event.y));
+		m_world_click = false;
 		break;
 	case InputEvent::Type::MouseMove:
 		if (m_mouse_turn || m_mouse_pan) {
@@ -1389,6 +1373,7 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			// and the cursor stays free).
 			bool turn = m_mouse_turn;
 			bool pan = !turn && m_zone_view && m_zone_view->View() == ZoneView::CameraView::Chase;
+			m_click_travel += std::abs(event.x - m_look_x) + std::abs(event.y - m_look_y);
 			if (!turn && !pan) {
 				m_mouse_grabbed = false;
 				m_look_x = event.x;
@@ -1471,6 +1456,9 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			if (m_zone_view)
 				m_zone_view->CycleCamera();
 			break;
+		case InputEvent::Key::F11:
+			m_debug.open = !m_debug.open;
+			break;
 		case InputEvent::Key::PageUp:
 		case InputEvent::Key::PageDown:
 			if (m_zone_view)
@@ -1499,7 +1487,6 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 {
 	const ZoneProfile &me = m_zone.Profile();
-	const ZoneInfo &info = m_zone.Info();
 	int width = canvas.Width(), height = canvas.Height();
 
 	// The world, or the loading screen until the zone is in.
@@ -1509,8 +1496,11 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 		AddZoneLog("Couldn't load the zone: " + m_zone_view->Error(), ZoneGrey);
 		m_zone_error_logged = true;
 	}
+	double world_ms = 0;
 	if (world) {
+		auto start = std::chrono::steady_clock::now();
 		m_zone_view->Render(canvas, now_ms);
+		world_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
 		// TurnCharacterNameSpritesOn / TurnNPCNameSpritesOn: names over heads, ours in the chase
 		// view, the nearest few dozen within 120 units.
 		auto tags = m_zone_view->NameTags(120);
@@ -1540,90 +1530,6 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 		m_text.Draw(canvas, (width - size.w) / 2, height / 2 - size.h / 2, loading, 20, ZoneWhite);
 	}
 
-	// Top left: zone name, time of day, camp countdown, our details.
-	canvas.Darken({0, 0, PanelWidth, PanelHeight});
-	m_text.Draw(canvas, 10, 8, info.long_name.empty() ? "Entering the zone..." : info.long_name, 20, ZoneWhite);
-	std::string status;
-	if (m_zone.GetState() == ZoneSession::State::Camping)
-		status = "Camping... " + std::to_string((m_zone.CampRemainingMs() + 999) / 1000) + "s";
-	else {
-		// Norrath's clock: hour 1 is midnight.
-		int hour;
-		float minute;
-		if (m_zone.GameTime(hour, minute)) {
-			int h = (hour - 1) % 24;
-			char clock[32];
-			snprintf(clock, sizeof(clock), "%d:%02d %s", h % 12 == 0 ? 12 : h % 12, static_cast<int>(minute), h < 12 ? "AM" : "PM");
-			status = clock;
-		}
-	}
-	if (!status.empty())
-		m_text.Draw(canvas, 10, 30, status, FontSize::Small, ZoneGrey);
-
-	int y = 48;
-	auto line = [&](const std::string &text, int text_height, uint32_t color) {
-		m_text.Draw(canvas, 10, y, text, text_height, color);
-		y += text_height + 3;
-	};
-	if (!me.name.empty()) {
-		line(me.name + (me.last_name.empty() ? "" : " " + me.last_name), 16, ZoneWhite);
-		line("Level " + std::to_string(me.level) + " " + RaceName(me.race) + " " + ClassName(static_cast<uint8_t>(me.class_id)),
-			FontSize::Small, ZoneGrey);
-		line("HP " + std::to_string(me.cur_hp) + "   Mana " + std::to_string(me.mana), FontSize::Small, ZoneGrey);
-		char loc[64];
-		snprintf(loc, sizeof(loc), "Loc %.0f, %.0f, %.0f", me.y, me.x, me.z); // /loc order: y, x, z
-		line(loc, FontSize::Small, ZoneGrey);
-		line(std::to_string(me.platinum) + "p " + std::to_string(me.gold) + "g " + std::to_string(me.silver) + "s " +
-				std::to_string(me.copper) + "c",
-			FontSize::Small, ZoneGrey);
-	}
-
-	// The nearest spawns.
-	auto nearby = SortedByDistance(m_zone);
-	y = 150;
-	m_text.Draw(canvas, 10, y, "Nearby", FontSize::Normal, ZoneWhite);
-	y += 18;
-	for (size_t i = 0; i < nearby.size() && y < PanelHeight - 14; ++i, y += 14) {
-		const ZoneSpawn &spawn = *nearby[i].spawn;
-		char row[96];
-		snprintf(row, sizeof(row), "%.22s (%u)", spawn.DisplayName().c_str(), spawn.level);
-		m_text.Draw(canvas, 10, y, row, FontSize::Small, SpawnColor(spawn));
-		std::string distance = std::to_string(static_cast<int>(nearby[i].distance));
-		TextSize size = m_text.Measure(distance, FontSize::Small);
-		m_text.Draw(canvas, 205 - size.w, y, distance, FontSize::Small, ZoneDim);
-	}
-
-	// Top right: a radar, north up, east right. EQ's +y is north and +x is west.
-	const int radar_x = width - RadarSize - 10, radar_y = 10;
-	Rect radar{radar_x, radar_y, RadarSize, RadarSize};
-	canvas.Darken(radar);
-	canvas.Frame(radar, 0x404850);
-	canvas.Fill({radar_x + RadarSize / 2, radar_y + 4, 1, RadarSize - 8}, 0x303840);
-	canvas.Fill({radar_x + 4, radar_y + RadarSize / 2, RadarSize - 8, 1}, 0x303840);
-	m_text.Draw(canvas, radar_x + RadarSize / 2 - 3, radar_y + 3, "N", FontSize::Small, ZoneGrey);
-	float scale = (RadarSize / 2 - 6) / RadarRange;
-	int labels = 0;
-	for (auto it = nearby.rbegin(); it != nearby.rend(); ++it) { // farthest first so near dots draw on top
-		if (it->distance > RadarRange)
-			continue;
-		const ZoneSpawn &spawn = *it->spawn;
-		int px = radar_x + RadarSize / 2 + static_cast<int>(-(spawn.x - me.x) * scale);
-		int py = radar_y + RadarSize / 2 + static_cast<int>(-(spawn.y - me.y) * scale);
-		canvas.Fill({px - 1, py - 1, 3, 3}, SpawnColor(spawn));
-	}
-	for (size_t i = 0; i < nearby.size() && labels < 6; ++i) {
-		if (nearby[i].distance > RadarRange)
-			break;
-		const ZoneSpawn &spawn = *nearby[i].spawn;
-		int px = radar_x + RadarSize / 2 + static_cast<int>(-(spawn.x - me.x) * scale);
-		int py = radar_y + RadarSize / 2 + static_cast<int>(-(spawn.y - me.y) * scale);
-		m_text.Draw(canvas, px + 4, py - 6, spawn.DisplayName(), 10, ZoneGrey);
-		++labels;
-	}
-	canvas.Fill({radar_x + RadarSize / 2 - 2, radar_y + RadarSize / 2 - 2, 5, 5}, ZoneWhite); // us
-	m_text.Draw(canvas, radar_x + 4, radar_y + RadarSize - 14, std::to_string(static_cast<int>(RadarRange)) + " units", 10,
-		ZoneGrey);
-
 	// Bottom left: the chat log, the last lines that fit, newest at the bottom.
 	int bottom = height - Height;
 	Rect log{10, bottom + 350, ChatWidth, 92};
@@ -1634,6 +1540,10 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 	for (int i = first, ry = log.y + 1; i < static_cast<int>(m_zone_log.size()); ++i, ry += row_height)
 		m_text.Draw(canvas, log.x + 4, ry, m_zone_log[i].text, FontSize::Small, m_zone_log[i].color);
 
+	// Top left and right: the debug menu's stat card and radar, above the chat.
+	m_debug.Frame(world_ms);
+	m_debug.Draw(canvas, m_text, m_zone, m_zone_view.get(), log.y - 10);
+
 	m_text.Draw(canvas, 10, bottom + 450, "Say:", FontSize::Normal, ZoneGrey);
 	canvas.Frame({m_chat_input.rect.x - 2, m_chat_input.rect.y - 1, m_chat_input.rect.w + 4, m_chat_input.rect.h + 2}, 0x404850);
 	m_chat_input.Draw(canvas, m_text, now_ms);
@@ -1643,7 +1553,7 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 
 	if (world) {
 		std::string help = std::string("Arrows/WASD move   Space jump   Ctrl+R ") + (m_run ? "walk" : "run") +
-		                   "   Right drag look   Wheel zoom   F9 camera   Enter chat";
+		                   "   Right drag look   Wheel zoom   F9 camera   F11 debug   Enter chat";
 		TextSize size = m_text.Measure(help, FontSize::Small);
 		m_text.Draw(canvas, width - size.w - 10, height - size.h - 8, help, FontSize::Small, ZoneGrey);
 	}

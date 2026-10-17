@@ -17,6 +17,15 @@ struct AppPacket
 	std::vector<uint8_t> data;
 };
 
+// The connection's health, from rdplib: round trip, and totals since it opened.
+struct RdpStats
+{
+	uint32_t rtt_ms = 0, rtt_deviation_ms = 0;
+	uint64_t bytes_in = 0, bytes_out = 0;
+	uint64_t packets_in = 0, packets_out = 0;
+	uint64_t resent = 0; // reliable packets sent again
+};
+
 class RdpSession
 {
 public:
@@ -41,6 +50,7 @@ public:
 
 	void Close(uint32_t linger_ms = 1000);
 	const std::string &Peer() const { return m_peer; }
+	bool Stats(RdpStats &out) const; // false when not connected
 	uint32_t DisconnectReason() const { return m_disconnect_reason; }
 
 private:

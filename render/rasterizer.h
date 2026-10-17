@@ -64,6 +64,9 @@ namespace render
 		uint32_t fog_color = 0;
 	};
 
+	// A one-pixel line clipped to a width x height surface (debug overlays).
+	void DrawLine(uint32_t *pixels, int stride, int width, int height, float x0, float y0, float x1, float y1, uint32_t color);
+
 	class Rasterizer
 	{
 	public:
@@ -101,6 +104,8 @@ namespace render
 		bool Occluded(const Vec3 &point) const;
 
 		size_t TriangleCount() const { return m_triangles.size(); }
+		// After Finish: the outline of every solid triangle drawn (the debug wireframe).
+		void DrawEdges(uint32_t *pixels, int stride, uint32_t color) const;
 
 	private:
 		struct ViewVertex

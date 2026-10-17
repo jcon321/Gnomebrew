@@ -41,7 +41,7 @@ void PlayerMovement::Place(const render::Vec3 &feet, float heading, float height
 	if (run_speed > 0)
 		m_run_speed = run_speed;
 	m_gravity = gravity;
-	m_speed = m_heading_speed = m_turn_ramp = 0;
+	m_speed = m_heading_speed = m_turn_ramp = m_strafe = 0;
 	m_velocity = {};
 	m_on_ground = true;
 }
@@ -63,9 +63,18 @@ bool PlayerMovement::Step(const MoveControls &controls, float ms, const render::
 
 	float ticks = std::min(ms * 0.02f, 3.0f);
 	int direction = (controls.left ? 1 : 0) - (controls.right ? 1 : 0);
+	m_strafe = 0;
+	if (controls.strafe && direction != 0) {
+		// process_physics: half the run (or walk) speed beside the forward push, or the strafe
+		// speed (2, unencumbered) times that when standing still.
+		m_strafe = direction * (controls.run ? m_run_speed : m_walk_speed) * 0.5f;
+		if (m_speed == 0)
+			m_strafe *= 2;
+		direction = 0;
+	}
 	if (direction != 0) {
-		// The real client adds one per frame; at its usual 30 frames a second that's 1.5 a tick.
-		m_turn_ramp = std::min(m_turn_ramp + ticks * 1.5f, MaxTurnRate);
+		// The real client adds one per frame: at 60 frames a second, three a tick.
+		m_turn_ramp = std::min(m_turn_ramp + ticks / FrameTicks, MaxTurnRate);
 		m_heading_speed = direction * std::max(1.0f, std::floor(m_turn_ramp));
 	}
 	else
@@ -99,11 +108,12 @@ void PlayerMovement::Tick(float t, const render::ZoneScene &scene)
 	float control = m_on_ground ? GroundControl : 0;
 	float frames = t / FrameTicks;
 	float keep = std::pow(friction, frames);
-	render::Vec3 push = Along(m_heading, m_speed * control * (1 - keep) / (1 - friction));
+	float scale = control * (1 - keep) / (1 - friction);
+	render::Vec3 push = Along(m_heading, m_speed * scale) + Along(m_heading + 128, m_strafe * scale);
 	m_velocity.x = m_velocity.x * keep + push.x;
 	m_velocity.y = m_velocity.y * keep + push.y;
 	m_velocity.z *= std::pow(AirFriction, frames);
-	if (m_on_ground && m_speed == 0) {
+	if (m_on_ground && m_speed == 0 && m_strafe == 0) {
 		if (std::fabs(m_velocity.x) < 0.01f)
 			m_velocity.x = 0;
 		if (std::fabs(m_velocity.y) < 0.01f)
