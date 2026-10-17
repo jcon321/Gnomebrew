@@ -110,6 +110,30 @@ namespace
 		return event;
 	}
 
+	InputEvent::Key TranslateKey(WPARAM vk)
+	{
+		switch (vk) {
+		case VK_RETURN: return InputEvent::Key::Enter;
+		case VK_ESCAPE: return InputEvent::Key::Escape;
+		case VK_TAB: return InputEvent::Key::Tab;
+		case VK_BACK: return InputEvent::Key::Backspace;
+		case VK_UP: return InputEvent::Key::Up;
+		case VK_DOWN: return InputEvent::Key::Down;
+		case VK_LEFT: return InputEvent::Key::Left;
+		case VK_RIGHT: return InputEvent::Key::Right;
+		case VK_F9: return InputEvent::Key::F9;
+		case VK_PRIOR: return InputEvent::Key::PageUp;
+		case VK_NEXT: return InputEvent::Key::PageDown;
+		case VK_SPACE: return InputEvent::Key::Space;
+		case 'W': return InputEvent::Key::W;
+		case 'A': return InputEvent::Key::A;
+		case 'S': return InputEvent::Key::S;
+		case 'D': return InputEvent::Key::D;
+		case 'R': return InputEvent::Key::R;
+		default: return InputEvent::Key::None;
+		}
+	}
+
 	InputEvent KeyEvent(InputEvent::Key key)
 	{
 		InputEvent event;
@@ -118,6 +142,7 @@ namespace
 		event.x = g_app.mouse_x;
 		event.y = g_app.mouse_y;
 		event.shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+		event.ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
 		return event;
 	}
 
@@ -192,21 +217,24 @@ namespace
 			return 0;
 		}
 		case WM_KEYDOWN:
-			switch (wparam) {
-			case VK_RETURN: Send(KeyEvent(InputEvent::Key::Enter)); break;
-			case VK_ESCAPE: Send(KeyEvent(InputEvent::Key::Escape)); break;
-			case VK_TAB: Send(KeyEvent(InputEvent::Key::Tab)); break;
-			case VK_BACK: Send(KeyEvent(InputEvent::Key::Backspace)); break;
-			case VK_UP: Send(KeyEvent(InputEvent::Key::Up)); break;
-			case VK_DOWN: Send(KeyEvent(InputEvent::Key::Down)); break;
-			case VK_LEFT: Send(KeyEvent(InputEvent::Key::Left)); break;
-			case VK_RIGHT: Send(KeyEvent(InputEvent::Key::Right)); break;
-			case VK_F9: Send(KeyEvent(InputEvent::Key::F9)); break;
-			case VK_PRIOR: Send(KeyEvent(InputEvent::Key::PageUp)); break;
-			case VK_NEXT: Send(KeyEvent(InputEvent::Key::PageDown)); break;
-			default: break;
+		case WM_KEYUP: {
+			InputEvent::Key key = TranslateKey(wparam);
+			if (key != InputEvent::Key::None) {
+				InputEvent event = KeyEvent(key);
+				if (message == WM_KEYUP)
+					event.type = InputEvent::Type::KeyUp;
+				Send(event);
 			}
 			return 0;
+		}
+		case WM_KILLFOCUS: {
+			InputEvent event;
+			event.type = InputEvent::Type::FocusLost;
+			event.x = g_app.mouse_x;
+			event.y = g_app.mouse_y;
+			Send(event);
+			break;
+		}
 		case WM_PAINT: {
 			PAINTSTRUCT paint;
 			HDC dc = BeginPaint(window, &paint);

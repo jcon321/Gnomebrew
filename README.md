@@ -8,9 +8,10 @@ A from-scratch EQMac (TAKP-era) client. Two programs share one core:
   (`uifiles/default/EQUI_CharacterSelect.xml`), over the 3D character select scene: the
   `load2` zone with the selected character standing in their class's room while the camera
   circles them. Empty slots open character creation. Enter World connects to the zone and
-  draws it in 3D with your character standing where the server put them, under a chase camera
-  (F9: first person). Over the view are your details, the nearest spawns, a 2D radar, and the chat
-  log with a /say line, plus a CAMP button for a proper camp-out. Moving isn't written yet.
+  draws it in 3D: you run, walk, turn and jump through it (arrows or WASD, Space, Ctrl+R), with
+  everyone else around you and the time of day lighting it, under a chase camera (F9: first
+  person). Over the view are your details, the nearest spawns, a 2D radar, and the chat log (Enter
+  to chat), plus a CAMP button for a proper camp-out.
 - **`eqclient`** (console, Linux and Windows): logs in, authenticates to world, lists
   characters, can create a test character (`--create`), and with `--char` and `--zone` enters
   the zone, lists nearby spawns, can `--say` something, then camps out. Used for testing
@@ -141,13 +142,15 @@ checking layout and flow without Windows.
 build/scene_preview EQDIR OUT.png --char RACE GENDER CLASS [--face F] [--equip M,M,...] [--camera H] [--frames N] [--size WxH]
 build/scene_preview EQDIR OUT.png [--zone NAME] [--at X Y Z] [--heading H] [--pitch P] [--frames N] [--size WxH]
 build/scene_preview EQDIR OUT.png --player RACE GENDER --zone NAME --at X Y Z [--heading H] [--face F] [--equip M,M,...]
-                    [--orbit H] [--pitch P] [--first-person] [--fog START END RRGGBB] [--sky N] [--frames N] [--size WxH]
+                    [--orbit H] [--pitch P] [--first-person] [--zoom N] [--walk MS [--turn -1|1]] [--npc ...]
+                    [--time HOUR MINUTE] [--time-type T] [--fog START END RRGGBB] [--sky N] [--frames N] [--size WxH]
 ```
 
 `scene_preview` renders the 3D view to a PNG: the character select scene for any race, gender,
 class, face and armor, a free camera anywhere in a zone (server coordinates, heading 0..512), or
 the in-zone view with a character standing at a server position (`--fog` and `--sky` stand in for
-the zone's `OP_NewZone`).
+the zone's `OP_NewZone`). In that mode `--walk MS` runs forward first (and `--turn`), `--npc RACE
+GENDER SIZE X Y Z HEADING` stands spawns around, and `--time HOUR MINUTE` sets the time of day.
 `--frames N` times N renders.
 
 ## How the front end was recovered
@@ -291,9 +294,34 @@ Not yet: the real client's messages use `CConfirmationDialog`; these use the fro
   wall or the floor is in the way (tested over a box around the camera, so surfaces it backs into at a
   shallow angle don't cut into the view), and hides the model once it's inside them. The wheel zooms
   from first person out to 200 units, `DoCamAi`'s limit: out of first person into the chase camera, and
-  back in past 3 units. Holding the right button and dragging looks around. F9 switches between first
-  person and the chase camera. Until the character can move, Left/Right turn the camera and Page Up/Down
-  tilt it.
+  back in past 3 units. Holding the right button and dragging looks around; running brings the camera
+  back behind you. F9 switches between first person and the chase camera; Page Up/Down tilt it.
+- **Moving** (`frontend/player_movement.cpp`), ported from `CEverQuest::ProcessControls` (@0053f337) and
+  `process_physics` (@0054d964): Up/W runs (or walks: Ctrl+R, `/walk`, `/run`) at the zone entry's
+  `runspeed` (0.7) or `walkspeed` (0.46), Down/S backs up at the walk speed, Left/A and Right/D turn,
+  speeding up to 12 heading units a tick. Time runs in 50 ms ticks: on the ground the velocity is
+  `v * 0.625 + push * 0.8` (`MovementFriction1/2`), in the air there's no push and it keeps 0.99, and
+  gravity is `OP_NewZone`'s. That's about 30 units a second running. Space jumps
+  (`1.65 * JumpHeightModifier`, 1.35, plus a push of 1 along the heading) and sends `OP_Jump`. The
+  collision is ours: the feet follow the floor (stepping up to 40% of the character's height) and moves
+  slide along walls, tested at knee and chest height. There's no water yet; you sink to the bottom.
+- **Position updates:** `OP_ClientUpdate` as `pack_physics` packs it (the speed * 10, the heading in
+  256ths, its change per tick, y/x/z*10, and the velocities in 16ths per tick). `ProcessControls` flags an
+  update when the heading moves 2 or the speed 0.2, `DoPassageOfTime` every second, and `DoMainLoop` sends
+  at most every 150 ms and stops repeating an unchanged update after 6.
+- **Other spawns:** each race's model is `EQPlayer::GetActorTag`'s (`render/actor_tags.cpp`, the client's
+  race table): `<tag>_ACTORDEF` from `<zone>_chr.s3d`, `<zone>_chr2.s3d` or `global*_chr.s3d`, else race 75's
+  (`CreatePlayerActor`). Player races are scaled to their height like ours; the rest by `EQPlayer::SetHeights`:
+  size / 5, with the model's origin at the spawn's z. They carry on from their last update with its
+  velocity, as `process_physics` moves everyone, and play walk, run, idle or (dead) `D05`. Their names
+  float over them within 120 units, hidden by anything in front.
+- **Time of day:** `OP_TimeOfDay`'s hour (1..24, 1 is midnight) carried on at 20 game seconds a second
+  (`EQWorldData::AdvanceTime`). Zones of time type 1, 2 and 5 take their ambient light from the client's
+  hourly red, green and blue tables (`SetAmbientLight`); other zones get 0.1. As eqgfx's
+  `calculateMeshLighting` does, a zone vertex is its baked color plus its alpha times the ambient light,
+  so nights outdoors go dark blue but lamp-lit corners stay lit. The sky dims along `SetSkyBackground`'s
+  60 day periods (night until 3:00, dawn to 9:00, day to 15:00, dusk to 20:48), and the fog darkens with
+  the light. The sun and moon aren't drawn yet.
 
 The zone screen fills the window: the 3D view, with the chat at the bottom left, our details and the
 nearest spawns at the top left, and the radar at the top right.

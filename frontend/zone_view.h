@@ -11,13 +11,17 @@
 
 #include "canvas.h"
 #include "character_model.h"
+#include "player_movement.h"
 #include "rasterizer.h"
 #include "sky.h"
 #include "zone_scene.h"
 #include "zone_session.h"
 
 #include <atomic>
+#include <map>
 #include <memory>
+#include <set>
+#include <vector>
 #include <optional>
 #include <string>
 #include <thread>
@@ -35,9 +39,27 @@ public:
 	const std::string &Error() const { return m_error; } // valid once loaded
 	const std::string &ZoneName() const { return m_info.short_name; }
 
-	// Our own character: appearance (and size) from OP_ZoneEntry, position from the server.
-	void SetPlayer(const render::CharacterAppearance &appearance);
+	// Our own character: appearance (and size) and speeds from OP_ZoneEntry, the starting
+	// position from the server. From then on Move() moves them.
+	void SetPlayer(const render::CharacterAppearance &appearance, float walk_speed, float run_speed);
 	void SetPlayerPosition(float x, float y, float z, float heading);
+	// Runs our movement up to now. Returns true when a jump started. `looking` is the mouse
+	// look being held, which keeps the chase camera where it's put while moving.
+	bool Move(const MoveControls &controls, uint64_t now_ms, bool looking);
+	bool Placed() const { return m_placed; }
+	ZoneMovement Movement() const; // for OP_ClientUpdate
+
+	// Everyone else, every frame: their models, carried on from their last update.
+	void UpdateSpawns(const std::map<uint16_t, ZoneSpawn> &spawns, uint16_t my_id, uint64_t now_ms);
+	struct NameTag
+	{
+		uint16_t id; // 0: us
+		int x, y;    // over the head, after Render
+		float distance;
+	};
+	// Names to draw over heads (CDisplay's name sprites): us in the chase view, and spawns in view
+	// within `range`, nearest first.
+	std::vector<NameTag> NameTags(float range) const;
 
 	// F9 toggles first person and the chase camera. Orbit turns the view (in 512ths; the chase
 	// camera circles the character), Pitch tilts it (degrees), Zoom moves the chase camera in or
@@ -47,6 +69,15 @@ public:
 	void Orbit(float delta) { m_orbit += delta; }
 	void Pitch(float degrees);
 	void Zoom(int notches);
+
+	// Norrath's time (ZoneSession::GameTime): the ambient light, the sky and the fog follow it.
+	void SetGameTime(int hour, float minute);
+	struct DayLight
+	{
+		render::Vec3 ambient{0.6f, 0.6f, 0.6f}; // added to the zone's baked lighting
+		float sky = 1;                           // the sky's brightness
+	};
+	DayLight Lighting() const;
 
 	void Render(Canvas &canvas, uint64_t now_ms);
 	// Where to draw the name over our character's head, after Render (chase view only).
@@ -62,6 +93,11 @@ private:
 
 	void Load();
 	void PlacePlayer();
+	struct SpawnActor;
+	void PoseSpawn(SpawnActor &actor, const ZoneSpawn &spawn, uint64_t now_ms);
+	std::shared_ptr<render::CharacterModel> SpawnModel(const ZoneSpawn &spawn);
+	void DrawSpawns();
+	void ChooseAnimation(float ms);
 	render::Camera MakeCamera(float &distance) const; // distance: the chase camera's, after walls pull it in
 
 	std::string m_eq_dir;
@@ -83,6 +119,37 @@ private:
 	float m_heading = 0;
 	bool m_position_dirty = false;
 	render::Vec3 m_feet; // world space
+	float m_height = 6;  // the model's
+	float m_walk_speed = 0.46f, m_run_speed = 0.7f;
+	PlayerMovement m_movement;
+	bool m_placed = false;
+	uint64_t m_last_move_ms = 0;
+	std::string m_animation = "P01";
+	double m_animation_ms = 0;
+	bool m_animation_reversed = false;
+
+	// Other spawns: models shared by everyone who looks the same, built once they're in range.
+	struct SpawnActor
+	{
+		std::shared_ptr<render::CharacterModel> model;
+		bool resolved = false; // model looked up (it may still be null: no model for the race)
+		render::Vec3 feet;
+		float heading = 0;
+		std::string animation = "P01";
+		bool hold_last_frame = false;
+		double animation_ms = 0;
+		uint64_t last_ms = 0;
+		float distance = 0; // from the camera, last frame
+		bool drawn = false;
+	};
+	std::map<uint16_t, SpawnActor> m_actors;
+	std::map<std::string, std::shared_ptr<render::CharacterModel>> m_model_cache;
+	std::set<std::string> m_missing_models;
+	render::Vec3 m_camera_position;
+	bool m_have_time = false;
+	float m_model_ambient = 0.5f, m_model_diffuse = 0.6f;
+	int m_hour = 12;
+	float m_minute = 0;
 
 	CameraView m_view = CameraView::Chase;
 	float m_orbit = 0;      // chase camera heading relative to the character's

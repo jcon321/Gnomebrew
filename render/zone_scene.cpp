@@ -134,14 +134,18 @@ namespace render
 			high = {std::max(high.x, v.position.x), std::max(high.y, v.position.y), std::max(high.z, v.position.z)};
 
 			// Flat ambient, the mesh's own (small, additive) vertex colors, and the point lights.
+			// The colors' alpha is how much of the zone's ambient light reaches the vertex; it rides
+			// along in the top byte for Rasterizer::SetVertexLight.
 			float r = lighting.ambient, g = lighting.ambient, b = lighting.ambient;
+			uint32_t exposure = 0xff;
 			if (!mesh.colors.empty()) {
 				uint32_t c = mesh.colors[i];
 				r += ((c >> 16) & 0xff) / 255.0f;
 				g += ((c >> 8) & 0xff) / 255.0f;
 				b += (c & 0xff) / 255.0f;
+				exposure = c >> 24;
 			}
-			for (const auto &light : lights) {
+			for (const auto &light : lighting.point_lights ? lights : std::vector<WldLight>{}) {
 				Vec3 d = ToVec(light.position) - v.position;
 				float distance = Length(d);
 				if (distance >= light.radius)
@@ -151,7 +155,7 @@ namespace render
 				g += light.g * attenuation;
 				b += light.b * attenuation;
 			}
-			v.color = PackLight(r, g, b);
+			v.color = PackLight(r, g, b) | exposure << 24;
 		}
 		if (out.vertices.empty())
 			return;
@@ -220,7 +224,7 @@ namespace render
 		return found;
 	}
 
-	bool ZoneScene::SegmentHit(const Vec3 &from, const Vec3 &to, float &fraction) const
+	bool ZoneScene::SegmentHit(const Vec3 &from, const Vec3 &to, float &fraction, Vec3 *normal) const
 	{
 		// Moller-Trumbore against every solid triangle, both sides.
 		Vec3 d = to - from;
@@ -251,6 +255,11 @@ namespace render
 			if (t >= 0 && t < fraction) {
 				fraction = t;
 				found = true;
+				if (normal) {
+					*normal = Normalize(Cross(e1, e2));
+					if (Dot(*normal, d) > 0)
+						*normal = *normal * -1.0f;
+				}
 			}
 		}
 		return found;

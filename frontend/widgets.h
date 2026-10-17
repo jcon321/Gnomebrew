@@ -12,8 +12,10 @@
 
 struct InputEvent
 {
-	enum class Type { MouseMove, MouseDown, MouseUp, DoubleClick, RightDown, RightUp, Wheel, Char, Key };
-	enum class Key { None, Enter, Escape, Tab, Backspace, Up, Down, Left, Right, PageUp, PageDown, F9 };
+	// Key comes with each press (and auto-repeat), KeyUp when it's let go. FocusLost: the window
+	// lost the keyboard, so every held key counts as released.
+	enum class Type { MouseMove, MouseDown, MouseUp, DoubleClick, RightDown, RightUp, Wheel, Char, Key, KeyUp, FocusLost };
+	enum class Key { None, Enter, Escape, Tab, Backspace, Up, Down, Left, Right, PageUp, PageDown, F9, W, A, S, D, R, Space };
 
 	Type type = Type::MouseMove;
 	int x = 0, y = 0;     // mouse position, front-end pixels
@@ -21,6 +23,8 @@ struct InputEvent
 	uint32_t ch = 0;      // Char: the character (Latin-1 range is all the login fields accept)
 	Key key = Key::None;  // Key
 	bool shift = false;
+	bool ctrl = false;
+	bool IsMouse() const { return type != Type::Char && type != Type::Key && type != Type::KeyUp && type != Type::FocusLost; }
 };
 
 // eqmain colors, from the COLORREFs in the decompile.

@@ -116,6 +116,8 @@ namespace render
 		m_focal = (width * 0.5f) / m_tan_x;
 		m_fog_scale = camera.fog && camera.fog_end > camera.fog_start ? 1.0f / (camera.fog_end - camera.fog_start) : 0;
 		m_background = false;
+		m_light_scale = {1, 1, 1};
+		m_light_add = {0, 0, 0};
 		m_triangles.clear();
 		m_depth.resize(static_cast<size_t>(width) * height);
 		m_bins.resize((height + StripHeight - 1) / StripHeight);
@@ -146,6 +148,19 @@ namespace render
 		return true;
 	}
 
+	bool Rasterizer::Occluded(const Vec3 &point) const
+	{
+		float x, y;
+		if (!Project(point, x, y))
+			return true;
+		int px = static_cast<int>(x), py = static_cast<int>(y);
+		if (px < 0 || py < 0 || px >= m_width || py >= m_height || m_depth.size() < static_cast<size_t>(m_width) * m_height)
+			return false;
+		float z = Dot(point - m_camera.position, m_forward);
+		// The depth buffer holds 1/z; something more than 2% nearer hides the point.
+		return m_depth[static_cast<size_t>(py) * m_width + px] > (1.0f / z) * 1.02f;
+	}
+
 	void Rasterizer::Draw(const Vertex *vertices, size_t vertex_count, const uint32_t *indices, size_t index_count,
 		const Material &material)
 	{
@@ -160,9 +175,10 @@ namespace render
 			out.z = Dot(d, m_forward);
 			out.u = in.u;
 			out.v = in.v;
-			out.r = static_cast<float>((in.color >> 16) & 0xff);
-			out.g = static_cast<float>((in.color >> 8) & 0xff);
-			out.b = static_cast<float>(in.color & 0xff);
+			float exposure = static_cast<float>(in.color >> 24) * (1.0f / 255);
+			out.r = std::min(255.0f, static_cast<float>((in.color >> 16) & 0xff) * m_light_scale.x + m_light_add.x * exposure);
+			out.g = std::min(255.0f, static_cast<float>((in.color >> 8) & 0xff) * m_light_scale.y + m_light_add.y * exposure);
+			out.b = std::min(255.0f, static_cast<float>(in.color & 0xff) * m_light_scale.z + m_light_add.z * exposure);
 		}
 
 		const float near_z = m_camera.near_plane, far_z = m_camera.far_plane;

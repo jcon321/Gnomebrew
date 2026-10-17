@@ -1,5 +1,6 @@
 #include "character_model.h"
 
+#include "actor_tags.h"
 #include "skeleton.h"
 
 #include <algorithm>
@@ -66,67 +67,102 @@ namespace render
 
 	std::string RaceModelCode(uint16_t race, uint8_t gender)
 	{
-		static const std::map<uint16_t, const char *> codes = {{1, "HU"}, {2, "BA"}, {3, "ER"}, {4, "EL"}, {5, "HI"},
-			{6, "DA"}, {7, "HA"}, {8, "DW"}, {9, "TR"}, {10, "OG"}, {11, "HO"}, {12, "GN"}, {128, "IK"}, {130, "KE"}};
-		auto it = codes.find(race);
-		if (it == codes.end())
-			return {};
-		return std::string(it->second) + (gender == 1 ? "F" : "M");
+		return IsPlayerRace(race) ? ActorTag(race, gender) : std::string();
 	}
 
-	bool CharacterModels::Open(const std::string &eq_dir, std::string &error)
+	bool CharacterModels::AddSource(const std::string &eq_dir, const std::string &name)
+	{
+		auto source = std::make_unique<Source>();
+		std::vector<uint8_t> data;
+		if (!source->archive.Open(eq_dir + "/" + name + ".s3d"))
+			return false;
+		if (!source->archive.Read(name + ".wld", data) || !source->wld.Load(std::move(data)))
+			return false;
+		source->textures.AddArchive(&source->archive);
+		m_sources.push_back(std::move(source));
+		return true;
+	}
+
+	bool CharacterModels::Open(const std::string &eq_dir, std::string &error, bool creatures)
 	{
 		m_sources.clear();
-		for (const char *name : {"global_chr", "global4_chr", "global7_chr"}) {
-			auto source = std::make_unique<Source>();
-			std::vector<uint8_t> data;
-			if (!source->archive.Open(eq_dir + "/" + name + ".s3d"))
-				continue;
-			if (!source->archive.Read(std::string(name) + ".wld", data) || !source->wld.Load(std::move(data)))
-				continue;
-			source->textures.AddArchive(&source->archive);
-			m_sources.push_back(std::move(source));
-		}
-		if (m_sources.empty()) {
+		if (!AddSource(eq_dir, "global_chr")) {
 			error = "Couldn't read global_chr.s3d in " + eq_dir;
 			return false;
+		}
+		for (const char *name : {"global2_chr", "global3_chr", "global4_chr", "global5_chr", "global6_chr", "global7_chr"}) {
+			if (creatures || std::string(name) == "global4_chr" || std::string(name) == "global7_chr")
+				AddSource(eq_dir, name);
 		}
 		return true;
 	}
 
+	bool CharacterModels::AddZone(const std::string &eq_dir, const std::string &zone)
+	{
+		// CDisplay::StartWorldDisplay loads <zone>_chr2 and <zone>_chr (and <zone>2_chr for a few zones).
+		// Zone models are searched before the global ones.
+		size_t before = m_sources.size();
+		for (const std::string &name : {zone + "_chr", zone + "_chr2", zone + "2_chr"})
+			AddSource(eq_dir, name);
+		std::rotate(m_sources.begin(), m_sources.begin() + static_cast<long>(before), m_sources.end());
+		return m_sources.size() > before;
+	}
+
 	std::unique_ptr<CharacterModel> CharacterModels::Build(const CharacterAppearance &appearance, std::string &error)
 	{
-		std::string code = RaceModelCode(appearance.race, appearance.gender);
-		if (code.empty()) {
-			error = "no model for race " + std::to_string(appearance.race);
-			return nullptr;
-		}
+		// CDisplay::CreatePlayerActor: the race's actor, or race 75's when the zone doesn't have it.
+		auto find = [this](const std::string &tag, Source *&source, int &actor) {
+			for (auto &candidate : m_sources) {
+				actor = candidate->wld.Find(tag + "_ACTORDEF");
+				if (actor >= 0 && candidate->wld.ActorSkeleton(actor) >= 0) {
+					source = candidate.get();
+					return true;
+				}
+			}
+			return false;
+		};
+		std::string code = ActorTag(appearance.race, appearance.gender);
 		Source *source = nullptr;
 		int actor = -1;
-		for (auto &candidate : m_sources) {
-			actor = candidate->wld.Find(code + "_ACTORDEF");
-			if (actor >= 0) {
-				source = candidate.get();
-				break;
+		if (!find(code, source, actor)) {
+			std::string fallback = ActorTag(75, appearance.gender);
+			if (!find(fallback, source, actor)) {
+				error = "model " + code + " not found";
+				return nullptr;
 			}
+			code = fallback;
 		}
 		WldSkeleton skeleton;
-		if (!source || !source->wld.ReadSkeleton(source->wld.ActorSkeleton(actor), skeleton)) {
-			error = "model " + code + " not found";
+		if (!source->wld.ReadSkeleton(source->wld.ActorSkeleton(actor), skeleton)) {
+			error = "model " + code + " has no skeleton";
 			return nullptr;
 		}
 
 		auto model = std::make_unique<CharacterModel>();
 		model->m_code = code;
-		model->m_idle = LoadAnimation(source->wld, skeleton, "P01", code, code);
-		if (model->m_idle.length == 0) {
-			model->m_idle = LoadAnimation(source->wld, skeleton, "P01", code, AnimationSource(code));
-			// A borrowed animation keeps this model's bone lengths; only the rotations carry over.
-			for (size_t i = 0; i < model->m_idle.frames.size(); ++i)
-				for (auto &frame : model->m_idle.frames[i])
-					frame.shift = skeleton.bones[i].pose.shift;
+		bool player_race = IsPlayerRace(appearance.race) && code.size() == 3;
+		// Each animation from the model itself, else (player races) from the model it borrows the
+		// idle from, else from the elf of the same gender, the classic models with every animation.
+		std::vector<std::string> sources = {code};
+		if (player_race)
+			sources = {code, AnimationSource(code), code.back() == 'F' ? "ELF" : "ELM"};
+		for (const char *name : {"P01", "L01", "L02", "L03", "L04", "L05", "D05"}) {
+			for (const auto &from : sources) {
+				SkeletonAnimation animation = LoadAnimation(source->wld, skeleton, name, code, from);
+				if (animation.length == 0)
+					continue;
+				if (from != code) {
+					// A borrowed animation keeps this model's bone lengths; only the rotations carry over.
+					for (size_t i = 0; i < animation.frames.size(); ++i)
+						for (auto &frame : animation.frames[i])
+							frame.shift = skeleton.bones[i].pose.shift;
+				}
+				model->m_animations[name] = std::move(animation);
+				break;
+			}
 		}
-		std::vector<Transform> bones = PoseSkeleton(skeleton, &model->m_idle, 0);
+		auto idle = model->m_animations.find("P01");
+		std::vector<Transform> bones = PoseSkeleton(skeleton, idle == model->m_animations.end() ? nullptr : &idle->second, 0);
 		model->m_head_z = 0;
 		for (size_t i = 0; i < skeleton.bones.size(); ++i) {
 			const std::string &name = skeleton.bones[i].name;
@@ -208,18 +244,42 @@ namespace render
 			return nullptr;
 		}
 		model->m_skeleton = std::move(skeleton);
-		if (model->m_max_z > model->m_min_z)
-			model->m_scale = (appearance.height > 0 ? appearance.height : RaceHeight(appearance.race)) / (model->m_max_z - model->m_min_z);
+		if (player_race) {
+			// Player race models come in assorted sizes; each is scaled to the race's height.
+			if (model->m_max_z > model->m_min_z)
+				model->m_scale = (appearance.height > 0 ? appearance.height : RaceHeight(appearance.race)) /
+				                 (model->m_max_z - model->m_min_z);
+		}
+		else {
+			// EQPlayer::SetHeights: the actor's scale is the height / 5 (6 when it's not given;
+			// races 63, and 42 and 120 neuter, a little under half that), its origin 3.125 * scale over the feet.
+			float height = appearance.height > 0 ? appearance.height : 6;
+			if (appearance.race == 63 || ((appearance.race == 42 || appearance.race == 120) && appearance.gender == 2))
+				height *= 0.45f;
+			model->m_scale = height * 0.2f;
+			model->m_origin_over_feet = 3.125f * model->m_scale;
+		}
 		model->m_min_z *= model->m_scale;
 		model->m_max_z *= model->m_scale;
 		model->m_head_z *= model->m_scale;
+		if (player_race)
+			model->m_origin_over_feet = -model->m_min_z;
 		return model;
 	}
 
-	void CharacterModel::Draw(Rasterizer &rasterizer, const Transform &placement, const Vec3 &light_direction, float ambient,
-		float diffuse, uint64_t now_ms) const
+	uint32_t CharacterModel::AnimationMs(const std::string &animation) const
 	{
-		std::vector<Transform> bones = PoseSkeleton(m_skeleton, &m_idle, now_ms);
+		auto it = m_animations.find(animation);
+		return it == m_animations.end() ? 0 : static_cast<uint32_t>(it->second.length * it->second.frame_ms);
+	}
+
+	void CharacterModel::Draw(Rasterizer &rasterizer, const Transform &placement, const Vec3 &light_direction, float ambient,
+		float diffuse, uint64_t time_ms, const std::string &animation) const
+	{
+		auto it = m_animations.find(animation);
+		if (it == m_animations.end())
+			it = m_animations.find("P01");
+		std::vector<Transform> bones = PoseSkeleton(m_skeleton, it == m_animations.end() ? nullptr : &it->second, time_ms);
 		Transform scaled = placement;
 		scaled.scale *= m_scale;
 		for (auto &bone : bones)

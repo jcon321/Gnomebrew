@@ -110,6 +110,14 @@ namespace
 			frontend.OnEvent(event);
 		}
 
+		void KeyUp(InputEvent::Key key)
+		{
+			InputEvent event;
+			event.type = InputEvent::Type::KeyUp;
+			event.key = key;
+			frontend.OnEvent(event);
+		}
+
 		void Type(const std::string &text)
 		{
 			for (char c : text) {
@@ -342,9 +350,36 @@ int main(int argc, char **argv)
 			h.Key(InputEvent::Key::F9);
 			h.Snapshot("8-zone-first-person");
 			h.Key(InputEvent::Key::F9);
-			for (int i = 0; i < 16; ++i)
-				h.Key(InputEvent::Key::Left);
+			// Right-drag the camera around a third of a turn.
+			frontend.OnEvent({InputEvent::Type::RightDown, 600, 300});
+			frontend.OnEvent({InputEvent::Type::MouseMove, 320, 300});
+			frontend.OnEvent({InputEvent::Type::RightUp, 320, 300});
 			h.Snapshot("8-zone-turned");
+
+			// Run forward for 3 seconds, turn right for one, jump, then stop.
+			auto loc = [&](const char *when) {
+				const ZoneProfile &me = frontend.Zone().Profile();
+				printf("[preview] %s: loc %.1f, %.1f, %.1f heading %.0f\n", when, me.y, me.x, me.z, me.heading);
+			};
+			loc("before moving");
+			h.Key(InputEvent::Key::Up);
+			h.RunUntil([] { return false; }, 3000);
+			loc("after 3 s forward");
+			h.Snapshot("8-zone-running");
+			h.Key(InputEvent::Key::Right);
+			h.RunUntil([] { return false; }, 1000);
+			h.KeyUp(InputEvent::Key::Right);
+			h.Key(InputEvent::Key::Space);
+			h.RunUntil([] { return false; }, 150);
+			h.Snapshot("8-zone-jump");
+			h.RunUntil([] { return false; }, 1000);
+			h.KeyUp(InputEvent::Key::Up);
+			h.RunUntil([] { return false; }, 1500);
+			h.RunUntil([] { return false; }, 1200); // the next periodic update reaches the server
+			loc("stopped");
+			h.Snapshot("8-zone-moved");
+
+			h.Key(InputEvent::Key::Enter); // open the chat line
 			h.Type("hello from the GUI");
 			h.Key(InputEvent::Key::Enter);
 			h.RunUntil([] { return false; }, 1500);

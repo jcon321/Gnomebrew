@@ -46,7 +46,9 @@ namespace render
 	{
 		Vec3 position; // world space
 		float u = 0, v = 0;
-		uint32_t color = 0xffffff; // 0x00RRGGBB light; 0xffffff draws the texture as is
+		// 0xAARRGGBB: RRGGBB is the light (0xffffff draws the texture as is), AA how much of the
+		// light set with SetVertexLight's `add` reaches it (a zone vertex's exposure to the ambient light).
+		uint32_t color = 0xffffff;
 	};
 
 	struct Camera
@@ -78,6 +80,15 @@ namespace render
 		void BeginBackground() { m_background = true; }
 		void EndBackground() { m_background = false; }
 		bool SphereVisible(const Vec3 &center, float radius) const;
+		// Light applied to the vertex colors of the triangles drawn after it, channel by channel:
+		// color * scale + add * AA / 255 (0..1). Begin resets it to (1, 0): the colors as given. The
+		// time of day uses it to add the ambient light to a zone's baked lighting (as eqgfx's
+		// calculateMeshLighting does: vertex color + vertex alpha * ambient) and to dim the sky.
+		void SetVertexLight(const Vec3 &scale, const Vec3 &add)
+		{
+			m_light_scale = scale;
+			m_light_add = add * 255.0f;
+		}
 		void Draw(const Vertex *vertices, size_t vertex_count, const uint32_t *indices, size_t index_count,
 			const Material &material);
 		// Clears to clear_color (unless clear is false: drawing over an earlier pass, such
@@ -86,6 +97,8 @@ namespace render
 
 		// Screen position of a world point under the camera given to the last Begin.
 		bool Project(const Vec3 &point, float &x, float &y) const;
+		// After Finish: whether something drawn is in front of the point (name tags behind walls).
+		bool Occluded(const Vec3 &point) const;
 
 		size_t TriangleCount() const { return m_triangles.size(); }
 
@@ -121,6 +134,7 @@ namespace render
 		float m_focal = 1, m_tan_x = 1, m_tan_y = 1;
 		float m_fog_scale = 0;
 		bool m_background = false;
+		Vec3 m_light_scale{1, 1, 1}, m_light_add{0, 0, 0};
 
 		std::vector<ViewVertex> m_view;
 		std::vector<ScreenTriangle> m_triangles;

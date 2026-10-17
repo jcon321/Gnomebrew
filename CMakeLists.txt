@@ -61,6 +61,7 @@ add_library(eqrender STATIC
     render/skeleton.cpp
     render/zone_scene.cpp
     render/character_model.cpp
+    render/actor_tags.cpp
     render/sky.cpp
 )
 target_include_directories(eqrender PUBLIC render)
@@ -78,6 +79,7 @@ add_library(eqfrontend STATIC
     frontend/charselect_view.cpp
     frontend/charcreate.cpp
     frontend/zone_view.cpp
+    frontend/player_movement.cpp
 )
 target_include_directories(eqfrontend PUBLIC frontend)
 target_link_libraries(eqfrontend PUBLIC eqcore eqrender)

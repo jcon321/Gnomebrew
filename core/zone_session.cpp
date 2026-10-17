@@ -4,7 +4,9 @@
 #include "opcodes.h"
 #include "rdp_session.h"
 
+#include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -14,6 +16,7 @@ namespace
 	constexpr uint64_t HandshakeTimeoutMs = 30000;
 	constexpr uint64_t CampMs = 30000;          // the client logs out after 30s; the server's timer goes stale at 35s
 	constexpr uint16_t AppearanceSpawnId = 0x10; // SpawnAppearance type that tells the client its spawn id
+	constexpr uint16_t AppearanceAnimation = 14; // SpawnAppearance: standing, sitting, lying...
 	constexpr size_t SpawnSize = 224;            // Mac::structs::Spawn_Struct
 	constexpr size_t ProfileSize = 8460;         // Mac::structs::PlayerProfile_Struct
 	constexpr size_t ZoneEntrySize = 356;        // ServerZoneEntry_Struct
@@ -55,16 +58,35 @@ namespace
 		return ~crc;
 	}
 
+	// The packed velocities in Spawn_Struct and SpawnPositionUpdate_Struct: y in bits 0-10,
+	// z in 11-21, x in 22-31, each signed and 16ths of a unit per tick (pack_physics).
+	void UnpackDeltas(uint32_t value, float &dy, float &dz, float &dx)
+	{
+		auto field = [](uint32_t bits, int width) {
+			int32_t v = static_cast<int32_t>(bits);
+			if (bits & (1u << (width - 1)))
+				v -= 1 << width;
+			return static_cast<float>(v) * 0.0625f;
+		};
+		dy = field(value & 0x7ff, 11);
+		dz = field((value >> 11) & 0x7ff, 11);
+		dx = field(value >> 22, 10);
+	}
+
 	// Mac::structs::Spawn_Struct, 224 bytes.
 	ZoneSpawn ParseSpawn(const std::vector<uint8_t> &d, size_t o)
 	{
 		ZoneSpawn s;
+		s.heading_speed = static_cast<float>(static_cast<int8_t>(d[o + 6]));
+		UnpackDeltas(Read<uint32_t>(d, o + 13), s.dy, s.dz, s.dx);
 		s.heading = d[o + 5] * 2.0f;
 		s.y = static_cast<float>(Read<int16_t>(d, o + 7));
 		s.x = static_cast<float>(Read<int16_t>(d, o + 9));
 		s.z = static_cast<float>(Read<int16_t>(d, o + 11)) / 10.0f;
 		s.pet_owner = Read<uint16_t>(d, o + 18);
 		s.size = Read<float>(d, o + 28);
+		s.walk_speed = Read<float>(d, o + 32);
+		s.run_speed = Read<float>(d, o + 36);
 		for (int k = 0; k < 9; ++k)
 			s.colors[k] = Read<uint32_t>(d, o + 40 + k * 4);
 		s.id = Read<uint16_t>(d, o + 76);
@@ -74,6 +96,7 @@ namespace
 		s.class_id = d[o + 87];
 		s.gender = d[o + 88];
 		s.level = d[o + 89];
+		s.stance = d[o + 93];
 		s.anon = d[o + 95];
 		s.afk = d[o + 96];
 		s.gm = d[o + 99];
@@ -106,6 +129,8 @@ namespace
 			s.colors[k] = Read<uint32_t>(d, 204 + k * 4);
 		}
 		s.size = Read<float>(d, 244);
+		s.walk_speed = Read<float>(d, 260);
+		s.run_speed = Read<float>(d, 264);
 		s.gm = d[269];
 		s.anon = d[280];
 		s.afk = d[283];
@@ -117,13 +142,14 @@ namespace
 
 std::string ZoneSpawn::DisplayName() const
 {
-	// The client's CleanName: underscores become spaces, trailing digits go.
-	std::string out = name;
-	while (!out.empty() && std::isdigit(static_cast<unsigned char>(out.back())))
-		out.pop_back();
-	for (auto &c : out)
-		if (c == '_')
-			c = ' ';
+	// The client's CleanName: underscores become spaces and the digits go (NPC names end in
+	// them, before "'s_corpse" for their corpses).
+	std::string out;
+	for (char c : name) {
+		if (std::isdigit(static_cast<unsigned char>(c)))
+			continue;
+		out.push_back(c == '_' ? ' ' : c);
+	}
 	return out;
 }
 
@@ -228,6 +254,9 @@ bool ZoneSession::Begin(const std::string &host, uint16_t port, const std::strin
 	m_self = ZoneSpawn{};
 	m_my_id = 0;
 	m_have_profile = m_have_zone_entry = m_sent_req_new_zone = m_sent_exp_zonein = false;
+	m_movement = ZoneMovement{};
+	m_have_movement = m_movement_dirty = false;
+	m_identical_updates = 0;
 
 	m_session = std::make_unique<RdpSession>();
 	if (!m_session->Connect(host, port)) {
@@ -281,6 +310,89 @@ bool ZoneSession::Say(const std::string &text)
 	return Send(ZoneOp::ChannelMessage, body.data(), body.size(), "OP_ChannelMessage say: " + message);
 }
 
+void ZoneSession::SetMovement(const ZoneMovement &movement)
+{
+	if (m_state != State::InZone && m_state != State::Camping)
+		return;
+	if (!m_have_movement) {
+		m_have_movement = true;
+		m_flagged_heading = movement.heading;
+		m_flagged_speed = movement.speed;
+		m_last_tick_ms = NowMs();
+	}
+	m_movement = movement;
+	m_profile.x = movement.x;
+	m_profile.y = movement.y;
+	m_profile.z = movement.z;
+	m_profile.heading = movement.heading;
+	// ProcessControls: flag an update when the heading or the speed changed enough.
+	if (std::fabs(movement.heading - m_flagged_heading) >= 2) {
+		m_movement_dirty = true;
+		m_flagged_heading = movement.heading;
+	}
+	if (std::fabs(movement.speed - m_flagged_speed) >= 0.2f) {
+		m_movement_dirty = true;
+		m_flagged_speed = movement.speed;
+	}
+}
+
+void ZoneSession::Jump()
+{
+	if (m_state != State::InZone && m_state != State::Camping)
+		return;
+	m_movement_dirty = true;
+	Send(ZoneOp::Jump, nullptr, 0, "OP_Jump");
+}
+
+void ZoneSession::SendMovement(uint64_t now_ms)
+{
+	// DoPassageOfTime flags an update every second.
+	if (now_ms - m_last_tick_ms >= 1000) {
+		m_last_tick_ms = now_ms;
+		m_movement_dirty = true;
+	}
+	if (!m_movement_dirty || now_ms - m_last_update_ms <= 150)
+		return;
+
+	// pack_physics: SpawnPositionUpdate_Struct after the spawn id.
+	const ZoneMovement &m = m_movement;
+	uint8_t body[13] = {};
+	body[0] = static_cast<uint8_t>(static_cast<int8_t>(std::clamp(m.speed, -12.8f, 12.7f) * 10));
+	float heading = std::fmod(m.heading, 512.0f);
+	if (heading < 0)
+		heading += 512;
+	body[1] = static_cast<uint8_t>(static_cast<int>(heading * 0.5f) & 0xff);
+	body[2] = static_cast<uint8_t>(static_cast<int8_t>(std::clamp(m.heading_speed, -128.0f, 127.0f)));
+	int16_t y = static_cast<int16_t>(m.y), x = static_cast<int16_t>(m.x), z = static_cast<int16_t>(m.z * 10);
+	memcpy(body + 3, &y, 2);
+	memcpy(body + 5, &x, 2);
+	memcpy(body + 7, &z, 2);
+	int32_t dy = static_cast<int32_t>(std::clamp(m.dy, -64.0f, 63.0f) * 16);
+	int32_t dx = static_cast<int32_t>(std::clamp(m.dx, -32.0f, 31.0f) * 16);
+	int32_t dz = static_cast<int32_t>(std::clamp(m.dz, -64.0f, 63.0f) * 16);
+	uint32_t deltas = (static_cast<uint32_t>(dx) & 0x3ff) << 22 | (static_cast<uint32_t>(dz) & 0x7ff) << 11 |
+	                  (static_cast<uint32_t>(dy) & 0x7ff);
+	memcpy(body + 9, &deltas, 4);
+
+	// The same update goes out at most 6 times in a row.
+	if (memcmp(body, m_last_update, sizeof(body)) == 0) {
+		if (++m_identical_updates >= 7) {
+			m_identical_updates = 7;
+			return;
+		}
+	}
+	else {
+		m_identical_updates = 0;
+		memcpy(m_last_update, body, sizeof(body));
+	}
+	uint8_t update[15];
+	memcpy(update, &m_my_id, 2);
+	memcpy(update + 2, body, sizeof(body));
+	Send(ZoneOp::ClientUpdate, update, sizeof(update), m_verbose ? "OP_ClientUpdate" : "");
+	m_movement_dirty = false;
+	m_last_update_ms = now_ms;
+}
+
 bool ZoneSession::Camp()
 {
 	if (m_state != State::InZone)
@@ -288,6 +400,19 @@ bool ZoneSession::Camp()
 	m_state = State::Camping;
 	m_camp_started_ms = NowMs();
 	return Send(ZoneOp::Camp, nullptr, 0, "OP_Camp");
+}
+
+bool ZoneSession::GameTime(int &hour, float &minute) const
+{
+	if (!m_time_received_ms)
+		return false;
+	double seconds = ((m_time_hour - 1) * 60.0 + m_time_minute) * 60.0 + (NowMs() - m_time_received_ms) * 0.02;
+	seconds = std::fmod(seconds, 86400.0);
+	if (seconds < 0)
+		seconds += 86400;
+	hour = static_cast<int>(seconds / 3600) + 1;
+	minute = static_cast<float>(std::fmod(seconds, 3600.0) / 60);
+	return true;
 }
 
 uint64_t ZoneSession::CampRemainingMs() const
@@ -363,6 +488,10 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		m_info.fog_start = Read<float>(data, 388);
 		m_info.fog_end = Read<float>(data, 404);
 		m_info.sky = Read<uint8_t>(data, 474);
+		m_info.time_type = Read<uint8_t>(data, 424);
+		m_info.gravity = Read<float>(data, 420);
+		if (!(m_info.gravity > 0 && m_info.gravity < 10))
+			m_info.gravity = 0.4f;
 		m_info.min_clip = Read<float>(data, 508);
 		m_info.max_clip = Read<float>(data, 512);
 		// HandleWorldMessage's fallbacks: no fog means grey fog from 500 to 600, and the clip
@@ -401,6 +530,7 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		size_t count = data.size() / SpawnSize;
 		for (size_t i = 0; i < count; ++i) {
 			ZoneSpawn spawn = ParseSpawn(data, i * SpawnSize);
+			spawn.updated_ms = NowMs();
 			m_spawns[spawn.id] = spawn;
 			Event e;
 			e.type = Event::Type::SpawnAdded;
@@ -427,12 +557,19 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 	case ZoneOp::ClientUpdate: {
 		// Batched SpawnPositionUpdate_Structs: u32 count, then 15 bytes each.
 		uint32_t count = Read<uint32_t>(data, 0);
+		uint64_t now = NowMs();
 		for (uint32_t i = 0; i < count && 4 + (i + 1) * 15 <= data.size(); ++i) {
 			size_t o = 4 + i * 15;
 			auto it = m_spawns.find(Read<uint16_t>(data, o));
 			if (it == m_spawns.end())
 				continue;
+			// unpack_physics: the animation byte is the speed * 10, then the heading, its change per tick,
+			// the position and the velocities.
+			it->second.speed = static_cast<float>(static_cast<int8_t>(data[o + 2])) * 0.1f;
 			it->second.heading = data[o + 3] * 2.0f;
+			it->second.heading_speed = static_cast<float>(static_cast<int8_t>(data[o + 4]));
+			UnpackDeltas(Read<uint32_t>(data, o + 11), it->second.dy, it->second.dz, it->second.dx);
+			it->second.updated_ms = now;
 			it->second.y = static_cast<float>(Read<int16_t>(data, o + 5));
 			it->second.x = static_cast<float>(Read<int16_t>(data, o + 7));
 			it->second.z = static_cast<float>(Read<int16_t>(data, o + 9)) / 10.0f;
@@ -454,6 +591,32 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 			m_my_id = static_cast<uint16_t>(Read<uint32_t>(data, 4));
 			Log("[zone]    my spawn id " + std::to_string(m_my_id));
 		}
+		else if (type == AppearanceAnimation) {
+			auto it = m_spawns.find(Read<uint16_t>(data, 0));
+			if (it != m_spawns.end()) {
+				it->second.stance = static_cast<uint8_t>(Read<uint32_t>(data, 4));
+				Event e;
+				e.type = Event::Type::SpawnChanged;
+				e.id = it->first;
+				events.push_back(e);
+			}
+		}
+		break;
+	}
+	case ZoneOp::Death: {
+		// Death_Struct: the spawn falls over and becomes its corpse.
+		auto it = m_spawns.find(Read<uint16_t>(data, 0));
+		if (it != m_spawns.end()) {
+			ZoneSpawn &s = it->second;
+			s.npc = s.npc == 0 ? 2 : 3;
+			s.speed = s.heading_speed = s.dx = s.dy = s.dz = 0;
+			if (s.name.find("_corpse") == std::string::npos)
+				s.name += "'s_corpse";
+			Event e;
+			e.type = Event::Type::SpawnChanged;
+			e.id = it->first;
+			events.push_back(e);
+		}
 		break;
 	}
 	case ZoneOp::SendExpZonein:
@@ -471,6 +634,11 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		}
 		break;
 	case ZoneOp::TimeOfDay: {
+		if (data.size() >= 2) {
+			m_time_hour = data[0];
+			m_time_minute = data[1];
+			m_time_received_ms = NowMs();
+		}
 		char text[32];
 		snprintf(text, sizeof(text), "%u:%02u", data.size() > 0 ? data[0] : 0, data.size() > 1 ? data[1] : 0);
 		Event e;
@@ -580,6 +748,8 @@ void ZoneSession::Pump(int timeout_ms, std::vector<Event> &events)
 		}
 	}
 
+	if ((m_state == State::InZone || m_state == State::Camping) && m_have_movement)
+		SendMovement(NowMs());
 	if (m_state == State::Entering && NowMs() - m_started_ms > HandshakeTimeoutMs)
 		Fail(events, "timed out entering the zone");
 	if (m_state == State::Camping && CampRemainingMs() == 0 && m_camp_started_ms != 0) {

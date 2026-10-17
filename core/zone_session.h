@@ -48,6 +48,8 @@ struct ZoneInfo
 	float fog_start = 500, fog_end = 600;
 	float min_clip = 50, max_clip = 2400;
 	uint8_t sky = 0;                 // sky.s3d type; 0 = no sky
+	uint8_t time_type = 0;           // 1, 2 and 5 follow the time of day (outdoors)
+	float gravity = 0.4f;            // per 50 ms tick, squared
 	float safe_x = 0, safe_y = 0, safe_z = 0;
 };
 
@@ -72,8 +74,25 @@ struct ZoneSpawn
 	uint8_t face = 0;
 	uint16_t equipment[9] = {}; // material per slot: head, chest, arms, wrists, hands, legs, feet, primary, secondary
 	uint32_t colors[9] = {};    // 0xFFRRGGBB when tinted
+	float walk_speed = 0.46f, run_speed = 0.7f; // EQPlayer's MovementBackward/ForwardSpeedMultiplier
+	// Motion from the last update (unpack_physics): per 50 ms tick, for the client to carry on with.
+	float dx = 0, dy = 0, dz = 0;
+	float speed = 0;         // MovementSpeed (the update's animation byte / 10)
+	float heading_speed = 0; // per tick
+	uint8_t stance = 100;    // SpawnAppearance Animation: 100 standing, 110 sitting, 111 crouching, 115 lying
+	uint64_t updated_ms = 0; // when the position came in
 
 	std::string DisplayName() const; // "a rat", like the client's CleanName
+};
+
+// Our position and motion as pack_physics puts them in OP_ClientUpdate: the server's
+// coordinates (z is the model's center), heading 0..512, and the speeds per 50 ms tick.
+struct ZoneMovement
+{
+	float y = 0, x = 0, z = 0, heading = 0;
+	float speed = 0;         // MovementSpeed: forward (+) or back (-), sent as the animation byte
+	float heading_speed = 0; // MovementSpeedHeading
+	float dy = 0, dx = 0, dz = 0;
 };
 
 struct ZoneChat
@@ -99,6 +118,7 @@ public:
 			SpawnAdded,   // id
 			SpawnRemoved, // id
 			SpawnsMoved,
+			SpawnChanged, // id: stance, corpse...
 			Chat,         // chat
 			Message,      // text: system/special message
 			TimeOfDay,    // text: "hour:minute"
@@ -126,6 +146,11 @@ public:
 	void Pump(int timeout_ms, std::vector<Event> &events);
 
 	bool Say(const std::string &text);
+	// Our movement, every frame once we're in. Pump sends OP_ClientUpdate the way DoMainLoop
+	// does: when the heading moved 2 or the speed 0.2 since the last flag, and every second
+	// (DoPassageOfTime), at most every 150 ms, and not more than 6 identical updates in a row.
+	void SetMovement(const ZoneMovement &movement);
+	void Jump(); // OP_Jump
 	// /camp: OP_Camp, then OP_Logout once the 30 second camp timer has run (Handle_OP_Logout expects that).
 	bool Camp();
 	void Close();
@@ -139,12 +164,16 @@ public:
 	const ZoneSpawn &Self() const { return m_self; }
 	uint16_t MySpawnId() const { return m_my_id; }
 	uint64_t CampRemainingMs() const;
+	// Norrath's time: OP_TimeOfDay's hour (1..24) and minute, carried on at 20 game seconds a
+	// second as EQWorldData::AdvanceTime does. False until the zone has sent it.
+	bool GameTime(int &hour, float &minute) const;
 
 private:
 	void Log(const std::string &line);
 	void Fail(std::vector<Event> &events, const std::string &text);
 	bool Send(uint16_t opcode, const void *body, size_t size, const std::string &what, bool reliable = true);
 	void SendPosition();
+	void SendMovement(uint64_t now_ms);
 	void HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std::vector<Event> &events);
 
 	std::unique_ptr<RdpSession> m_session;
@@ -161,6 +190,16 @@ private:
 	bool m_sent_exp_zonein = false;
 	uint64_t m_started_ms = 0;
 	uint64_t m_camp_started_ms = 0;
+	int m_time_hour = 0, m_time_minute = 0;
+	uint64_t m_time_received_ms = 0;
+	// OP_ClientUpdate pacing (DoMainLoop / ProcessControls)
+	ZoneMovement m_movement;
+	bool m_have_movement = false;
+	bool m_movement_dirty = false;
+	float m_flagged_heading = 0, m_flagged_speed = 0;
+	uint64_t m_last_update_ms = 0, m_last_tick_ms = 0;
+	uint8_t m_last_update[13] = {};
+	int m_identical_updates = 0;
 	std::function<void(const std::string &)> m_log;
 	bool m_verbose = false;
 	const EqStr *m_eqstr = nullptr;

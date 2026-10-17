@@ -31,6 +31,7 @@ namespace render
 	struct ZoneLighting
 	{
 		float ambient = 0.6f; // added to every vertex, 0..1
+		bool point_lights = true; // add the lights.wld lights to the vertex colors
 	};
 
 	class ZoneScene
@@ -40,8 +41,9 @@ namespace render
 		void Draw(Rasterizer &rasterizer, uint64_t now_ms) const;
 		// Highest solid surface at or below `from` (searching down to `from.z - depth`).
 		bool FloorBelow(const Vec3 &from, float depth, float &floor_z) const;
-		// The first solid surface on the segment from `from` to `to`, as a fraction of its length.
-		bool SegmentHit(const Vec3 &from, const Vec3 &to, float &fraction) const;
+		// The first solid surface on the segment from `from` to `to`, as a fraction of its length,
+		// and that surface's unit normal (facing `from`).
+		bool SegmentHit(const Vec3 &from, const Vec3 &to, float &fraction, Vec3 *normal = nullptr) const;
 
 		size_t TriangleCount() const;
 		size_t ObjectCount() const { return m_object_count; }

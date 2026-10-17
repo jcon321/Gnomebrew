@@ -67,6 +67,7 @@ namespace ZoneOp
 	constexpr uint16_t SpecialMesg = 0x4180; // u32 type + text
 	constexpr uint16_t FormattedMessage = 0x4236; // eqstr id + args
 	constexpr uint16_t Camp = 0x4207;
+	constexpr uint16_t Jump = 0x4020;          // no body; DoMainLoop sends it as the jump starts
 	constexpr uint16_t Logout = 0x4150;
 	constexpr uint16_t LogoutReply = 0x4159;
 	constexpr uint16_t ZoneInAvatarSet = 0x406f;
@@ -151,6 +152,7 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::SpecialMesg, "OP_SpecialMesg"},
 	{ZoneOp::FormattedMessage, "OP_FormattedMessage"},
 	{ZoneOp::Camp, "OP_Camp"},
+	{ZoneOp::Jump, "OP_Jump"},
 	{ZoneOp::Logout, "OP_Logout"},
 	{ZoneOp::LogoutReply, "OP_LogoutReply"},
 	{ZoneOp::ZoneInAvatarSet, "OP_ZoneInAvatarSet"},

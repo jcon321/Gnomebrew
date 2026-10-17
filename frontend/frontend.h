@@ -116,6 +116,8 @@ private:
 	void CharacterSelectEvent(const InputEvent &event);
 	void CharacterCreateEvent(const InputEvent &event);
 	void ZoneEvent(const InputEvent &event);
+	bool SetZoneKey(InputEvent::Key key, bool down, bool typing); // false: not a movement key
+	MoveControls ZoneControls();
 
 	void SubmitLogin();
 	void PlaySelected();
@@ -206,6 +208,13 @@ private:
 	std::string m_time_of_day;
 	std::unique_ptr<ZoneView> m_zone_view;
 	bool m_zone_error_logged = false;
+	struct HeldKeys
+	{
+		bool up = false, down = false, left = false, right = false, w = false, a = false, s = false, d = false;
+	};
+	HeldKeys m_keys;
+	bool m_run = true;
+	bool m_jump_requested = false;
 	bool m_mouse_look = false; // right button held: dragging turns and tilts the camera
 	int m_look_x = 0, m_look_y = 0;
 

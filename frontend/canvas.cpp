@@ -44,6 +44,8 @@ void Canvas::Fill(const Rect &area, uint32_t color)
 {
 	int x0 = std::max(area.x, 0), y0 = std::max(area.y, 0);
 	int x1 = std::min(area.Right(), m_width), y1 = std::min(area.Bottom(), m_height);
+	if (x0 >= x1)
+		return; // wholly left or right of the canvas
 	for (int y = y0; y < y1; ++y)
 		std::fill(Row(y) + x0, Row(y) + x1, color);
 }
