@@ -43,8 +43,8 @@ public:
 	// position from the server. From then on Move() moves them.
 	void SetPlayer(const render::CharacterAppearance &appearance, float walk_speed, float run_speed);
 	void SetPlayerPosition(float x, float y, float z, float heading);
-	// Runs our movement up to now. Returns true when a jump started. `looking` is the mouse
-	// look being held, which keeps the chase camera where it's put while moving.
+	// Runs our movement up to now. Returns true when a jump started. `looking` is a mouse
+	// drag being held, which keeps the chase camera where it's put while moving.
 	bool Move(const MoveControls &controls, uint64_t now_ms, bool looking);
 	bool Placed() const { return m_placed; }
 	ZoneMovement Movement() const; // for OP_ClientUpdate
@@ -61,12 +61,16 @@ public:
 	// within `range`, nearest first.
 	std::vector<NameTag> NameTags(float range) const;
 
-	// F9 toggles first person and the chase camera. Orbit turns the view (in 512ths; the chase
-	// camera circles the character), Pitch tilts it (degrees), Zoom moves the chase camera in or
-	// out, from first person out to 200 units (CDisplay::DoCamAi's 2..200).
+	// F9 toggles first person and the chase camera. Orbit circles the chase camera around the
+	// character (in 512ths), Turn turns the character (and the camera with them), FaceCamera
+	// turns the character to where the chase camera looks, Pitch tilts the view (degrees), Zoom
+	// moves the chase camera in or out, from first person out to 200 units (CDisplay::DoCamAi's
+	// 2..200).
 	void CycleCamera();
 	CameraView View() const { return m_view; }
 	void Orbit(float delta) { m_orbit += delta; }
+	void Turn(float delta);
+	void FaceCamera();
 	void Pitch(float degrees);
 	void Zoom(int notches);
 

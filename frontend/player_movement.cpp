@@ -12,6 +12,11 @@ namespace
 	constexpr float AirFriction = 0.99f;
 	constexpr float JumpHeightModifier = 1.35f; // EQPlayer::SetHeights
 	constexpr float MaxTurnRate = 12;           // heading units per tick
+	// process_physics applies the friction once a frame, not once a tick, so the real client
+	// stops (and gets up to speed) quicker the faster it draws, and jumps a little lower. We
+	// play like it does at 60 frames a second, a third of a tick each; the top speed doesn't
+	// change.
+	constexpr float FrameTicks = 1.0f / 3;
 
 	float WrapHeading(float heading)
 	{
@@ -39,6 +44,11 @@ void PlayerMovement::Place(const render::Vec3 &feet, float heading, float height
 	m_speed = m_heading_speed = m_turn_ramp = 0;
 	m_velocity = {};
 	m_on_ground = true;
+}
+
+void PlayerMovement::Turn(float delta)
+{
+	m_heading = WrapHeading(m_heading + delta);
 }
 
 bool PlayerMovement::Step(const MoveControls &controls, float ms, const render::ZoneScene &scene)
@@ -87,11 +97,12 @@ void PlayerMovement::Tick(float t, const render::ZoneScene &scene)
 	m_velocity.z -= m_gravity * t;
 	float friction = m_on_ground ? GroundFriction : AirFriction;
 	float control = m_on_ground ? GroundControl : 0;
-	float keep = std::pow(friction, t);
+	float frames = t / FrameTicks;
+	float keep = std::pow(friction, frames);
 	render::Vec3 push = Along(m_heading, m_speed * control * (1 - keep) / (1 - friction));
 	m_velocity.x = m_velocity.x * keep + push.x;
 	m_velocity.y = m_velocity.y * keep + push.y;
-	m_velocity.z *= std::pow(AirFriction, t);
+	m_velocity.z *= std::pow(AirFriction, frames);
 	if (m_on_ground && m_speed == 0) {
 		if (std::fabs(m_velocity.x) < 0.01f)
 			m_velocity.x = 0;

@@ -72,6 +72,10 @@ public:
 	Rect ScreenArea() const; // where the current screen is laid out, in window pixels
 
 	void SetCursorVisible(bool visible) { m_cursor_visible = visible; }
+	// While a mouse drag turns the character or pans the camera, the cursor is hidden and held
+	// where the drag started: the host puts it back at (x, y), in window pixels, after every move
+	// and once more when the drag ends.
+	bool MouseGrab(int &x, int &y) const;
 	bool QuitRequested() const { return m_quit; }
 	std::string Username() const { return m_user.text; }
 	Screen CurrentScreen() const { return m_screen; }
@@ -215,7 +219,11 @@ private:
 	HeldKeys m_keys;
 	bool m_run = true;
 	bool m_jump_requested = false;
-	bool m_mouse_look = false; // right button held: dragging turns and tilts the camera
+	// Mouse drags in the zone: the right button turns the character and tilts the view, the left
+	// button (in the chase view) circles the camera around them, and both run forward. Drags
+	// measure from where they started (m_look_x, m_look_y), where the host holds the cursor.
+	bool m_mouse_turn = false, m_mouse_pan = false;
+	bool m_mouse_grabbed = false;
 	int m_look_x = 0, m_look_y = 0;
 
 	LoginSession m_session;

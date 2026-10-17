@@ -224,9 +224,16 @@ void FrontEnd::OnEvent(const InputEvent &event)
 	}
 	if (event.type == InputEvent::Type::FocusLost) {
 		m_keys = HeldKeys{};
-		m_mouse_look = false;
+		m_mouse_turn = m_mouse_pan = m_mouse_grabbed = false;
 		return;
 	}
+	// Mouse drags end even if a dialog came up in the middle of one.
+	if (event.type == InputEvent::Type::RightUp)
+		m_mouse_turn = false;
+	if (event.type == InputEvent::Type::MouseUp)
+		m_mouse_pan = false;
+	if (!m_mouse_turn && !m_mouse_pan)
+		m_mouse_grabbed = false;
 
 	// Handlers see positions relative to the area they're laid out in.
 	Rect area = m_dialog.open ? DialogArea() : ScreenArea();
@@ -581,7 +588,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		if (m_zone.GameTime(hour, minute))
 			m_zone_view->SetGameTime(hour, minute);
 		m_zone_view->UpdateSpawns(m_zone.Spawns(), m_zone.MySpawnId(), now_ms);
-		bool jumped = m_zone_view->Move(ZoneControls(), now_ms, m_mouse_look);
+		bool jumped = m_zone_view->Move(ZoneControls(), now_ms, m_mouse_turn || m_mouse_pan);
 		if (m_zone_view->Placed())
 			m_zone.SetMovement(m_zone_view->Movement());
 		if (jumped)
@@ -738,8 +745,18 @@ void FrontEnd::Render(Canvas &canvas, uint64_t now_ms)
 		RenderDialog(dialog);
 	}
 
-	if (m_cursor_visible)
+	if (m_cursor_visible && !m_mouse_grabbed)
 		canvas.Blit(m_art.Get("cursor.bmp"), m_mouse_x, m_mouse_y, true);
+}
+
+bool FrontEnd::MouseGrab(int &x, int &y) const
+{
+	if (!m_mouse_grabbed)
+		return false;
+	Rect area = ScreenArea();
+	x = area.x + m_look_x;
+	y = area.y + m_look_y;
+	return true;
 }
 
 // ---------------------------------------------------------------- character select (eqgame)
@@ -1201,7 +1218,7 @@ void FrontEnd::EnterZoneScreen()
 	m_time_of_day.clear();
 	m_zone_view.reset();
 	m_zone_error_logged = false;
-	m_mouse_look = false;
+	m_mouse_turn = m_mouse_pan = m_mouse_grabbed = false;
 	m_keys = HeldKeys{};
 	m_jump_requested = false;
 	AddZoneLog("Entering the zone...", ZoneGrey);
@@ -1324,7 +1341,7 @@ MoveControls FrontEnd::ZoneControls()
 	MoveControls controls;
 	bool can_move = !m_dialog.open && m_zone.GetState() == ZoneSession::State::InZone;
 	if (can_move) {
-		controls.forward = m_keys.up || m_keys.w;
+		controls.forward = m_keys.up || m_keys.w || (m_mouse_turn && m_mouse_pan); // both buttons run
 		controls.back = m_keys.down || m_keys.s;
 		controls.left = m_keys.left || m_keys.a;
 		controls.right = m_keys.right || m_keys.d;
@@ -1344,22 +1361,53 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			m_zone_view->Zoom(event.wheel);
 		return;
 	case InputEvent::Type::RightDown:
-		m_mouse_look = true;
-		m_look_x = event.x;
-		m_look_y = event.y;
-		return;
-	case InputEvent::Type::RightUp:
-		m_mouse_look = false;
-		return;
-	case InputEvent::Type::MouseMove:
-		if (m_mouse_look) {
-			// Mouse look: right turns right, up looks up.
-			if (m_zone_view) {
-				m_zone_view->Orbit(-0.6f * static_cast<float>(event.x - m_look_x));
-				m_zone_view->Pitch(-0.25f * static_cast<float>(event.y - m_look_y));
-			}
+		// Mouse look: the character turns to where the camera looks, then turns with the mouse.
+		if (!m_mouse_pan) {
 			m_look_x = event.x;
 			m_look_y = event.y;
+		}
+		m_mouse_turn = true;
+		if (m_zone_view)
+			m_zone_view->FaceCamera();
+		return;
+	case InputEvent::Type::MouseDown:
+	case InputEvent::Type::DoubleClick:
+		// Panning the chase camera (or running, with the right button too), from anywhere but
+		// the buttons.
+		if (!m_camp.rect.Contains(event.x, event.y)) {
+			if (!m_mouse_turn) {
+				m_look_x = event.x;
+				m_look_y = event.y;
+			}
+			m_mouse_pan = true;
+		}
+		break;
+	case InputEvent::Type::MouseMove:
+		if (m_mouse_turn || m_mouse_pan) {
+			// Right turns right, up looks up. The right button turns the character; the left
+			// circles the camera, and only in the chase view (in first person it does nothing,
+			// and the cursor stays free).
+			bool turn = m_mouse_turn;
+			bool pan = !turn && m_zone_view && m_zone_view->View() == ZoneView::CameraView::Chase;
+			if (!turn && !pan) {
+				m_mouse_grabbed = false;
+				m_look_x = event.x;
+				m_look_y = event.y;
+				break;
+			}
+			int moved_x = event.x - m_look_x, moved_y = event.y - m_look_y;
+			if (moved_x == 0 && moved_y == 0)
+				return; // the host putting the cursor back
+			m_mouse_grabbed = true;
+			float dx = -0.6f * static_cast<float>(moved_x);
+			float dy = -0.25f * static_cast<float>(moved_y);
+			if (m_zone_view) {
+				if (turn)
+					m_zone_view->Turn(dx);
+				else
+					m_zone_view->Orbit(dx);
+				m_zone_view->Pitch(dy);
+			}
 			return;
 		}
 		break;

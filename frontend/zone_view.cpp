@@ -139,6 +139,20 @@ void ZoneView::CycleCamera()
 	m_pitch = m_view == CameraView::Chase ? -12.0f : 0.0f;
 }
 
+void ZoneView::Turn(float delta)
+{
+	if (!m_placed)
+		return;
+	m_movement.Turn(delta);
+	m_heading = m_movement.Heading();
+}
+
+void ZoneView::FaceCamera()
+{
+	Turn(m_orbit);
+	m_orbit = 0;
+}
+
 void ZoneView::Pitch(float degrees)
 {
 	m_pitch = std::clamp(m_pitch + degrees, -80.0f, 60.0f);
@@ -161,6 +175,7 @@ void ZoneView::Zoom(int notches)
 	if (distance < MinDistance) {
 		m_view = CameraView::FirstPerson;
 		m_distance = MinDistance;
+		FaceCamera(); // first person looks where the character faces
 		return;
 	}
 	m_distance = std::min(distance, MaxDistance);

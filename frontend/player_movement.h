@@ -36,6 +36,8 @@ public:
 	void Place(const render::Vec3 &feet, float heading, float height, float walk_speed, float run_speed, float gravity);
 	// Advances `ms` milliseconds. Returns true when a jump started.
 	bool Step(const MoveControls &controls, float ms, const render::ZoneScene &scene);
+	// Turns by `delta` 512ths at once (mouse look).
+	void Turn(float delta);
 
 	const render::Vec3 &Feet() const { return m_feet; }
 	float Heading() const { return m_heading; }

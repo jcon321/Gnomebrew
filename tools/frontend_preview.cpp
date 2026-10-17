@@ -350,7 +350,7 @@ int main(int argc, char **argv)
 			h.Key(InputEvent::Key::F9);
 			h.Snapshot("8-zone-first-person");
 			h.Key(InputEvent::Key::F9);
-			// Right-drag the camera around a third of a turn.
+			// Right-drag: turn around about a third of a turn.
 			frontend.OnEvent({InputEvent::Type::RightDown, 600, 300});
 			frontend.OnEvent({InputEvent::Type::MouseMove, 320, 300});
 			frontend.OnEvent({InputEvent::Type::RightUp, 320, 300});

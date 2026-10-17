@@ -42,6 +42,8 @@ namespace
 		Surface surface; // the window's client area
 		int mouse_x = 0, mouse_y = 0;
 		bool tracking_mouse = false;
+		bool grabbed = false; // FrontEnd::MouseGrab: the cursor is held at grab_x, grab_y
+		int grab_x = 0, grab_y = 0;
 		FrontEnd *frontend = nullptr;
 		FILE *log = nullptr;
 	};
@@ -93,10 +95,33 @@ namespace
 		return GetTickCount64();
 	}
 
+	// Moves the real cursor to (x, y) in the window's client area.
+	void PlaceCursor(int x, int y)
+	{
+		POINT point{x, y};
+		ClientToScreen(g_app.window, &point);
+		POINT now{};
+		if (GetCursorPos(&now) && now.x == point.x && now.y == point.y)
+			return;
+		SetCursorPos(point.x, point.y);
+	}
+
 	void Send(InputEvent event)
 	{
-		if (g_app.frontend)
-			g_app.frontend->OnEvent(event);
+		if (!g_app.frontend)
+			return;
+		g_app.frontend->OnEvent(event);
+		// While a drag holds the mouse, keep the cursor where it started (so it can turn as far
+		// as it likes, and the next move measures from there), and leave it there afterwards.
+		int x, y;
+		bool grabbed = g_app.frontend->MouseGrab(x, y);
+		if (grabbed) {
+			g_app.grab_x = x;
+			g_app.grab_y = y;
+		}
+		if (grabbed || g_app.grabbed)
+			PlaceCursor(g_app.grab_x, g_app.grab_y);
+		g_app.grabbed = grabbed;
 	}
 
 	InputEvent MouseEvent(InputEvent::Type type, LPARAM lparam)
