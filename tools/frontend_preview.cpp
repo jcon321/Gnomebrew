@@ -1,0 +1,263 @@
+// frontend_preview (Linux): drives the front end headlessly and writes PNG
+// snapshots, to check layout and flow without a Windows box. Text is drawn as
+// outline boxes of an estimated Arial size, since GDI isn't available.
+//
+//   frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect]]
+//
+// Without a login server it snapshots the start screen, a dialog and the login
+// screen. With one it also logs in and snapshots server select and the play result.
+// "charselect" stops at character select (two snapshots of the 3D scene, as the
+// camera turns) instead of entering the world.
+
+#include "eqstr.h"
+#include "frontend.h"
+#include "png_writer.h"
+
+#include <algorithm>
+#include <chrono>
+#include <cstdio>
+#include <cstring>
+#include <fstream>
+#include <thread>
+#include <vector>
+
+namespace
+{
+	class BoxTextRenderer : public TextRenderer
+	{
+	public:
+		TextSize Measure(const std::string &utf8, int height, int) override
+		{
+			// Arial averages roughly half its cell height per character.
+			return {static_cast<int>(utf8.size()) * height / 2, height};
+		}
+
+		void Draw(Canvas &canvas, int x, int y, const std::string &utf8, int height, uint32_t rgb, int weight) override
+		{
+			if (utf8.empty())
+				return;
+			TextSize size = Measure(utf8, height, weight);
+			canvas.Frame({x, y + height / 5, size.w, height * 3 / 5}, rgb);
+		}
+
+		void DrawWrapped(Canvas &canvas, const Rect &area, const std::string &utf8, int height, uint32_t rgb, int weight) override
+		{
+			// Greedy wrap on the estimated widths, one box per line.
+			int per_line = std::max(1, area.w / std::max(1, height / 2));
+			int y = area.y;
+			size_t start = 0;
+			while (start < utf8.size() && y + height <= area.Bottom()) {
+				size_t newline = utf8.find('\n', start);
+				size_t end = std::min(newline == std::string::npos ? utf8.size() : newline, start + per_line);
+				Draw(canvas, area.x + 2, y, utf8.substr(start, end - start), height, rgb, weight);
+				start = end + (end == newline ? 1 : 0);
+				y += height;
+			}
+		}
+	};
+
+	uint64_t NowMs()
+	{
+		return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::steady_clock::now().time_since_epoch()).count());
+	}
+
+	struct Harness
+	{
+		FrontEnd &frontend;
+		std::string out_dir;
+		std::vector<uint32_t> pixels = std::vector<uint32_t>(FrontEnd::Width * FrontEnd::Height);
+
+		void Snapshot(const std::string &name)
+		{
+			Canvas canvas(pixels.data(), FrontEnd::Width, FrontEnd::Height, FrontEnd::Width);
+			frontend.Render(canvas, 0);
+			std::string path = out_dir + "/" + name + ".png";
+			printf("[preview] %s %s\n", WritePng(path, pixels, FrontEnd::Width, FrontEnd::Height) ? "wrote" : "FAILED", path.c_str());
+		}
+
+		void Click(int x, int y)
+		{
+			frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+			frontend.OnEvent({InputEvent::Type::MouseDown, x, y});
+			frontend.OnEvent({InputEvent::Type::MouseUp, x, y});
+		}
+
+		void Key(InputEvent::Key key)
+		{
+			InputEvent event;
+			event.type = InputEvent::Type::Key;
+			event.key = key;
+			frontend.OnEvent(event);
+		}
+
+		void Type(const std::string &text)
+		{
+			for (char c : text) {
+				InputEvent event;
+				event.type = InputEvent::Type::Char;
+				event.ch = static_cast<unsigned char>(c);
+				frontend.OnEvent(event);
+			}
+		}
+
+		// Pumps the front end until done() or timeout.
+		template <typename Done>
+		bool RunUntil(Done done, int timeout_ms = 15000)
+		{
+			uint64_t end = NowMs() + timeout_ms;
+			while (NowMs() < end) {
+				frontend.Update(NowMs());
+				if (done())
+					return true;
+				std::this_thread::sleep_for(std::chrono::milliseconds(15));
+			}
+			return false;
+		}
+	};
+}
+
+int main(int argc, char **argv)
+{
+	if (argc != 3 && argc != 6 && argc != 7) {
+		fprintf(stderr, "usage: %s EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect]]\n", argv[0]);
+		return 2;
+	}
+	std::string eq_dir = argv[1];
+
+	FrontEndArt art;
+	std::string error;
+	if (!art.Open(eq_dir, error)) {
+		fprintf(stderr, "%s\n", error.c_str());
+		return 1;
+	}
+	EqText strings;
+	if (!strings.Load(eq_dir + "/eqtext.txt")) {
+		fprintf(stderr, "can't read %s/eqtext.txt\n", eq_dir.c_str());
+		return 1;
+	}
+
+	FrontEndConfig config;
+	bool stop_at_charselect = argc == 7 && std::string(argv[6]) == "charselect";
+	if (argc >= 6) {
+		std::string login = argv[3];
+		size_t colon = login.rfind(':');
+		config.login_host = login.substr(0, colon);
+		if (colon != std::string::npos)
+			config.login_port = static_cast<uint16_t>(atoi(login.c_str() + colon + 1));
+	}
+
+	std::string ui_dir = eq_dir + "/uifiles/default";
+	SidlDefinitions sidl;
+	SidlTextures textures(ui_dir);
+	GameData ui;
+	ui.eq_dir = eq_dir;
+	if (sidl.Load(ui_dir, error)) {
+		ui.definitions = &sidl;
+		ui.textures = &textures;
+	}
+	else
+		ui.error = error;
+	for (const auto &warning : sidl.Warnings())
+		printf("[preview] SIDL: %s\n", warning.c_str());
+	EqStr eqstr;
+	if (eqstr.Load(eq_dir + "/eqstr_en.txt"))
+		ui.eqstr = &eqstr;
+
+	BoxTextRenderer text;
+	FrontEnd frontend(art, strings, text, config, ui);
+	frontend.log = [](const std::string &line) { printf("%s\n", line.c_str()); };
+	Harness h{frontend, argv[2]};
+	using Screen = FrontEnd::Screen;
+
+	h.Snapshot("1-start");
+	h.Click(400 + 114, 0xff + 17); // ACCOUNT -> "not implemented" dialog
+	h.Snapshot("2-dialog");
+	h.Key(InputEvent::Key::Enter);
+	h.Click(400 + 114, 0xd2 + 17); // CONNECT
+	h.Snapshot("3-login");
+
+	if (argc >= 6) {
+		h.Type(argv[4]);
+		h.Key(InputEvent::Key::Enter); // to the password field
+		h.Type(argv[5]);
+		h.Snapshot("4-login-filled");
+
+		for (int attempt = 0; attempt < 2; ++attempt) {
+			h.Key(InputEvent::Key::Enter);
+			h.RunUntil([&] { return frontend.CurrentScreen() == Screen::ServerSelect || frontend.DialogOpen(); });
+			if (!frontend.DialogOpen())
+				break;
+			printf("[preview] dialog: %s\n", frontend.DialogText().c_str());
+			h.Snapshot("5-login-error");
+			h.Key(InputEvent::Key::Enter); // close; a new account needs a second try
+		}
+
+		if (frontend.CurrentScreen() != Screen::ServerSelect) {
+			fprintf(stderr, "[preview] never reached server select\n");
+			return 1;
+		}
+		h.Snapshot("6-server-select");
+
+		h.Key(InputEvent::Key::Enter); // PLAY the selected server
+		h.RunUntil([&] { return frontend.DialogOpen() || frontend.CurrentScreen() == Screen::CharacterSelect; });
+		if (frontend.DialogOpen()) {
+			printf("[preview] dialog: %s\n", frontend.DialogText().c_str());
+			h.Snapshot("7-play-result");
+			return 1;
+		}
+		h.frontend.OnEvent({InputEvent::Type::MouseMove, 400, 300});
+		if (const CharacterSelectView *scene = frontend.CharacterScene())
+			h.RunUntil([&] { return scene->Loaded(); }, 10000);
+		h.RunUntil([] { return false; }, 300);
+		h.Snapshot("7-character-select");
+		for (const auto &c : frontend.Characters())
+			if (!c.Empty())
+				printf("[preview] character: %s level %u %s %s zone %u\n", c.name.c_str(), c.level, RaceName(c.race),
+					ClassName(c.class_id), c.zone);
+
+		if (stop_at_charselect) {
+			h.RunUntil([] { return false; }, 2000);
+			h.Snapshot("7-character-select-turned");
+			h.Key(InputEvent::Key::Escape); // Quit back to the start screen
+			return 0;
+		}
+		if (frontend.SelectedCharacter() >= 0) {
+			h.Key(InputEvent::Key::Enter); // Enter World
+			h.RunUntil([&] {
+				return frontend.DialogOpen() || frontend.Zone().GetState() == ZoneSession::State::InZone;
+			});
+			if (frontend.DialogOpen()) {
+				printf("[preview] dialog: %s\n", frontend.DialogText().c_str());
+				h.Snapshot("8-enter-world");
+				return 1;
+			}
+			h.RunUntil([] { return false; }, 1500); // let spawn updates and messages arrive
+			h.Snapshot("8-zone");
+			h.Type("hello from the GUI");
+			h.Key(InputEvent::Key::Enter);
+			h.RunUntil([] { return false; }, 1500);
+			h.Snapshot("9-zone-chat");
+
+			h.Key(InputEvent::Key::Escape); // camp prompt
+			h.Key(InputEvent::Key::Enter);  // yes
+			h.RunUntil([&] { return frontend.DialogOpen(); }, 45000);
+			printf("[preview] dialog: %s\n", frontend.DialogText().c_str());
+			h.Snapshot("10-camped");
+		}
+		else {
+			h.Click(2 + 4 + 40, 20 + 4 + 105 + 16); // Char1_Button: an empty slot
+			printf("[preview] dialog: %s\n", frontend.DialogText().c_str());
+			h.Snapshot("8-empty-slot");
+			h.Key(InputEvent::Key::Enter);
+			h.Key(InputEvent::Key::Escape); // Quit back to the start screen
+			printf("[preview] after Esc: screen %d\n", static_cast<int>(frontend.CurrentScreen()));
+		}
+	}
+
+	for (const auto &name : art.Missing())
+		printf("[preview] missing art: %s\n", name.c_str());
+	for (const auto &name : textures.Missing())
+		printf("[preview] missing UI texture: %s\n", name.c_str());
+	return 0;
+}

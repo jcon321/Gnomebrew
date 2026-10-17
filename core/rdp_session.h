@@ -36,6 +36,8 @@ public:
 
 	// Waits up to timeout_ms for the next application packet.
 	Status Receive(AppPacket &out, int timeout_ms);
+	// Non-blocking: services the socket once, then returns a queued packet if there is one.
+	Status Poll(AppPacket &out) { return Receive(out, 0); }
 
 	void Close(uint32_t linger_ms = 1000);
 	const std::string &Peer() const { return m_peer; }
@@ -54,4 +56,5 @@ private:
 };
 
 const char *OpcodeName(uint16_t opcode, bool world);
+const char *ZoneOpcodeName(uint16_t opcode);
 void HexDump(const std::vector<uint8_t> &data, size_t max_bytes = 256);

@@ -4,9 +4,39 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <mutex>
 
 namespace
 {
+	// rdplib allows one runtime per process, but login and world sessions overlap
+	// (the GUI keeps the login session object while world connects), so share it.
+	std::mutex g_runtime_mutex;
+	rdplib_runtime_t *g_runtime = nullptr;
+	int g_runtime_users = 0;
+
+	rdplib_runtime_t *AcquireRuntime(int &result)
+	{
+		std::lock_guard<std::mutex> lock(g_runtime_mutex);
+		result = RDPLIB_OK;
+		if (!g_runtime)
+			result = rdplib_runtime_create(&g_runtime, 1024 * 1024);
+		if (result != RDPLIB_OK) {
+			g_runtime = nullptr;
+			return nullptr;
+		}
+		++g_runtime_users;
+		return g_runtime;
+	}
+
+	void ReleaseRuntime()
+	{
+		std::lock_guard<std::mutex> lock(g_runtime_mutex);
+		if (--g_runtime_users == 0 && g_runtime) {
+			rdplib_runtime_destroy(g_runtime);
+			g_runtime = nullptr;
+		}
+	}
+
 	constexpr uint32_t ClientStream = 1;         // send_message/OpCode passes stream 1
 	constexpr uint32_t ClientDataRate = 0x1400;  // net_connect: connection_set_max_data_rate
 	constexpr uint32_t ClientSendBuffer = 0x40000; // net_connect: connection_set_send_buffer_size
@@ -20,15 +50,16 @@ RdpSession::~RdpSession()
 	if (m_endpoint)
 		rdplib_endpoint_destroy(m_endpoint);
 	if (m_runtime)
-		rdplib_runtime_destroy(m_runtime);
+		ReleaseRuntime();
 }
 
 bool RdpSession::Connect(const std::string &host, uint16_t port)
 {
 	m_peer = host + ":" + std::to_string(port);
 
-	int result = rdplib_runtime_create(&m_runtime, 1024 * 1024);
-	if (result != RDPLIB_OK) {
+	int result = RDPLIB_OK;
+	m_runtime = AcquireRuntime(result);
+	if (!m_runtime) {
 		fprintf(stderr, "[net] rdplib_runtime_create failed: %d\n", result);
 		return false;
 	}
@@ -131,12 +162,16 @@ RdpSession::Status RdpSession::Receive(AppPacket &out, int timeout_ms)
 			return Status::Closed;
 
 		auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()).count();
-		if (left <= 0)
-			return Status::Timeout;
-
-		rdplib_endpoint_process(m_endpoint, static_cast<int32_t>(left < 50 ? left : 50));
+		rdplib_endpoint_process(m_endpoint, static_cast<int32_t>(left <= 0 ? 0 : (left < 50 ? left : 50)));
 		while (rdplib_message_t *stray = rdplib_endpoint_pop_connectionless(m_endpoint))
 			rdplib_message_release(stray);
+
+		if (left <= 0) {
+			// One last look after servicing the socket, so a zero timeout still delivers.
+			if (PopOne(out, status))
+				return status;
+			return m_closed ? Status::Closed : Status::Timeout;
+		}
 	}
 }
 
@@ -159,6 +194,14 @@ const char *OpcodeName(uint16_t opcode, bool world)
 	for (; table->name; ++table)
 		if (table->value == opcode)
 			return table->name;
+	return "?";
+}
+
+const char *ZoneOpcodeName(uint16_t opcode)
+{
+	for (const OpcodeEntry *entry = ZoneOpcodes; entry->name; ++entry)
+		if (entry->value == opcode)
+			return entry->name;
 	return "?";
 }
 
