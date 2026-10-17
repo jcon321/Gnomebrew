@@ -270,6 +270,9 @@ void WorldSession::Pump(int timeout_ms, std::vector<Event> &events)
 			events.push_back({Event::Type::Approved, ""});
 			break;
 		case WorldOp::LogServer:
+			// HandleWorldMessage 0x41c3: the ruleset at 4 and the name rule at 12.
+			m_server_type = Read<uint32_t>(packet.data, 4);
+			m_strict_names = Read<uint32_t>(packet.data, 12) != 0;
 			m_world_short_name = CString(packet.data, 32, 32);
 			Log("[world]    world short name '" + m_world_short_name + "'");
 			break;

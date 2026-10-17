@@ -35,6 +35,8 @@ public:
 	// nullptr shows the empty default room.
 	void SetCharacter(const render::CharacterAppearance *appearance, uint8_t class_id);
 	void SetRotate(bool rotate) { m_rotate = rotate; }
+	// CFacePick::Activate: the camera close in front of the face, not turning.
+	void SetCloseUp(bool close_up) { m_close_up = close_up; }
 	// Pins the camera heading (preview tool); otherwise it follows Rotate.
 	void SetCameraHeading(float heading) { m_camera_override = heading; }
 	void Render(Canvas &canvas, uint64_t now_ms);
@@ -71,6 +73,7 @@ private:
 	float m_heading = 0;
 
 	bool m_rotate = true;
+	bool m_close_up = false;
 	float m_camera_heading = 456; // CEverQuest_SetupCharacterSelectCamera
 	std::optional<float> m_camera_override;
 	uint64_t m_next_step_ms = 0;

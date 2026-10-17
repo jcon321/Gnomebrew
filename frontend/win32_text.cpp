@@ -39,33 +39,62 @@ HFONT GdiTextRenderer::Font(int height, int weight)
 	return font;
 }
 
+void GdiTextRenderer::AddSurface(HDC dc, const uint32_t *pixels, int stride, int height)
+{
+	m_surfaces.push_back({dc, pixels, stride, height});
+}
+
+HDC GdiTextRenderer::Target(Canvas &canvas, int &x, int &y)
+{
+	const uint32_t *origin = canvas.Row(0);
+	for (const auto &surface : m_surfaces) {
+		if (origin >= surface.pixels && origin < surface.pixels + static_cast<size_t>(surface.stride) * surface.height) {
+			ptrdiff_t offset = origin - surface.pixels;
+			x += static_cast<int>(offset % surface.stride);
+			y += static_cast<int>(offset / surface.stride);
+			return surface.dc;
+		}
+	}
+	return nullptr;
+}
+
 TextSize GdiTextRenderer::Measure(const std::string &utf8, int height, int weight)
 {
+	if (m_surfaces.empty())
+		return {};
+	HDC dc = m_surfaces.front().dc;
 	std::wstring text = Widen(utf8);
-	SelectObject(m_dc, Font(height, weight));
+	SelectObject(dc, Font(height, weight));
 	SIZE size{};
-	GetTextExtentPoint32W(m_dc, text.c_str(), static_cast<int>(text.size()), &size);
+	GetTextExtentPoint32W(dc, text.c_str(), static_cast<int>(text.size()), &size);
 	return {size.cx, size.cy};
 }
 
-void GdiTextRenderer::Draw(Canvas &, int x, int y, const std::string &utf8, int height, uint32_t rgb, int weight)
+void GdiTextRenderer::Draw(Canvas &canvas, int x, int y, const std::string &utf8, int height, uint32_t rgb, int weight)
 {
+	HDC dc = Target(canvas, x, y);
+	if (!dc)
+		return;
 	std::wstring text = Widen(utf8);
-	SelectObject(m_dc, Font(height, weight));
-	SetTextColor(m_dc, RGB((rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff));
-	SetBkMode(m_dc, TRANSPARENT);
-	SetTextAlign(m_dc, TA_LEFT | TA_TOP);
-	TextOutW(m_dc, x, y, text.c_str(), static_cast<int>(text.size()));
+	SelectObject(dc, Font(height, weight));
+	SetTextColor(dc, RGB((rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff));
+	SetBkMode(dc, TRANSPARENT);
+	SetTextAlign(dc, TA_LEFT | TA_TOP);
+	TextOutW(dc, x, y, text.c_str(), static_cast<int>(text.size()));
 	GdiFlush(); // the canvas is the DIB's memory; finish before the next CPU blit
 }
 
-void GdiTextRenderer::DrawWrapped(Canvas &, const Rect &area, const std::string &utf8, int height, uint32_t rgb, int weight)
+void GdiTextRenderer::DrawWrapped(Canvas &canvas, const Rect &area, const std::string &utf8, int height, uint32_t rgb, int weight)
 {
+	int x = area.x, y = area.y;
+	HDC dc = Target(canvas, x, y);
+	if (!dc)
+		return;
 	std::wstring text = Widen(utf8);
-	SelectObject(m_dc, Font(height, weight));
-	SetTextColor(m_dc, RGB((rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff));
-	SetBkMode(m_dc, TRANSPARENT);
-	RECT rect{area.x + 2, area.y, area.x + area.w, area.y + area.h};
-	DrawTextW(m_dc, text.c_str(), static_cast<int>(text.size()), &rect, DT_LEFT | DT_TOP | DT_WORDBREAK | DT_NOPREFIX);
+	SelectObject(dc, Font(height, weight));
+	SetTextColor(dc, RGB((rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff));
+	SetBkMode(dc, TRANSPARENT);
+	RECT rect{x + 2, y, x + area.w, y + area.h};
+	DrawTextW(dc, text.c_str(), static_cast<int>(text.size()), &rect, DT_LEFT | DT_TOP | DT_WORDBREAK | DT_NOPREFIX);
 	GdiFlush();
 }

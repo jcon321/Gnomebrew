@@ -6,10 +6,13 @@
 // displayServerSelectionScreen (@100275d0). After PLAY it continues as eqgame.exe
 // does: world authentication and character select (EQUI_CharacterSelect.xml,
 // CEverQuest::DoCharacterSelection @0053b9cf). Portable: the platform layer feeds
-// input events, calls Update/Render, and presents the 640x480 canvas.
+// input events in window pixels, calls Update/Render with a canvas the size of the
+// window (the game resolution), and presents it.
 
 #include "art.h"
+#include "charcreate.h"
 #include "charselect_view.h"
+#include "creation_rules.h"
 #include "eqtext.h"
 #include "login_client.h"
 #include "sidl.h"
@@ -27,6 +30,7 @@ struct FrontEndConfig
 	std::string login_host = "127.0.0.1";
 	uint16_t login_port = 6000;
 	std::string username; // pre-filled on the login screen
+	int last_character = 0; // character select slot to start on (LastCharSel)
 	uint16_t world_port = 9000;
 };
 
@@ -50,13 +54,21 @@ public:
 	static constexpr int Width = 640;
 	static constexpr int Height = 480;
 
-	enum class Screen { Start, Login, ServerSelect, CharacterSelect, Zone };
+	enum class Screen { Start, Login, ServerSelect, CharacterSelect, CharacterCreate, Zone };
 
 	FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, const FrontEndConfig &config, GameData ui = {});
 
 	void OnEvent(const InputEvent &event);
 	void Update(uint64_t now_ms);
 	void Render(Canvas &canvas, uint64_t now_ms);
+
+	// The window's size. eqmain's screens are 640x480 art (and the zone screen is a 640x480
+	// stand-in), drawn at their native size in the middle of the window; character select
+	// fills it, like eqgame, with the SIDL windows at their real pixel size.
+	void SetGameResolution(int width, int height);
+	int ScreenWidth() const { return m_game_width; }
+	int ScreenHeight() const { return m_game_height; }
+	Rect ScreenArea() const; // where the current screen is laid out, in window pixels
 
 	void SetCursorVisible(bool visible) { m_cursor_visible = visible; }
 	bool QuitRequested() const { return m_quit; }
@@ -66,8 +78,12 @@ public:
 	const std::string &DialogText() const { return m_dialog.text; }
 	const std::vector<CharacterSlot> &Characters() const { return m_world.Characters(); }
 	int SelectedCharacter() const { return m_selected_slot; }
+	int LastCharacter() const { return m_config.last_character; } // the slot to remember (LastCharSel)
 	const ZoneSession &Zone() const { return m_zone; }
 	const CharacterSelectView *CharacterScene() const { return m_charselect_view.get(); }
+	CharacterCreation *Creation() { return m_creation.get(); }
+	// For tools: the window-pixel center of a visible SIDL control on character select or creation.
+	bool ControlCenter(const std::string &screen_id, int &x, int &y) const;
 
 	std::function<void(const std::string &)> log;
 
@@ -96,6 +112,7 @@ private:
 	void LoginEvent(const InputEvent &event);
 	void ServerSelectEvent(const InputEvent &event);
 	void CharacterSelectEvent(const InputEvent &event);
+	void CharacterCreateEvent(const InputEvent &event);
 	void ZoneEvent(const InputEvent &event);
 
 	void SubmitLogin();
@@ -104,6 +121,9 @@ private:
 	void HandleSessionEvents(const std::vector<LoginSession::Event> &events);
 	void HandleWorldEvents(const std::vector<WorldSession::Event> &events);
 	void EnterCharacterSelect();
+	void EnterCharacterCreate();
+	void ReturnToCharacterSelect();
+	void ShowCreatedCharacter(); // the creation's choices in the 3D scene
 	void RefreshCharacterButtons();
 	void SelectSlot(int slot);
 	void EnterWorldSelected();
@@ -117,8 +137,11 @@ private:
 	void RenderLogin(Canvas &canvas, uint64_t now_ms);
 	void RenderServerSelect(Canvas &canvas);
 	void RenderCharacterSelect(Canvas &canvas, uint64_t now_ms);
+	void RenderCharacterCreate(Canvas &canvas, uint64_t now_ms);
+	void RenderScene(Canvas &canvas, uint64_t now_ms); // the 3D character select scene, or black
 	void RenderZone(Canvas &canvas, uint64_t now_ms);
 	void RenderDialog(Canvas &canvas);
+	Rect DialogArea() const; // the 640x480 area the dialog is laid out in, centered on the screen
 
 	ButtonArt Art(int style);
 	void Log(const std::string &line);
@@ -132,7 +155,8 @@ private:
 	Dialog m_dialog;
 	bool m_quit = false;
 	bool m_cursor_visible = true;
-	int m_mouse_x = 0, m_mouse_y = 0;
+	int m_mouse_x = 0, m_mouse_y = 0; // window pixels
+	int m_game_width = Width, m_game_height = Height;
 
 	// start screen
 	std::vector<Button> m_start_buttons; // CONNECT, ACCOUNT, CREDITS, OPTIONS, EXIT
@@ -162,6 +186,11 @@ private:
 	bool m_entering_world = false;
 	std::unique_ptr<CharacterSelectView> m_charselect_view;
 	bool m_scene_error_logged = false;
+
+	// character creation
+	CreationRules m_rules;
+	std::unique_ptr<CharacterCreation> m_creation;
+	bool m_creating = false; // waiting for the world server's answer
 
 	// zone (stand-in for the 3D view)
 	struct LogLine

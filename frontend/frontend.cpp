@@ -39,6 +39,7 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 		m_charselect_view = std::make_unique<CharacterSelectView>(m_ui.eq_dir);
 		m_charselect_view->StartLoading();
 	}
+	m_rules.CheckInstall(m_ui.eq_dir);
 	EnterStart();
 }
 
@@ -162,7 +163,8 @@ void FrontEnd::ShowMessage(const std::string &text, std::function<void(bool)> on
 	m_dialog.ok.label = m_strings.Get("SISATEXT_OKBUTTON");
 	m_dialog.label_height = FitTextHeight(m_text, {m_dialog.ok.label}, 0x50, 0x22);
 	m_dialog.ok.text_height = m_dialog.label_height;
-	m_dialog.ok.OnMouse({InputEvent::Type::MouseMove, m_mouse_x, m_mouse_y});
+	Rect area = DialogArea();
+	m_dialog.ok.OnMouse({InputEvent::Type::MouseMove, m_mouse_x - area.x, m_mouse_y - area.y});
 }
 
 void FrontEnd::ShowQuestion(const std::string &text, std::function<void(bool)> on_close)
@@ -214,26 +216,34 @@ void FrontEnd::OnEvent(const InputEvent &event)
 		m_mouse_y = event.y;
 	}
 
+	// Handlers see positions relative to the area they're laid out in.
+	Rect area = m_dialog.open ? DialogArea() : ScreenArea();
+	InputEvent local = event;
+	local.x -= area.x;
+	local.y -= area.y;
 	if (m_dialog.open) {
-		DialogEvent(event);
+		DialogEvent(local);
 		return;
 	}
 
 	switch (m_screen) {
 	case Screen::Start:
-		StartEvent(event);
+		StartEvent(local);
 		break;
 	case Screen::Login:
-		LoginEvent(event);
+		LoginEvent(local);
 		break;
 	case Screen::ServerSelect:
-		ServerSelectEvent(event);
+		ServerSelectEvent(local);
 		break;
 	case Screen::CharacterSelect:
-		CharacterSelectEvent(event);
+		CharacterSelectEvent(local);
+		break;
+	case Screen::CharacterCreate:
+		CharacterCreateEvent(local);
 		break;
 	case Screen::Zone:
-		ZoneEvent(event);
+		ZoneEvent(local);
 		break;
 	}
 }
@@ -634,9 +644,26 @@ void FrontEnd::RenderServerSelect(Canvas &canvas)
 	m_play.Draw(canvas, m_text);
 }
 
+void FrontEnd::SetGameResolution(int width, int height)
+{
+	m_game_width = std::max(width, static_cast<int>(Width));
+	m_game_height = std::max(height, static_cast<int>(Height));
+}
+
+Rect FrontEnd::DialogArea() const
+{
+	return {(m_game_width - Width) / 2, (m_game_height - Height) / 2, Width, Height};
+}
+
+Rect FrontEnd::ScreenArea() const
+{
+	if (m_screen == Screen::CharacterSelect || m_screen == Screen::CharacterCreate)
+		return {0, 0, m_game_width, m_game_height};
+	return DialogArea();
+}
+
 void FrontEnd::RenderDialog(Canvas &canvas)
 {
-	canvas.DarkenAll();
 	const Image &image = m_art.Get(m_dialog.medium ? "dialogmedium.bmp" : "dialog.bmp");
 	canvas.Blit(image, m_dialog.medium ? 0x55 : 0xaa, 0x32, true);
 
@@ -653,26 +680,38 @@ void FrontEnd::RenderDialog(Canvas &canvas)
 
 void FrontEnd::Render(Canvas &canvas, uint64_t now_ms)
 {
+	// The 640x480 screens sit in the middle of the window, black around them.
+	Rect area = ScreenArea();
+	if (area.w < canvas.Width() || area.h < canvas.Height())
+		canvas.Fill({0, 0, canvas.Width(), canvas.Height()}, 0x000000);
+	Canvas screen(canvas.Row(area.y) + area.x, area.w, area.h, canvas.Stride());
 	switch (m_screen) {
 	case Screen::Start:
-		RenderStart(canvas);
+		RenderStart(screen);
 		break;
 	case Screen::Login:
-		RenderLogin(canvas, now_ms);
+		RenderLogin(screen, now_ms);
 		break;
 	case Screen::ServerSelect:
-		RenderServerSelect(canvas);
+		RenderServerSelect(screen);
 		break;
 	case Screen::CharacterSelect:
-		RenderCharacterSelect(canvas, now_ms);
+		RenderCharacterSelect(screen, now_ms);
+		break;
+	case Screen::CharacterCreate:
+		RenderCharacterCreate(screen, now_ms);
 		break;
 	case Screen::Zone:
-		RenderZone(canvas, now_ms);
+		RenderZone(screen, now_ms);
 		break;
 	}
 
-	if (m_dialog.open)
-		RenderDialog(canvas);
+	if (m_dialog.open) {
+		canvas.DarkenAll();
+		Rect area = DialogArea();
+		Canvas dialog(canvas.Row(area.y) + area.x, area.w, area.h, canvas.Stride());
+		RenderDialog(dialog);
+	}
 
 	if (m_cursor_visible)
 		canvas.Blit(m_art.Get("cursor.bmp"), m_mouse_x, m_mouse_y, true);
@@ -711,10 +750,28 @@ void FrontEnd::HandleWorldEvents(const std::vector<WorldSession::Event> &events)
 			}
 			EnterZoneScreen();
 			break;
-		case Type::CharacterCreated:
+		case Type::CharacterCreated: {
+			// The new list is already in; character select starts on the new character.
+			m_creating = false;
+			if (m_dialog.open)
+				CloseDialog(true);
+			const auto &slots = m_world.Characters();
+			for (int i = 0; i < static_cast<int>(slots.size()); ++i)
+				if (slots[i].name == event.text)
+					m_config.last_character = i;
 			break;
+		}
 		case Type::CreateFailed:
-			ShowMessage("Character creation failed: " + event.text);
+			if (m_creating && m_creation) {
+				// HandleNameApprovalResponse: "Name has been rejected", back to the first screen.
+				m_creating = false;
+				if (m_dialog.open)
+					CloseDialog(true);
+				m_creation->NameRejected();
+				ShowMessage(m_creation->RejectedText());
+			}
+			else
+				ShowMessage("Character creation failed: " + event.text);
 			break;
 		case Type::ZoneUnavailable:
 			m_entering_world = false;
@@ -741,21 +798,26 @@ void FrontEnd::EnterCharacterSelect()
 	m_submitting = false;
 	m_entering_world = false;
 
-	// Start on the first character, like a fresh eqclient.ini (LastCharSel remembers it in the real client).
 	// CCharacterSelect::AlternateBackgroundAvailable: Rotate starts checked.
 	if (auto *rotate = m_charselect.Find("Rotate_Button"))
 		rotate->checked = true;
-	if (m_charselect_view)
+	if (m_charselect_view) {
 		m_charselect_view->SetRotate(true);
+		m_charselect_view->SetCloseUp(false);
+	}
 
+	// Start on the remembered slot (LastCharSel), else the first character.
 	m_selected_slot = -1;
 	const auto &slots = m_world.Characters();
-	for (int i = 0; i < CharacterButtons && i < static_cast<int>(slots.size()); ++i) {
-		if (!slots[i].Empty()) {
+	int last = m_config.last_character;
+	if (last >= 0 && last < CharacterButtons && last < static_cast<int>(slots.size()) && !slots[last].Empty())
+		m_selected_slot = last;
+	for (int i = 0; m_selected_slot < 0 && i < CharacterButtons && i < static_cast<int>(slots.size()); ++i) {
+		if (!slots[i].Empty())
 			m_selected_slot = i;
-			break;
-		}
 	}
+	if (m_selected_slot >= 0)
+		m_config.last_character = m_selected_slot;
 	RefreshCharacterButtons();
 }
 
@@ -807,12 +869,13 @@ void FrontEnd::SelectSlot(int slot)
 	if (slot < 0 || slot >= CharacterButtons)
 		return;
 	if (slot >= static_cast<int>(slots.size()) || slots[slot].Empty()) {
-		// The real client opens character creation here.
+		// An empty slot is "Create New Character".
 		RefreshCharacterButtons();
-		ShowMessage("Character creation isn't written yet.");
+		EnterCharacterCreate();
 		return;
 	}
 	m_selected_slot = slot;
+	m_config.last_character = slot; // DoCharacterSelection writes LastCharSel when the selection changes
 	RefreshCharacterButtons();
 }
 
@@ -900,13 +963,9 @@ void FrontEnd::RenderCharacterSelect(Canvas &canvas, uint64_t now_ms)
 {
 	// The zone and the selected character in 3D behind the window (CharacterSelectView).
 	const auto &slots = m_world.Characters();
+	RenderScene(canvas, now_ms);
 	bool scene = m_charselect_view && m_charselect_view->Loaded() && m_charselect_view->Error().empty();
-	if (m_charselect_view && m_charselect_view->Loaded() && !m_charselect_view->Error().empty() && !m_scene_error_logged) {
-		Log("character select scene: " + m_charselect_view->Error());
-		m_scene_error_logged = true;
-	}
 	if (scene) {
-		m_charselect_view->Render(canvas, now_ms);
 		// TurnCharacterNameSpritesOn: the name floats over the character's head.
 		int x, y;
 		if (m_selected_slot >= 0 && m_selected_slot < static_cast<int>(slots.size()) && m_charselect_view->NamePosition(x, y)) {
@@ -917,25 +976,128 @@ void FrontEnd::RenderCharacterSelect(Canvas &canvas, uint64_t now_ms)
 		}
 	}
 	else {
-		canvas.Fill({0, 0, Width, Height}, 0x000000);
 		if (m_selected_slot >= 0 && m_selected_slot < static_cast<int>(slots.size())) {
 			const CharacterSlot &c = slots[m_selected_slot];
-			int center = (m_charselect.Bounds().Right() + Width) / 2;
+			int center = (m_charselect.Bounds().Right() + canvas.Width()) / 2;
 			auto centered = [&](int y, const std::string &line, int height, uint32_t color) {
 				TextSize size = m_text.Measure(line, height);
 				m_text.Draw(canvas, center - size.w / 2, y, line, height, color);
 			};
-			centered(180, c.name, 20, 0xffffff);
-			centered(210, "Level " + std::to_string(c.level) + " " + RaceName(c.race) + " " + ClassName(c.class_id), 14,
+			int top = canvas.Height() * 3 / 8;
+			centered(top, c.name, 20, 0xffffff);
+			centered(top + 30, "Level " + std::to_string(c.level) + " " + RaceName(c.race) + " " + ClassName(c.class_id), 14,
 				0xd0d0d0);
 			if (m_charselect_view && !m_charselect_view->Loaded())
-				centered(440, "Loading...", 12, 0x808080);
+				centered(canvas.Height() - 40, "Loading...", 12, 0x808080);
 		}
 	}
 	if (m_entering_world)
 		m_text.Draw(canvas, m_charselect.Bounds().Right() + 20, 20, "Entering world...", 14, 0xffffff);
 
 	m_charselect.Draw(canvas, m_text, *m_ui.textures, now_ms);
+}
+
+// ---------------------------------------------------------------- character creation (eqgame)
+
+void FrontEnd::EnterCharacterCreate()
+{
+	if (!m_creation) {
+		auto creation = std::make_unique<CharacterCreation>(m_rules, m_ui.eqstr);
+		std::string error;
+		if (!creation->Build(*m_ui.definitions, error)) {
+			ShowMessage(error);
+			return;
+		}
+		m_creation = std::move(creation);
+	}
+	// DoNewCharacterCreation: CCharacterCreation::Activate over the character select scene.
+	m_rules.SetServerType(m_world.ServerType());
+	m_rules.SetStrictNames(m_world.StrictNames());
+	m_creation->Activate(m_game_width, m_game_height, m_world.Expansions());
+	m_creating = false;
+	m_screen = Screen::CharacterCreate;
+	ShowCreatedCharacter();
+}
+
+void FrontEnd::ReturnToCharacterSelect()
+{
+	m_screen = Screen::CharacterSelect;
+	if (m_charselect_view) {
+		m_charselect_view->SetCloseUp(false);
+		const auto *rotate = m_charselect.Find("Rotate_Button");
+		m_charselect_view->SetRotate(!rotate || rotate->checked);
+	}
+	RefreshCharacterButtons();
+}
+
+void FrontEnd::ShowCreatedCharacter()
+{
+	if (!m_charselect_view || !m_creation)
+		return;
+	render::CharacterAppearance appearance = m_creation->Appearance();
+	m_charselect_view->SetCharacter(&appearance, m_creation->ClassId());
+	m_charselect_view->SetRotate(m_creation->Rotate());
+	m_charselect_view->SetCloseUp(m_creation->PickingFace());
+}
+
+void FrontEnd::CharacterCreateEvent(const InputEvent &event)
+{
+	if (m_creating)
+		return;
+	switch (m_creation->OnEvent(event)) {
+	case CharacterCreation::Action::Back:
+		ReturnToCharacterSelect();
+		return;
+	case CharacterCreation::Action::Message:
+		ShowMessage(m_creation->Message());
+		break;
+	case CharacterCreation::Action::Submit: {
+		// SubmitNameToWorld: OP_ApproveName, then (approved) OP_CharacterCreate.
+		NewCharacter character = m_creation->Character();
+		if (m_world.CreateCharacter(character)) {
+			m_creating = true;
+			ShowMessage(m_creation->SubmittingText());
+		}
+		else
+			ShowMessage(m_creation->RejectedText());
+		break;
+	}
+	case CharacterCreation::Action::None:
+		break;
+	}
+	ShowCreatedCharacter();
+}
+
+bool FrontEnd::ControlCenter(const std::string &screen_id, int &x, int &y) const
+{
+	const SidlWindow *window = m_screen == Screen::CharacterSelect                 ? &m_charselect
+	                           : m_screen == Screen::CharacterCreate && m_creation ? &m_creation->Window()
+	                                                                               : nullptr;
+	const SidlWindow::Control *control = window ? window->Find(screen_id) : nullptr;
+	if (!control || !window->Shown(*control))
+		return false;
+	x = control->rect.x + control->rect.w / 2;
+	y = control->rect.y + control->rect.h / 2;
+	return true;
+}
+
+void FrontEnd::RenderScene(Canvas &canvas, uint64_t now_ms)
+{
+	bool scene = m_charselect_view && m_charselect_view->Loaded() && m_charselect_view->Error().empty();
+	if (m_charselect_view && m_charselect_view->Loaded() && !m_charselect_view->Error().empty() && !m_scene_error_logged) {
+		Log("character select scene: " + m_charselect_view->Error());
+		m_scene_error_logged = true;
+	}
+	if (scene)
+		m_charselect_view->Render(canvas, now_ms);
+	else
+		canvas.Fill({0, 0, canvas.Width(), canvas.Height()}, 0x000000);
+}
+
+void FrontEnd::RenderCharacterCreate(Canvas &canvas, uint64_t now_ms)
+{
+	RenderScene(canvas, now_ms);
+	m_creation->Draw(canvas, m_text, *m_ui.textures, now_ms);
 }
 
 // ---------------------------------------------------------------- zone (stand-in for eqgame's 3D view)

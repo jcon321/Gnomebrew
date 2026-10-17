@@ -19,10 +19,11 @@ A from-scratch EQMac (TAKP-era) client. Two programs share one core:
 ## Layout
 
 ```
-core/       portable: RDP session, login/world protocol, DES, inflate, PFS (.pak/.s3d), BMP, DDS, TGA, XML, WLD, eqtext.txt
+core/       portable: RDP session, login/world protocol, DES, inflate, PFS (.pak/.s3d), BMP, DDS, TGA, XML, WLD, eqtext.txt,
+            character creation rules
 console/    eqclient
 render/     portable 3D: software rasterizer, textures, zone scenes, sky, skeletons, race models
-frontend/   the front end: canvas, widgets, screens, SIDL UI engine, character select scene (portable)
+frontend/   the front end: canvas, widgets, screens, SIDL UI engine, character select scene, character creation (portable)
             + win32_main.cpp / win32_text.cpp (Windows host)
 tools/      frontend_preview and scene_preview (Linux), cross-check-windows.sh
 third_party/rdplib/  vendored rdplib (MIT, by solar), unmodified
@@ -63,7 +64,9 @@ they also run as-is on Windows 10+.
 
 ## Running the GUI
 
-Put a `my-client.ini` next to `eqclient_gui.exe`:
+All settings live in `my-client.ini` next to `eqclient_gui.exe`. The EQ folder is only read for
+assets; its `eqclient.ini` is never used. On startup the GUI adds any missing keys with their
+defaults, so the file always lists every setting:
 
 ```ini
 [Paths]
@@ -71,24 +74,35 @@ EQDir=C:\TAKP
 
 [Login]
 Server=192.168.0.18:6000
+User=
 
 [Display]
-Scale=2
+Width=1920
+Height=1080
+
+[Defaults]
+LastCharSel=0
 ```
 
 - `EQDir` is the EverQuest folder. It needs `eqfeart*.pak` (the front-end art), `eqtext.txt`
   (the front-end strings), `uifiles/default` (the SIDL UI for character select),
   `eqstr_en.txt` (the server message strings), and for the 3D character select scene
   `load2.s3d`, `load2_obj.s3d`, `sky.s3d` and `global_chr.s3d` / `global4_chr.s3d` /
-  `global7_chr.s3d`. Nothing from
-  the install is copied into this repo. If `EQDir` isn't
+  `global7_chr.s3d`. Only assets are read from it; the client never loads or reads `eqgame.exe`.
+  Nothing from the install is copied into this repo. If `EQDir` isn't
   set, the GUI tries the current folder, then the exe's folder.
 - `Server` is the login server. It isn't read from `eqhost.txt`, so you can't hit the live TAKP
   server by accident.
-- `Scale` is the integer window scale for the 640x480 front end. 0 or missing fits the screen.
+- `Width` and `Height` are the game resolution, which is the window's size (default 1920x1080).
+  Character select is drawn at this size, like eqgame: the SIDL windows at their real pixel size, the
+  3D scene filling the rest. A window that doesn't fit the screen's work area is shrunk to fit.
+- eqmain's screens (start, login, server select, and the zone stand-in for now) are 640x480 art. They're
+  drawn at their native size in the middle of the window, black around them, not scaled.
+- `LastCharSel` is the character select slot to start on. Like the real client's `[Defaults]
+  LastCharSel`, it's saved as you select characters (written when the GUI exits).
 
-Command-line flags override the ini: `--eqdir`, `--login`, `--scale`. The GUI saves the last
-username as `[Login] User=`, and writes a log to `my-client.log` next to the exe.
+Command-line flags override the ini: `--eqdir`, `--login`, `--size WxH`. The GUI saves the last
+username as `[Login] User=` and the selected character as `[Defaults] LastCharSel=`, and writes a log to `my-client.log` next to the exe.
 
 Like the real client on an EQMacEmu server with `auto_create_accounts`, the first login of a new
 name creates the account but is still rejected. Click CONNECT again.
@@ -119,11 +133,13 @@ build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD]
 This drives the real front-end code with scripted input and writes PNG snapshots. Text is
 drawn as outline boxes, since there's no GDI. With a login server it logs in, snapshots server
 select and character select, and presses Enter World (add `charselect` after the password to stop
-at character select instead). It's for checking layout and flow without Windows.
+at character select instead). `create` instead makes an Erudite wizard from the first empty slot,
+snapshots every creation screen and the face picker, submits it, and deletes it again. It's for
+checking layout and flow without Windows.
 
 ```
-build/scene_preview EQDIR OUT.png --char RACE GENDER CLASS [--face F] [--equip M,M,...] [--camera H] [--frames N]
-build/scene_preview EQDIR OUT.png [--zone NAME] [--at X Y Z] [--heading H] [--pitch P] [--frames N]
+build/scene_preview EQDIR OUT.png --char RACE GENDER CLASS [--face F] [--equip M,M,...] [--camera H] [--frames N] [--size WxH]
+build/scene_preview EQDIR OUT.png [--zone NAME] [--at X Y Z] [--heading H] [--pitch P] [--frames N] [--size WxH]
 ```
 
 `scene_preview` renders the 3D view to a PNG: the character select scene for any race, gender,
@@ -163,8 +179,13 @@ loads the same files:
 - `ButtonDrawTemplate`: Normal, Pressed, Flyby, Disabled and PressedFlyby animations.
 - `WindowDrawTemplate`: a background texture tiled over the client area, plus 12 border pieces
   with corners at natural size and edges stretched between them.
-- `Screen`, `Button`, `Label` and `StaticAnimation` pieces. A child's `Location` is relative to
-  the window's client area.
+- `Screen` (nested too), `Button`, `Label`, `StaticAnimation`, `Editbox` and `STMLbox` pieces. A
+  child's `Location` is relative to its parent's client area (`RelativePosition` false: to the
+  screen). `AutoStretch` pieces sit at anchor offsets from the parent's edges, so they follow it
+  when it's moved or resized. Static animations draw under the other pieces; otherwise pieces
+  stack in the order they're listed.
+- Title bars (`Style_Titlebar`) use the template's `Titlebar` pieces, between the side borders.
+- STML is drawn as plain text: `<BR>` breaks the line and other tags are dropped.
 - SIDL `Font` numbers index the fonts `CDisplay::InitDDraw` creates: Arial 10, 12, 14, 15, 16
   and 20, numbered from 1, with 3 (14px) as the schema default.
 
@@ -192,9 +213,12 @@ does the same, from these decompiled functions:
   body textures (`HUMCH0201.BMP` is the chest in material 2, chain), and tints multiply them. Models
   are scaled to their race's default height.
 
-The renderer (`render/`) is a portable software rasterizer drawing into the same 640x480 surface as
-the front end, standing in for `eqgfx_dx8.dll`: perspective-correct textures with mipmaps, masked and
-blended materials, vertex lighting, a sky pass, and strips rasterized on worker threads. Things
+The renderer (`render/`) is a portable software rasterizer drawing into the same surface as the
+front end, standing in for `eqgfx_dx8.dll`: perspective-correct textures with mipmaps and bilinear
+filtering where they're magnified, masked and blended materials, vertex lighting, and strips
+rasterized on worker threads. The sky is a background layer: it's drawn after the solid geometry,
+only on pixels the zone left empty, and before translucent surfaces, so a hidden sky costs nothing.
+At 1920x1080 a character select frame takes about 24-31 ms on a 4-core VM. Things
 learned about the files:
 
 - WLD x/y are the server's y/x (z is up; +x is north), checked against the EQEmu map `load2.map`.
@@ -204,6 +228,42 @@ learned about the files:
 - Zone lighting is the `lights.wld` point lights (linear falloff) over a flat ambient, plus the meshes'
   small additive vertex colors. It's an approximation of the real client's lighting.
 - TAKP's repacked `sky.s3d` names its filename table with CRC `0xFFFFFFFF` instead of `0x61580AC9`.
+
+## Character creation
+
+Clicking an empty slot ("Create New Character") opens `CharacterCreation` from
+`EQUI_CharacterCreate.xml` over the character select scene, as `CEverQuest::DoNewCharacterCreation`
+(@0053ae99) does. `frontend/charcreate.cpp` ports `CCharacterCreation`:
+
+- Four screens behind Back and Next: race, class, abilities, name, face and gender; deity; starting
+  city; and the welcome text. `ActivateScreen` lays them out for the screen size. The first screen
+  puts race and class at the left edge, the name panel at the top center and the abilities at the
+  right edge; the others are 640x440 and centered.
+- Opening the screen picks a random race, gender, face and class, like `Activate`. A race picks a new
+  random face and class; a class resets the stats, deity and city to the first allowed ones (humans
+  and half elves get a random city among the allowed ones, as the real client does).
+- Abilities start at the race's base plus the class's bonus (green), which comes out of 50 points;
+  each can go 25 over that, 150 at most. The stat's name button puts everything left into it. Next
+  insists the points are spent and the name is 4 to 15 letters.
+- Get Name is the client's own `CreateName`: syllables by race plus a feminine ending for women. The
+  name is sent as a capital followed by lower case, the only form world approves.
+- Set Face opens `FacePickWindow` with the camera close on the face. Face cycles 0..7; the old models
+  have no separate hair, eyes or beard, so those rows don't change anything.
+- Next on the last screen sends `OP_ApproveName` and, once it's approved, `OP_CharacterCreate` with
+  the start zone `EQ_PC::InitPlayerStart` picks. Character select then opens on the new character.
+
+The rules are built into `core/creation_rules.cpp`: which classes a race can be, race base stats,
+class bonus points, allowed deities and cities, and `CreateName`'s syllables. The tables were taken
+once from TAKP's eqgame.exe and checked to give the same answer as the exe's for every race, class,
+deity, city and server type. As in the exe, Erudite shadow knights, necromancers and Cazic Thule
+need `paineel.s3d` in the EQ folder. `GetCharCreateText`, which picks the welcome text's strings by
+race, class, deity and city through about a thousand lines of branches, is a table of string ids
+instead. It was generated by compiling the decompiled function and running it for every allowed
+combination. Every race, class, deity and start zone combination the client allows matches world's
+`char_create_combinations` table (all 317; the server's extra rows are Berserkers, which this client
+doesn't know).
+
+Not yet: the real client's messages use `CConfirmationDialog`; these use the front end's dialog.
 
 ## Protocol
 

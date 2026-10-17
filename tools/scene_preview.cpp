@@ -1,17 +1,19 @@
 // scene_preview (Linux): renders the 3D view to PNG files without a window, to
 // check the zone and model loaders and the rasterizer.
 //
-//   scene_preview EQDIR OUT.png [--zone NAME] [--at X Y Z] [--heading H] [--pitch P] [--frames N]
-//   scene_preview EQDIR OUT.png --char RACE GENDER CLASS [--face F] [--equip M,M,...] [--camera H] [--frames N]
+//   scene_preview EQDIR OUT.png [--zone NAME] [--at X Y Z] [--heading H] [--pitch P] [--frames N] [--size WxH]
+//   scene_preview EQDIR OUT.png --char RACE GENDER CLASS [--face F] [--equip M,M,...] [--camera H] [--frames N] [--size WxH]
 //
 // The first form flies a free camera through a zone: X Y Z are server
 // coordinates (/loc order is Y X Z), heading is 0..512. The second renders the
 // character select scene for a race/gender/class, with the camera at heading H.
-// --frames renders N times and prints the average frame time.
+// --frames renders N times and prints the average frame time. --size picks the
+// image size (default 640x480).
 
 #include "charselect_view.h"
 #include "png_writer.h"
 #include "rasterizer.h"
+#include "sky.h"
 #include "zone_scene.h"
 
 #include <chrono>
@@ -24,7 +26,7 @@
 namespace
 {
 	int CharacterSelect(const std::string &eq_dir, const std::string &out, const render::CharacterAppearance &appearance,
-		uint8_t class_id, float camera_heading, int frames)
+		uint8_t class_id, float camera_heading, int frames, int Width, int Height)
 	{
 		auto t0 = std::chrono::steady_clock::now();
 		CharacterSelectView view(eq_dir);
@@ -38,8 +40,7 @@ namespace
 		printf("loaded %s in %.0f ms\n", view.ZoneName().c_str(),
 			std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
 
-		constexpr int Width = 640, Height = 480;
-		std::vector<uint32_t> pixels(Width * Height);
+		std::vector<uint32_t> pixels(static_cast<size_t>(Width) * Height);
 		Canvas canvas(pixels.data(), Width, Height, Width);
 		view.SetRotate(false);
 		view.SetCharacter(&appearance, class_id);
@@ -72,6 +73,7 @@ int main(int argc, char **argv)
 	std::string eq_dir = argv[1], out = argv[2], zone = "load2";
 	float server_x = 1475, server_y = 600, server_z = -175, heading = 256, pitch = 0;
 	int frames = 1;
+	int width = 640, height = 480;
 	bool character = false;
 	render::CharacterAppearance appearance;
 	int class_id = 1;
@@ -109,10 +111,12 @@ int main(int argc, char **argv)
 			pitch = static_cast<float>(atof(argv[++i]));
 		else if (arg == "--frames" && i + 1 < argc)
 			frames = atoi(argv[++i]);
+		else if (arg == "--size" && i + 1 < argc)
+			sscanf(argv[++i], "%dx%d", &width, &height);
 	}
 
 	if (character)
-		return CharacterSelect(eq_dir, out, appearance, static_cast<uint8_t>(class_id), camera_heading, frames);
+		return CharacterSelect(eq_dir, out, appearance, static_cast<uint8_t>(class_id), camera_heading, frames, width, height);
 
 	auto t0 = std::chrono::steady_clock::now();
 	render::ZoneScene scene;
@@ -127,20 +131,29 @@ int main(int argc, char **argv)
 	for (const auto &warning : scene.Warnings())
 		printf("  %s\n", warning.c_str());
 
-	constexpr int Width = 640, Height = 480;
+	const int Width = width, Height = height;
 	render::Camera camera;
 	camera.position = {server_y, server_x, server_z}; // WLD x/y are the server's y/x
 	float yaw = render::HeadingToRadians(heading), tilt = pitch * render::Pi / 180;
 	camera.forward = {std::cos(yaw) * std::cos(tilt), std::sin(yaw) * std::cos(tilt), std::sin(tilt)};
 
+	render::Sky sky;
+	if (!sky.Load(eq_dir, 1, error))
+		printf("  no sky: %s\n", error.c_str());
+
 	render::Rasterizer rasterizer;
-	std::vector<uint32_t> pixels(Width * Height);
+	std::vector<uint32_t> pixels(static_cast<size_t>(Width) * Height);
 	double total = 0;
 	for (int f = 0; f < frames; ++f) {
 		auto start = std::chrono::steady_clock::now();
 		rasterizer.Begin(Width, Height, camera);
 		scene.Draw(rasterizer, 0);
-		rasterizer.Finish(pixels.data(), Width, 0x203040);
+		if (sky.Loaded()) {
+			rasterizer.BeginBackground();
+			sky.Draw(rasterizer, 0);
+			rasterizer.EndBackground();
+		}
+		rasterizer.Finish(pixels.data(), Width, sky.Loaded() ? sky.HorizonColor() : 0x203040);
 		total += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
 	}
 	printf("%zu triangles drawn, %.1f ms per frame\n", rasterizer.TriangleCount(), total / frames);

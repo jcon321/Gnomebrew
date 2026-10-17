@@ -38,6 +38,7 @@ add_library(eqcore STATIC
     core/xml.cpp
     core/dds.cpp
     core/wld.cpp
+    core/creation_rules.cpp
 )
 target_include_directories(eqcore PUBLIC core)
 target_link_libraries(eqcore PUBLIC rdplib)
@@ -75,6 +76,7 @@ add_library(eqfrontend STATIC
     frontend/frontend.cpp
     frontend/sidl.cpp
     frontend/charselect_view.cpp
+    frontend/charcreate.cpp
 )
 target_include_directories(eqfrontend PUBLIC frontend)
 target_link_libraries(eqfrontend PUBLIC eqcore eqrender)

@@ -115,6 +115,7 @@ namespace render
 		m_tan_y = m_tan_x * height / width;
 		m_focal = (width * 0.5f) / m_tan_x;
 		m_fog_scale = camera.fog && camera.fog_end > camera.fog_start ? 1.0f / (camera.fog_end - camera.fog_start) : 0;
+		m_background = false;
 		m_triangles.clear();
 		m_depth.resize(static_cast<size_t>(width) * height);
 		m_bins.resize((height + StripHeight - 1) / StripHeight);
@@ -122,7 +123,7 @@ namespace render
 
 	bool Rasterizer::SphereVisible(const Vec3 &center, float radius) const
 	{
-		Vec3 d = center - m_camera.position;
+		Vec3 d = center - Eye();
 		float x = Dot(d, m_right), y = Dot(d, m_up), z = Dot(d, m_forward);
 		if (z + radius < m_camera.near_plane || z - radius > m_camera.far_plane)
 			return false;
@@ -149,9 +150,10 @@ namespace render
 		const Material &material)
 	{
 		m_view.resize(vertex_count);
+		Vec3 eye = Eye();
 		for (size_t i = 0; i < vertex_count; ++i) {
 			const Vertex &in = vertices[i];
-			Vec3 d = in.position - m_camera.position;
+			Vec3 d = in.position - eye;
 			ViewVertex &out = m_view[i];
 			out.x = Dot(d, m_right);
 			out.y = Dot(d, m_up);
@@ -234,7 +236,7 @@ namespace render
 			attr[i][3] = in[i]->r;
 			attr[i][4] = in[i]->g;
 			attr[i][5] = in[i]->b;
-			attr[i][6] = m_fog_scale > 0 ? std::clamp((in[i]->z - m_camera.fog_start) * m_fog_scale, 0.0f, 1.0f) : 0;
+			attr[i][6] = m_fog_scale > 0 && !m_background ? std::clamp((in[i]->z - m_camera.fog_start) * m_fog_scale, 0.0f, 1.0f) : 0;
 			far_depth = std::max(far_depth, in[i]->z);
 		}
 
@@ -274,6 +276,7 @@ namespace render
 		tri.row_start = row_start;
 		tri.row_end = row_end;
 		tri.depth = far_depth;
+		tri.background = m_background;
 		m_triangles.push_back(tri);
 	}
 
@@ -316,24 +319,55 @@ namespace render
 			return (r << 16) | (g << 8) | b;
 		}
 
+		// Packed 0xAARRGGBB lerp, t 0..256: two channels per multiply.
+		inline uint32_t Lerp(uint32_t a, uint32_t b, uint32_t t)
+		{
+			uint32_t rb = (((a & 0xff00ff) * (256 - t) + (b & 0xff00ff) * t) >> 8) & 0xff00ff;
+			uint32_t ag = (((a >> 8) & 0xff00ff) * (256 - t) + ((b >> 8) & 0xff00ff) * t) & 0xff00ff00;
+			return rb | ag;
+		}
+
+		// Bilinear sample, like D3DTEXF_LINEAR. u, v are level-0 texels plus the positive
+		// bias that keeps them out of negative numbers; texel centers are at +0.5.
+		inline uint32_t Sample(const uint32_t *texels, float u, float v, float scale, int width_mask, int height_mask,
+			int row_shift)
+		{
+			int fu = static_cast<int>(u * scale) - 128; // 8.8 fixed point at this level
+			int fv = static_cast<int>(v * scale) - 128;
+			int x0 = (fu >> 8) & width_mask, y0 = (fv >> 8) & height_mask;
+			int x1 = (x0 + 1) & width_mask, y1 = (y0 + 1) & height_mask;
+			const uint32_t *row0 = texels + (y0 << row_shift), *row1 = texels + (y1 << row_shift);
+			uint32_t tx = static_cast<uint32_t>(fu & 0xff), ty = static_cast<uint32_t>(fv & 0xff);
+			return Lerp(Lerp(row0[x0], row0[x1], tx), Lerp(row1[x0], row1[x1], tx), ty);
+		}
+
 		struct Span
 		{
 			float iw, uw, vw, r, g, b, fog;
 			float diw, duw, dvw, dr, dg, db, dfog;
 		};
 
-		template <Blend Mode, bool Textured>
+		// Filtered: bilinear (where the texture is magnified); otherwise the nearest texel
+		// of the mip level, which is enough once texels are pixel-sized or smaller.
+		template <Blend Mode, bool Textured, bool Filtered, bool Background>
 		void DrawSpan(Span s, int count, uint32_t *pixels, float *depth, const uint32_t *texels, int level, int width_mask,
 			int height_mask, int row_shift, float bias_u, float bias_v, uint32_t fog_color, int opacity)
 		{
+			float scale = 256.0f / static_cast<float>(1 << level);
 			for (int i = 0; i < count; ++i) {
-				if (s.iw > depth[i]) {
+				if (Background ? depth[i] == 0 : s.iw > depth[i]) {
 					uint32_t c;
 					if (Textured) {
 						float w = 1.0f / s.iw;
-						int tx = (static_cast<int>(s.uw * w + bias_u) >> level) & width_mask;
-						int ty = (static_cast<int>(s.vw * w + bias_v) >> level) & height_mask;
-						uint32_t texel = texels[(ty << row_shift) + tx];
+						uint32_t texel;
+						if (Filtered)
+							texel = Sample(texels, s.uw * w + bias_u, s.vw * w + bias_v, scale, width_mask, height_mask,
+								row_shift);
+						else {
+							int tx = (static_cast<int>(s.uw * w + bias_u) >> level) & width_mask;
+							int ty = (static_cast<int>(s.vw * w + bias_v) >> level) & height_mask;
+							texel = texels[(ty << row_shift) + tx];
+						}
 						if (Mode == Blend::Masked && (texel >> 24) < 0x80)
 							goto next;
 						c = Shade(texel, static_cast<int>(s.r) + 1, static_cast<int>(s.g) + 1, static_cast<int>(s.b) + 1);
@@ -347,7 +381,8 @@ namespace render
 						pixels[i] = Add(c, pixels[i]);
 					else {
 						pixels[i] = c;
-						depth[i] = s.iw;
+						if (!Background)
+							depth[i] = s.iw;
 					}
 				}
 			next:
@@ -364,17 +399,31 @@ namespace render
 		using SpanFunction = void (*)(Span, int, uint32_t *, float *, const uint32_t *, int, int, int, int, float, float,
 			uint32_t, int);
 
-		SpanFunction PickSpan(Blend blend, bool textured)
+		template <Blend Mode, bool Background>
+		SpanFunction PickSpan(bool textured, bool filtered)
+		{
+			if (!textured)
+				return DrawSpan<Mode == Blend::Masked ? Blend::Opaque : Mode, false, false, Background>;
+			return filtered ? DrawSpan<Mode, true, true, Background> : DrawSpan<Mode, true, false, Background>;
+		}
+
+		template <Blend Mode>
+		SpanFunction PickSpan(bool textured, bool filtered, bool background)
+		{
+			return background ? PickSpan<Mode, true>(textured, filtered) : PickSpan<Mode, false>(textured, filtered);
+		}
+
+		SpanFunction PickSpan(Blend blend, bool textured, bool filtered, bool background)
 		{
 			switch (blend) {
 			case Blend::Masked:
-				return textured ? DrawSpan<Blend::Masked, true> : DrawSpan<Blend::Opaque, false>;
+				return PickSpan<Blend::Masked>(textured, filtered, background);
 			case Blend::Translucent:
-				return textured ? DrawSpan<Blend::Translucent, true> : DrawSpan<Blend::Translucent, false>;
+				return PickSpan<Blend::Translucent>(textured, filtered, background);
 			case Blend::Additive:
-				return textured ? DrawSpan<Blend::Additive, true> : DrawSpan<Blend::Additive, false>;
+				return PickSpan<Blend::Additive>(textured, filtered, background);
 			default:
-				return textured ? DrawSpan<Blend::Opaque, true> : DrawSpan<Blend::Opaque, false>;
+				return PickSpan<Blend::Opaque>(textured, filtered, background);
 			}
 		}
 	}
@@ -391,7 +440,6 @@ namespace render
 		for (uint32_t index : m_bins[strip]) {
 			const ScreenTriangle &t = m_triangles[index];
 			const Texture *texture = t.texture;
-			SpanFunction span_function = PickSpan(t.blend, texture != nullptr);
 			int max_level = texture ? static_cast<int>(texture->levels.size()) - 1 : 0;
 			float bias_u = texture ? static_cast<float>(texture->width) * 256 : 0;
 			float bias_v = texture ? static_cast<float>(texture->height) * 256 : 0;
@@ -449,6 +497,7 @@ namespace render
 
 				const uint32_t *texels = nullptr;
 				int level = 0, width_mask = 0, height_mask = 0, row_shift = 0;
+				bool filtered = false;
 				if (texture) {
 					// Mip level from the texel footprint of a pixel at the middle of the span.
 					float mx = (xs + xe) * 0.5f - t.ref_x;
@@ -462,6 +511,7 @@ namespace render
 						float rho = std::max(dudx * dudx + dvdx * dvdx, dudy * dudy + dvdy * dvdy);
 						if (rho > 1)
 							level = std::min(max_level, static_cast<int>(0.5f * std::log2(rho)));
+						filtered = rho < 1;
 					}
 					texels = texture->levels[level].data();
 					int lw = std::max(1, texture->width >> level), lh = std::max(1, texture->height >> level);
@@ -471,7 +521,7 @@ namespace render
 				}
 				uint32_t *row = pixels + static_cast<size_t>(y) * stride + xs;
 				float *depth = m_depth.data() + static_cast<size_t>(y) * m_width + xs;
-				span_function(s, xe - xs, row, depth, texels, level, width_mask, height_mask, row_shift, bias_u, bias_v,
+				PickSpan(t.blend, texture != nullptr, filtered, t.background)(s, xe - xs, row, depth, texels, level, width_mask, height_mask, row_shift, bias_u, bias_v,
 					m_camera.fog_color, t.opacity + 1);
 			}
 		}
@@ -479,14 +529,19 @@ namespace render
 
 	void Rasterizer::Finish(uint32_t *pixels, int stride, uint32_t clear_color, bool clear)
 	{
-		// Opaque and masked first in draw order, then the rest back to front.
+		// Opaque and masked first in draw order, then the background in draw order, then
+		// the rest back to front.
+		auto solid_blend = [](Blend blend) { return blend == Blend::Opaque || blend == Blend::Masked; };
 		m_order.clear();
 		for (uint32_t i = 0; i < m_triangles.size(); ++i)
-			if (m_triangles[i].blend == Blend::Opaque || m_triangles[i].blend == Blend::Masked)
+			if (!m_triangles[i].background && solid_blend(m_triangles[i].blend))
+				m_order.push_back(i);
+		for (uint32_t i = 0; i < m_triangles.size(); ++i)
+			if (m_triangles[i].background)
 				m_order.push_back(i);
 		size_t solid = m_order.size();
 		for (uint32_t i = 0; i < m_triangles.size(); ++i)
-			if (m_triangles[i].blend == Blend::Translucent || m_triangles[i].blend == Blend::Additive)
+			if (!m_triangles[i].background && !solid_blend(m_triangles[i].blend))
 				m_order.push_back(i);
 		std::stable_sort(m_order.begin() + solid, m_order.end(),
 			[&](uint32_t a, uint32_t b) { return m_triangles[a].depth > m_triangles[b].depth; });

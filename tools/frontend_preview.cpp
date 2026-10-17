@@ -66,21 +66,40 @@ namespace
 	{
 		FrontEnd &frontend;
 		std::string out_dir;
-		std::vector<uint32_t> pixels = std::vector<uint32_t>(FrontEnd::Width * FrontEnd::Height);
+		std::vector<uint32_t> pixels;
 
 		void Snapshot(const std::string &name)
 		{
-			Canvas canvas(pixels.data(), FrontEnd::Width, FrontEnd::Height, FrontEnd::Width);
-			frontend.Render(canvas, 0);
+			int w = frontend.ScreenWidth(), h = frontend.ScreenHeight();
+			pixels.assign(static_cast<size_t>(w) * h, 0);
+			Canvas canvas(pixels.data(), w, h, w);
+			frontend.Render(canvas, NowMs());
 			std::string path = out_dir + "/" + name + ".png";
-			printf("[preview] %s %s\n", WritePng(path, pixels, FrontEnd::Width, FrontEnd::Height) ? "wrote" : "FAILED", path.c_str());
+			printf("[preview] %s %s\n", WritePng(path, pixels, w, h) ? "wrote" : "FAILED", path.c_str());
 		}
 
-		void Click(int x, int y)
+		void Click(int x, int y) // in the current screen's layout
 		{
+			Rect area = frontend.ScreenArea();
+			x += area.x;
+			y += area.y;
 			frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
 			frontend.OnEvent({InputEvent::Type::MouseDown, x, y});
 			frontend.OnEvent({InputEvent::Type::MouseUp, x, y});
+		}
+
+		// A SIDL control on character select or creation, by ScreenID.
+		bool ClickId(const std::string &id)
+		{
+			int x, y;
+			if (!frontend.ControlCenter(id, x, y)) {
+				printf("[preview] no control %s\n", id.c_str());
+				return false;
+			}
+			frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+			frontend.OnEvent({InputEvent::Type::MouseDown, x, y});
+			frontend.OnEvent({InputEvent::Type::MouseUp, x, y});
+			return true;
 		}
 
 		void Key(InputEvent::Key key)
@@ -120,7 +139,7 @@ namespace
 int main(int argc, char **argv)
 {
 	if (argc != 3 && argc != 6 && argc != 7) {
-		fprintf(stderr, "usage: %s EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect]]\n", argv[0]);
+		fprintf(stderr, "usage: %s EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create]]\n", argv[0]);
 		return 2;
 	}
 	std::string eq_dir = argv[1];
@@ -139,6 +158,7 @@ int main(int argc, char **argv)
 
 	FrontEndConfig config;
 	bool stop_at_charselect = argc == 7 && std::string(argv[6]) == "charselect";
+	bool create = argc == 7 && std::string(argv[6]) == "create";
 	if (argc >= 6) {
 		std::string login = argv[3];
 		size_t colon = login.rfind(':');
@@ -167,7 +187,8 @@ int main(int argc, char **argv)
 	BoxTextRenderer text;
 	FrontEnd frontend(art, strings, text, config, ui);
 	frontend.log = [](const std::string &line) { printf("%s\n", line.c_str()); };
-	Harness h{frontend, argv[2]};
+	frontend.SetGameResolution(1280, 720); // character select is drawn at this size
+	Harness h{frontend, argv[2], {}};
 	using Screen = FrontEnd::Screen;
 
 	h.Snapshot("1-start");
@@ -215,6 +236,82 @@ int main(int argc, char **argv)
 			if (!c.Empty())
 				printf("[preview] character: %s level %u %s %s zone %u\n", c.name.c_str(), c.level, RaceName(c.race),
 					ClassName(c.class_id), c.zone);
+
+		if (create) {
+			// Character creation from the first empty slot: an Erudite wizard with a random name,
+			// a snapshot of each screen, then submitted. The new character is deleted afterwards.
+			const auto &slots = frontend.Characters();
+			int empty = 0;
+			while (empty < static_cast<int>(slots.size()) && !slots[empty].Empty())
+				++empty;
+			h.ClickId("Char" + std::to_string(empty + 1) + "_Button");
+			if (frontend.CurrentScreen() != Screen::CharacterCreate) {
+				printf("[preview] creation didn't open%s\n", frontend.DialogOpen() ? (": " + frontend.DialogText()).c_str() : "");
+				return 1;
+			}
+			h.RunUntil([] { return false; }, 300);
+			h.Snapshot("c0-random");
+			h.ClickId("CC0_Race3_Button");  // Erudite
+			h.ClickId("CC0_Class14_Button"); // Wizard
+			h.ClickId("CC0_Female_Button");
+			h.ClickId("CC0_Face_Button");
+			h.RunUntil([] { return false; }, 200);
+			h.Snapshot("c0-face");
+			h.ClickId("Face_Up_Button");
+			h.ClickId("Accept_Button");
+			h.ClickId("CC0_Stat0_Up_Button");
+			h.ClickId("CC0_Stat5_Button"); // the rest into intelligence, up to its maximum
+			h.ClickId("CC0_Stat1_Button"); // and whatever's left into stamina
+			std::string created;
+			for (int attempt = 0; attempt < 3 && created.empty(); ++attempt) {
+				h.ClickId("CC0_Get_Name_Button");
+				h.RunUntil([] { return false; }, 200);
+				h.Snapshot("c0-erudite-wizard");
+				h.ClickId("CC_Next_Button");
+				if (frontend.DialogOpen()) {
+					printf("[preview] dialog: %s\n", frontend.DialogText().c_str());
+					return 1;
+				}
+				h.Snapshot("c1-deity");
+				h.ClickId("CC1_Deity10_Button"); // Quellious
+				h.ClickId("CC_Next_Button");
+				h.Snapshot("c2-city");
+				h.ClickId("CC_Next_Button");
+				h.Snapshot("c3-welcome");
+				std::string name = frontend.Creation()->Character().name;
+				printf("[preview] creating %s, start zone %u\n", name.c_str(), frontend.Creation()->Character().start_zone);
+				h.ClickId("CC_Next_Button");
+				h.RunUntil([&] { return frontend.CurrentScreen() == Screen::CharacterSelect; }, 10000);
+				if (frontend.CurrentScreen() == Screen::CharacterSelect)
+					created = name;
+				else {
+					printf("[preview] dialog: %s\n", frontend.DialogText().c_str());
+					h.Key(InputEvent::Key::Enter);
+				}
+			}
+			if (created.empty())
+				return 1;
+			h.RunUntil([] { return false; }, 300);
+			h.Snapshot("c4-created");
+			for (const auto &c : frontend.Characters())
+				if (!c.Empty())
+					printf("[preview] character: %s level %u %s %s zone %u\n", c.name.c_str(), c.level, RaceName(c.race),
+						ClassName(c.class_id), c.zone);
+			// Clean up: delete it again.
+			if (frontend.SelectedCharacter() >= 0 && frontend.Characters()[frontend.SelectedCharacter()].name == created) {
+				h.ClickId("Delete_Button");
+				h.Key(InputEvent::Key::Enter); // yes
+				h.RunUntil([&] {
+					for (const auto &c : frontend.Characters())
+						if (c.name == created)
+							return false;
+					return true;
+				}, 5000);
+				printf("[preview] deleted %s\n", created.c_str());
+			}
+			h.Key(InputEvent::Key::Escape);
+			return 0;
+		}
 
 		if (stop_at_charselect) {
 			h.RunUntil([] { return false; }, 2000);

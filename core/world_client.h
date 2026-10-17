@@ -85,6 +85,8 @@ public:
 	State GetState() const { return m_state; }
 	const std::vector<CharacterSlot> &Characters() const { return m_characters; }
 	uint32_t Expansions() const { return m_expansions; }
+	uint32_t ServerType() const { return m_server_type; } // OP_LogServer: the ruleset (2 and 4 are team PvP)
+	bool StrictNames() const { return m_strict_names; }   // OP_LogServer: no four consonants in a row
 	const std::string &WorldShortName() const { return m_world_short_name; }
 	const std::string &Motd() const { return m_motd; }
 	const std::string &ZoneAddress() const { return m_zone_address; }
@@ -101,6 +103,8 @@ private:
 	bool m_approved = false;
 	std::vector<CharacterSlot> m_characters;
 	uint32_t m_expansions = 0;
+	uint32_t m_server_type = 0;
+	bool m_strict_names = false;
 	std::string m_world_short_name;
 	std::string m_motd;
 	std::string m_entering;

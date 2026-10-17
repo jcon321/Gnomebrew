@@ -2,9 +2,10 @@
 
 // SIDL ("Sony Interface Definition Language"): eqgame's XML-defined UI, loaded
 // from uifiles/<skin>/EQUI.xml and the files it <Include>s. This covers the
-// pieces character select uses: Ui2DAnimation, ButtonDrawTemplate,
-// WindowDrawTemplate, Screen, Button, Label and StaticAnimation.
-// Schema defaults come from uifiles/default/SIDL.xml.
+// pieces character select and creation use: Ui2DAnimation, ButtonDrawTemplate,
+// WindowDrawTemplate, Screen (nested too), Button, Label, StaticAnimation,
+// Editbox and STMLbox, with AutoStretch anchors. Schema defaults come from
+// uifiles/default/SIDL.xml.
 
 #include "canvas.h"
 #include "text.h"
@@ -49,6 +50,7 @@ struct SidlWindowTemplate
 {
 	std::string background; // texture, tiled over the client area
 	std::string border[BorderPieceCount];
+	std::string title_left, title_middle, title_right; // Titlebar, under the top border
 };
 
 struct SidlPiece
@@ -60,6 +62,11 @@ struct SidlPiece
 	bool relative = true;
 	Rect rect;
 	bool has_size = false;
+
+	// AutoStretch: each edge sits an offset from the parent's left/top or right/bottom edge.
+	bool auto_stretch = false;
+	bool left_to_left = true, top_to_top = true, right_to_left = true, bottom_to_top = true;
+	int left_offset = 0, top_offset = 0, right_offset = 0, bottom_offset = 0;
 	std::string text;
 	uint32_t text_color = 0xffffff;
 	bool has_text_color = false;
@@ -74,9 +81,11 @@ struct SidlPiece
 	// StaticAnimation
 	std::string animation;
 
-	// Screen
+	// Screen (and the Editbox and STMLbox frames)
 	std::string draw_template;
 	bool style_border = false;
+	bool transparent = false; // no background
+	bool titlebar = false;    // Style_Titlebar: the template's title bar with <Text> in it
 	std::vector<std::string> pieces;
 };
 
@@ -121,39 +130,56 @@ private:
 // SIDL font numbers index the fonts CDisplay::InitDDraw creates: Arial 10, 12, 14, 15, 16, 20 (1-based; 3 = default).
 int SidlFontHeight(int font);
 
-// A live window built from a <Screen>: child controls with absolute rects and state.
+// A live window built from a <Screen>: a tree of controls (nested screens and
+// their pieces) with absolute rects and state. Control 0 is the screen itself.
 class SidlWindow
 {
 public:
 	struct Control
 	{
 		const SidlPiece *def = nullptr;
+		const SidlWindowTemplate *frame = nullptr; // DrawTemplate, for screens, edit boxes and STML boxes
 		Rect rect;
-		std::string text;
+		Rect client; // inside the border and title bar
+		Rect title;  // the title bar, when it has one
+		int parent = -1;
+		std::vector<int> children;
+		std::string text; // STMLbox: STML (<BR> line breaks; other tags are dropped)
+		uint32_t text_color = 0xffffff;
 		bool visible = true;
 		bool enabled = true;
 		bool checked = false;
 		bool hover = false;
 		bool pressed = false;
+		size_t max_chars = 64; // Editbox
 	};
 
 	bool Build(const SidlDefinitions &defs, const std::string &screen_item, std::string &error);
 	void Draw(Canvas &canvas, TextRenderer &text, SidlTextures &textures, uint64_t now_ms) const;
-	// Returns the ScreenID of a button clicked by this event, or "".
+	// Returns the ScreenID of a button clicked by this event, or "". A click on an edit box focuses it.
 	std::string OnMouse(const InputEvent &event);
+	// Typing into the focused edit box; false if there's none (or it's hidden).
+	bool OnKey(const InputEvent &event);
 
 	Control *Find(const std::string &screen_id);
+	const Control *Find(const std::string &screen_id) const;
 	// Radio group handling: checks this one, unchecks the rest of its group.
 	void Check(const std::string &screen_id);
-	const Rect &Bounds() const { return m_rect; }
+	// CXWnd::MoveAndInvalidate: a control's new rect, with its children laid out again.
+	void Move(const std::string &screen_id, const Rect &rect);
+	void Move(const Rect &rect) { Place(0, rect); } // the window itself
+	void Focus(const std::string &screen_id);
+	bool Shown(const Control &control) const; // it and every parent visible
+	const Rect &Bounds() const { return m_controls.front().rect; }
 
 private:
+	int Add(const SidlPiece &piece, int parent);
+	void Place(int index, const Rect &rect);
+	void DrawControl(int index, Canvas &canvas, TextRenderer &text, SidlTextures &textures, uint64_t now_ms) const;
+	void DrawFrame(const Control &control, Canvas &canvas, SidlTextures &textures, uint64_t now_ms) const;
 	void DrawAnimation(Canvas &canvas, SidlTextures &textures, const std::string &name, const Rect &dest, uint64_t now_ms) const;
 
 	const SidlDefinitions *m_defs = nullptr;
-	const SidlPiece *m_screen = nullptr;
-	const SidlWindowTemplate *m_template = nullptr;
-	Rect m_rect;
-	Rect m_client;
 	std::vector<Control> m_controls;
+	int m_focus = -1;
 };

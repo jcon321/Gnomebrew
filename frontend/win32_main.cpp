@@ -1,12 +1,17 @@
-// eqclient_gui: Win32 host for the front end. Owns the window, a 640x480 32-bit
-// DIB that FrontEnd draws into, GDI text, and input translation.
+// eqclient_gui: Win32 host for the front end. Owns the window, a 32-bit DIB the
+// size of its client area (the game resolution) that FrontEnd draws into, GDI
+// text, and input translation.
 //
-// Settings come from my-client.ini next to the exe, overridden by the command line:
-//   [Paths]   EQDir=C:\TAKP            (folder with eqfeart*.pak and eqtext.txt)
-//   [Login]   Server=192.168.0.18:6000
-//             User=myname             (remembered from the last login)
-//   [Display] Scale=2                 (0 or missing = fit the screen)
-//   eqclient_gui.exe --eqdir C:\TAKP --login 192.168.0.18:6000 --scale 2
+// All settings live in my-client.ini next to the exe (the EQ folder is only read
+// for assets; its eqclient.ini is never used). Missing keys are written with their
+// defaults at startup. The command line overrides the ini:
+//   [Paths]    EQDir=C:\TAKP           (folder with eqfeart*.pak, eqtext.txt, ...; empty = auto)
+//   [Login]    Server=127.0.0.1:6000
+//              User=myname            (remembered from the last login)
+//   [Display]  Width=1920             (game resolution: the window's size)
+//              Height=1080
+//   [Defaults] LastCharSel=0          (remembered character select slot, like eqclient.ini's)
+//   eqclient_gui.exe --eqdir C:\TAKP --login 192.168.0.18:6000 --size 1920x1080
 
 #include "eqstr.h"
 #include "frontend.h"
@@ -15,20 +20,26 @@
 #include <windows.h>
 #include <shellapi.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <memory>
 #include <string>
 
 namespace
 {
-	struct App
+	struct Surface
 	{
-		HWND window = nullptr;
-		HDC memory_dc = nullptr;
+		HDC dc = nullptr;
 		HBITMAP dib = nullptr;
 		HGDIOBJ old_bitmap = nullptr;
 		uint32_t *pixels = nullptr;
-		int scale = 1;
+		int width = 0, height = 0;
+	};
+
+	struct App
+	{
+		HWND window = nullptr;
+		Surface surface; // the window's client area
 		int mouse_x = 0, mouse_y = 0;
 		bool tracking_mouse = false;
 		FrontEnd *frontend = nullptr;
@@ -51,6 +62,15 @@ namespace
 		wchar_t buffer[MAX_PATH] = {};
 		GetPrivateProfileStringW(section, key, L"", buffer, MAX_PATH, ini.c_str());
 		return buffer;
+	}
+
+	// Writes key=value unless the key is already there (even empty), so the ini lists every setting.
+	void IniDefault(const std::wstring &ini, const wchar_t *section, const wchar_t *key, const wchar_t *value)
+	{
+		wchar_t buffer[8] = {};
+		GetPrivateProfileStringW(section, key, L"\x01", buffer, 8, ini.c_str());
+		if (buffer[0] == L'\x01' && buffer[1] == 0)
+			WritePrivateProfileStringW(section, key, value, ini.c_str());
 	}
 
 	bool FileExists(const std::wstring &path)
@@ -83,8 +103,8 @@ namespace
 	{
 		InputEvent event;
 		event.type = type;
-		event.x = static_cast<short>(LOWORD(lparam)) / g_app.scale;
-		event.y = static_cast<short>(HIWORD(lparam)) / g_app.scale;
+		event.x = static_cast<short>(LOWORD(lparam));
+		event.y = static_cast<short>(HIWORD(lparam));
 		g_app.mouse_x = event.x;
 		g_app.mouse_y = event.y;
 		return event;
@@ -103,9 +123,8 @@ namespace
 
 	void Present(HDC window_dc)
 	{
-		SetStretchBltMode(window_dc, COLORONCOLOR); // nearest neighbour keeps the 640x480 art crisp
-		StretchBlt(window_dc, 0, 0, FrontEnd::Width * g_app.scale, FrontEnd::Height * g_app.scale, g_app.memory_dc, 0, 0,
-			FrontEnd::Width, FrontEnd::Height, SRCCOPY);
+		const Surface &surface = g_app.surface;
+		BitBlt(window_dc, 0, 0, surface.width, surface.height, surface.dc, 0, 0, SRCCOPY);
 	}
 
 	LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
@@ -192,49 +211,52 @@ namespace
 		return DefWindowProcW(window, message, wparam, lparam);
 	}
 
-	int PickScale(int requested)
+	// The game resolution: the requested size, shrunk to fit the work area with the frame.
+	void PickResolution(int &width, int &height, DWORD style)
 	{
-		if (requested > 0)
-			return requested;
 		RECT work{};
 		SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
-		int scale = 1;
-		while ((scale + 1) * FrontEnd::Width <= (work.right - work.left) * 9 / 10 &&
-		       (scale + 1) * FrontEnd::Height <= (work.bottom - work.top) * 9 / 10)
-			++scale;
-		return scale;
+		RECT frame{0, 0, 0, 0};
+		AdjustWindowRect(&frame, style, FALSE);
+		int max_w = (work.right - work.left) - (frame.right - frame.left);
+		int max_h = (work.bottom - work.top) - (frame.bottom - frame.top);
+		width = std::max(static_cast<int>(FrontEnd::Width), std::min(width, max_w));
+		height = std::max(static_cast<int>(FrontEnd::Height), std::min(height, max_h));
 	}
 
-	bool CreateSurface()
+	bool CreateSurface(Surface &surface, int width, int height)
 	{
 		BITMAPINFO info{};
 		info.bmiHeader.biSize = sizeof(info.bmiHeader);
-		info.bmiHeader.biWidth = FrontEnd::Width;
-		info.bmiHeader.biHeight = -FrontEnd::Height; // top-down
+		info.bmiHeader.biWidth = width;
+		info.bmiHeader.biHeight = -height; // top-down
 		info.bmiHeader.biPlanes = 1;
 		info.bmiHeader.biBitCount = 32;
 		info.bmiHeader.biCompression = BI_RGB;
 
 		HDC screen = GetDC(nullptr);
-		g_app.memory_dc = CreateCompatibleDC(screen);
+		surface.dc = CreateCompatibleDC(screen);
 		ReleaseDC(nullptr, screen);
 		void *bits = nullptr;
-		g_app.dib = CreateDIBSection(g_app.memory_dc, &info, DIB_RGB_COLORS, &bits, nullptr, 0);
-		if (!g_app.dib || !bits)
+		surface.dib = CreateDIBSection(surface.dc, &info, DIB_RGB_COLORS, &bits, nullptr, 0);
+		if (!surface.dib || !bits)
 			return false;
-		g_app.pixels = static_cast<uint32_t *>(bits);
-		g_app.old_bitmap = SelectObject(g_app.memory_dc, g_app.dib);
+		surface.pixels = static_cast<uint32_t *>(bits);
+		surface.width = width;
+		surface.height = height;
+		surface.old_bitmap = SelectObject(surface.dc, surface.dib);
 		return true;
 	}
 
-	void DestroySurface()
+	void DestroySurface(Surface &surface)
 	{
-		if (g_app.memory_dc) {
-			SelectObject(g_app.memory_dc, g_app.old_bitmap);
-			DeleteDC(g_app.memory_dc);
+		if (surface.dc) {
+			SelectObject(surface.dc, surface.old_bitmap);
+			DeleteDC(surface.dc);
 		}
-		if (g_app.dib)
-			DeleteObject(g_app.dib);
+		if (surface.dib)
+			DeleteObject(surface.dib);
+		surface = {};
 	}
 
 	void Fatal(const std::wstring &text)
@@ -253,10 +275,18 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	g_app.log = _wfopen((exe_dir + L"\\my-client.log").c_str(), L"w");
 
 	// Settings: ini first, then command line.
+	IniDefault(ini, L"Paths", L"EQDir", L"");
+	IniDefault(ini, L"Login", L"Server", L"127.0.0.1:6000");
+	IniDefault(ini, L"Login", L"User", L"");
+	IniDefault(ini, L"Display", L"Width", L"1920");
+	IniDefault(ini, L"Display", L"Height", L"1080");
+	IniDefault(ini, L"Defaults", L"LastCharSel", L"0");
 	std::wstring eq_dir = IniString(ini, L"Paths", L"EQDir");
 	std::wstring login = IniString(ini, L"Login", L"Server");
 	std::wstring user = IniString(ini, L"Login", L"User");
-	int scale = GetPrivateProfileIntW(L"Display", L"Scale", 0, ini.c_str());
+	int width = GetPrivateProfileIntW(L"Display", L"Width", 1920, ini.c_str());
+	int height = GetPrivateProfileIntW(L"Display", L"Height", 1080, ini.c_str());
+	int last_character = GetPrivateProfileIntW(L"Defaults", L"LastCharSel", 0, ini.c_str());
 
 	int argc = 0;
 	wchar_t **argv = CommandLineToArgvW(GetCommandLineW(), &argc);
@@ -266,8 +296,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 			eq_dir = argv[++i];
 		else if (arg == L"--login")
 			login = argv[++i];
-		else if (arg == L"--scale")
-			scale = _wtoi(argv[++i]);
+		else if (arg == L"--size")
+			swscanf(argv[++i], L"%dx%d", &width, &height);
 	}
 	if (argv)
 		LocalFree(argv);
@@ -275,8 +305,14 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	if (eq_dir.empty())
 		eq_dir = FileExists(L"eqfeart1.pak") ? L"." : exe_dir;
 
+	if (width <= 0 || height <= 0) {
+		width = 1920;
+		height = 1080;
+	}
+
 	FrontEndConfig config;
 	config.username = Narrow(user);
+	config.last_character = last_character;
 	if (!login.empty()) {
 		std::string value = Narrow(login);
 		size_t colon = value.rfind(':');
@@ -321,12 +357,14 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	else
 		Log("eqstr_en.txt not found; server messages will show string ids");
 
-	if (!CreateSurface()) {
+	DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
+	PickResolution(width, height, style);
+	Log("resolution " + std::to_string(width) + "x" + std::to_string(height) + ", 640x480 screens at native size");
+	if (!CreateSurface(g_app.surface, width, height)) {
 		Fatal(L"Couldn't create the drawing surface.");
 		return 1;
 	}
 
-	g_app.scale = PickScale(scale);
 	WNDCLASSW window_class{};
 	window_class.style = CS_DBLCLKS;
 	window_class.lpfnWndProc = WindowProc;
@@ -335,8 +373,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	window_class.lpszClassName = L"MyClientFrontEnd";
 	RegisterClassW(&window_class);
 
-	DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
-	RECT rect{0, 0, FrontEnd::Width * g_app.scale, FrontEnd::Height * g_app.scale};
+	RECT rect{0, 0, width, height};
 	AdjustWindowRect(&rect, style, FALSE);
 	g_app.window = CreateWindowExW(0, window_class.lpszClassName, L"EverQuest (my-client)", style, CW_USEDEFAULT,
 		CW_USEDEFAULT, rect.right - rect.left, rect.bottom - rect.top, nullptr, nullptr, instance, nullptr);
@@ -345,13 +382,15 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 		return 1;
 	}
 
-	GdiTextRenderer text(g_app.memory_dc);
+	GdiTextRenderer text;
+	text.AddSurface(g_app.surface.dc, g_app.surface.pixels, g_app.surface.width, g_app.surface.height);
 	FrontEnd frontend(art, strings, text, config, ui);
 	frontend.log = Log;
+	frontend.SetGameResolution(width, height);
 	g_app.frontend = &frontend;
 	ShowWindow(g_app.window, show);
 
-	Canvas canvas(g_app.pixels, FrontEnd::Width, FrontEnd::Height, FrontEnd::Width);
+	Canvas canvas(g_app.surface.pixels, g_app.surface.width, g_app.surface.height, g_app.surface.width);
 	MSG message{};
 	bool running = true;
 	while (running) {
@@ -379,7 +418,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 		Present(dc);
 		ReleaseDC(g_app.window, dc);
 
-		MsgWaitForMultipleObjects(0, nullptr, FALSE, 15, QS_ALLINPUT);
+		// About 60 frames a second; input wakes the loop early.
+		uint64_t spent = NowMs() - now;
+		MsgWaitForMultipleObjects(0, nullptr, FALSE, spent < 16 ? static_cast<DWORD>(16 - spent) : 0, QS_ALLINPUT);
 	}
 
 	for (const auto &name : art.Missing())
@@ -387,9 +428,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	for (const auto &name : textures.Missing())
 		Log("missing UI texture: " + name);
 	WritePrivateProfileStringW(L"Login", L"User", Widen(frontend.Username()).c_str(), ini.c_str());
+	WritePrivateProfileStringW(L"Defaults", L"LastCharSel", std::to_wstring(frontend.LastCharacter()).c_str(), ini.c_str());
 
 	g_app.frontend = nullptr;
-	DestroySurface();
+	DestroySurface(g_app.surface);
 	if (g_app.log)
 		fclose(g_app.log);
 	return 0;

@@ -120,21 +120,24 @@ void CharacterSelectView::PlaceCharacter()
 
 void CharacterSelectView::AdvanceCamera(uint64_t now_ms)
 {
-	// DoCharacterSelection: every 50 ms, the camera heading follows the player, or
-	// turns 3 units when Rotate is checked (a full turn in about 8.5 seconds).
-	if (m_next_step_ms == 0 || now_ms - m_next_step_ms > 1000)
-		m_next_step_ms = now_ms;
+	// DoCharacterSelection: once the 50 ms step is due, the camera heading follows the
+	// player, or turns 3 units when Rotate is checked (a full turn in about 8.5 seconds).
+	// At most one step per frame, and the next is due 50 ms after this frame.
 	if (m_camera_override) {
 		m_camera_heading = *m_camera_override;
 		return;
 	}
-	while (now_ms >= m_next_step_ms) {
-		m_next_step_ms += 50;
-		if (m_rotate)
-			m_camera_heading = std::fmod(m_camera_heading + 3, 512.0f);
-		else
-			m_camera_heading = m_heading;
+	if (m_close_up) {
+		m_camera_heading = m_heading;
+		return;
 	}
+	if (m_next_step_ms >= now_ms)
+		return;
+	m_next_step_ms = now_ms + 50;
+	if (m_rotate)
+		m_camera_heading = std::fmod(m_camera_heading + 3, 512.0f);
+	else
+		m_camera_heading = m_heading;
 }
 
 void CharacterSelectView::Render(Canvas &canvas, uint64_t now_ms)
@@ -153,32 +156,36 @@ void CharacterSelectView::Render(Canvas &canvas, uint64_t now_ms)
 	// thirds of the character's eye height, looking level at the character.
 	float zoom = 6;
 	float eye = 5;
+	float camera_height = 0.67f; // of the eye height
 	if (m_model) {
 		uint16_t race = m_appearance->race;
+		uint8_t gender = m_appearance->gender;
 		if (race == 9 || race == 10 || race == 128) // troll, ogre, iksar (CDisplay_SetCCreateCamera)
 			zoom = 7;
 		eye = (m_model->HeadZ() - m_model->MinZ()) * 1.05f;
+		if (m_close_up) {
+			// CDisplay_SetCCreateCamera(100) plus CFacePick::Activate's 1.5, level with the face.
+			zoom = gender == 0 || race == 3 || race == 5 ? 1.5f : 1.3f;
+			if (race == 8 || race == 11 || race == 12)
+				zoom = gender == 0 ? 2.5f : 1.5f;
+			if (race == 9 || race == 10)
+				zoom = gender == 0 || race == 10 ? 4.0f : 3.0f;
+			if (race == 128)
+				zoom = 2.5f;
+			if (race == 130)
+				zoom = 2.4f;
+			zoom += 1.5f;
+			camera_height = 1.0f;
+		}
 	}
 	float angle = render::HeadingToRadians(m_camera_heading);
 	render::Vec3 offset{std::cos(angle) * zoom, std::sin(angle) * zoom, 0};
 	render::Camera camera;
-	camera.position = m_position + offset + render::Vec3{0, 0, eye * 0.67f};
+	camera.position = m_position + offset + render::Vec3{0, 0, eye * camera_height};
 	camera.forward = offset * -1.0f;
 	camera.horizontal_fov = render::Pi / 2; // SetViewAngle(90)
 	camera.near_plane = 0.5f;
 	camera.far_plane = 5000; // CCharacterSelect::SetLoadZoneWeather: SetYon(5000)
-
-	// The sky first, around a camera at the origin, then the zone over it.
-	bool sky = m_sky.Loaded();
-	if (sky) {
-		render::Camera sky_camera = camera;
-		sky_camera.position = {0, 0, 0};
-		sky_camera.near_plane = 1;
-		sky_camera.far_plane = 1000;
-		m_rasterizer.Begin(canvas.Width(), canvas.Height(), sky_camera);
-		m_sky.Draw(m_rasterizer, now_ms);
-		m_rasterizer.Finish(canvas.Row(0), canvas.Stride(), m_sky.HorizonColor());
-	}
 
 	m_rasterizer.Begin(canvas.Width(), canvas.Height(), camera);
 	m_zone.Draw(m_rasterizer, now_ms);
@@ -190,8 +197,15 @@ void CharacterSelectView::Render(Canvas &canvas, uint64_t now_ms)
 		render::Vec3 light = render::Normalize(offset) + render::Vec3{0, 0, 0.8f};
 		m_model->Draw(m_rasterizer, placement, light, 0.45f, 0.65f, now_ms);
 	}
+	// The sky, around the camera, wherever the zone leaves the screen open.
+	bool sky = m_sky.Loaded();
+	if (sky) {
+		m_rasterizer.BeginBackground();
+		m_sky.Draw(m_rasterizer, now_ms);
+		m_rasterizer.EndBackground();
+	}
 	m_triangles_drawn = m_rasterizer.TriangleCount();
-	m_rasterizer.Finish(canvas.Row(0), canvas.Stride(), 0x000000, !sky);
+	m_rasterizer.Finish(canvas.Row(0), canvas.Stride(), sky ? m_sky.HorizonColor() : 0x000000);
 }
 
 bool CharacterSelectView::NamePosition(int &x, int &y) const

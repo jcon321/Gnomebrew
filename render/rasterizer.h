@@ -71,6 +71,12 @@ namespace render
 		Rasterizer &operator=(const Rasterizer &) = delete;
 
 		void Begin(int width, int height, const Camera &camera);
+		// Between these, Draw adds background (the sky): positions are relative to the
+		// camera, and the triangles fill only pixels the solid triangles left empty, in
+		// draw order, unfogged, before the translucent triangles blend over them. Hidden
+		// sky costs nothing this way.
+		void BeginBackground() { m_background = true; }
+		void EndBackground() { m_background = false; }
 		bool SphereVisible(const Vec3 &center, float radius) const;
 		void Draw(const Vertex *vertices, size_t vertex_count, const uint32_t *indices, size_t index_count,
 			const Material &material);
@@ -101,9 +107,11 @@ namespace render
 			uint8_t opacity;
 			int row_start, row_end;
 			float depth; // farthest view depth, for sorting translucent triangles
+			bool background;
 		};
 		class Workers;
 
+		Vec3 Eye() const { return m_background ? Vec3{0, 0, 0} : m_camera.position; }
 		void Setup(const ViewVertex &a, const ViewVertex &b, const ViewVertex &c, const Material &material);
 		void RasterizeStrip(int strip, uint32_t *pixels, int stride, uint32_t clear_color, bool clear);
 
@@ -112,6 +120,7 @@ namespace render
 		Vec3 m_right, m_up, m_forward;
 		float m_focal = 1, m_tan_x = 1, m_tan_y = 1;
 		float m_fog_scale = 0;
+		bool m_background = false;
 
 		std::vector<ViewVertex> m_view;
 		std::vector<ScreenTriangle> m_triangles;
