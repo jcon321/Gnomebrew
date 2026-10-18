@@ -15,7 +15,11 @@
 // --orbit from behind them, or first person. --fog and --sky stand in for
 // OP_NewZone (default: the client's fallback fog, 500 to 600 in grey, sky 1).
 // --walk runs forward that long first (turning left -1 or right 1 with --turn). --npc RACE GENDER
-// SIZE X Y Z HEADING (repeatable) stands a spawn there. --time HOUR MINUTE sets Norrath's time (hour
+// SIZE X Y Z HEADING (repeatable) stands a spawn there; after it, --npc-look TEXTURE HELM gives it an
+// NPC's body texture and helm (255 0: dressed per slot), --npc-move SPEED TURN sets it walking (the
+// update's speed, and turn per tick), --npc-stance S its stance (100, 110 sitting, 111, 115) and
+// --npc-fly F its fly mode. --spawn-ms MS runs the spawns that long first, printing where they are
+// and what they play each second. --time HOUR MINUTE sets Norrath's time (hour
 // 1..24, 1 is midnight) for the zone's time type (--time-type, default 2: outdoors).
 // --debug-draw wireframe,nofog,walls,floor turns on the debug menu's render toggles.
 // --frames renders N times and prints the average frame time. --size picks the
@@ -79,7 +83,7 @@ namespace
 	int InZone(const std::string &eq_dir, const std::string &out, const ZoneInfo &info, const render::CharacterAppearance &appearance,
 		float x, float y, float z, float heading, float orbit, float pitch, bool first_person, int zoom, int walk_ms, int turn, int frames,
 		int Width, int Height, const std::map<uint16_t, ZoneSpawn> &spawns, int game_hour, float game_minute,
-		const ZoneView::DebugDraw &debug_draw)
+		const ZoneView::DebugDraw &debug_draw, int spawn_ms)
 	{
 		auto t0 = std::chrono::steady_clock::now();
 		ZoneView view(eq_dir);
@@ -141,15 +145,39 @@ namespace
 			view.Render(canvas, 0); // places the character, which sets the starting distance
 			view.Zoom(zoom);
 		}
+		uint64_t spawn_clock = 1000;
+		if (spawn_ms > 0) {
+			// Run everyone else in 16 ms frames (Render first: it places the camera they're near).
+			view.Render(canvas, spawn_clock);
+			double spawn_total = 0;
+			int spawn_steps = 0;
+			for (int ms = 0; ms <= spawn_ms; ms += 16, ++spawn_steps) {
+				spawn_clock += 16;
+				auto start = std::chrono::steady_clock::now();
+				view.UpdateSpawns(spawns, 0, spawn_clock);
+				spawn_total += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+				if ((ms % 1000 >= 16 && ms != spawn_ms) || spawns.size() > 12)
+					continue;
+				for (const auto &[id, spawn] : spawns) {
+					ZoneView::SpawnDebug st;
+					if (view.SpawnStats(id, st))
+						printf("  %5d ms: spawn %u %s at loc %.1f, %.1f, %.1f (feet) playing %s x%.2f%s\n", ms, id, st.model.c_str(),
+							st.feet.y, st.feet.x, st.feet.z, st.animation.c_str(), st.animation_rate,
+							render::Swimming(st.body_environment) ? " in water" : "");
+				}
+			}
+			printf("%.3f ms per UpdateSpawns (%zu spawns)\n", spawn_total / spawn_steps, spawns.size());
+		}
 		double total = 0;
 		for (int f = 0; f < frames; ++f) {
-			view.UpdateSpawns(spawns, 0, 1000 + f);
+			view.UpdateSpawns(spawns, 0, spawn_clock + f);
 			auto start = std::chrono::steady_clock::now();
-			view.Render(canvas, 1000 + f);
+			view.Render(canvas, spawn_clock + f);
 			total += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
 			if (f == 0 && view.Model())
-				printf("model %s: %zu triangles, height %.2f, feet at %.2f, %.2f, %.2f (WLD)\n", view.Model()->Code().c_str(),
-					view.Model()->TriangleCount(), view.Model()->MaxZ() - view.Model()->MinZ(), view.Feet().x, view.Feet().y,
+				printf("model %s: %zu triangles, height %.2f (z %.2f..%.2f, origin %.2f over the feet), feet at %.2f, %.2f, %.2f (WLD)\n",
+					view.Model()->Code().c_str(), view.Model()->TriangleCount(), view.Model()->MaxZ() - view.Model()->MinZ(),
+					view.Model()->MinZ(), view.Model()->MaxZ(), view.Model()->OriginOverFeet(), view.Feet().x, view.Feet().y,
 					view.Feet().z);
 		}
 		printf("%zu triangles drawn, %.1f ms per frame\n", view.TrianglesDrawn(), total / frames);
@@ -181,7 +209,7 @@ int main(int argc, char **argv)
 	float camera_heading = 0;
 	bool player = false, first_person = false;
 	float orbit = 0;
-	int zoom = 0, walk_ms = 0, turn = 0;
+	int zoom = 0, walk_ms = 0, turn = 0, spawn_ms = 0;
 	std::map<uint16_t, ZoneSpawn> spawns;
 	int game_hour = 0;
 	float game_minute = 0;
@@ -207,6 +235,9 @@ int main(int argc, char **argv)
 			spawn.y = static_cast<float>(atof(argv[++i]));
 			spawn.z = static_cast<float>(atof(argv[++i]));
 			spawn.heading = static_cast<float>(atof(argv[++i]));
+			spawn.hp = 100;
+			spawn.body_texture = 0; // an NPC's default texture (a player race's guard is 255 and dressed)
+			spawn.updated_ms = 1000;
 			spawns[spawn.id] = spawn;
 		}
 		else if (arg == "--debug-draw" && i + 1 < argc) {
@@ -224,6 +255,21 @@ int main(int argc, char **argv)
 			info.time_type = static_cast<uint8_t>(atoi(argv[++i]));
 		else if (arg == "--orbit" && i + 1 < argc)
 			orbit = static_cast<float>(atof(argv[++i]));
+		else if (arg == "--npc-look" && i + 2 < argc && !spawns.empty()) {
+			spawns.rbegin()->second.body_texture = static_cast<uint8_t>(atoi(argv[++i]));
+			spawns.rbegin()->second.helm = static_cast<uint8_t>(atoi(argv[++i]));
+			spawns.rbegin()->second.equipment[0] = spawns.rbegin()->second.helm;
+		}
+		else if (arg == "--npc-move" && i + 2 < argc && !spawns.empty()) {
+			spawns.rbegin()->second.speed = static_cast<float>(atof(argv[++i]));
+			spawns.rbegin()->second.heading_speed = static_cast<float>(atof(argv[++i]));
+		}
+		else if (arg == "--npc-stance" && i + 1 < argc && !spawns.empty())
+			spawns.rbegin()->second.stance = static_cast<uint8_t>(atoi(argv[++i]));
+		else if (arg == "--npc-fly" && i + 1 < argc && !spawns.empty())
+			spawns.rbegin()->second.fly_mode = static_cast<uint8_t>(atoi(argv[++i]));
+		else if (arg == "--spawn-ms" && i + 1 < argc)
+			spawn_ms = atoi(argv[++i]);
 		else if (arg == "--walk" && i + 1 < argc)
 			walk_ms = atoi(argv[++i]);
 		else if (arg == "--turn" && i + 1 < argc)
@@ -280,7 +326,7 @@ int main(int argc, char **argv)
 		for (int i = 3; i < argc; ++i)
 			have_heading = have_heading || std::string(argv[i]) == "--heading";
 		return InZone(eq_dir, out, info, appearance, server_x, server_y, server_z, have_heading ? heading : 0, orbit, pitch,
-			first_person, zoom, walk_ms, turn, frames, width, height, spawns, game_hour, game_minute, debug_draw);
+			first_person, zoom, walk_ms, turn, frames, width, height, spawns, game_hour, game_minute, debug_draw, spawn_ms);
 	}
 	if (character)
 		return CharacterSelect(eq_dir, out, appearance, static_cast<uint8_t>(class_id), camera_heading, frames, width, height);

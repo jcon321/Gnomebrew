@@ -59,6 +59,7 @@ add_library(eqrender STATIC
     render/renderer.cpp
     render/rasterizer.cpp
     render/textures.cpp
+    render/animations.cpp
     render/skeleton.cpp
     render/zone_scene.cpp
     render/zone_regions.cpp
@@ -82,6 +83,7 @@ add_library(eqfrontend STATIC
     frontend/charcreate.cpp
     frontend/zone_view.cpp
     frontend/player_movement.cpp
+    frontend/spawn_actor.cpp
     frontend/debug_menu.cpp
 )
 target_include_directories(eqfrontend PUBLIC frontend)

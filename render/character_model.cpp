@@ -1,9 +1,11 @@
 #include "character_model.h"
 
 #include "actor_tags.h"
+#include "animations.h"
 #include "skeleton.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdio>
 #include <map>
 
@@ -28,15 +30,44 @@ namespace render
 			return s;
 		}
 
-		// Models without their own idle borrow another model's (by model code).
-		std::string AnimationSource(const std::string &code)
+		// SwapHead: the head mesh (<tag>HE<nn>_DMSPRITEDEF) a helm material puts on. Material 7 is
+		// chain (plate on an Iksar); crowns and the like (240 and up) are item models over the bare head.
+		int HeadForMaterial(unsigned material, uint16_t race)
 		{
-			static const std::map<std::string, std::string> sources = {{"HUF", "ELF"}, {"ERF", "ELF"}, {"HIF", "ELF"},
-				{"DAF", "ELF"}, {"HAF", "ELF"}, {"BAF", "ELF"}, {"ERM", "HUM"}, {"HIM", "HUM"}, {"DAM", "HUM"},
-				{"HAM", "HUM"}, {"GNM", "DWM"}, {"HOM", "DWM"}, {"GNF", "DWF"}, {"HOF", "DWF"}, {"OGM", "OGF"},
-				{"TRM", "OGF"}, {"TRF", "OGF"}, {"IKF", "IKM"}};
-			auto it = sources.find(code);
-			return it == sources.end() ? code : it->second;
+			if (material == 7)
+				return race == 128 ? 3 : 2;
+			return material < 240 ? static_cast<int>(material) : 0;
+		}
+
+		// SwapHead tints only these of the head's materials with the helm's color, not the face.
+		bool TintedByHelm(const std::string &name, uint16_t race)
+		{
+			if (race == 2)
+				return name.compare(0, 9, "BAMHE0003") == 0 || name.compare(0, 9, "BAMHE0004") == 0 ||
+				       name.compare(0, 7, "CHAIN01") == 0;
+			return name.compare(0, 4, "HELM") == 0 || name.compare(0, 5, "CHAIN") == 0;
+		}
+
+		bool Digits(const std::string &s, size_t from, size_t count)
+		{
+			for (size_t i = from; i < from + count; ++i)
+				if (i >= s.size() || s[i] < '0' || s[i] > '9')
+					return false;
+			return true;
+		}
+
+		// Whether a model is built on a player race's skeleton, its own or the one it plays
+		// the animations of (the Qeynos citizens' is the elf male's, the Rivervale citizens' the dwarf's).
+		bool OnPlayerSkeleton(const std::string &code)
+		{
+			static const char *const players[] = {"HUM", "HUF", "BAM", "BAF", "ERM", "ERF", "ELM", "ELF", "HIM", "HIF",
+				"DAM", "DAF", "HAM", "HAF", "DWM", "DWF", "TRM", "TRF", "OGM", "OGF", "HOM", "HOF", "GNM", "GNF", "IKM",
+				"IKF", "KEM", "KEF"};
+			std::string source = AnimationSource(code);
+			for (const char *player : players)
+				if (code == player || source == player)
+					return true;
+			return false;
 		}
 
 		uint32_t PackLight(float r, float g, float b)
@@ -141,28 +172,27 @@ namespace render
 		auto model = std::make_unique<CharacterModel>();
 		model->m_code = code;
 		bool player_race = IsPlayerRace(appearance.race) && code.size() == 3;
-		// Each animation from the model itself, else (player races) from the model it borrows the
-		// idle from, else from the elf of the same gender, the classic models with every animation.
-		std::vector<std::string> sources = {code};
-		if (player_race)
-			sources = {code, AnimationSource(code), code.back() == 'F' ? "ELF" : "ELM"};
-		for (const char *name : {"P01", "L01", "L02", "L03", "L04", "L05", "D05", "P06", "L09"}) { // ... P06 swim, L09 tread water
-			for (const auto &from : sources) {
-				SkeletonAnimation animation = LoadAnimation(source->wld, skeleton, name, code, from);
-				if (animation.length == 0)
-					continue;
-				if (from != code) {
-					// A borrowed animation keeps this model's bone lengths; only the rotations carry over.
-					for (size_t i = 0; i < animation.frames.size(); ++i)
-						for (auto &frame : animation.frames[i])
-							frame.shift = skeleton.bones[i].pose.shift;
-				}
-				model->m_animations[name] = std::move(animation);
-				break;
+		// Every animation the model has, each bone from its own tracks or its source model's,
+		// shared by everyone with this model.
+		auto &animations = m_animation_sets[code];
+		if (!animations) {
+			std::vector<const WldFile *> wlds = {&source->wld};
+			for (auto &other : m_sources)
+				if (other.get() != source)
+					wlds.push_back(&other->wld);
+			auto set = std::make_shared<std::map<std::string, SkeletonAnimation>>();
+			std::string from = AnimationSource(code);
+			for (int id = 1; id < Anim::Count; ++id) {
+				const char *name = AnimationCode(id);
+				SkeletonAnimation animation = LoadAnimation(wlds, skeleton, name, code, from);
+				if (animation.length > 0)
+					(*set)[name] = std::move(animation);
 			}
+			animations = std::move(set);
 		}
-		auto idle = model->m_animations.find("P01");
-		std::vector<Transform> bones = PoseSkeleton(skeleton, idle == model->m_animations.end() ? nullptr : &idle->second, 0);
+		model->m_animations = animations;
+		auto idle = model->m_animations->find("P01");
+		std::vector<Transform> bones = PoseSkeleton(skeleton, idle == model->m_animations->end() ? nullptr : &idle->second, 0);
 		model->m_head_z = 0;
 		for (size_t i = 0; i < skeleton.bones.size(); ++i) {
 			const std::string &name = skeleton.bones[i].name;
@@ -170,31 +200,72 @@ namespace render
 				model->m_head_z = bones[i].translation.z;
 		}
 
-		// Texture names follow RRRPPMMVV.BMP (race, part, material, variant); swap in the
-		// equipped material where the model has one, and the face on the head.
-		auto texture_for = [&](const std::string &name, int &slot) {
+		// The head: the helm's mesh in place of the bare head, where the model has one (Vah Shir
+		// helms are item models). An NPC's helm byte picks it, else the helm material does.
+		bool npc_texture = appearance.texture != 0xff;
+		std::string bare_head = code + "HE00_DMSPRITEDEF";
+		int head_mesh = -1;
+		auto head_named = [&](int head) {
+			char name[64];
+			snprintf(name, sizeof(name), "%sHE%02d_DMSPRITEDEF", code.c_str(), head);
+			int index = head > 0 ? source->wld.Find(name) : -1;
+			return index >= 0 && source->wld.Fragments()[index].type == 0x36 ? index : -1;
+		};
+		if (appearance.race != 130) {
+			if (npc_texture && appearance.helm < 0xf0)
+				head_mesh = head_named(appearance.helm);
+			if (head_mesh < 0)
+				head_mesh = head_named(HeadForMaterial(appearance.equip[0], appearance.race));
+		}
+
+		// Material names follow RRRPPMMVV_MDF (race, part, material, variant). A player's slots each
+		// swap in their material (CDisplay_SwapMaterial), and the face goes on the head
+		// (CDisplay_SwapFace); an NPC's body texture goes on every part instead (SwapNPCMaterials),
+		// untinted. Skeletons (race 60) only have the one.
+		unsigned body_texture = appearance.texture < 31 && !(appearance.race == 60) ? appearance.texture : 0;
+		auto material_for = [&](const WldMaterial &material, int &slot) {
 			slot = -1;
-			std::string upper = Upper(name);
-			if (upper.size() != 13 || upper.compare(9, 4, ".BMP") != 0 || upper.compare(0, 3, code) != 0)
-				return name;
-			slot = SlotForPart(upper.substr(3, 2));
-			if (slot < 0)
-				return name;
-			unsigned material = appearance.equip[slot] <= 99 ? appearance.equip[slot] : 0;
-			char swapped[16];
-			if (slot == 0) {
-				snprintf(swapped, sizeof(swapped), "%sHE%02u%u%c.BMP", code.c_str(), 0u, appearance.face % 10u, upper[8]);
-				return source->textures.Exists(swapped) ? std::string(swapped) : name;
+			std::string upper = Upper(material.name);
+			if (upper.size() <= 8 || upper.compare(0, 3, code) != 0 || !Digits(upper, 5, 4))
+				return material;
+			std::string swapped = upper;
+			if (npc_texture) {
+				char digits[4];
+				snprintf(digits, sizeof(digits), "%02u", body_texture);
+				swapped.replace(5, 2, digits);
 			}
-			snprintf(swapped, sizeof(swapped), "%s%s%02u%s.BMP", code.c_str(), upper.substr(3, 2).c_str(), material,
-				upper.substr(7, 2).c_str());
-			return source->textures.Exists(swapped) ? std::string(swapped) : name;
+			else {
+				if (upper.size() != 13 || upper.compare(9, 4, "_MDF") != 0)
+					return material;
+				slot = SlotForPart(upper.substr(3, 2));
+				if (slot < 0)
+					return material;
+				char name[16];
+				if (slot == 0)
+					snprintf(name, sizeof(name), "%sHE%02u%u%c_MDF", code.c_str(), 0u, appearance.face % 10u, upper[8]);
+				else
+					snprintf(name, sizeof(name), "%s%s%02u%s_MDF", code.c_str(), upper.substr(3, 2).c_str(),
+						appearance.equip[slot] <= 99 ? appearance.equip[slot] : 0u, upper.substr(7, 2).c_str());
+				swapped = name;
+			}
+			WldMaterial found;
+			return swapped != upper && source->wld.FindMaterial(swapped, found) ? found : material;
+		};
+		auto tint_for = [&](const WldMaterial &material, int slot) {
+			uint32_t tint = 0;
+			if (slot >= 1 && slot < EquipSlots)
+				tint = appearance.tint[slot];
+			else if (slot < 0 && TintedByHelm(Upper(material.name), appearance.race))
+				tint = appearance.tint[0];
+			return (tint >> 24) != 0 ? tint & 0xffffff : 0xffffffu;
 		};
 
 		model->m_min_z = 1e30f;
 		model->m_max_z = -1e30f;
 		WldMesh mesh;
-		for (int index : skeleton.meshes) {
+		for (int &index : skeleton.meshes) {
+			if (head_mesh >= 0 && Upper(source->wld.Fragments()[index].name) == bare_head)
+				index = head_mesh;
 			if (!source->wld.ReadMesh(index, mesh))
 				continue;
 			uint32_t base = static_cast<uint32_t>(model->m_positions.size());
@@ -213,28 +284,31 @@ namespace render
 				model->m_min_z = std::min(model->m_min_z, z);
 				model->m_max_z = std::max(model->m_max_z, z);
 			}
-			std::map<uint16_t, size_t> batch_of;
+			std::map<uint16_t, size_t> batch_of; // SIZE_MAX: not drawn
 			for (const auto &t : mesh.triangles) {
 				if (t.material >= mesh.materials.size())
 					continue;
-				const WldMaterial &material = mesh.materials[t.material];
-				MaterialInfo info = DescribeRenderMethod(material.render_method);
-				if (!info.visible)
-					continue;
 				auto found = batch_of.find(t.material);
 				if (found == batch_of.end()) {
+					int slot = -1;
+					WldMaterial material = material_for(mesh.materials[t.material], slot);
+					MaterialInfo info = DescribeRenderMethod(material.render_method);
+					if (!info.visible) {
+						batch_of.emplace(t.material, SIZE_MAX);
+						continue;
+					}
 					CharacterModel::Batch batch;
 					batch.material.blend = info.blend;
 					batch.material.opacity = info.opacity;
 					batch.material.two_sided = info.blend != Blend::Opaque;
-					int slot = -1;
 					if (!material.textures.empty())
-						batch.material.texture = source->textures.Get(texture_for(material.textures[0], slot), info.masked);
-					if (slot >= 0 && (appearance.tint[slot] >> 24) != 0)
-						batch.tint = appearance.tint[slot] & 0xffffff;
+						batch.material.texture = source->textures.Get(material.textures[0], info.masked);
+					batch.tint = tint_for(material, slot);
 					found = batch_of.emplace(t.material, model->m_batches.size()).first;
 					model->m_batches.push_back(std::move(batch));
 				}
+				if (found->second == SIZE_MAX)
+					continue;
 				auto &indices = model->m_batches[found->second].indices;
 				indices.insert(indices.end(), {base + t.v[0], base + t.v[1], base + t.v[2]});
 			}
@@ -244,11 +318,18 @@ namespace render
 			return nullptr;
 		}
 		model->m_skeleton = std::move(skeleton);
-		if (player_race) {
-			// Player race models come in assorted sizes; each is scaled to the race's height.
+		if (player_race || OnPlayerSkeleton(code)) {
+			// Player race models come in assorted sizes (the female halfling's is half again the
+			// male's); each is scaled to the race's height, its feet on the floor. Ours, and also for
+			// the citizens made from them (the Rivervale citizens are the halfling's, the Qeynos ones
+			// the human's), which SetHeights' size / 5 below would leave as mismatched.
+			float height = appearance.height > 0 ? appearance.height : player_race ? RaceHeight(appearance.race) : 6;
 			if (model->m_max_z > model->m_min_z)
-				model->m_scale = (appearance.height > 0 ? appearance.height : RaceHeight(appearance.race)) /
-				                 (model->m_max_z - model->m_min_z);
+				model->m_scale = height / (model->m_max_z - model->m_min_z);
+			model->m_min_z *= model->m_scale;
+			model->m_max_z *= model->m_scale;
+			model->m_head_z *= model->m_scale;
+			model->m_origin_over_feet = -model->m_min_z;
 		}
 		else {
 			// EQPlayer::SetHeights: the actor's scale is the height / 5 (6 when it's not given;
@@ -257,29 +338,27 @@ namespace render
 			if (appearance.race == 63 || ((appearance.race == 42 || appearance.race == 120) && appearance.gender == 2))
 				height *= 0.45f;
 			model->m_scale = height * 0.2f;
+			model->m_min_z *= model->m_scale;
+			model->m_max_z *= model->m_scale;
+			model->m_head_z *= model->m_scale;
 			model->m_origin_over_feet = 3.125f * model->m_scale;
 		}
-		model->m_min_z *= model->m_scale;
-		model->m_max_z *= model->m_scale;
-		model->m_head_z *= model->m_scale;
-		if (player_race)
-			model->m_origin_over_feet = -model->m_min_z;
 		return model;
 	}
 
 	uint32_t CharacterModel::AnimationMs(const std::string &animation) const
 	{
-		auto it = m_animations.find(animation);
-		return it == m_animations.end() ? 0 : static_cast<uint32_t>(it->second.length * it->second.frame_ms);
+		auto it = m_animations->find(animation);
+		return it == m_animations->end() ? 0 : static_cast<uint32_t>(it->second.length * it->second.frame_ms);
 	}
 
 	void CharacterModel::Draw(Renderer &renderer, const Transform &placement, const Vec3 &light_direction, float ambient,
-		float diffuse, uint64_t time_ms, const std::string &animation) const
+		float diffuse, uint64_t time_ms, const std::string &animation, bool loop) const
 	{
-		auto it = m_animations.find(animation);
-		if (it == m_animations.end())
-			it = m_animations.find("P01");
-		std::vector<Transform> bones = PoseSkeleton(m_skeleton, it == m_animations.end() ? nullptr : &it->second, time_ms);
+		auto it = m_animations->find(animation);
+		if (it == m_animations->end())
+			it = m_animations->find("P01");
+		std::vector<Transform> bones = PoseSkeleton(m_skeleton, it == m_animations->end() ? nullptr : &it->second, time_ms, loop);
 		Transform scaled = placement;
 		scaled.scale *= m_scale;
 		for (auto &bone : bones)

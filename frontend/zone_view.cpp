@@ -1,6 +1,7 @@
 #include "zone_view.h"
 
 #include "actor_tags.h"
+#include "animations.h"
 
 #include <algorithm>
 #include <chrono>
@@ -314,7 +315,7 @@ void ZoneView::ChooseAnimation(float ms)
 	if (m_model && (animation == "L03" || animation == "L04" || animation == "L05")) {
 		double length = m_model->AnimationMs(animation);
 		if (length > 0)
-			m_animation_ms = std::min(m_animation_ms, length - 1);
+			m_animation_ms = std::min(m_animation_ms, length);
 	}
 }
 
@@ -356,14 +357,16 @@ bool ZoneView::SpawnStats(uint16_t id, SpawnDebug &out) const
 	auto it = m_actors.find(id);
 	if (it == m_actors.end())
 		return false;
-	const SpawnActor &actor = it->second;
+	const SpawnView &view = it->second;
 	out = SpawnDebug{};
-	if (actor.model)
-		out.model = actor.model->Code();
-	out.animation = actor.animation;
-	out.animation_rate = actor.animation_rate;
-	out.drawn = actor.drawn;
-	out.camera_distance = actor.distance;
+	if (view.model)
+		out.model = view.model->Code();
+	out.animation = render::AnimationCode(view.actor.Animation());
+	out.animation_rate = view.actor.AnimationRate();
+	out.drawn = view.drawn;
+	out.camera_distance = view.distance;
+	out.feet = view.Feet();
+	out.body_environment = view.actor.BodyEnvironment();
 	return true;
 }
 
@@ -378,7 +381,7 @@ uint16_t ZoneView::PickSpawn(int x, int y) const
 			continue;
 		float height = actor.model->MaxZ() - actor.model->MinZ();
 		float fx, fy, tx, ty;
-		if (!m_renderer->Project(actor.feet, fx, fy) || !m_renderer->Project(actor.feet + render::Vec3{0, 0, height}, tx, ty))
+		if (!m_renderer->Project(actor.Feet(), fx, fy) || !m_renderer->Project(actor.Feet() + render::Vec3{0, 0, height}, tx, ty))
 			continue;
 		float half = std::max(6.0f, (fy - ty) / 3);
 		float center = (fx + tx) / 2;
@@ -501,7 +504,8 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 			if (length > 0)
 				time = length - 1 - time % length;
 		}
-		m_model->Draw(*m_renderer, placement, light_direction, m_model_ambient, m_model_diffuse, time, m_animation);
+		bool held = m_animation == "L03" || m_animation == "L04" || m_animation == "L05"; // jumps and falls stop at the end
+		m_model->Draw(*m_renderer, placement, light_direction, m_model_ambient, m_model_diffuse, time, m_animation, !held);
 	}
 	m_camera_position = camera.position;
 	DrawSpawns();
@@ -574,23 +578,32 @@ void ZoneView::DrawDebugOverlays(Canvas &canvas) const
 
 // ---------------------------------------------------------------- other spawns
 
-std::shared_ptr<render::CharacterModel> ZoneView::SpawnModel(const ZoneSpawn &spawn)
+std::string ZoneView::SpawnModelKey(const ZoneSpawn &spawn)
 {
+	char key[512];
+	int length = snprintf(key, sizeof(key), "%u/%u/%u/%.2f/%u/%u", spawn.race, spawn.gender, spawn.face, spawn.size,
+		spawn.body_texture, spawn.helm);
+	for (int k = 0; k < render::EquipSlots; ++k)
+		length += snprintf(key + length, sizeof(key) - static_cast<size_t>(length), "/%u:%08x", spawn.equipment[k], spawn.colors[k]);
+	return key;
+}
+
+std::shared_ptr<render::CharacterModel> ZoneView::SpawnModel(const ZoneSpawn &spawn, const std::string &key)
+{
+	auto cached = m_model_cache.find(key);
+	if (cached != m_model_cache.end())
+		return cached->second;
 	render::CharacterAppearance appearance;
 	appearance.race = spawn.race;
 	appearance.gender = spawn.gender;
 	appearance.face = spawn.face;
 	appearance.height = spawn.size;
-	char key[512];
-	int length = snprintf(key, sizeof(key), "%u/%u/%u/%.2f", spawn.race, spawn.gender, spawn.face, spawn.size);
+	appearance.texture = spawn.body_texture;
+	appearance.helm = spawn.helm;
 	for (int k = 0; k < render::EquipSlots; ++k) {
 		appearance.equip[k] = spawn.equipment[k];
 		appearance.tint[k] = spawn.colors[k];
-		length += snprintf(key + length, sizeof(key) - static_cast<size_t>(length), "/%u:%08x", spawn.equipment[k], spawn.colors[k]);
 	}
-	auto cached = m_model_cache.find(key);
-	if (cached != m_model_cache.end())
-		return cached->second;
 	std::string error;
 	std::shared_ptr<render::CharacterModel> model = m_models.Build(appearance, error);
 	if (!model && m_missing_models.insert(render::ActorTag(spawn.race, spawn.gender)).second)
@@ -614,84 +627,51 @@ void ZoneView::UpdateSpawns(const std::map<uint16_t, ZoneSpawn> &spawns, uint16_
 	}
 }
 
-void ZoneView::PoseSpawn(SpawnActor &actor, const ZoneSpawn &spawn, uint64_t now_ms)
+void ZoneView::PoseSpawn(SpawnView &view, const ZoneSpawn &spawn, uint64_t now_ms)
 {
-	// Carry on from the last update the way process_physics moves everyone: the velocity per
-	// tick (and the turn) since the update came in, for up to two seconds.
-	float ticks = spawn.updated_ms && now_ms > spawn.updated_ms ? std::min((now_ms - spawn.updated_ms) * 0.02f, 40.0f) : 0;
-	float y = spawn.y + spawn.dy * ticks, x = spawn.x + spawn.dx * ticks, z = spawn.z + spawn.dz * ticks;
-	actor.heading = std::fmod(spawn.heading + spawn.heading_speed * std::min(ticks, 10.0f) + 512, 512.0f);
-
+	float ms = view.last_ms && now_ms > view.last_ms ? static_cast<float>(now_ms - view.last_ms) : 0;
+	view.last_ms = now_ms;
 	float size = spawn.size > 0 ? spawn.size : (render::IsPlayerRace(spawn.race) ? render::RaceHeight(spawn.race) : 6);
-	actor.feet = {y, x, z - size / 5 * 3.125f}; // WLD x/y are the server's y/x; z is the model's center
+	view.actor.Update(spawn, size, m_info.gravity, now_ms);
 
-	// Build the model once they're close enough to be seen.
-	float distance = render::Length(actor.feet - m_camera_position);
-	if (!actor.resolved && distance < std::max(m_info.fog_end, 50.0f) + 50) {
-		actor.model = SpawnModel(spawn);
-		actor.resolved = true;
+	// Build the model once they're close enough to be seen (and again when their look changes).
+	// Up close they move with the floor and the water under them; far off they just carry on.
+	float range = std::max(m_info.fog_end, 50.0f) + 50;
+	bool near = render::Length(view.Feet() - m_camera_position) < range;
+	view.actor.Step(m_zone, ms, near, now_ms);
+	if ((near && !view.resolved) || (view.resolved && spawn.look_serial != view.look_serial)) {
+		std::string key = SpawnModelKey(spawn);
+		if (!view.resolved || key != view.model_key)
+			view.model = SpawnModel(spawn, key);
+		view.model_key = key;
+		view.look_serial = spawn.look_serial;
+		view.resolved = true;
 	}
-
-	// The animation: dead, sitting, running, walking or standing.
-	std::string animation = "P01";
-	bool hold = false;
-	float moving = std::sqrt(spawn.dx * spawn.dx + spawn.dy * spawn.dy);
-	if (spawn.npc == 2 || spawn.npc == 3 || spawn.stance == 115) {
-		animation = "D05";
-		hold = true;
-	}
-	float rate = 1;
-	// In water (their body's region, as MovePlayer finds it for everyone): swimming or treading water.
-	bool swimming = animation != "D05" && render::Swimming(m_zone.Regions().EnvironmentAt({y, x, z}));
-	if (swimming) {
-		bool swimming_on = moving >= 0.001f || spawn.speed != 0;
-		animation = swimming_on ? "P06" : "L09";
-		rate = swimming_on ? moving * 0.5f + 1 : 1;
-	}
-	else if (animation != "D05" && (spawn.speed != 0 || moving > 0.05f)) {
-		float speed = spawn.speed != 0 ? std::fabs(spawn.speed) : moving / 2.13f; // velocity -> speed at steady state
-		animation = speed >= spawn.run_speed * 0.9f ? "L02" : "L01";
-		rate = MoveAnimationRate(moving > 0.05f ? moving : speed * 2.13f);
-	}
-	if (actor.model && !actor.model->HasAnimation(animation))
-		animation = "P01";
-	float ms = actor.last_ms && now_ms > actor.last_ms ? static_cast<float>(now_ms - actor.last_ms) : 0;
-	actor.last_ms = now_ms;
-	if (animation != actor.animation) {
-		actor.animation = animation;
-		actor.animation_ms = 0;
-	}
-	actor.hold_last_frame = hold;
-	actor.animation_rate = rate;
-	actor.animation_ms += ms * rate;
-	if (hold && actor.model) {
-		double length = actor.model->AnimationMs(animation);
-		if (length > 0)
-			actor.animation_ms = std::min(actor.animation_ms, length - 1);
-	}
+	if (view.model)
+		view.actor.Animate(spawn, *view.model, ms, now_ms);
 }
 
 void ZoneView::DrawSpawns()
 {
 	float far_plane = FarPlane();
-	for (auto &[id, actor] : m_actors) {
-		actor.drawn = false;
-		if (!actor.model)
+	for (auto &[id, view] : m_actors) {
+		view.drawn = false;
+		if (!view.model)
 			continue;
-		const render::CharacterModel &model = *actor.model;
+		const render::CharacterModel &model = *view.model;
 		float height = model.MaxZ() - model.MinZ();
-		render::Vec3 center = actor.feet + render::Vec3{0, 0, height * 0.5f};
-		actor.distance = render::Length(center - m_camera_position);
-		if (actor.distance > far_plane + height || !m_renderer->SphereVisible(center, height * 0.75f))
+		render::Vec3 center = view.Feet() + render::Vec3{0, 0, height * 0.5f};
+		view.distance = render::Length(center - m_camera_position);
+		if (view.distance > far_plane + height || !m_renderer->SphereVisible(center, height * 0.75f))
 			continue;
 		render::Transform placement;
-		placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(actor.heading));
-		placement.translation = actor.feet + render::Vec3{0, 0, model.OriginOverFeet()};
+		placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(view.actor.Heading()));
+		placement.translation = view.Feet() + render::Vec3{0, 0, model.OriginOverFeet()};
 		render::Vec3 to_camera = render::Normalize(m_camera_position - center);
 		render::Vec3 light{to_camera.x, to_camera.y, 1.2f};
-		model.Draw(*m_renderer, placement, light, m_model_ambient, m_model_diffuse, static_cast<uint64_t>(actor.animation_ms),
-			actor.animation);
-		actor.drawn = true;
+		model.Draw(*m_renderer, placement, light, m_model_ambient, m_model_diffuse, view.actor.AnimationTime(model),
+			render::AnimationCode(view.actor.Animation()), view.actor.AnimationLoops());
+		view.drawn = true;
 	}
 }
 
@@ -705,7 +685,7 @@ std::vector<ZoneView::NameTag> ZoneView::NameTags(float range) const
 		if (!actor.drawn || actor.distance > range)
 			continue;
 		float sx, sy;
-		render::Vec3 top = actor.feet + render::Vec3{0, 0, actor.model->MaxZ() - actor.model->MinZ() + 0.6f};
+		render::Vec3 top = actor.Feet() + render::Vec3{0, 0, actor.model->MaxZ() - actor.model->MinZ() + 0.6f};
 		if (m_renderer->Project(top, sx, sy) && !m_renderer->Occluded(top))
 			tags.push_back({id, static_cast<int>(sx), static_cast<int>(sy), actor.distance});
 	}

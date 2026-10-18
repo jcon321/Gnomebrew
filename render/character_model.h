@@ -1,9 +1,9 @@
 #pragma once
 
 // Player race models (the classic ones the TAKP client uses: global_chr.s3d,
-// global4_chr.s3d for Iksar, global7_chr.s3d for Vah Shir), dressed from the
-// equipment list and playing one of their animations: P01 standing idle, L01
-// walk, L02 run, L03 running jump, L04 standing jump, L05 falling.
+// global4_chr.s3d for Iksar, global7_chr.s3d for Vah Shir) and the creatures,
+// dressed from the equipment list (or an NPC's body texture and helm) and playing
+// any of their animations by track code (see animations.h).
 
 #include "renderer.h"
 #include "skeleton.h"
@@ -27,6 +27,8 @@ namespace render
 		uint32_t equip[EquipSlots] = {}; // material per slot (0 none, 1 leather, 2 chain, 3 plate, ...)
 		uint32_t tint[EquipSlots] = {};  // 0xFFRRGGBB when tinted
 		float height = 0;                // the spawn's size; 0 = the race's default
+		uint8_t texture = 0xff;          // 0xFF: dressed per slot; else an NPC's body texture (Spawn_Struct bodytexture)
+		uint8_t helm = 0;                // an NPC's head (Spawn_Struct helm)
 	};
 
 	// Three-letter model code for a playable race ("HUM", "IKF", ...), or empty.
@@ -37,10 +39,10 @@ namespace render
 	{
 	public:
 		// placement: model space -> world. Lit by a directional light (toward `light_direction`) over ambient.
-		// `time_ms` runs the animation (looping); a missing one plays the idle.
+		// `time_ms` runs the animation (looping, or stopping on its last frame); a missing one plays the idle.
 		void Draw(Renderer &renderer, const Transform &placement, const Vec3 &light_direction, float ambient,
-			float diffuse, uint64_t time_ms, const std::string &animation = "P01") const;
-		bool HasAnimation(const std::string &animation) const { return m_animations.count(animation) != 0; }
+			float diffuse, uint64_t time_ms, const std::string &animation = "P01", bool loop = true) const;
+		bool HasAnimation(const std::string &animation) const { return m_animations->count(animation) != 0; }
 		uint32_t AnimationMs(const std::string &animation) const; // one loop
 
 		// Model-space extent of the idle's first frame, after scaling to the race's height.
@@ -64,7 +66,7 @@ namespace render
 
 		std::string m_code;
 		WldSkeleton m_skeleton;
-		std::map<std::string, SkeletonAnimation> m_animations;
+		std::shared_ptr<const std::map<std::string, SkeletonAnimation>> m_animations; // by code ("L01"), shared
 		std::vector<Vec3> m_positions, m_normals; // bone space
 		std::vector<uint16_t> m_bones;           // per vertex
 		std::vector<float> m_uvs;
@@ -103,5 +105,6 @@ namespace render
 		};
 		bool AddSource(const std::string &eq_dir, const std::string &name);
 		std::vector<std::unique_ptr<Source>> m_sources;
+		std::map<std::string, std::shared_ptr<const std::map<std::string, SkeletonAnimation>>> m_animation_sets; // by model code
 	};
 }

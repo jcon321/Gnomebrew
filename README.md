@@ -163,8 +163,10 @@ build/scene_preview EQDIR OUT.png --player RACE GENDER --zone NAME --at X Y Z [-
 class, face and armor, a free camera anywhere in a zone (server coordinates, heading 0..512), or
 the in-zone view with a character standing at a server position (`--fog` and `--sky` stand in for
 the zone's `OP_NewZone`). In that mode `--walk MS` runs forward first (and `--turn`), `--npc RACE
-GENDER SIZE X Y Z HEADING` stands spawns around, `--time HOUR MINUTE` sets the time of day, and
-`--debug-draw` turns on the debug menu's render toggles. `--frames N` times N renders.
+GENDER SIZE X Y Z HEADING` stands spawns around (each followed by any of `--npc-look TEXTURE HELM`,
+`--npc-move SPEED TURN`, `--npc-stance S` and `--npc-fly F`), `--spawn-ms MS` runs them that long first
+and prints what they do, `--time HOUR MINUTE` sets the time of day, and `--debug-draw` turns on the
+debug menu's render toggles. `--frames N` times N renders.
 
 ## How the front end was recovered
 
@@ -373,10 +375,39 @@ Not yet: the real client's messages use `CConfirmationDialog`; these use the fro
   at most every 150 ms and stops repeating an unchanged update after 6.
 - **Other spawns:** each race's model is `EQPlayer::GetActorTag`'s (`render/actor_tags.cpp`, the client's
   race table): `<tag>_ACTORDEF` from `<zone>_chr.s3d`, `<zone>_chr2.s3d` or `global*_chr.s3d`, else race 75's
-  (`CreatePlayerActor`). Player races are scaled to their height like ours; the rest by `EQPlayer::SetHeights`:
-  size / 5, with the model's origin at the spawn's z. They carry on from their last update with its
-  velocity, as `process_physics` moves everyone, and play walk, run, idle or (dead) `D05`. Their names
-  float over them within 120 units, hidden by anything in front.
+  (`CreatePlayerActor`). Player races are scaled to their height like ours, feet on the floor, and so are the
+  citizens built on a player race's skeleton (Rivervale's are the halfling's, Qeynos's the human's): the female
+  halfling, dwarf and gnome meshes are ~6.6 units tall against the males' ~4.2, so `EQPlayer::SetHeights`'
+  size / 5 left Rivervale's bankers under their counters. The rest get size / 5, with the model's origin at
+  the spawn's z. Their names float over them within 120 units,
+  hidden by anything in front.
+- **How they look:** the spawn's `bodytexture` (byte 101) is the client's `EQPlayer::Texture`. 0xFF (players)
+  dresses each slot from the equipment list; anything else is an NPC's texture for every part
+  (`CDisplay::SwapNPCMaterials`: every `<tag>PPTTVV_MDF` material becomes `<tag>PP<texture>VV_MDF` where the
+  model has one, untinted), so a Qeynos guard is race 71 (`QCM`) with texture 1. The head is a mesh of its
+  own: `SwapHead` puts `<tag>HE<nn>_DMSPRITEDEF` in place of `HE00`, chosen by the NPC's `helm` (byte 102)
+  or the helm material (chain is 2), and the helm's tint goes only on its `HELM*` / `CHAIN*` materials, not
+  the face. `OP_WearChange` changes a slot's material and tint.
+- **Animations:** the client plays animations by number; the table at 004d7a21 (TAKP calls it
+  `initializeHotkeyLabels`) names their tracks: 1..11 `C01`..`C11` combat, 16 `D05` death, 17..25
+  `L01`..`L09` walking to treading water, 26 `O01` fidget, 32..38 `P01`..`P07` idle to sitting, 39..47
+  `T01`..`T09` casting. Each bone plays its own track, else the one of the model
+  `mapCharacterPrefixToRaceCode` names (`HUM` and `QCM` play `ELM`'s, `GNM` `DWM`'s, a minotaur the gnoll's), from
+  any loaded archive (the elves' sitting idle is in `global3_chr.s3d`), and a missing animation falls back
+  as `getFallbackAnimationId` says, then to the idle.
+- **How they move:** `unpack_physics` puts a spawn where its update says, with its speed (the update's
+  animation byte / 10), turn and velocity. The server sends a walking NPC with no velocity at all, so
+  `process_physics` moves it: each frame the speed pushes along the heading against friction (0.625, halved
+  while an NPC moves), which settles at 1.16 x speed a tick, the 23.3 x speed units a second the server
+  moves it. Gravity pulls unless the spawn flies or levitates (`flymode`, byte 100: 3, the NPC default, floats
+  only in water), and the feet stay on the floor (`MovePlayer`, `CheckForUnderFloor`). We stop a spawn 5 s
+  after its last update, since the server only updates spawns in range.
+- **What they play** (`CDisplay::ProcessAnimation`): idle, with a fidget one time in four each second (pets
+  one in a hundred); shuffling (`P03`) while turning on the spot; walking, or running once faster than the
+  walk speed, at `1 + velocity / 2`; swimming or treading water; jumping and falling. Stances play
+  `EQPlayer::ChangeStance`'s transitions (sitting down is `P02`, standing up the same backwards, `L08`
+  ducks, `D05` lies down), corpses lie dead, and `OP_Animation` plays the server's attacks, casting and
+  emotes once (its ids are the same numbers).
 - **Time of day:** `OP_TimeOfDay`'s hour (1..24, 1 is midnight) carried on at 20 game seconds a second
   (`EQWorldData::AdvanceTime`). Zones of time type 1, 2 and 5 take their ambient light from the client's
   hourly red, green and blue tables (`SetAmbientLight`); other zones get 0.1. As eqgfx's

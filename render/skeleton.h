@@ -20,15 +20,19 @@ namespace render
 		size_t length = 0; // frames in the longest track
 	};
 
-	// Loads `animation` (e.g. "P01") for a skeleton whose tracks are named after
-	// `own_code`, reading the tracks of `source_code`: models borrow each other's
-	// animations (e.g. the human female plays the wood elf female's).
-	SkeletonAnimation LoadAnimation(const WldFile &wld, const WldSkeleton &skeleton, const std::string &animation,
-		const std::string &own_code, const std::string &source_code);
+	// Loads `animation` (e.g. "P01") for a skeleton whose tracks are named after `own_code`,
+	// as initializeHierarchicalSprite (@004d8cab) does: each bone plays its own track, else
+	// the one of `source_code`'s model (AnimationSource: the human male plays the elf male's),
+	// as it is: the models that borrow have the same bone lengths, and the root bone's shift is
+	// what lowers the body to sit, duck or lie down. Tracks are looked up in each of `wlds` in turn.
+	SkeletonAnimation LoadAnimation(const std::vector<const WldFile *> &wlds, const WldSkeleton &skeleton,
+		const std::string &animation, const std::string &own_code, const std::string &source_code);
 
-	// Model-space transform of every bone, at time_ms into a looping animation
-	// (nullptr: the base pose). Frames are interpolated.
-	std::vector<Transform> PoseSkeleton(const WldSkeleton &skeleton, const SkeletonAnimation *animation, uint64_t time_ms);
+	// Model-space transform of every bone, at time_ms into the animation (nullptr: the base pose).
+	// Frames are interpolated; a looping one blends its last frame back into the first, one that
+	// doesn't loop stops on its last frame.
+	std::vector<Transform> PoseSkeleton(const WldSkeleton &skeleton, const SkeletonAnimation *animation, uint64_t time_ms,
+		bool loop = true);
 
 	// Moves the mesh's positions and normals from bone space into model space.
 	void SkinMesh(WldMesh &mesh, const std::vector<Transform> &bones);

@@ -14,6 +14,7 @@
 #include "player_movement.h"
 #include "rasterizer.h"
 #include "sky.h"
+#include "spawn_actor.h"
 #include "zone_scene.h"
 #include "zone_session.h"
 
@@ -131,6 +132,8 @@ public:
 		float animation_rate = 1;
 		bool drawn = false;
 		float camera_distance = 0;
+		render::Vec3 feet; // world space
+		render::Environment body_environment = render::Environment::Dry;
 	};
 	bool SpawnStats(uint16_t id, SpawnDebug &out) const;
 	// The spawn drawn under a window pixel, nearest first (after Render); 0 for none.
@@ -149,9 +152,10 @@ private:
 
 	void Load();
 	void PlacePlayer();
-	struct SpawnActor;
-	void PoseSpawn(SpawnActor &actor, const ZoneSpawn &spawn, uint64_t now_ms);
-	std::shared_ptr<render::CharacterModel> SpawnModel(const ZoneSpawn &spawn);
+	struct SpawnView;
+	void PoseSpawn(SpawnView &view, const ZoneSpawn &spawn, uint64_t now_ms);
+	static std::string SpawnModelKey(const ZoneSpawn &spawn);
+	std::shared_ptr<render::CharacterModel> SpawnModel(const ZoneSpawn &spawn, const std::string &key);
 	void DrawSpawns();
 	float FarPlane() const; // the fog's end, or the zone's max clip with the debug menu's no fog
 	void DrawDebugOverlays(Canvas &canvas) const;
@@ -189,21 +193,19 @@ private:
 	bool m_animation_reversed = false;
 
 	// Other spawns: models shared by everyone who looks the same, built once they're in range.
-	struct SpawnActor
+	struct SpawnView
 	{
 		std::shared_ptr<render::CharacterModel> model;
+		std::string model_key; // the look it was built for
+		uint32_t look_serial = 0; // ZoneSpawn::look_serial then: an OP_WearChange since builds again
 		bool resolved = false; // model looked up (it may still be null: no model for the race)
-		render::Vec3 feet;
-		float heading = 0;
-		std::string animation = "P01";
-		float animation_rate = 1;
-		bool hold_last_frame = false;
-		double animation_ms = 0;
+		SpawnActor actor;      // how it moves and what it's playing
 		uint64_t last_ms = 0;
 		float distance = 0; // from the camera, last frame
 		bool drawn = false;
+		const render::Vec3 &Feet() const { return actor.Feet(); }
 	};
-	std::map<uint16_t, SpawnActor> m_actors;
+	std::map<uint16_t, SpawnView> m_actors;
 	std::map<std::string, std::shared_ptr<render::CharacterModel>> m_model_cache;
 	std::set<std::string> m_missing_models;
 	render::Vec3 m_camera_position;

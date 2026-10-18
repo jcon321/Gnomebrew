@@ -90,6 +90,7 @@ namespace
 		for (int k = 0; k < 9; ++k)
 			s.colors[k] = Read<uint32_t>(d, o + 40 + k * 4);
 		s.id = Read<uint16_t>(d, o + 76);
+		s.body_type = Read<int16_t>(d, o + 78);
 		s.hp = Read<int16_t>(d, o + 80);
 		s.race = Read<uint16_t>(d, o + 84);
 		s.npc = d[o + 86];
@@ -100,6 +101,9 @@ namespace
 		s.anon = d[o + 95];
 		s.afk = d[o + 96];
 		s.gm = d[o + 99];
+		s.fly_mode = d[o + 100];
+		s.body_texture = d[o + 101];
+		s.helm = d[o + 102];
 		s.face = d[o + 103];
 		for (int k = 0; k < 9; ++k)
 			s.equipment[k] = Read<uint16_t>(d, o + 104 + k * 2);
@@ -674,6 +678,31 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		}
 		break;
 	}
+	case ZoneOp::WearChange: {
+		// WearChange_Struct: a slot's material and tint changed (an item worn or taken off).
+		auto it = m_spawns.find(Read<uint16_t>(data, 0));
+		uint8_t slot = data.size() >= 12 ? data[2] : 0xff;
+		if (it != m_spawns.end() && slot < 9) {
+			it->second.equipment[slot] = Read<uint16_t>(data, 4);
+			it->second.colors[slot] = Read<uint32_t>(data, 8);
+			++it->second.look_serial;
+			Event e;
+			e.type = Event::Type::SpawnChanged;
+			e.id = it->first;
+			events.push_back(e);
+		}
+		break;
+	}
+	case ZoneOp::Animation: {
+		// Animation_Struct: {u16 spawn, pad, i32 animation id, float speed}, played once.
+		auto it = m_spawns.find(Read<uint16_t>(data, 0));
+		if (it != m_spawns.end() && data.size() >= 12) {
+			it->second.action = Read<int32_t>(data, 4);
+			it->second.action_speed = Read<float>(data, 8);
+			++it->second.action_serial;
+		}
+		break;
+	}
 	case ZoneOp::Death: {
 		// Death_Struct: the spawn falls over and becomes its corpse.
 		auto it = m_spawns.find(Read<uint16_t>(data, 0));
@@ -853,7 +882,8 @@ void ZoneSession::Pump(int timeout_ms, std::vector<Event> &events)
 		}
 
 		bool chatty = packet.opcode == ZoneOp::MobUpdate || packet.opcode == ZoneOp::ClientUpdate ||
-		              packet.opcode == ZoneOp::HPUpdate || packet.opcode == ZoneOp::ManaChange;
+		              packet.opcode == ZoneOp::HPUpdate || packet.opcode == ZoneOp::ManaChange ||
+		              packet.opcode == ZoneOp::Animation;
 		if (!chatty || m_verbose) {
 			char header[96];
 			snprintf(header, sizeof(header), "[zone] <- %s (0x%04x) %zu bytes", ZoneOpcodeName(packet.opcode), packet.opcode,

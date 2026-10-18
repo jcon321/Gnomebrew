@@ -96,6 +96,17 @@ struct ZoneSpawn
 	float heading_speed = 0; // per tick
 	uint8_t stance = 100;    // SpawnAppearance Animation: 100 standing, 110 sitting, 111 crouching, 115 lying
 	uint64_t updated_ms = 0; // when the position came in
+	// EQPlayer::Texture: 0xFF dresses each slot from `equipment` (players); anything else is an NPC's
+	// body texture for every part, with `helm` choosing the head (CDisplay::SwapNPCMaterials).
+	uint8_t body_texture = 0xff;
+	uint8_t helm = 0;
+	uint8_t fly_mode = 0;    // LevitationState: 0 on the ground, 1 flying, 2 levitating, 3 floats in water
+	int16_t body_type = 0;
+	uint32_t look_serial = 0; // counts OP_WearChanges: the look changed
+	// The last OP_Animation (attacks, casting, emotes): a client animation id, played once.
+	uint32_t action_serial = 0;
+	int32_t action = 0;
+	float action_speed = 1;
 
 	std::string DisplayName() const; // "a rat", like the client's CleanName
 };

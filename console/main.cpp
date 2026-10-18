@@ -71,8 +71,8 @@ namespace
 		for (size_t i = 0; i < nearby.size() && i < 10; ++i) {
 			const ZoneSpawn &s = *nearby[i].second;
 			const char *kind = s.npc == 0 ? "player" : s.npc == 1 ? "npc" : "corpse";
-			printf("[zone]      %-28s level %2u %-6s %6.0f away  (%.0f, %.0f, %.0f)\n", s.DisplayName().c_str(), s.level, kind,
-				nearby[i].first, s.x, s.y, s.z);
+			printf("[zone]      %-28s level %2u %-6s %6.0f away  (%.0f, %.0f, %.0f)  race %u texture %u helm %u fly %u\n",
+				s.DisplayName().c_str(), s.level, kind, nearby[i].first, s.x, s.y, s.z, s.race, s.body_texture, s.helm, s.fly_mode);
 		}
 	}
 

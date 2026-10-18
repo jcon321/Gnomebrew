@@ -142,6 +142,8 @@ public:
 	int Find(const std::string &name) const; // fragment index by (case-insensitive) name, or -1
 
 	bool ReadMesh(int index, WldMesh &mesh) const;
+	// A material (0x30) by name, e.g. "GNNCH0201_MDF"; false when there's none.
+	bool FindMaterial(const std::string &name, WldMaterial &material) const;
 	// Meshes reached from an actor definition (0x14) through its 0x2d references.
 	std::vector<int> ActorMeshes(int actor_index) const;
 	// The skeleton (0x10) an actor definition uses through its 0x11 reference, or -1.

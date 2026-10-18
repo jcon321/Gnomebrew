@@ -380,10 +380,15 @@ void DebugMenu::DrawCard(Canvas &canvas, TextRenderer &text, const ZoneSession &
 			row(Format("Heading %.0f (%s)   size %.1f", s.heading, Compass(s.heading), s.size));
 			float moving = std::sqrt(s.dx * s.dx + s.dy * s.dy) * 20;
 			row(Format("Moving %.1f u/s   speed %.2f (walk %.2f run %.2f)", moving, s.speed, s.walk_speed, s.run_speed));
+			row(s.body_texture == 0xff ? Format("Dressed per slot   fly %u", s.fly_mode)
+			                           : Format("Texture %u   helm %u   fly %u", s.body_texture, s.helm, s.fly_mode));
 			ZoneView::SpawnDebug actor;
-			if (world && view->SpawnStats(s.id, actor))
+			if (world && view->SpawnStats(s.id, actor)) {
 				row(Format("Model %s   %s x%.2f%s", actor.model.empty() ? "none" : actor.model.c_str(), actor.animation.c_str(),
 					actor.animation_rate, actor.drawn ? "" : "   (not drawn)"));
+				row(Format("Drawn at %.1f, %.1f, %.1f (feet)%s", actor.feet.y, actor.feet.x, actor.feet.z,
+					render::Swimming(actor.body_environment) ? "   in water" : ""));
+			}
 			row(Format("Stance %u", s.stance))->right = s.updated_ms ? "updated " + Age(s.updated_ms, now) + " ago" : "not moved";
 		}
 		else

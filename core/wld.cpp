@@ -80,6 +80,12 @@ int WldFile::Find(const std::string &name) const
 	return it == m_by_name.end() ? -1 : it->second;
 }
 
+bool WldFile::FindMaterial(const std::string &name, WldMaterial &material) const
+{
+	int index = Find(name);
+	return index >= 0 && m_fragments[index].type == 0x30 && ReadMaterial(index, material);
+}
+
 // 0x30 material -> 0x05 sprite -> 0x04 sprite definition -> 0x03 bitmap names.
 bool WldFile::ReadMaterial(int index, WldMaterial &material) const
 {
