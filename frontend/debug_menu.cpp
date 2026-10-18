@@ -271,6 +271,21 @@ void DebugMenu::DrawCard(Canvas &canvas, TextRenderer &text, const ZoneSession &
 			row(Format("Floor z %.1f   feet %.2f above", stats.floor_z, stats.feet_z - stats.floor_z));
 		else
 			row("No floor below");
+		auto environment = [](render::Environment e) {
+			switch (e) {
+			case render::Environment::Water: return "water";
+			case render::Environment::Slime: return "slime";
+			case render::Environment::Lava: return "lava";
+			case render::Environment::VWater: return "vwater";
+			case render::Environment::Water2: return "water2";
+			case render::Environment::Water3: return "water3";
+			default: return "dry";
+			}
+		};
+		row(Format("Feet %s  body %s  eyes %s", environment(stats.feet_environment), environment(stats.body_environment),
+			environment(stats.head_environment)));
+		if (!stats.region_types.empty())
+			row("Region " + stats.region_types.substr(0, 40));
 		row(Format("Animation %s x%.2f", stats.animation.c_str(), stats.animation_rate));
 	}
 

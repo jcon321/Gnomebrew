@@ -141,7 +141,11 @@ private:
 	void SelectSlot(int slot);
 	void EnterWorldSelected();
 	void LeaveWorld(); // close the world session and go back to the start screen
-	void EnterZoneScreen();
+	// zoning: arriving through a zone line, which keeps the chat.
+	void EnterZoneScreen(bool zoning = false);
+	// CDisplay_DoTeleport for a zone line our feet stepped into (a "DRNTP..." region type).
+	void HandleZoneLine(const std::string &type);
+	std::string EqString(uint32_t id, const std::string &fallback) const; // eqstr_en.txt
 	void HandleZoneEvents(const std::vector<ZoneSession::Event> &events);
 	void AddZoneLog(const std::string &text, uint32_t color);
 	void StartCamp();
@@ -219,6 +223,7 @@ private:
 	std::string m_time_of_day;
 	std::unique_ptr<ZoneView> m_zone_view;
 	bool m_zone_error_logged = false;
+	bool m_zoning = false; // through a zone line: from the zone's approval until the next zone is in
 	DebugMenu m_debug;
 	struct HeldKeys
 	{

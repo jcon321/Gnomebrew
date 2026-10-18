@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace
 {
@@ -17,6 +18,7 @@ namespace
 	// play like it does at 60 frames a second, a third of a tick each; the top speed doesn't
 	// change.
 	constexpr float FrameTicks = 1.0f / 3;
+	constexpr float BodyHeight = 0.625f; // ModelHeightOffset: 5/8 of the height above the feet, where the server's z is
 
 	float WrapHeading(float heading)
 	{
@@ -44,6 +46,17 @@ void PlayerMovement::Place(const render::Vec3 &feet, float heading, float height
 	m_speed = m_heading_speed = m_turn_ramp = m_strafe = 0;
 	m_velocity = {};
 	m_on_ground = true;
+	m_eye = m_height * 0.9f;
+	m_clock_ms = m_swim_jump_ms = 0;
+	m_feet_region = m_body_region = m_head_region = -2;
+	m_feet_environment = m_body_environment = m_head_environment = render::Environment::Dry;
+	m_slippery = m_was_swimming = false;
+	m_zone_line.clear();
+}
+
+std::string PlayerMovement::TakeZoneLine()
+{
+	return std::exchange(m_zone_line, {});
 }
 
 void PlayerMovement::Turn(float delta)
@@ -53,11 +66,15 @@ void PlayerMovement::Turn(float delta)
 
 bool PlayerMovement::Step(const MoveControls &controls, float ms, const render::ZoneScene &scene)
 {
-	// ProcessControls: forward runs or walks, back walks; SetAccel takes effect at once.
+	// ProcessControls: forward runs or walks (swimming adds a hundredth of the skill), back walks
+	// (or stays put in water); SetAccel takes effect at once.
+	m_clock_ms += ms;
+	m_pitch = controls.pitch;
+	bool swimming = Swimming();
 	if (controls.forward && !controls.back)
-		m_speed = controls.run ? m_run_speed : m_walk_speed;
+		m_speed = (controls.run ? m_run_speed : m_walk_speed) + (swimming ? m_swim_skill * 0.01f : 0);
 	else if (controls.back && !controls.forward)
-		m_speed = -m_walk_speed;
+		m_speed = swimming ? 0 : -m_walk_speed;
 	else
 		m_speed = 0;
 
@@ -80,8 +97,17 @@ bool PlayerMovement::Step(const MoveControls &controls, float ms, const render::
 	else
 		m_turn_ramp = m_heading_speed = 0;
 
+	// DoSwimJump: swimming forward and looking up, every 1.5 s, climbs out where it isn't water ahead.
+	if (swimming && m_speed > 0 && m_pitch > 0 && m_clock_ms > m_swim_jump_ms) {
+		m_swim_jump_ms = m_clock_ms + 1500;
+		if (CanSwimJump(scene)) {
+			m_velocity.z += 3 * 2.5f * JumpHeightModifier;
+			m_velocity += Along(m_heading, 0.5f);
+		}
+	}
+
 	bool jumped = false;
-	if (controls.jump && m_on_ground) {
+	if (controls.jump && m_on_ground && !swimming) {
 		// DoMainLoop: the jump, and push_along_heading(1).
 		m_velocity.z += 1.65f * JumpHeightModifier;
 		m_velocity += Along(m_heading, 1.0f);
@@ -89,9 +115,10 @@ bool PlayerMovement::Step(const MoveControls &controls, float ms, const render::
 		jumped = true;
 	}
 
-	// One tick at most per step, so collision sees every stretch of the move.
+	// A frame (at 60 a second) at most per step: water damps a lot each frame, and collision
+	// sees every stretch of the move.
 	while (ticks > 0) {
-		float step = std::min(ticks, 1.0f);
+		float step = std::min(ticks, FrameTicks);
 		Tick(step, scene);
 		ticks -= step;
 	}
@@ -102,18 +129,36 @@ void PlayerMovement::Tick(float t, const render::ZoneScene &scene)
 {
 	m_heading = WrapHeading(m_heading + t * m_heading_speed);
 
-	// process_physics: gravity, then damping and the push along the heading.
+	// process_physics: gravity, then damping and the push along the heading (and in water, up
+	// or down the way we look).
+	bool swimming = Swimming();
 	m_velocity.z -= m_gravity * t;
-	float friction = m_on_ground ? GroundFriction : AirFriction;
-	float control = m_on_ground ? GroundControl : 0;
+	float friction = AirFriction, control = 0, rise_friction = AirFriction, rise_control = 0;
+	if (swimming) {
+		bool thick = m_body_environment == render::Environment::Slime || m_body_environment == render::Environment::Lava ||
+		             m_body_environment == render::Environment::VWater;
+		friction = thick ? 0.94f : 0.95f;
+		control = thick ? 0.02f : 0.025f;
+		rise_friction = thick ? 0.15f : 0.2f;
+		rise_control = 0.8f;
+	}
+	else if (m_on_ground) {
+		friction = m_slippery ? 0.99f : GroundFriction;
+		control = m_slippery ? 0.02f : GroundControl;
+	}
 	float frames = t / FrameTicks;
 	float keep = std::pow(friction, frames);
 	float scale = control * (1 - keep) / (1 - friction);
 	render::Vec3 push = Along(m_heading, m_speed * scale) + Along(m_heading + 128, m_strafe * scale);
 	m_velocity.x = m_velocity.x * keep + push.x;
 	m_velocity.y = m_velocity.y * keep + push.y;
-	m_velocity.z *= std::pow(AirFriction, frames);
-	if (m_on_ground && m_speed == 0 && m_strafe == 0) {
+	float rise_keep = std::pow(rise_friction, frames);
+	float rise = m_speed != 0 && m_pitch != 0 ? m_speed * std::sin(render::HeadingToRadians(m_pitch)) : 0;
+	m_velocity.z = m_velocity.z * rise_keep + rise * rise_control * (1 - rise_keep) / (1 - rise_friction);
+	// Out of the water but still swimming's animation: a slow rise stops (no popping up at the surface).
+	if (!swimming && m_was_swimming && m_velocity.z > 0 && m_velocity.z < 1)
+		m_velocity.z = 0;
+	if (m_on_ground && m_speed == 0 && m_strafe == 0 && !swimming) {
 		if (std::fabs(m_velocity.x) < 0.01f)
 			m_velocity.x = 0;
 		if (std::fabs(m_velocity.y) < 0.01f)
@@ -137,7 +182,7 @@ void PlayerMovement::Tick(float t, const render::ZoneScene &scene)
 	}
 	float z = feet.z + m_velocity.z * t;
 	// Walking down a slope or a step keeps us on the ground instead of falling off each edge.
-	if (m_on_ground && m_velocity.z <= 0 && floor_z >= feet.z - step_up)
+	if (m_on_ground && !swimming && m_velocity.z <= 0 && floor_z >= feet.z - step_up)
 		z = floor_z;
 	if (z <= floor_z + 0.001f) {
 		z = floor_z;
@@ -149,6 +194,51 @@ void PlayerMovement::Tick(float t, const render::ZoneScene &scene)
 		m_on_ground = false;
 	feet.z = z;
 	m_feet = feet;
+	m_was_swimming = swimming;
+	UpdateEnvironment(scene);
+}
+
+void PlayerMovement::UpdateEnvironment(const render::ZoneScene &scene)
+{
+	// MovePlayer looks again when a sample point's region changes, and keeps what it had
+	// outside every region.
+	const render::ZoneRegions &regions = scene.Regions();
+	if (regions.Empty())
+		return;
+	render::Vec3 feet = m_feet + render::Vec3{0, 0, 0.25f};
+	int region = regions.RegionAt(feet);
+	if (region >= 0 && region != m_feet_region) {
+		// Not where we were put: a zone-in point inside a zone line mustn't send us straight back.
+		bool placed_here = m_feet_region == -2;
+		m_feet_region = region;
+		render::ZoneRegions::Feet info = regions.FeetAt(feet);
+		m_feet_environment = info.environment;
+		m_slippery = info.slippery;
+		if (!info.zone_line.empty() && !placed_here)
+			m_zone_line = info.zone_line;
+	}
+	render::Vec3 body = m_feet + render::Vec3{0, 0, m_height * BodyHeight};
+	region = regions.RegionAt(body);
+	if (region >= 0 && region != m_body_region) {
+		m_body_region = region;
+		m_body_environment = regions.EnvironmentAt(body);
+	}
+	render::Vec3 eyes = m_feet + render::Vec3{0, 0, m_eye};
+	region = regions.RegionAt(eyes);
+	if (region >= 0 && region != m_head_region) {
+		m_head_region = region;
+		m_head_environment = regions.EnvironmentAt(eyes);
+	}
+}
+
+bool PlayerMovement::CanSwimJump(const render::ZoneScene &scene) const
+{
+	// CDisplay::GetEnvironment(player): ModelHeightOffset ahead, a unit under the body; no
+	// region or a dry one there means the edge.
+	float body = m_height * BodyHeight;
+	render::Vec3 ahead = m_feet + Along(m_heading, body) + render::Vec3{0, 0, body - 1};
+	int region = scene.Regions().RegionAt(ahead);
+	return region < 0 || scene.Regions().EnvironmentAt(ahead) == render::Environment::Dry;
 }
 
 render::Vec3 PlayerMovement::MoveHorizontally(const render::Vec3 &start, render::Vec3 move, const render::ZoneScene &scene) const

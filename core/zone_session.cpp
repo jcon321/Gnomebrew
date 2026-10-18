@@ -299,6 +299,9 @@ bool ZoneSession::Begin(const std::string &host, uint16_t port, const std::strin
 	m_identical_updates = 0;
 	m_recent_packets.clear();
 	m_last_sent = SentPosition{};
+	m_zone_points.clear();
+	m_zone_target = 0;
+	m_camp_started_ms = 0;
 
 	m_session = std::make_unique<RdpSession>();
 	if (!m_session->Connect(host, port)) {
@@ -334,6 +337,23 @@ void ZoneSession::SendPosition()
 	memcpy(update + 9, &z, 2);
 	if (Send(ZoneOp::ClientUpdate, update, sizeof(update), "OP_ClientUpdate"))
 		RecordSent(update);
+}
+
+bool ZoneSession::RequestZoneChange(uint32_t zone_id)
+{
+	if (m_state != State::InZone || zone_id == 0)
+		return false;
+	// The zone checks the request against where it last heard we are.
+	SendPosition();
+	// ZoneChange_Struct: char_name[64], zoneID @64, zone_reason @68 (0: a zone line), success @72.
+	uint8_t body[76] = {};
+	memcpy(body, m_profile.name.c_str(), std::min<size_t>(m_profile.name.size(), 63));
+	int32_t zone = static_cast<int32_t>(zone_id);
+	memcpy(body + 64, &zone, 4);
+	m_zone_target = zone_id;
+	m_zone_state_ms = NowMs();
+	m_state = State::ZoneRequested;
+	return Send(ZoneOp::ZoneChange, body, sizeof(body), "OP_ZoneChange " + std::to_string(zone_id));
 }
 
 bool ZoneSession::Say(const std::string &text)
@@ -509,6 +529,8 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		p.copper = Read<int32_t>(data, 2936);
 		p.zone_id = Read<uint32_t>(data, 3444);
 		p.deity = Read<uint16_t>(data, 4944);
+		for (int i = 0; i < 100; ++i)
+			p.skills[i] = Read<int16_t>(data, 2988 + i * 2);
 		m_have_profile = true;
 		char line[160];
 		snprintf(line, sizeof(line), "[zone]    profile: %s level %u, zone %u at (%.1f, %.1f, %.1f), hp %d", p.name.c_str(), p.level,
@@ -740,7 +762,56 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		events.push_back(e);
 		break;
 	}
+	case ZoneOp::SendZonepoints: {
+		// ZonePoints: count, then {iterator, y, x, z, heading, zoneid u16, unused u16}; one extra at the end.
+		m_zone_points.clear();
+		uint32_t count = data.size() >= 4 ? Read<uint32_t>(data, 0) : 0;
+		for (uint32_t i = 0; i < count && 4 + (i + 1) * 24 <= data.size(); ++i) {
+			size_t at = 4 + i * 24;
+			ZonePoint point;
+			point.index = Read<uint32_t>(data, at);
+			point.y = Read<float>(data, at + 4);
+			point.x = Read<float>(data, at + 8);
+			point.z = Read<float>(data, at + 12);
+			point.heading = Read<float>(data, at + 16);
+			point.zone = Read<uint16_t>(data, at + 20);
+			m_zone_points.push_back(point);
+		}
+		Log("[zone]    " + std::to_string(m_zone_points.size()) + " zone points");
+		break;
+	}
+	case ZoneOp::ZoneChange: {
+		// IsZoneAvailable reads the answer's success: 1, or why not.
+		int32_t zone = data.size() >= 76 ? Read<int32_t>(data, 64) : 0;
+		int32_t success = data.size() >= 76 ? Read<int32_t>(data, 72) : 0;
+		Log("[zone]    zone change to " + std::to_string(zone) + ": " + std::to_string(success));
+		if (m_state != State::ZoneRequested)
+			break;
+		Event e(success == 1 ? Event::Type::ZoneApproved : Event::Type::ZoneDenied);
+		if (success == 1) {
+			// MoveToZone_2: OP_DeleteSpawn with our spawn id, then wait to be let go.
+			Send(ZoneOp::DeleteSpawn, &m_my_id, sizeof(m_my_id), "OP_DeleteSpawn (leaving)");
+			m_state = State::Departing;
+			m_zone_state_ms = NowMs();
+			e.value = static_cast<int32_t>(m_zone_target);
+		}
+		else {
+			m_state = State::InZone;
+			e.value = success;
+		}
+		events.push_back(e);
+		break;
+	}
 	case ZoneOp::LogoutReply:
+		if (m_state == State::Departing) {
+			// The zone lets us go after OP_DeleteSpawn: on to world.
+			m_state = State::LoggedOut;
+			Log("[zone]    left for zone " + std::to_string(m_zone_target));
+			events.push_back({Event::Type::Departed});
+			if (m_session)
+				m_session->Close();
+			break;
+		}
 		m_state = State::LoggedOut;
 		Log("[zone]    logged out");
 		events.push_back({Event::Type::LoggedOut});
@@ -764,6 +835,11 @@ void ZoneSession::Pump(int timeout_ms, std::vector<Event> &events)
 		if (status == RdpSession::Status::Timeout)
 			break;
 		if (status == RdpSession::Status::Closed) {
+			if (m_state == State::Departing) {
+				m_state = State::LoggedOut;
+				events.push_back({Event::Type::Departed});
+				return;
+			}
 			if (m_state == State::Camping) {
 				// The zone may just drop the connection once the logout is processed.
 				m_state = State::LoggedOut;
@@ -802,6 +878,20 @@ void ZoneSession::Pump(int timeout_ms, std::vector<Event> &events)
 		SendMovement(NowMs());
 	if (m_state == State::Entering && NowMs() - m_started_ms > HandshakeTimeoutMs)
 		Fail(events, "timed out entering the zone");
+	// The zone gives up on world after a while and answers "not ready"; this is in case it never answers.
+	if (m_state == State::ZoneRequested && NowMs() - m_zone_state_ms > 60000) {
+		m_state = State::InZone;
+		Event e(Event::Type::ZoneDenied);
+		e.value = -1;
+		events.push_back(e);
+	}
+	if (m_state == State::Departing && NowMs() - m_zone_state_ms > 10000) {
+		// No OP_LogoutReply; the zone drops us on its own timer anyway.
+		m_state = State::LoggedOut;
+		events.push_back({Event::Type::Departed});
+		if (m_session)
+			m_session->Close();
+	}
 	if (m_state == State::Camping && CampRemainingMs() == 0 && m_camp_started_ms != 0) {
 		m_camp_started_ms = 0; // send once
 		Send(ZoneOp::Logout, nullptr, 0, "OP_Logout");

@@ -6,6 +6,7 @@
 
 #include "renderer.h"
 #include "textures.h"
+#include "zone_regions.h"
 
 #include <string>
 #include <vector>
@@ -49,6 +50,7 @@ namespace render
 		size_t TriangleCount() const;
 		const std::vector<Vec3> &SolidTriangles() const { return m_collision; } // 3 vertices each
 		size_t ObjectCount() const { return m_object_count; }
+		const ZoneRegions &Regions() const { return m_regions; } // water, lava, zone lines
 		const std::vector<std::string> &Warnings() const { return m_warnings; }
 
 	private:
@@ -62,6 +64,7 @@ namespace render
 		TextureCache m_textures;
 		std::vector<StaticMesh> m_meshes;
 		StaticVertices m_vertices; // every mesh's, once loaded
+		ZoneRegions m_regions;
 		std::vector<Vec3> m_collision; // solid triangles, 3 vertices each
 		// m_collision's triangles listed by the top-down grid cells their bounds touch, so the
 		// floor and wall tests look at the triangles nearby instead of the whole zone.

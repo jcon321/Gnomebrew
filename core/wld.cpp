@@ -451,3 +451,51 @@ std::vector<WldLight> WldFile::Lights() const
 	}
 	return lights;
 }
+
+// 0x21: node count, then {normal x y z, distance, region, front, back} (28 bytes) per node.
+// 0x22: one per region. 0x29: flags, region count, 0-based regions, then a user data string
+// (its length, then text encoded like the string hash).
+bool WldFile::ReadRegionMap(WldRegionMap &map) const
+{
+	map = {};
+	for (const auto &f : m_fragments) {
+		if (f.type == 0x21 && map.nodes.empty() && f.size >= 4) {
+			uint32_t count = Get<uint32_t>(f.offset);
+			if (4 + static_cast<size_t>(count) * 28 > f.size)
+				continue;
+			map.nodes.resize(count);
+			for (uint32_t i = 0; i < count; ++i) {
+				size_t p = f.offset + 4 + static_cast<size_t>(i) * 28;
+				WldRegionMap::Node &node = map.nodes[i];
+				node.normal = {Get<float>(p), Get<float>(p + 4), Get<float>(p + 8)};
+				node.distance = Get<float>(p + 12);
+				node.region = Get<int32_t>(p + 16);
+				node.front = Get<int32_t>(p + 20);
+				node.back = Get<int32_t>(p + 24);
+			}
+		}
+		else if (f.type == 0x22)
+			++map.region_count;
+		else if (f.type == 0x29 && f.size >= 8) {
+			WldRegionMap::Group group;
+			group.name = f.name;
+			uint32_t count = Get<uint32_t>(f.offset + 4);
+			size_t p = f.offset + 8;
+			if (p + static_cast<size_t>(count) * 4 > f.offset + f.size)
+				continue;
+			for (uint32_t i = 0; i < count; ++i, p += 4)
+				group.regions.push_back(Get<uint32_t>(p));
+			if (p + 4 <= f.offset + f.size) {
+				uint32_t length = Get<uint32_t>(p);
+				p += 4;
+				if (length > 0 && p + length <= f.offset + f.size) {
+					std::string text(reinterpret_cast<const char *>(m_data.data() + p), length);
+					Decode(text.data(), text.size());
+					group.user_data = text.c_str(); // up to the terminator
+				}
+			}
+			map.groups.push_back(std::move(group));
+		}
+	}
+	return !map.nodes.empty();
+}

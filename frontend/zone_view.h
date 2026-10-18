@@ -44,6 +44,9 @@ public:
 	// position from the server. From then on Move() moves them.
 	void SetPlayer(const render::CharacterAppearance &appearance, float walk_speed, float run_speed);
 	void SetPlayerPosition(float x, float y, float z, float heading);
+	void SetSwimSkill(int skill) { m_movement.SetSwimSkill(skill); } // the profile's swimming skill
+	// The zone line (a "DRNTP..." region type) our feet stepped into since the last call, once.
+	std::string TakeZoneLine() { return m_movement.TakeZoneLine(); }
 	// Runs our movement up to now. Returns true when a jump started. `looking` is a mouse
 	// drag being held, which keeps the chase camera where it's put while moving.
 	bool Move(const MoveControls &controls, uint64_t now_ms, bool looking);
@@ -113,6 +116,9 @@ public:
 		float camera_distance = 0, camera_pitch = 0;
 		bool have_floor = false;
 		float feet_z = 0, floor_z = 0;                          // world z of our feet and the floor under them
+		render::Environment feet_environment = render::Environment::Dry, body_environment = render::Environment::Dry,
+		                    head_environment = render::Environment::Dry;
+		std::string region_types; // the body's region's group types, comma-separated
 		size_t zone_triangles = 0, zone_objects = 0;
 		DayLight light;
 	};

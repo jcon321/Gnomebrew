@@ -52,6 +52,7 @@ namespace render
 	{
 		m_meshes.clear();
 		m_vertices = {};
+		m_regions = {};
 		m_collision.clear();
 		m_cell_start.clear();
 		m_cell_triangles.clear();
@@ -84,6 +85,9 @@ namespace render
 		}
 
 		WldMesh mesh;
+		WldRegionMap region_map;
+		if (zone_wld.ReadRegionMap(region_map))
+			m_regions.Load(region_map);
 		for (int i = 0; i < static_cast<int>(zone_wld.Fragments().size()); ++i) {
 			if (zone_wld.Fragments()[i].type == 0x36 && zone_wld.ReadMesh(i, mesh))
 				AddMesh(mesh, Transform{}, true, lights, lighting);

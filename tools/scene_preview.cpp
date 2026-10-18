@@ -101,6 +101,10 @@ namespace
 		if (game_hour > 0)
 			view.SetGameTime(game_hour, game_minute);
 		view.UpdateSpawns(spawns, 0, 1000);
+		if (first_person)
+			view.CycleCamera();
+		view.Orbit(orbit);
+		view.Pitch(pitch);
 		if (walk_ms > 0) {
 			// Hold forward (and turn, with --turn) for walk_ms of 16 ms frames, then report where we got.
 			MoveControls controls;
@@ -116,20 +120,23 @@ namespace
 				auto start = std::chrono::steady_clock::now();
 				view.Move(controls, now, false);
 				total += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+				std::string zone_line = view.TakeZoneLine();
+				if (!zone_line.empty()) {
+					ZoneMovement at = view.Movement();
+					printf("  %5d ms: zone line %s at loc %.1f, %.1f, %.1f\n", ms, zone_line.c_str(), at.y, at.x, at.z);
+				}
 				if (ms % 1000 < 16) {
 					ZoneMovement m = view.Movement();
-					printf("  %5d ms: loc %.1f, %.1f, %.1f heading %.0f speed %.2f velocity %.2f, %.2f, %.2f\n", ms, m.y, m.x, m.z,
-						m.heading, m.speed, m.dy, m.dx, m.dz);
+					ZoneView::DebugStats st = view.Stats();
+					printf("  %5d ms: loc %.1f, %.1f, %.1f heading %.0f speed %.2f velocity %.2f, %.2f, %.2f  body %d eyes %d %s\n", ms, m.y,
+						m.x, m.z, m.heading, m.speed, m.dy, m.dx, m.dz, static_cast<int>(st.body_environment),
+						static_cast<int>(st.head_environment), st.animation.c_str());
 				}
 			}
 			ZoneMovement m = view.Movement();
 			printf("walked %d ms: loc %.1f, %.1f, %.1f heading %.0f (%.2f ms per movement step)\n", walk_ms, m.y, m.x, m.z,
 				m.heading, total / std::max(1, steps));
 		}
-		if (first_person)
-			view.CycleCamera();
-		view.Orbit(orbit);
-		view.Pitch(pitch);
 		if (zoom) {
 			view.Render(canvas, 0); // places the character, which sets the starting distance
 			view.Zoom(zoom);

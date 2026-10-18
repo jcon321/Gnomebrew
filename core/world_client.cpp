@@ -35,7 +35,8 @@ namespace
 	}
 
 	// WorldAuthenticate builds this with ConcatenateStringsWithSeparators(name, password)
-	// into a 188 byte buffer, then zoning @188, a uint32 @192 and 0xc3 @196: 200 bytes.
+	// into a 188 byte buffer, then a uint32 0 @188, the zoning flag @192 (DAT_00799776, which
+	// MoveToZone_2 sets) and 0xc3 @196: 200 bytes. The server's Mac LoginInfo_Struct reads @192.
 	std::vector<uint8_t> BuildLoginInfo(const std::string &name, const std::string &password, bool zoning)
 	{
 		std::vector<uint8_t> out(200, 0);
@@ -43,7 +44,7 @@ namespace
 		memcpy(&out[pos], name.c_str(), name.size());
 		pos += name.size() + 1;
 		memcpy(&out[pos], password.c_str(), password.size());
-		out[188] = zoning ? 1 : 0;
+		out[192] = zoning ? 1 : 0;
 		out[196] = 0xc3;
 		return out;
 	}
@@ -131,6 +132,7 @@ bool WorldSession::Send(uint16_t opcode, const void *body, size_t size, const st
 bool WorldSession::Begin(const std::string &host, uint16_t port, const std::string &session_name, const std::string &key)
 {
 	Close();
+	m_zoning = false;
 	m_approved = false;
 	m_characters.clear();
 	m_zone_address.clear();
@@ -146,6 +148,28 @@ bool WorldSession::Begin(const std::string &host, uint16_t port, const std::stri
 	m_wait_started_ms = NowMs();
 	auto info = BuildLoginInfo(session_name, key, false);
 	return Send(WorldOp::SendLoginInfo, info.data(), info.size(), "OP_SendLoginInfo (" + session_name + " / " + key + ")");
+}
+
+bool WorldSession::BeginZoning(const std::string &host, uint16_t port, const std::string &session_name,
+	const std::string &key, const std::string &character)
+{
+	Close();
+	m_zoning = true;
+	m_approved = false;
+	m_characters.clear();
+	m_zone_address.clear();
+	m_zone_port = 0;
+	m_entering = character;
+
+	m_session = std::make_unique<RdpSession>();
+	if (!m_session->Connect(host, port)) {
+		m_state = State::Failed;
+		return false;
+	}
+	m_state = State::Authenticating;
+	m_wait_started_ms = NowMs();
+	auto info = BuildLoginInfo(session_name, key, true);
+	return Send(WorldOp::SendLoginInfo, info.data(), info.size(), "OP_SendLoginInfo (zoning, " + session_name + ")");
 }
 
 bool WorldSession::EnterWorld(const std::string &character)
@@ -278,8 +302,18 @@ void WorldSession::Pump(int timeout_ms, std::vector<Event> &events)
 			break;
 		case WorldOp::EnterWorld:
 			// Before OP_SendCharInfo this is the live character for a zoning reconnect; empty normally.
-			if (m_state == State::Authenticating)
-				Log("[world]    live character: '" + CString(packet.data) + "'");
+			if (m_state == State::Authenticating) {
+				std::string live = CString(packet.data);
+				Log("[world]    live character: '" + live + "'");
+				if (m_zoning) {
+					// Carry on as that character: straight to the zone's address.
+					if (!live.empty())
+						m_entering = live;
+					m_state = State::EnteringWorld;
+					m_wait_started_ms = NowMs();
+					Send(WorldOp::EnterWorld, m_entering.c_str(), m_entering.size() + 1, "OP_EnterWorld " + m_entering);
+				}
+			}
 			break;
 		case WorldOp::ExpansionInfo:
 			m_expansions = Read<uint32_t>(packet.data, 0);

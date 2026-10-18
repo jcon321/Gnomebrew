@@ -76,7 +76,8 @@ namespace ZoneOp
 	constexpr uint16_t ItemPacket = 0x4164;
 	constexpr uint16_t SpawnDoor = 0x41f7;
 	constexpr uint16_t GroundSpawn = 0x402c;
-	constexpr uint16_t SendZonepoints = 0x40b4;
+	constexpr uint16_t SendZonepoints = 0x40b4; // u32 count + ZonePoint_Entry (24 bytes) each: the teleport table
+	constexpr uint16_t ZoneChange = 0x40a3;     // ZoneChange_Struct, 76 bytes, both directions
 	constexpr uint16_t Stamina = 0x4157;
 	constexpr uint16_t MoneyUpdate = 0x4008;
 	constexpr uint16_t Emote = 0x4015;
@@ -162,6 +163,7 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::SpawnDoor, "OP_SpawnDoor"},
 	{ZoneOp::GroundSpawn, "OP_GroundSpawn"},
 	{ZoneOp::SendZonepoints, "OP_SendZonepoints"},
+	{ZoneOp::ZoneChange, "OP_ZoneChange"},
 	{ZoneOp::Stamina, "OP_Stamina"},
 	{ZoneOp::MoneyUpdate, "OP_MoneyUpdate"},
 	{ZoneOp::Emote, "OP_Emote"},

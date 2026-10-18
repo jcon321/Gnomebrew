@@ -97,6 +97,30 @@ struct WldSkeleton
 	std::vector<int> meshes; // fragment indices of the 0x36 meshes
 };
 
+// The zone's BSP tree (0x21), which finds the region (0x22) a point is in, and the
+// region groups (0x29) that say what some regions are: water, lava, zone lines...
+struct WldRegionMap
+{
+	// A split plane: points with Dot(normal, p) < -distance go back, the rest front, until a
+	// node with a region. Regions and nodes are 1-based; 0 is none.
+	struct Node
+	{
+		WldVec3 normal;
+		float distance = 0;
+		int32_t region = 0;
+		int32_t front = 0, back = 0;
+	};
+	struct Group
+	{
+		std::string name;      // e.g. "Z0002_ZONE"
+		std::string user_data; // e.g. "WTN__01258000000000000000000000___000000000000"
+		std::vector<uint32_t> regions; // 0-based
+	};
+	std::vector<Node> nodes;
+	size_t region_count = 0;
+	std::vector<Group> groups;
+};
+
 class WldFile
 {
 public:
@@ -130,6 +154,8 @@ public:
 
 	std::vector<WldPlacement> Placements() const;
 	std::vector<WldLight> Lights() const;
+	// The zone's BSP tree and region groups; false when there's no tree.
+	bool ReadRegionMap(WldRegionMap &map) const;
 
 private:
 	bool ReadMaterial(int index, WldMaterial &material) const;

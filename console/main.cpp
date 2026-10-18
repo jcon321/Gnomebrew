@@ -28,6 +28,8 @@ namespace
 			"  --idle SECONDS        without --char, stay at character select this long (default 0)\n"
 			"  --zone SECONDS        with --char, enter the zone, stay this long, then /camp (30s) and log out\n"
 			"  --say TEXT            with --zone, /say this once in the zone\n"
+			"  --zone-to ID          with --zone, once in, ask to zone to zone ID (the zone checks it against its\n"
+			"                        zone points), go there through world, then stay and camp there\n"
 			"  --no-retry            don't retry once after 'Invalid username or password'\n"
 			"                        (the first login of a new account creates it and is rejected)\n"
 			"  -v                    hex dump every packet\n",
@@ -74,7 +76,32 @@ namespace
 		}
 	}
 
-	bool RunZone(const ZoneHandoff &handoff, int seconds, const std::string &say, bool verbose)
+	// Back through world after leaving a zone, to the next zone's address (WorldSession::BeginZoning).
+	bool RunZoningWorld(const LoginResult &login, const WorldOptions &options, const std::string &character, ZoneHandoff &handoff)
+	{
+		WorldSession world;
+		world.SetLogger([](const std::string &line) { printf("%s\n", line.c_str()); });
+		std::string host = options.host.empty() ? login.world.address : options.host;
+		if (!world.BeginZoning(host, options.port, login.session_name, login.world_key, character))
+			return false;
+		for (;;) {
+			std::vector<WorldSession::Event> events;
+			world.Pump(100, events);
+			for (const auto &event : events) {
+				if (event.type == WorldSession::Event::Type::ZoneServer) {
+					handoff = {world.EnteringCharacter(), world.ZoneAddress(), world.ZonePort()};
+					return true;
+				}
+				if (event.type == WorldSession::Event::Type::Error || event.type == WorldSession::Event::Type::ZoneUnavailable) {
+					fprintf(stderr, "[world] %s\n", event.text.c_str());
+					return false;
+				}
+			}
+		}
+	}
+
+	bool RunZone(const ZoneHandoff &handoff, int seconds, const std::string &say, bool verbose, uint32_t zone_to = 0,
+		const LoginResult *login = nullptr, const WorldOptions *world = nullptr)
 	{
 		ZoneSession zone;
 		zone.SetLogger([](const std::string &line) { printf("%s\n", line.c_str()); });
@@ -93,9 +120,28 @@ namespace
 					PrintNearby(zone);
 					if (!say.empty())
 						zone.Say(say);
+					if (zone_to != 0) {
+						printf("[zone] asking to zone to %u\n", zone_to);
+						zone.RequestZoneChange(zone_to);
+						break;
+					}
 					printf("[zone] staying %d s, then camping\n", seconds);
 					leave_at = NowMs() + static_cast<uint64_t>(seconds) * 1000;
 					break;
+				case ZoneSession::Event::Type::ZoneApproved:
+					printf("[zone] zone change to %d approved\n", event.value);
+					break;
+				case ZoneSession::Event::Type::ZoneDenied:
+					printf("[zone] zone change denied (%d); staying %d s, then camping\n", event.value, seconds);
+					leave_at = NowMs() + static_cast<uint64_t>(seconds) * 1000;
+					break;
+				case ZoneSession::Event::Type::Departed: {
+					printf("[zone] left; back to world, zoning\n");
+					ZoneHandoff next;
+					if (!login || !world || !RunZoningWorld(*login, *world, handoff.character, next))
+						return false;
+					return RunZone(next, seconds, "", verbose);
+				}
 				case ZoneSession::Event::Type::LoggedOut:
 					printf("[done] %s camped out of %s\n", handoff.character.c_str(), zone.Info().long_name.c_str());
 					return true;
@@ -122,6 +168,7 @@ int main(int argc, char **argv)
 	bool retry = true;
 	int zone_seconds = -1;
 	std::string say_text;
+	uint32_t zone_to = 0;
 
 	for (int i = 1; i < argc; ++i) {
 		std::string arg = argv[i];
@@ -155,6 +202,8 @@ int main(int argc, char **argv)
 			zone_seconds = atoi(next().c_str());
 		else if (arg == "--say")
 			say_text = next();
+		else if (arg == "--zone-to")
+			zone_to = static_cast<uint32_t>(atoi(next().c_str()));
 		else if (arg == "--no-retry")
 			retry = false;
 		else if (arg == "-v")
@@ -199,5 +248,5 @@ int main(int argc, char **argv)
 			handoff.address.c_str(), handoff.port);
 		return 0;
 	}
-	return RunZone(handoff, zone_seconds, say_text, login.verbose) ? 0 : 1;
+	return RunZone(handoff, zone_seconds, say_text, login.verbose, zone_to, &result, &world) ? 0 : 1;
 }

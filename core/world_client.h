@@ -74,6 +74,11 @@ public:
 	void SetVerbose(bool verbose) { m_verbose = verbose; }
 
 	bool Begin(const std::string &host, uint16_t port, const std::string &session_name, const std::string &key);
+	// Back to world after leaving a zone (the zoning flag in OP_SendLoginInfo): world answers with
+	// the character it has in the game, we enter the world as it, and it sends the new zone's
+	// address (a ZoneServer event), skipping character select.
+	bool BeginZoning(const std::string &host, uint16_t port, const std::string &session_name, const std::string &key,
+		const std::string &character);
 	void Pump(int timeout_ms, std::vector<Event> &events);
 	bool EnterWorld(const std::string &character);
 	bool DeleteCharacter(const std::string &character);
@@ -101,6 +106,7 @@ private:
 	std::unique_ptr<RdpSession> m_session;
 	State m_state = State::Idle;
 	bool m_approved = false;
+	bool m_zoning = false;
 	std::vector<CharacterSlot> m_characters;
 	uint32_t m_expansions = 0;
 	uint32_t m_server_type = 0;

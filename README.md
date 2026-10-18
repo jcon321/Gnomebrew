@@ -130,6 +130,8 @@ build/eqclient -u USER -p PASS [options]
   --create NAME         create a Human Warrior with this name first (for testing)
   --zone SECONDS        with --char: enter the zone, stay this long, then /camp (30 s) and log out
   --say TEXT            with --zone: /say this once in the zone
+  --zone-to ID          with --zone: once in, zone to zone ID (OP_ZoneChange; the zone checks it against
+                        its zone points), through world to the next zone, then stay and camp there
   --idle SECONDS        without --char, stay at character select this long (default 0)
   --no-retry            don't retry once after "Invalid username or password"
   -v                    hex dump every packet
@@ -338,7 +340,33 @@ Not yet: the real client's messages use `CConfirmationDialog`; these use the fro
   and the walk and run animations play at `1 + velocity / 2` (`ProcessAnimation`). Space jumps
   (`1.65 * JumpHeightModifier`, 1.35, plus a push of 1 along the heading) and sends `OP_Jump`. The
   collision is ours: the feet follow the floor (stepping up to 40% of the character's height) and moves
-  slide along walls, tested at knee and chest height. There's no water yet; you sink to the bottom.
+  slide along walls, tested at knee and chest height.
+- **Water** (`render/zone_regions.cpp`): `<zone>.wld`'s BSP tree (0x21) finds the region (0x22) a point
+  is in (`t3dGetRegionNumberFromWorldAndXYZ`: back when `n . p < -d`), and the region groups (0x29) say
+  what regions are. A group's type is its name, or its user data when the name is under 20 characters
+  (classic zones: `Z0002_ZONE` with `WTN__01258...`). `CDisplay::GetEnvironment` reads the first known
+  prefix: `DR` dry, `WT` water, `SL` slime, `LA` lava, `VW`, `W2`, `W3` (types 0, 5..10). `MovePlayer`
+  samples the feet (+0.25), the body (`ModelHeightOffset`, the server's z) and the eyes when their
+  region changes. The body's is `SwimmingWaterType`, which `process_physics` swims in: gravity still
+  pulls, but across `v * 0.95 + push * 0.025` and up and down `v * 0.2 + speed * sin(pitch) * 0.8`
+  (lava, slime and `VW`: 0.94, 0.02, 0.15), so you swim where you look at about half the push, and
+  sink slowly when you stop. `ProcessControls` adds a hundredth of the swimming skill (the profile's
+  skills at 2988) to the forward speed and gives none backwards; swimming forward looking up does
+  `DoSwimJump` (at most every 1.5 s, where it isn't water ahead: `MovementSpeedZ += 3 x 2.5 x 1.35` and
+  a push of 0.5) to climb out. The look pitch is the view's tilt from where each camera starts. In water
+  we play `P06` swimming (at `1 + velocity / 2`) or `L09` treading water, and so do other spawns whose
+  body is in water. Not yet: breath and drowning, the underwater sound, levitation.
+- **Zone lines:** a feet region with `TP` at 3 (`DRNTP...`) is one; `MovePlayer` calls
+  `CDisplay_DoTeleport` as the feet step into it. The type holds the zone (5 digits), then y, x, z (6
+  each) and the heading (3); zone 255 makes the y an index into `OP_SendZonepoints` (Rivervale's lines
+  are 98 and 99). A line into the same zone moves us (999999 and a heading of 513 keep ours), with the
+  client's adjustments between Freeport East and the Ocean of Tears and two Qeynos lines. Otherwise
+  `CEverQuest::MoveToZone_2`: `OP_ZoneChange` (name, zone, reason 0) and wait for its answer
+  (`IsZoneAvailable`); on success "LOADING, PLEASE WAIT...", `OP_DeleteSpawn` with our id, and the zone
+  answers `OP_LogoutReply` and drops us. Then world again with the zoning flag at 192 in
+  `OP_SendLoginInfo`: it answers `OP_EnterWorld` with the character in the game, we enter as it, and it
+  sends the next zone's address. A refusal prints the client's `eqstr` message for it (not experienced
+  enough, not ready, expansion...) and moves us to the zone's safe point. The chat carries over.
 - **Position updates:** `OP_ClientUpdate` as `pack_physics` packs it (the speed * 10, the heading in
   256ths, its change per tick, y/x/z*10, and the velocities in 16ths per tick). `ProcessControls` flags an
   update when the heading moves 2 or the speed 0.2, `DoPassageOfTime` every second, and `DoMainLoop` sends

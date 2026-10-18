@@ -223,6 +223,7 @@ void ZoneView::PlacePlayer()
 	if (m_distance <= 0)
 		m_distance = height * 2 + 6;
 	m_movement.Place(m_feet, m_heading, height, m_walk_speed, m_run_speed, m_info.gravity);
+	m_movement.SetEyeHeight(m_model ? (m_model->HeadZ() - m_model->MinZ()) * 1.05f : height * 0.9f);
 	m_placed = true;
 }
 
@@ -238,7 +239,10 @@ bool ZoneView::Move(const MoveControls &controls, uint64_t now_ms, bool looking)
 	if (!m_placed || ms <= 0)
 		return false;
 
-	bool jumped = m_movement.Step(controls, ms, m_zone);
+	// We swim where we look: the view's pitch from where each camera starts out.
+	MoveControls swim = controls;
+	swim.pitch = (m_pitch - (m_view == CameraView::Chase ? -12.0f : 0.0f)) * 512 / 360;
+	bool jumped = m_movement.Step(swim, ms, m_zone);
 	m_feet = m_movement.Feet();
 	m_heading = m_movement.Heading();
 	m_server_position = {m_feet.y, m_feet.x, m_feet.z + m_height / 5 * 3.125f};
@@ -276,6 +280,13 @@ void ZoneView::ChooseAnimation(float ms)
 		else if (velocity.z > 0)
 			animation = speed != 0 ? "L03" : "L04";
 	}
+	// ProcessAnimation in water: P06 swimming while we move (faster with the speed), L09 treading water.
+	float across = std::sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
+	if (m_movement.Swimming()) {
+		bool moving = std::fabs(velocity.x) >= 0.001f || std::fabs(velocity.y) >= 0.001f;
+		animation = moving ? "P06" : "L09";
+		rate = moving ? across * 0.5f + 1 : 1;
+	}
 	if (animation.empty()) {
 		if (speed > 0)
 			animation = speed >= m_movement.RunSpeed() ? "L02" : "L01";
@@ -289,9 +300,9 @@ void ZoneView::ChooseAnimation(float ms)
 			animation = "P01";
 	}
 	if (animation == "L01" || animation == "L02")
-		rate = MoveAnimationRate(std::sqrt(velocity.x * velocity.x + velocity.y * velocity.y));
+		rate = MoveAnimationRate(across);
 	if (m_model && !m_model->HasAnimation(animation))
-		animation = animation == "L03" || animation == "L04" || animation == "L05" ? "P01" : animation;
+		animation = animation == "L03" || animation == "L04" || animation == "L05" || animation == "P06" || animation == "L09" ? "P01" : animation;
 	if (animation != m_animation) {
 		m_animation = animation;
 		m_animation_ms = 0;
@@ -312,6 +323,11 @@ ZoneView::DebugStats ZoneView::Stats() const
 	DebugStats stats;
 	stats.triangles = m_triangles_drawn;
 	stats.renderer = m_renderer->Name();
+	stats.feet_environment = m_movement.FeetEnvironment();
+	stats.body_environment = m_movement.BodyEnvironment();
+	stats.head_environment = m_movement.HeadEnvironment();
+	for (const std::string &type : m_zone.Regions().Types(m_zone.Regions().RegionAt(m_feet + render::Vec3{0, 0, m_height * 0.625f})))
+		stats.region_types += (stats.region_types.empty() ? "" : ", ") + type;
 	stats.spawns = m_actors.size();
 	for (const auto &[id, actor] : m_actors) {
 		stats.spawns_built += actor.model ? 1 : 0;
@@ -625,7 +641,14 @@ void ZoneView::PoseSpawn(SpawnActor &actor, const ZoneSpawn &spawn, uint64_t now
 		hold = true;
 	}
 	float rate = 1;
-	if (animation != "D05" && (spawn.speed != 0 || moving > 0.05f)) {
+	// In water (their body's region, as MovePlayer finds it for everyone): swimming or treading water.
+	bool swimming = animation != "D05" && render::Swimming(m_zone.Regions().EnvironmentAt({y, x, z}));
+	if (swimming) {
+		bool swimming_on = moving >= 0.001f || spawn.speed != 0;
+		animation = swimming_on ? "P06" : "L09";
+		rate = swimming_on ? moving * 0.5f + 1 : 1;
+	}
+	else if (animation != "D05" && (spawn.speed != 0 || moving > 0.05f)) {
 		float speed = spawn.speed != 0 ? std::fabs(spawn.speed) : moving / 2.13f; // velocity -> speed at steady state
 		animation = speed >= spawn.run_speed * 0.9f ? "L02" : "L01";
 		rate = MoveAnimationRate(moving > 0.05f ? moving : speed * 2.13f);

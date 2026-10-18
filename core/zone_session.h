@@ -8,6 +8,10 @@
 //   CEverQuest::DoMainLoop (@0053df6e) OP_ReqClientSpawn             <- doors, objects, OP_SendExpZonein
 //                                      OP_SendExpZonein              <- OP_SpawnAppearance (our id), OP_SendExpZonein
 //                                      OP_ClientUpdate (our position) -> the server completes the connect
+//   CEverQuest::MoveToZone_2 (@005460b5) leaving through a zone line: OP_ZoneChange {name, zone,
+//                                      reason 0} and wait for its answer (IsZoneAvailable); on
+//                                      success OP_DeleteSpawn (our id), and the zone answers
+//                                      OP_LogoutReply and drops us. Then world again, zoning.
 // Struct layouts are from EQMacEmu's common/patches/mac_structs.h and common/eq_packet_structs.h.
 
 #include <cstdint>
@@ -37,6 +41,15 @@ struct ZoneProfile
 	float x = 0, y = 0, z = 0, heading = 0;
 	uint32_t zone_id = 0;
 	int32_t platinum = 0, gold = 0, silver = 0, copper = 0;
+	int16_t skills[100] = {}; // by skill id; 50 is swimming
+};
+
+// One entry of OP_SendZonepoints: where a zone line with teleport index `index` goes.
+struct ZonePoint
+{
+	uint32_t index = 0;
+	float y = 0, x = 0, z = 0, heading = 0; // the server's coordinates; 999999 (or heading 513) keeps ours
+	uint16_t zone = 0;
 };
 
 // OP_NewZone (NewZone_Struct, 572 bytes), with the fallbacks CEverQuest::HandleWorldMessage
@@ -108,7 +121,8 @@ struct ZoneChat
 class ZoneSession
 {
 public:
-	enum class State { Idle, Entering, InZone, Camping, LoggedOut, Failed };
+	// ZoneRequested: OP_ZoneChange is out. Departing: approved, waiting for the zone to let us go.
+	enum class State { Idle, Entering, InZone, ZoneRequested, Departing, Camping, LoggedOut, Failed };
 
 	struct Event
 	{
@@ -125,6 +139,9 @@ public:
 			Message,      // text: system/special message
 			TimeOfDay,    // text: "hour:minute"
 			LoggedOut,    // camp finished; the zone closes the connection
+			ZoneApproved, // value: the zone we're going to; OP_DeleteSpawn is sent
+			ZoneDenied,   // value: the answer (ZoningMessage: 0 down, -1 not ready, -7 not experienced...)
+			Departed,     // the zone let us go after ZoneApproved: on to world, zoning
 			Error,        // the session is over
 		};
 		Event() = default;
@@ -132,6 +149,7 @@ public:
 
 		Type type = Type::Message;
 		uint16_t id = 0;
+		int32_t value = 0;
 		std::string text;
 		ZoneChat chat;
 	};
@@ -155,6 +173,11 @@ public:
 	void Jump(); // OP_Jump
 	// /camp: OP_Camp, then OP_Logout once the 30 second camp timer has run (Handle_OP_Logout expects that).
 	bool Camp();
+	// Ask to leave for another zone (a zone line): our position, then OP_ZoneChange. The answer
+	// comes as ZoneApproved (then Departed) or ZoneDenied.
+	bool RequestZoneChange(uint32_t zone_id);
+	// OP_SendZonepoints: the zone lines' teleport table.
+	const std::vector<ZonePoint> &ZonePoints() const { return m_zone_points; }
 	void Close();
 
 	State GetState() const { return m_state; }
@@ -218,6 +241,9 @@ private:
 	bool m_sent_exp_zonein = false;
 	uint64_t m_started_ms = 0;
 	uint64_t m_camp_started_ms = 0;
+	std::vector<ZonePoint> m_zone_points;
+	uint32_t m_zone_target = 0;
+	uint64_t m_zone_state_ms = 0; // when ZoneRequested or Departing began
 	int m_time_hour = 0, m_time_minute = 0;
 	uint64_t m_time_received_ms = 0;
 	// OP_ClientUpdate pacing (DoMainLoop / ProcessControls)

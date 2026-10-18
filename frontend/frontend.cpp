@@ -1,9 +1,12 @@
 #include "frontend.h"
 
+#include "eqstr.h"
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cctype>
 
 namespace
@@ -595,6 +598,9 @@ void FrontEnd::Update(uint64_t now_ms)
 			m_zone.SetMovement(m_zone_view->Movement());
 		if (jumped)
 			m_zone.Jump();
+		std::string zone_line = m_zone_view->TakeZoneLine();
+		if (!zone_line.empty())
+			HandleZoneLine(zone_line);
 	}
 
 	if (m_screen == Screen::ServerSelect && !m_submitting && now_ms - m_last_list_request_ms > ServerListRefreshMs) {
@@ -792,7 +798,7 @@ void FrontEnd::HandleWorldEvents(const std::vector<WorldSession::Event> &events)
 				ShowMessage(m_strings.Get("SISATEXT_CONNECT_FAILED"), [this](bool) { EnterStart(); });
 				break;
 			}
-			EnterZoneScreen();
+			EnterZoneScreen(m_zoning);
 			break;
 		case Type::CharacterCreated: {
 			// The new list is already in; character select starts on the new character.
@@ -1181,10 +1187,11 @@ namespace
 	}
 }
 
-void FrontEnd::EnterZoneScreen()
+void FrontEnd::EnterZoneScreen(bool zoning)
 {
 	m_screen = Screen::Zone;
-	m_zone_log.clear();
+	if (!zoning)
+		m_zone_log.clear();
 	m_time_of_day.clear();
 	m_zone_view.reset();
 	m_zone_error_logged = false;
@@ -1192,7 +1199,8 @@ void FrontEnd::EnterZoneScreen()
 	m_mouse_turn = m_mouse_pan = m_mouse_grabbed = false;
 	m_keys = HeldKeys{};
 	m_jump_requested = false;
-	AddZoneLog("Entering the zone...", ZoneGrey);
+	if (!zoning)
+		AddZoneLog("Entering the zone...", ZoneGrey);
 
 	// The chat sits along the bottom left of the window, over the 3D view.
 	int bottom = m_game_height - Height;
@@ -1259,8 +1267,42 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			break;
 		}
 		case Type::InZone:
+			m_zoning = false;
 			AddZoneLog(std::to_string(m_zone.Spawns().size()) + " spawns in the zone.", ZoneGrey);
+			if (m_zone_view) {
+				int16_t swimming = m_zone.Profile().skills[50];
+				m_zone_view->SetSwimSkill(swimming >= 0 && swimming <= 252 ? swimming : 0);
+			}
 			break;
+		case Type::ZoneApproved:
+			// MoveToZone_2: "LOADING, PLEASE WAIT...", then the zone lets us go (Departed).
+			m_zoning = true;
+			m_zone_view.reset();
+			AddZoneLog(EqString(12387, "LOADING, PLEASE WAIT..."), ZoneGrey);
+			break;
+		case Type::ZoneDenied: {
+			// MoveToZone_2: why, then back to the zone's safe point.
+			uint32_t id = event.value == -7 ? 252 : event.value == -2 ? 5049 : event.value == -3 ? 5050 : event.value == -6 ? 5052
+			            : event.value == -1                    ? 5051
+			                                                   : 12386;
+			AddZoneLog(EqString(id, "You can't enter that zone right now."), ZoneYellow);
+			if (m_zone_view) {
+				const ZoneInfo &info = m_zone.Info();
+				m_zone_view->SetPlayerPosition(info.safe_x, info.safe_y, info.safe_z, m_zone_view->Movement().heading);
+			}
+			break;
+		}
+		case Type::Departed: {
+			// Back to world, zoning: it sends the next zone's address (a ZoneServer event).
+			std::string character = m_zone.Profile().name;
+			m_zone.Close();
+			const LoginResult &result = m_session.Result();
+			if (!m_world.BeginZoning(result.world.address, m_config.world_port, result.session_name, result.world_key, character)) {
+				m_zoning = false;
+				ShowMessage(m_strings.Get("SISATEXT_CONNECT_FAILED"), [this](bool) { EnterStart(); });
+			}
+			break;
+		}
 		case Type::Chat: {
 			uint32_t color = ZoneWhite;
 			std::string line = ChatLine(event.chat, m_zone.Profile().name, color);
@@ -1283,6 +1325,62 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			break;
 		}
 	}
+}
+
+std::string FrontEnd::EqString(uint32_t id, const std::string &fallback) const
+{
+	return m_ui.eqstr && m_ui.eqstr->Has(id) ? m_ui.eqstr->Format(id, {}) : fallback;
+}
+
+void FrontEnd::HandleZoneLine(const std::string &type)
+{
+	// CDisplay_DoTeleport (@004b40aa): "DRNTP", the zone (5 digits), y, x and z (6 each) and the
+	// heading (3), each only if the type is long enough; zone 255 makes the y an index into the
+	// zone's teleport table (OP_SendZonepoints).
+	if (!m_zone_view || m_zone.GetState() != ZoneSession::State::InZone)
+		return;
+	auto field = [&](size_t at, size_t length) { return type.size() > at + length - 1 ? type.substr(at, length) : std::string("0"); };
+	uint32_t zone = static_cast<uint32_t>(atol(field(5, 5).c_str()));
+	float y = static_cast<float>(atof(field(10, 6).c_str()));
+	float x = static_cast<float>(atof(field(16, 6).c_str()));
+	float z = static_cast<float>(atof(field(22, 6).c_str()));
+	float heading = static_cast<float>(atof(field(28, 3).c_str()));
+	if (zone == 255) {
+		int index = static_cast<int>(y);
+		const ZonePoint *point = nullptr;
+		for (const auto &p : m_zone.ZonePoints())
+			if (static_cast<int>(p.index) == index)
+				point = &p;
+		if (!point) {
+			Log("zone line " + type + ": index " + std::to_string(index) + " is not in the teleport table");
+			return;
+		}
+		zone = point->zone;
+		y = point->y;
+		x = point->x;
+		z = point->z;
+		heading = point->heading;
+	}
+	ZoneMovement here = m_zone_view->Movement();
+	uint32_t current = m_zone.Profile().zone_id;
+	// DoTeleport's own adjustments: Freeport East and the Ocean of Tears line up 1044 apart, and
+	// two of the Qeynos lines nudge the arrival.
+	if (current == 34 && zone == 10)
+		x = here.x - 1044;
+	else if (current == 10 && zone == 34)
+		x = here.x + 1044;
+	else if (current == 3 && zone == 4)
+		z = here.z + 2;
+	else if (current == 2 && zone == 4)
+		y += 10;
+	Log("zone line " + type + " -> zone " + std::to_string(zone));
+	if (zone == current) {
+		// DoTeleportB within the zone: move there; 999999 (a heading of 513) keeps what we have.
+		m_zone_view->SetPlayerPosition(x < 999999 ? x : here.x, y < 999999 ? y : here.y, z < 999999 ? z : here.z,
+			heading < 513 ? heading : here.heading);
+		return;
+	}
+	m_zone.RequestZoneChange(zone);
 }
 
 bool FrontEnd::SetZoneKey(InputEvent::Key key, bool down, bool typing)

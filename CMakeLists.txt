@@ -61,6 +61,7 @@ add_library(eqrender STATIC
     render/textures.cpp
     render/skeleton.cpp
     render/zone_scene.cpp
+    render/zone_regions.cpp
     render/character_model.cpp
     render/actor_tags.cpp
     render/sky.cpp

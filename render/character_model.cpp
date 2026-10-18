@@ -146,7 +146,7 @@ namespace render
 		std::vector<std::string> sources = {code};
 		if (player_race)
 			sources = {code, AnimationSource(code), code.back() == 'F' ? "ELF" : "ELM"};
-		for (const char *name : {"P01", "L01", "L02", "L03", "L04", "L05", "D05"}) {
+		for (const char *name : {"P01", "L01", "L02", "L03", "L04", "L05", "D05", "P06", "L09"}) { // ... P06 swim, L09 tread water
 			for (const auto &from : sources) {
 				SkeletonAnimation animation = LoadAnimation(source->wld, skeleton, name, code, from);
 				if (animation.length == 0)
