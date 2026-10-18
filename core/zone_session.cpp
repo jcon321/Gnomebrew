@@ -17,6 +17,7 @@ namespace
 	constexpr uint64_t CampMs = 30000;          // the client logs out after 30s; the server's timer goes stale at 35s
 	constexpr uint16_t AppearanceSpawnId = 0x10; // SpawnAppearance type that tells the client its spawn id
 	constexpr uint16_t AppearanceAnimation = 14; // SpawnAppearance: standing, sitting, lying...
+	constexpr uint16_t AppearanceLight = 5;      // SpawnAppearance: the light it carries (LightType)
 	constexpr size_t SpawnSize = 224;            // Mac::structs::Spawn_Struct
 	constexpr size_t ProfileSize = 8460;         // Mac::structs::PlayerProfile_Struct
 	constexpr size_t ZoneEntrySize = 356;        // ServerZoneEntry_Struct
@@ -98,6 +99,7 @@ namespace
 		s.gender = d[o + 88];
 		s.level = d[o + 89];
 		s.stance = d[o + 93];
+		s.light = d[o + 94];
 		s.anon = d[o + 95];
 		s.afk = d[o + 96];
 		s.gm = d[o + 99];
@@ -666,10 +668,11 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 			m_my_id = static_cast<uint16_t>(Read<uint32_t>(data, 4));
 			Log("[zone]    my spawn id " + std::to_string(m_my_id));
 		}
-		else if (type == AppearanceAnimation) {
+		else if (type == AppearanceAnimation || type == AppearanceLight) {
 			auto it = m_spawns.find(Read<uint16_t>(data, 0));
 			if (it != m_spawns.end()) {
-				it->second.stance = static_cast<uint8_t>(Read<uint32_t>(data, 4));
+				uint8_t value = static_cast<uint8_t>(Read<uint32_t>(data, 4));
+				(type == AppearanceLight ? it->second.light : it->second.stance) = value;
 				Event e;
 				e.type = Event::Type::SpawnChanged;
 				e.id = it->first;

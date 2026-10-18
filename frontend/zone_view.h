@@ -157,6 +157,10 @@ private:
 	static std::string SpawnModelKey(const ZoneSpawn &spawn);
 	std::shared_ptr<render::CharacterModel> SpawnModel(const ZoneSpawn &spawn, const std::string &key);
 	void DrawSpawns();
+	// The lights spawns carry (point_lights.h), placed for this frame, and the regions each reaches.
+	void PlaceCarriedLights(uint64_t now_ms);
+	// The (up to 3) carried lights that light something centered at `center`.
+	const std::vector<render::PointLight> *LightsFor(const render::Vec3 &center);
 	float FarPlane() const; // the fog's end, or the zone's max clip with the debug menu's no fog
 	void DrawDebugOverlays(Canvas &canvas) const;
 	void ChooseAnimation(float ms);
@@ -203,6 +207,8 @@ private:
 		uint64_t last_ms = 0;
 		float distance = 0; // from the camera, last frame
 		bool drawn = false;
+		uint8_t light = 0;         // ZoneSpawn::light
+		float center_height = 0;   // ModelHeightOffset: the server's z over the feet
 		const render::Vec3 &Feet() const { return actor.Feet(); }
 	};
 	std::map<uint16_t, SpawnView> m_actors;
@@ -211,6 +217,10 @@ private:
 	render::Vec3 m_camera_position;
 	bool m_have_time = false;
 	float m_model_ambient = 0.5f, m_model_diffuse = 0.6f;
+	uint8_t m_my_light = 0; // our ZoneSpawn::light
+	std::vector<render::PointLight> m_carried_lights;
+	std::vector<std::vector<int>> m_carried_light_regions;
+	std::vector<render::PointLight> m_lights_for; // LightsFor's
 	int m_hour = 12;
 	float m_minute = 0;
 

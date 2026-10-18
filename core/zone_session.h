@@ -101,6 +101,7 @@ struct ZoneSpawn
 	uint8_t body_texture = 0xff;
 	uint8_t helm = 0;
 	uint8_t fly_mode = 0;    // LevitationState: 0 on the ground, 1 flying, 2 levitating, 3 floats in water
+	uint8_t light = 0;       // LightType, the light it carries (2 a torch, 4 a lantern...); 0 none
 	int16_t body_type = 0;
 	uint32_t look_serial = 0; // counts OP_WearChanges: the look changed
 	// The last OP_Animation (attacks, casting, emotes): a client animation id, played once.

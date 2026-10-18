@@ -5,6 +5,7 @@
 // dressed from the equipment list (or an NPC's body texture and helm) and playing
 // any of their animations by track code (see animations.h).
 
+#include "point_lights.h"
 #include "renderer.h"
 #include "skeleton.h"
 #include "textures.h"
@@ -38,10 +39,12 @@ namespace render
 	class CharacterModel
 	{
 	public:
-		// placement: model space -> world. Lit by a directional light (toward `light_direction`) over ambient.
+		// placement: model space -> world. Lit by a directional light (toward `light_direction`) over ambient,
+		// and by `lights` (calculateMeshLighting: color x 0.05 radius^2 x cos / distance^2 each, up to full).
 		// `time_ms` runs the animation (looping, or stopping on its last frame); a missing one plays the idle.
 		void Draw(Renderer &renderer, const Transform &placement, const Vec3 &light_direction, float ambient,
-			float diffuse, uint64_t time_ms, const std::string &animation = "P01", bool loop = true) const;
+			float diffuse, uint64_t time_ms, const std::string &animation = "P01", bool loop = true,
+			const std::vector<PointLight> *lights = nullptr) const;
 		bool HasAnimation(const std::string &animation) const { return m_animations->count(animation) != 0; }
 		uint32_t AnimationMs(const std::string &animation) const; // one loop
 
@@ -78,11 +81,12 @@ namespace render
 		struct BoneMatrix
 		{
 			float m[3][3]; // rotation times scale
+			float inverse_scale;
 			Vec3 translation;
 			Vec3 light; // the light direction in the bone's space
 		};
 		mutable std::vector<BoneMatrix> m_bone_matrices;
-		mutable std::vector<float> m_intensity;
+		mutable std::vector<Vec3> m_intensity;
 		mutable std::vector<Vertex> m_vertices;
 	};
 

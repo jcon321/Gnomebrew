@@ -39,6 +39,8 @@ namespace render
 		void Load(const WldRegionMap &map);
 		bool Empty() const { return m_nodes.empty(); }
 		int RegionAt(const Vec3 &point) const; // 0-based; -1 outside every region
+		// The regions a sphere reaches (traverseBspTree, as a light is put in them), sorted.
+		std::vector<int> RegionsTouched(const Vec3 &center, float radius) const;
 		Environment EnvironmentAt(const Vec3 &point) const;
 
 		struct Feet

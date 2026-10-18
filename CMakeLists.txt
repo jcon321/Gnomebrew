@@ -60,6 +60,7 @@ add_library(eqrender STATIC
     render/rasterizer.cpp
     render/textures.cpp
     render/animations.cpp
+    render/point_lights.cpp
     render/skeleton.cpp
     render/zone_scene.cpp
     render/zone_regions.cpp

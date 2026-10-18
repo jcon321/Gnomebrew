@@ -325,7 +325,7 @@ namespace render
 	}
 
 	void CharacterModel::Draw(Renderer &renderer, const Transform &placement, const Vec3 &light_direction, float ambient,
-		float diffuse, uint64_t time_ms, const std::string &animation, bool loop) const
+		float diffuse, uint64_t time_ms, const std::string &animation, bool loop, const std::vector<PointLight> *lights) const
 	{
 		auto it = m_animations->find(animation);
 		if (it == m_animations->end())
@@ -350,6 +350,7 @@ namespace render
 			for (int i = 0; i < 3; ++i)
 				for (int j = 0; j < 3; ++j)
 					out.m[i][j] = r[i][j] * bones[b].scale;
+			out.inverse_scale = bones[b].scale != 0 ? 1 / bones[b].scale : 1;
 			out.translation = bones[b].translation;
 			out.light = {r[0][0] * light.x + r[1][0] * light.y + r[2][0] * light.z,
 				r[0][1] * light.x + r[1][1] * light.y + r[2][1] * light.z,
@@ -365,12 +366,38 @@ namespace render
 				bone.m[2][0] * p.x + bone.m[2][1] * p.y + bone.m[2][2] * p.z + bone.translation.z};
 			m_vertices[i].u = m_uvs[i * 2];
 			m_vertices[i].v = m_uvs[i * 2 + 1];
-			m_intensity[i] = ambient + diffuse * std::max(0.0f, Dot(m_normals[i], bone.light));
+			float level = ambient + diffuse * std::max(0.0f, Dot(m_normals[i], bone.light));
+			m_intensity[i] = {level, level, level};
+		}
+		if (lights && !lights->empty()) {
+			std::vector<Vec3> strengths;
+			for (const PointLight &light : *lights)
+				strengths.push_back(light.Strength());
+			for (size_t i = 0; i < m_positions.size(); ++i) {
+				const BoneMatrix &bone = m_bone_matrices[m_bones[i]];
+				const Vec3 &n = m_normals[i];
+				Vec3 normal{(bone.m[0][0] * n.x + bone.m[0][1] * n.y + bone.m[0][2] * n.z) * bone.inverse_scale,
+					(bone.m[1][0] * n.x + bone.m[1][1] * n.y + bone.m[1][2] * n.z) * bone.inverse_scale,
+					(bone.m[2][0] * n.x + bone.m[2][1] * n.y + bone.m[2][2] * n.z) * bone.inverse_scale};
+				Vec3 added{};
+				for (size_t l = 0; l < lights->size(); ++l) {
+					Vec3 d = (*lights)[l].position - m_vertices[i].position;
+					float facing = Dot(d, normal);
+					if (facing <= 0)
+						continue;
+					float distance2 = Dot(d, d);
+					added = added + strengths[l] * (facing / (distance2 * std::sqrt(distance2)));
+				}
+				// Lights brighten up to full, never past what the vertex had.
+				Vec3 &out = m_intensity[i];
+				out = {std::max(out.x, std::min(out.x + added.x, 1.0f)), std::max(out.y, std::min(out.y + added.y, 1.0f)),
+					std::max(out.z, std::min(out.z + added.z, 1.0f))};
+			}
 		}
 		// The light at half (it reaches past 1 in full light), doubled back with each batch's tint
 		// by the renderer's vertex light, so every batch draws the same vertices.
 		for (size_t i = 0; i < m_vertices.size(); ++i)
-			m_vertices[i].color = PackLight(m_intensity[i] * 0.5f, m_intensity[i] * 0.5f, m_intensity[i] * 0.5f);
+			m_vertices[i].color = PackLight(m_intensity[i].x * 0.5f, m_intensity[i].y * 0.5f, m_intensity[i].z * 0.5f);
 		bool first = true;
 		for (const auto &batch : m_batches) {
 			float tr = ((batch.tint >> 16) & 0xff) / 255.0f, tg = ((batch.tint >> 8) & 0xff) / 255.0f,

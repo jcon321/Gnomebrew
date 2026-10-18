@@ -490,6 +490,7 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 	m_model_diffuse = 0.1f + 0.55f * std::clamp(level / 0.9f, 0.0f, 1.0f);
 	// Our own model isn't drawn in first person, or with the camera pushed into our head.
 	m_model_shown = m_model && m_view == CameraView::Chase && distance >= 1.5f;
+	PlaceCarriedLights(now_ms);
 	if (m_model_shown) {
 		render::Transform placement;
 		placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(m_heading));
@@ -505,7 +506,8 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 				time = length - 1 - time % length;
 		}
 		bool held = m_animation == "L03" || m_animation == "L04" || m_animation == "L05"; // jumps and falls stop at the end
-		m_model->Draw(*m_renderer, placement, light_direction, m_model_ambient, m_model_diffuse, time, m_animation, !held);
+		m_model->Draw(*m_renderer, placement, light_direction, m_model_ambient, m_model_diffuse, time, m_animation, !held,
+			LightsFor(m_feet + render::Vec3{0, 0, m_height / 5 * 3.125f}));
 	}
 	m_camera_position = camera.position;
 	DrawSpawns();
@@ -620,11 +622,44 @@ void ZoneView::UpdateSpawns(const std::map<uint16_t, ZoneSpawn> &spawns, uint16_
 		m_loader.join();
 	for (auto it = m_actors.begin(); it != m_actors.end();)
 		it = spawns.count(it->first) ? std::next(it) : m_actors.erase(it);
+	auto me = spawns.find(my_id);
+	m_my_light = me != spawns.end() ? me->second.light : 0;
 	for (const auto &[id, spawn] : spawns) {
 		if (id == my_id || id == 0)
 			continue;
 		PoseSpawn(m_actors[id], spawn, now_ms);
 	}
+}
+
+void ZoneView::PlaceCarriedLights(uint64_t now_ms)
+{
+	// ChangeLight / MoveLight: 2 in front of the spawn and 4 over its center, none in water but
+	// the magic ones.
+	m_carried_lights.clear();
+	m_carried_light_regions.clear();
+	auto add = [&](uint8_t type, const render::Vec3 &feet, float center_height, float heading, render::Environment body) {
+		render::PointLight light;
+		if (!type || (render::Swimming(body) && !render::CarriedLightShinesInWater(type)) ||
+			!render::CarriedLight(type, m_info.short_name.c_str(), now_ms, light.color, light.radius))
+			return;
+		float a = render::HeadingToRadians(heading);
+		light.position = feet + render::Vec3{std::cos(a) * 2, std::sin(a) * 2, center_height + 4};
+		m_carried_lights.push_back(light);
+		m_carried_light_regions.push_back(m_zone.Regions().RegionsTouched(light.position, light.radius));
+	};
+	if (m_placed)
+		add(m_my_light, m_feet, m_height / 5 * 3.125f, m_heading, m_movement.BodyEnvironment());
+	for (const auto &[id, view] : m_actors)
+		add(view.light, view.Feet(), view.center_height, view.actor.Heading(), view.actor.BodyEnvironment());
+}
+
+const std::vector<render::PointLight> *ZoneView::LightsFor(const render::Vec3 &center)
+{
+	if (m_carried_lights.empty())
+		return nullptr;
+	int region = m_zone.Regions().Empty() ? -1 : m_zone.Regions().RegionAt(center);
+	render::SelectLights(m_carried_lights, m_carried_light_regions, center, region, 3, m_lights_for);
+	return &m_lights_for;
 }
 
 void ZoneView::PoseSpawn(SpawnView &view, const ZoneSpawn &spawn, uint64_t now_ms)
@@ -633,6 +668,8 @@ void ZoneView::PoseSpawn(SpawnView &view, const ZoneSpawn &spawn, uint64_t now_m
 	view.last_ms = now_ms;
 	float size = spawn.size > 0 ? spawn.size : (render::IsPlayerRace(spawn.race) ? render::RaceHeight(spawn.race) : 6);
 	view.actor.Update(spawn, size, m_info.gravity, now_ms);
+	view.light = spawn.light;
+	view.center_height = size / 5 * 3.125f;
 
 	// Build the model once they're close enough to be seen (and again when their look changes).
 	// Up close they move with the floor and the water under them; far off they just carry on.
@@ -670,7 +707,8 @@ void ZoneView::DrawSpawns()
 		render::Vec3 to_camera = render::Normalize(m_camera_position - center);
 		render::Vec3 light{to_camera.x, to_camera.y, 1.2f};
 		model.Draw(*m_renderer, placement, light, m_model_ambient, m_model_diffuse, view.actor.AnimationTime(model),
-			render::AnimationCode(view.actor.Animation()), view.actor.AnimationLoops());
+			render::AnimationCode(view.actor.Animation()), view.actor.AnimationLoops(),
+			LightsFor(view.Feet() + render::Vec3{0, 0, view.center_height}));
 		view.drawn = true;
 	}
 }

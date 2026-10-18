@@ -18,7 +18,7 @@
 // SIZE X Y Z HEADING (repeatable) stands a spawn there; after it, --npc-look TEXTURE HELM gives it an
 // NPC's body texture and helm (255 0: dressed per slot), --npc-move SPEED TURN sets it walking (the
 // update's speed, and turn per tick), --npc-stance S its stance (100, 110 sitting, 111, 115) and
-// --npc-fly F its fly mode. --spawn-ms MS runs the spawns that long first, printing where they are
+// --npc-fly F its fly mode, --npc-light TYPE the light it carries (2 a torch, 4 a lantern...). --spawn-ms MS runs the spawns that long first, printing where they are
 // and what they play each second. --time HOUR MINUTE sets Norrath's time (hour
 // 1..24, 1 is midnight) for the zone's time type (--time-type, default 2: outdoors).
 // --debug-draw wireframe,nofog,walls,floor turns on the debug menu's render toggles.
@@ -266,6 +266,8 @@ int main(int argc, char **argv)
 		}
 		else if (arg == "--npc-stance" && i + 1 < argc && !spawns.empty())
 			spawns.rbegin()->second.stance = static_cast<uint8_t>(atoi(argv[++i]));
+		else if (arg == "--npc-light" && i + 1 < argc && !spawns.empty())
+			spawns.rbegin()->second.light = static_cast<uint8_t>(atoi(argv[++i]));
 		else if (arg == "--npc-fly" && i + 1 < argc && !spawns.empty())
 			spawns.rbegin()->second.fly_mode = static_cast<uint8_t>(atoi(argv[++i]));
 		else if (arg == "--spawn-ms" && i + 1 < argc)

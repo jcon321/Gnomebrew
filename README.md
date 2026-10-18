@@ -417,7 +417,14 @@ Not yet: the real client's messages use `CConfirmationDialog`; these use the fro
   so nights outdoors go dark blue but lamp-lit corners stay lit. Placed objects are lit the same way by
   their own colors: each `objects.wld` placement (0x15, flag 0x100) points through a 0x33 to a 0x32 with
   one color per vertex of its actor's meshes in turn, baked with the torches near it. Materials of render
-  method 0x0B (fire) and 0x17 are additive and unlit, drawn full bright. The sky dims along `SetSkyBackground`'s
+  method 0x0B (fire) and 0x17 are additive and unlit, drawn full bright. The zone's own lights (`lights.wld`,
+  flags 0x100) light nothing at run time: EQGfx's `processPhysicsEffects` only takes lights with a scene
+  influence flag (0x30000000), which only `CDisplay::CreateLight` sets. That's the light a spawn carries
+  (`LightType`, Spawn_Struct byte 94 and SpawnAppearance type 5: a torch, lantern or lightstone), 2 units
+  in front of it and 4 over its center, its color and radius from `InitCommonLights` (a torch flickers
+  yellow through 10 colors at 200 ms, radius 100). A character's 3 brightest such lights (0.05 radius^2 /
+  (distance^2 + 1), among those whose sphere reaches its BSP region) add color x 0.05 radius^2 x cos /
+  distance^2 to each vertex (`calculateMeshLighting`). They light the zone too in the client; not here yet. The sky dims along `SetSkyBackground`'s
   60 day periods (night until 3:00, dawn to 9:00, day to 15:00, dusk to 20:48), and the fog darkens with
   the light. The sun and moon aren't drawn yet.
 

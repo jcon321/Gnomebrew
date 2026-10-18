@@ -1,5 +1,6 @@
 #include "zone_regions.h"
 
+#include <algorithm>
 #include <cstring>
 
 namespace render
@@ -51,6 +52,37 @@ namespace render
 			index = side < -node.distance ? node.back : node.front;
 		}
 		return -1;
+	}
+
+	std::vector<int> ZoneRegions::RegionsTouched(const Vec3 &center, float radius) const
+	{
+		// Down the front of each split, and the back too when the sphere crosses it.
+		std::vector<int> regions;
+		std::vector<int32_t> pending;
+		if (!m_nodes.empty())
+			pending.push_back(1);
+		while (!pending.empty()) {
+			int32_t index = pending.back();
+			pending.pop_back();
+			if (index < 1 || index > static_cast<int32_t>(m_nodes.size()))
+				continue;
+			const WldRegionMap::Node &node = m_nodes[index - 1];
+			if (node.region != 0) {
+				regions.push_back(node.region - 1);
+				continue;
+			}
+			float side = center.x * node.normal.x + center.y * node.normal.y + center.z * node.normal.z + node.distance;
+			if (side < -radius) {
+				pending.push_back(node.back);
+				continue;
+			}
+			if (side <= radius)
+				pending.push_back(node.back);
+			pending.push_back(node.front);
+		}
+		std::sort(regions.begin(), regions.end());
+		regions.erase(std::unique(regions.begin(), regions.end()), regions.end());
+		return regions;
 	}
 
 	const std::vector<std::string> &ZoneRegions::Types(int region) const
