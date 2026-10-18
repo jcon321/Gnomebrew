@@ -62,7 +62,7 @@ ZoneView::DayLight ZoneView::Lighting() const
 	float minute = outdoors ? m_minute : 0;
 
 	// SetAmbientLight: the hour's color toward the next hour's; 0.1 where time doesn't pass
-	// (0.5 for time type 4).
+	// (0.5 for time type 4); then no less than the minimum below.
 	if (outdoors) {
 		int a = hour - 1, b = hour % 24;
 		float t = minute / 60;
@@ -82,7 +82,11 @@ ZoneView::DayLight ZoneView::Lighting() const
 		float a = render::HeadingToRadians(512 - angle);
 		light.sun_direction = {0, std::sin(a), -std::cos(a)};
 	}
-	light.ambient = {std::min(light.ambient.x, 0.99f), std::min(light.ambient.y, 0.99f), std::min(light.ambient.z, 0.99f)};
+	// SetAmbientLight keeps each channel between CDisplay's minimum ambient (0.18, set at 0x3c by
+	// its constructor, which TAKP's list calls CEverQuest::loadOptions @0049ec7e) and 0.99.
+	const float least = 0.18f;
+	light.ambient = {std::clamp(light.ambient.x, least, 0.99f), std::clamp(light.ambient.y, least, 0.99f),
+		std::clamp(light.ambient.z, least, 0.99f)};
 
 	// SetSkyBackground / ProcessSky: the day period, in steps of 12 game minutes. Night until
 	// 3:00, dawn to 9:00 (periods 44, 45 .. 59, 0 .. 13), day to 15:00 (14), dusk to 20:48 (14 .. 43).

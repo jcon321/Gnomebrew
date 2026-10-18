@@ -412,7 +412,8 @@ Not yet: the real client's messages use `CConfirmationDialog`; these use the fro
   emotes once (its ids are the same numbers).
 - **Time of day:** `OP_TimeOfDay`'s hour (1..24, 1 is midnight) carried on at 20 game seconds a second
   (`EQWorldData::AdvanceTime`). Zones of time type 1, 2 and 5 take their ambient light from the client's
-  hourly red, green and blue tables (`SetAmbientLight`); other zones get 0.1. As eqgfx's
+  hourly red, green and blue tables (`SetAmbientLight`); other zones get 0.1. No channel goes under 0.18,
+  `CDisplay`'s minimum ambient (set by its constructor, which TAKP's function list calls `CEverQuest::loadOptions`). As eqgfx's
   `calculateMeshLighting` does, a zone vertex is its baked color plus its alpha times the ambient light,
   so nights outdoors go dark blue but lamp-lit corners stay lit. Placed objects are lit the same way by
   their own colors: each `objects.wld` placement (0x15, flag 0x100) points through a 0x33 to a 0x32 with
