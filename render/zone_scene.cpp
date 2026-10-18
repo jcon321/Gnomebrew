@@ -3,6 +3,7 @@
 #include "skeleton.h"
 
 #include <algorithm>
+#include <cmath>
 #include <map>
 
 namespace render
@@ -27,24 +28,34 @@ namespace render
 		}
 	}
 
-	void DrawStaticMesh(Rasterizer &rasterizer, const StaticMesh &mesh, uint64_t now_ms)
+	void DrawStaticMesh(Renderer &renderer, const StaticMesh &mesh, uint64_t now_ms, const StaticVertices *pool)
 	{
-		if (!rasterizer.SphereVisible(mesh.center, mesh.radius))
+		if (!renderer.SphereVisible(mesh.center, mesh.radius))
 			return;
+		bool first = true;
 		for (const auto &batch : mesh.batches) {
 			Material material = batch.material;
 			if (!batch.frames.empty()) {
 				size_t frame = batch.frames.size() > 1 && batch.frame_ms ? (now_ms / batch.frame_ms) % batch.frames.size() : 0;
 				material.texture = batch.frames[frame];
 			}
-			rasterizer.Draw(mesh.vertices.data(), mesh.vertices.size(), batch.indices.data(), batch.indices.size(), material);
+			if (pool)
+				renderer.DrawStatic(*pool, mesh.first_vertex, mesh.vertex_count, batch.indices.data(), batch.indices.size(),
+					material, !first);
+			else
+				renderer.Draw(mesh.vertices.data(), mesh.vertices.size(), batch.indices.data(), batch.indices.size(), material, !first);
+			first = false;
 		}
 	}
 
 	bool ZoneScene::Load(const std::string &eq_dir, const std::string &zone, std::string &error, const ZoneLighting &lighting)
 	{
 		m_meshes.clear();
+		m_vertices = {};
 		m_collision.clear();
+		m_cell_start.clear();
+		m_cell_triangles.clear();
+		m_grid_w = m_grid_h = 0;
 		m_warnings.clear();
 		m_object_count = 0;
 
@@ -116,7 +127,87 @@ namespace render
 		}
 		for (const auto &name : m_textures.Missing())
 			m_warnings.push_back("missing texture " + name);
+
+		// Every mesh's vertices in one array, which a GPU renderer keeps.
+		for (auto &mesh : m_meshes) {
+			mesh.first_vertex = m_vertices.vertices.size();
+			mesh.vertex_count = mesh.vertices.size();
+			m_vertices.vertices.insert(m_vertices.vertices.end(), mesh.vertices.begin(), mesh.vertices.end());
+			mesh.vertices = {};
+		}
+		BuildGrid();
 		return true;
+	}
+
+	void ZoneScene::BuildGrid()
+	{
+		if (m_collision.empty())
+			return;
+		float x0 = m_collision[0].x, y0 = m_collision[0].y, x1 = x0, y1 = y0;
+		for (const Vec3 &v : m_collision) {
+			x0 = std::min(x0, v.x);
+			y0 = std::min(y0, v.y);
+			x1 = std::max(x1, v.x);
+			y1 = std::max(y1, v.y);
+		}
+		// 16-unit cells, coarser for zones that would need more than 1024 a side.
+		m_cell_size = std::max({16.0f, (x1 - x0) / 1024, (y1 - y0) / 1024});
+		m_grid_x = x0;
+		m_grid_y = y0;
+		m_grid_w = static_cast<int>((x1 - x0) / m_cell_size) + 1;
+		m_grid_h = static_cast<int>((y1 - y0) / m_cell_size) + 1;
+
+		// Count each cell's triangles, then fill the lists in triangle order.
+		auto cells = [&](size_t t, int &cx0, int &cy0, int &cx1, int &cy1) {
+			const Vec3 &a = m_collision[t * 3], &b = m_collision[t * 3 + 1], &c = m_collision[t * 3 + 2];
+			cx0 = static_cast<int>((std::min({a.x, b.x, c.x}) - m_grid_x) / m_cell_size);
+			cy0 = static_cast<int>((std::min({a.y, b.y, c.y}) - m_grid_y) / m_cell_size);
+			cx1 = std::min(m_grid_w - 1, static_cast<int>((std::max({a.x, b.x, c.x}) - m_grid_x) / m_cell_size));
+			cy1 = std::min(m_grid_h - 1, static_cast<int>((std::max({a.y, b.y, c.y}) - m_grid_y) / m_cell_size));
+		};
+		size_t triangles = m_collision.size() / 3;
+		m_cell_start.assign(static_cast<size_t>(m_grid_w) * m_grid_h + 1, 0);
+		for (size_t t = 0; t < triangles; ++t) {
+			int cx0, cy0, cx1, cy1;
+			cells(t, cx0, cy0, cx1, cy1);
+			for (int cy = cy0; cy <= cy1; ++cy)
+				for (int cx = cx0; cx <= cx1; ++cx)
+					++m_cell_start[static_cast<size_t>(cy) * m_grid_w + cx + 1];
+		}
+		for (size_t i = 1; i < m_cell_start.size(); ++i)
+			m_cell_start[i] += m_cell_start[i - 1];
+		m_cell_triangles.resize(m_cell_start.back());
+		std::vector<uint32_t> fill(m_cell_start.begin(), m_cell_start.end() - 1);
+		for (size_t t = 0; t < triangles; ++t) {
+			int cx0, cy0, cx1, cy1;
+			cells(t, cx0, cy0, cx1, cy1);
+			for (int cy = cy0; cy <= cy1; ++cy)
+				for (int cx = cx0; cx <= cx1; ++cx)
+					m_cell_triangles[fill[static_cast<size_t>(cy) * m_grid_w + cx]++] = static_cast<uint32_t>(t);
+		}
+	}
+
+	void ZoneScene::Candidates(float x0, float y0, float x1, float y1, std::vector<uint32_t> &out) const
+	{
+		out.clear();
+		if (m_grid_w == 0)
+			return;
+		int cx0 = std::max(0, static_cast<int>(std::floor((x0 - m_grid_x) / m_cell_size)));
+		int cy0 = std::max(0, static_cast<int>(std::floor((y0 - m_grid_y) / m_cell_size)));
+		int cx1 = std::min(m_grid_w - 1, static_cast<int>(std::floor((x1 - m_grid_x) / m_cell_size)));
+		int cy1 = std::min(m_grid_h - 1, static_cast<int>(std::floor((y1 - m_grid_y) / m_cell_size)));
+		if (cx0 > cx1 || cy0 > cy1)
+			return;
+		for (int cy = cy0; cy <= cy1; ++cy) {
+			const uint32_t *begin = m_cell_triangles.data() + m_cell_start[static_cast<size_t>(cy) * m_grid_w + cx0];
+			const uint32_t *end = m_cell_triangles.data() + m_cell_start[static_cast<size_t>(cy) * m_grid_w + cx1 + 1];
+			out.insert(out.end(), begin, end);
+		}
+		// Cells share big triangles; test each once, in the zone's order (ties come out as before).
+		if (cx0 != cx1 || cy0 != cy1) {
+			std::sort(out.begin(), out.end());
+			out.erase(std::unique(out.begin(), out.end()), out.end());
+		}
 	}
 
 	void ZoneScene::AddMesh(const WldMesh &mesh, const Transform &transform, bool solid, const std::vector<WldLight> &lights,
@@ -135,7 +226,7 @@ namespace render
 
 			// Flat ambient, the mesh's own (small, additive) vertex colors, and the point lights.
 			// The colors' alpha is how much of the zone's ambient light reaches the vertex; it rides
-			// along in the top byte for Rasterizer::SetVertexLight.
+			// along in the top byte for Renderer::SetVertexLight.
 			float r = lighting.ambient, g = lighting.ambient, b = lighting.ambient;
 			uint32_t exposure = 0xff;
 			if (!mesh.colors.empty()) {
@@ -195,17 +286,19 @@ namespace render
 			m_meshes.push_back(std::move(out));
 	}
 
-	void ZoneScene::Draw(Rasterizer &rasterizer, uint64_t now_ms) const
+	void ZoneScene::Draw(Renderer &renderer, uint64_t now_ms) const
 	{
 		for (const auto &mesh : m_meshes)
-			DrawStaticMesh(rasterizer, mesh, now_ms);
+			DrawStaticMesh(renderer, mesh, now_ms, &m_vertices);
 	}
 
 	bool ZoneScene::FloorBelow(const Vec3 &from, float depth, float &floor_z) const
 	{
+		thread_local std::vector<uint32_t> nearby;
+		Candidates(from.x, from.y, from.x, from.y, nearby);
 		bool found = false;
-		for (size_t i = 0; i + 2 < m_collision.size(); i += 3) {
-			const Vec3 &a = m_collision[i], &b = m_collision[i + 1], &c = m_collision[i + 2];
+		for (uint32_t t : nearby) {
+			const Vec3 &a = m_collision[t * 3], &b = m_collision[t * 3 + 1], &c = m_collision[t * 3 + 2];
 			// Barycentric coordinates of (x, y) in the triangle's top-down projection.
 			float d = (b.y - c.y) * (a.x - c.x) + (c.x - b.x) * (a.y - c.y);
 			if (std::fabs(d) < 1e-6f)
@@ -226,14 +319,16 @@ namespace render
 
 	bool ZoneScene::SegmentHit(const Vec3 &from, const Vec3 &to, float &fraction, Vec3 *normal) const
 	{
-		// Moller-Trumbore against every solid triangle, both sides.
+		// Moller-Trumbore against the solid triangles near the segment, both sides.
 		Vec3 d = to - from;
 		Vec3 low{std::min(from.x, to.x), std::min(from.y, to.y), std::min(from.z, to.z)};
 		Vec3 high{std::max(from.x, to.x), std::max(from.y, to.y), std::max(from.z, to.z)};
+		thread_local std::vector<uint32_t> nearby;
+		Candidates(low.x, low.y, high.x, high.y, nearby);
 		bool found = false;
 		fraction = 1;
-		for (size_t i = 0; i + 2 < m_collision.size(); i += 3) {
-			const Vec3 &a = m_collision[i], &b = m_collision[i + 1], &c = m_collision[i + 2];
+		for (uint32_t triangle : nearby) {
+			const Vec3 &a = m_collision[triangle * 3], &b = m_collision[triangle * 3 + 1], &c = m_collision[triangle * 3 + 2];
 			if (std::max({a.x, b.x, c.x}) < low.x || std::min({a.x, b.x, c.x}) > high.x || std::max({a.y, b.y, c.y}) < low.y ||
 				std::min({a.y, b.y, c.y}) > high.y || std::max({a.z, b.z, c.z}) < low.z || std::min({a.z, b.z, c.z}) > high.z)
 				continue;

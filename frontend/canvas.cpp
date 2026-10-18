@@ -21,12 +21,13 @@ void Canvas::BlitPart(const Image &image, const Rect &source, int x, int y, bool
 		const uint32_t *src = &image.pixels[static_cast<size_t>(sy + row) * image.width + sx];
 		uint32_t *dst = Row(y + row) + x;
 		if (!color_key) {
-			std::copy(src, src + w, dst);
+			for (int col = 0; col < w; ++col)
+				dst[col] = src[col] & 0xffffff;
 			continue;
 		}
 		for (int col = 0; col < w; ++col)
 			if ((src[col] & 0xffffff) != ColorKey)
-				dst[col] = src[col];
+				dst[col] = src[col] & 0xffffff;
 	}
 }
 
@@ -47,7 +48,7 @@ void Canvas::Fill(const Rect &area, uint32_t color)
 	if (x0 >= x1)
 		return; // wholly left or right of the canvas
 	for (int y = y0; y < y1; ++y)
-		std::fill(Row(y) + x0, Row(y) + x1, color);
+		std::fill(Row(y) + x0, Row(y) + x1, color & 0xffffff);
 }
 
 void Canvas::Frame(const Rect &area, uint32_t color)
@@ -64,14 +65,15 @@ namespace
 	{
 		uint32_t a = src >> 24;
 		if (a == 0xff)
-			return src;
+			return src & 0xffffff;
 		if (a == 0)
 			return dst;
 		uint32_t inv = 255 - a;
 		uint32_t r = (((src >> 16) & 0xff) * a + ((dst >> 16) & 0xff) * inv) / 255;
 		uint32_t g = (((src >> 8) & 0xff) * a + ((dst >> 8) & 0xff) * inv) / 255;
 		uint32_t b = ((src & 0xff) * a + (dst & 0xff) * inv) / 255;
-		return (r << 16) | (g << 8) | b;
+		uint32_t t = ((dst >> 24) * inv) / 255; // the 3D view behind shows through less
+		return (t << 24) | (r << 16) | (g << 8) | b;
 	}
 
 	inline uint32_t Lerp(uint32_t a, uint32_t b, uint32_t t) // t in 0..256
@@ -113,7 +115,7 @@ void Canvas::Stretch(const Image &image, const Rect &source, const Rect &dest)
 			uint32_t top = Lerp(image.At(col0, row0), image.At(col1, row0), fx);
 			uint32_t bottom = Lerp(image.At(col0, row1), image.At(col1, row1), fx);
 			uint32_t src = Lerp(top, bottom, fy);
-			dst[x] = image.has_alpha ? Blend(dst[x], src) : src;
+			dst[x] = image.has_alpha ? Blend(dst[x], src) : src & 0xffffff;
 		}
 	}
 }
@@ -137,6 +139,6 @@ void Canvas::Darken(const Rect &area)
 	for (int y = y0; y < y1; ++y) {
 		uint32_t *row = Row(y);
 		for (int x = x0; x < x1; ++x)
-			row[x] = (row[x] >> 1) & 0x7f7f7f;
+			row[x] = (row[x] >> 1) & 0x7f7f7f7f; // the 3D view behind too
 	}
 }

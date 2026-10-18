@@ -8,7 +8,7 @@
 // Draw() transforms, clips (near plane) and sets up triangles; Finish()
 // rasterizes them in horizontal strips spread over worker threads.
 
-#include "math3d.h"
+#include "renderer.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -17,95 +17,22 @@
 
 namespace render
 {
-	// A power-of-two texture with its mip chain; pixels are 0xAARRGGBB.
-	struct Texture
-	{
-		int width = 0, height = 0; // level 0
-		int width_shift = 0, height_shift = 0;
-		std::vector<std::vector<uint32_t>> levels;
-		bool has_alpha = false;
-	};
-
-	enum class Blend : uint8_t
-	{
-		Opaque,
-		Masked,      // texels with alpha < 128 are skipped
-		Translucent, // blended at Material::opacity, drawn after opaque, back to front
-		Additive,
-	};
-
-	struct Material
-	{
-		const Texture *texture = nullptr; // nullptr: vertex color only
-		Blend blend = Blend::Opaque;
-		uint8_t opacity = 255;
-		bool two_sided = false;
-	};
-
-	struct Vertex
-	{
-		Vec3 position; // world space
-		float u = 0, v = 0;
-		// 0xAARRGGBB: RRGGBB is the light (0xffffff draws the texture as is), AA how much of the
-		// light set with SetVertexLight's `add` reaches it (a zone vertex's exposure to the ambient light).
-		uint32_t color = 0xffffff;
-	};
-
-	struct Camera
-	{
-		Vec3 position;
-		Vec3 forward{1, 0, 0};
-		Vec3 up{0, 0, 1};
-		float horizontal_fov = Pi / 2; // full angle, radians
-		float near_plane = 0.25f;
-		float far_plane = 5000;
-		bool fog = false;
-		float fog_start = 0, fog_end = 1;
-		uint32_t fog_color = 0;
-	};
-
-	// A one-pixel line clipped to a width x height surface (debug overlays).
-	void DrawLine(uint32_t *pixels, int stride, int width, int height, float x0, float y0, float x1, float y1, uint32_t color);
-
-	class Rasterizer
+	class Rasterizer : public Renderer
 	{
 	public:
 		Rasterizer();
-		~Rasterizer();
+		~Rasterizer() override;
 		Rasterizer(const Rasterizer &) = delete;
 		Rasterizer &operator=(const Rasterizer &) = delete;
 
-		void Begin(int width, int height, const Camera &camera);
-		// Between these, Draw adds background (the sky): positions are relative to the
-		// camera, and the triangles fill only pixels the solid triangles left empty, in
-		// draw order, unfogged, before the translucent triangles blend over them. Hidden
-		// sky costs nothing this way.
-		void BeginBackground() { m_background = true; }
-		void EndBackground() { m_background = false; }
-		bool SphereVisible(const Vec3 &center, float radius) const;
-		// Light applied to the vertex colors of the triangles drawn after it, channel by channel:
-		// color * scale + add * AA / 255 (0..1). Begin resets it to (1, 0): the colors as given. The
-		// time of day uses it to add the ambient light to a zone's baked lighting (as eqgfx's
-		// calculateMeshLighting does: vertex color + vertex alpha * ambient) and to dim the sky.
-		void SetVertexLight(const Vec3 &scale, const Vec3 &add)
-		{
-			m_light_scale = scale;
-			m_light_add = add * 255.0f;
-		}
+		const char *Name() const override { return "software"; }
+		void Begin(int width, int height, const Camera &camera) override;
 		void Draw(const Vertex *vertices, size_t vertex_count, const uint32_t *indices, size_t index_count,
-			const Material &material);
-		// Clears to clear_color (unless clear is false: drawing over an earlier pass, such
-		// as the sky) and rasterizes everything drawn since Begin.
-		void Finish(uint32_t *pixels, int stride, uint32_t clear_color, bool clear = true);
-
-		// Screen position of a world point under the camera given to the last Begin.
-		bool Project(const Vec3 &point, float &x, float &y) const;
-		// After Finish: whether something drawn is in front of the point (name tags behind walls).
-		bool Occluded(const Vec3 &point) const;
-
-		size_t TriangleCount() const { return m_triangles.size(); }
-		// After Finish: the outline of every solid triangle drawn (the debug wireframe).
-		void DrawEdges(uint32_t *pixels, int stride, uint32_t color) const;
+			const Material &material, bool reuse_vertices = false) override;
+		void Finish(uint32_t *pixels, int stride, uint32_t clear_color, bool clear = true) override;
+		bool Occluded(const Vec3 &point) const override;
+		size_t TriangleCount() const override { return m_triangles.size(); }
+		void DrawEdges(uint32_t *pixels, int stride, uint32_t color) const override;
 
 	private:
 		struct ViewVertex
@@ -129,19 +56,16 @@ namespace render
 		};
 		class Workers;
 
-		Vec3 Eye() const { return m_background ? Vec3{0, 0, 0} : m_camera.position; }
 		void Setup(const ViewVertex &a, const ViewVertex &b, const ViewVertex &c, const Material &material);
 		void RasterizeStrip(int strip, uint32_t *pixels, int stride, uint32_t clear_color, bool clear);
 
-		int m_width = 0, m_height = 0;
-		Camera m_camera;
-		Vec3 m_right, m_up, m_forward;
-		float m_focal = 1, m_tan_x = 1, m_tan_y = 1;
 		float m_fog_scale = 0;
-		bool m_background = false;
-		Vec3 m_light_scale{1, 1, 1}, m_light_add{0, 0, 0};
 
 		std::vector<ViewVertex> m_view;
+		// What m_view was made from: reused by the next batch while the vertices and light are the same.
+		const Vertex *m_view_source = nullptr;
+		Vec3 m_view_scale, m_view_add;
+		bool m_view_background = false;
 		std::vector<ScreenTriangle> m_triangles;
 		std::vector<uint32_t> m_order; // opaque in draw order, then translucent back to front
 		std::vector<std::vector<uint32_t>> m_bins; // triangle indices per strip

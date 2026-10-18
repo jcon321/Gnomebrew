@@ -48,6 +48,8 @@ struct GameData
 	std::string error; // why the UI couldn't be loaded
 	const EqStr *eqstr = nullptr;
 	std::string eq_dir; // for the 3D character select scene; empty skips it
+	// The 3D views' renderer (the host's GPU one); unset, they use the software Rasterizer.
+	std::function<std::unique_ptr<render::Renderer>()> make_renderer;
 };
 
 class FrontEnd
@@ -73,6 +75,8 @@ public:
 	Rect ScreenArea() const; // where the current screen is laid out, in window pixels
 
 	void SetCursorVisible(bool visible) { m_cursor_visible = visible; }
+	// How long the host took to show the last frame, ms (the debug menu's Present).
+	void SetPresentMs(double ms) { m_present_ms = ms; }
 	// While a mouse drag turns the character or pans the camera, the cursor is hidden and held
 	// where the drag started: the host puts it back at (x, y), in window pixels, after every move
 	// and once more when the drag ends.
@@ -154,10 +158,12 @@ private:
 
 	ButtonArt Art(int style);
 	void Log(const std::string &line);
+	std::unique_ptr<render::Renderer> MakeRenderer() const { return m_ui.make_renderer ? m_ui.make_renderer() : nullptr; }
 
 	FrontEndArt &m_art;
 	const EqText &m_strings;
 	TextRenderer &m_text;
+	double m_present_ms = 0;
 	FrontEndConfig m_config;
 
 	Screen m_screen = Screen::Start;

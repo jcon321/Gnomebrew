@@ -32,9 +32,16 @@ class DebugMenu
 public:
 	bool open = true;
 
-	// Once a frame in the zone, whether or not the menu is open: the frame's time, and how much
-	// of it the world took to draw.
-	void Frame(double world_ms);
+	// Where a frame's CPU time went, ms: the zone's meshes, the character models (posing and
+	// skinning), handing the frame to the renderer (its Finish: the GPU upload and draw calls, or
+	// the software rasterizer), the name tags, the rest of the UI, and presenting (with Direct3D
+	// the canvas upload and the swap, which waits while the GPU is behind).
+	struct FrameTimes
+	{
+		double zone = 0, models = 0, submit = 0, tags = 0, ui = 0, present = 0;
+	};
+	// Once a frame in the zone, whether or not the menu is open.
+	void Frame(const FrameTimes &times);
 	void Reset(); // entering a zone: start the averages over, no target
 
 	// `bottom`: where the stat card has to stop (the chat log is below).
@@ -79,9 +86,11 @@ private:
 	Clock::time_point m_last_frame{};
 	Clock::time_point m_window_start{};
 	int m_window_frames = 0;
-	double m_window_ms = 0, m_window_worst_ms = 0, m_window_world_ms = 0;
+	double m_window_ms = 0, m_window_worst_ms = 0;
+	FrameTimes m_window_times; // sums over the window
 	// The last full second.
-	double m_fps = 0, m_frame_ms = 0, m_worst_ms = 0, m_world_ms = 0;
+	double m_fps = 0, m_frame_ms = 0, m_worst_ms = 0;
+	FrameTimes m_times; // averages
 
 	bool m_have_network = false;
 	RdpStats m_network;         // the latest

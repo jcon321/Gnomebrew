@@ -90,13 +90,15 @@ void DebugMenu::Reset()
 {
 	m_last_frame = {};
 	m_window_frames = 0;
-	m_window_ms = m_window_worst_ms = m_window_world_ms = 0;
-	m_fps = m_frame_ms = m_worst_ms = m_world_ms = 0;
+	m_window_ms = m_window_worst_ms = 0;
+	m_window_times = {};
+	m_fps = m_frame_ms = m_worst_ms = 0;
+	m_times = {};
 	m_have_network = false;
 	m_target = 0;
 }
 
-void DebugMenu::Frame(double world_ms)
+void DebugMenu::Frame(const FrameTimes &times)
 {
 	Clock::time_point now = Clock::now();
 	if (m_last_frame != Clock::time_point{}) {
@@ -104,7 +106,12 @@ void DebugMenu::Frame(double world_ms)
 		++m_window_frames;
 		m_window_ms += ms;
 		m_window_worst_ms = std::max(m_window_worst_ms, ms);
-		m_window_world_ms += world_ms;
+		m_window_times.zone += times.zone;
+		m_window_times.models += times.models;
+		m_window_times.submit += times.submit;
+		m_window_times.tags += times.tags;
+		m_window_times.ui += times.ui;
+		m_window_times.present += times.present;
 	}
 	else
 		m_window_start = now;
@@ -113,10 +120,13 @@ void DebugMenu::Frame(double world_ms)
 		m_fps = m_window_frames * 1000.0 / m_window_ms;
 		m_frame_ms = m_window_ms / m_window_frames;
 		m_worst_ms = m_window_worst_ms;
-		m_world_ms = m_window_world_ms / m_window_frames;
+		double n = m_window_frames;
+		m_times = {m_window_times.zone / n, m_window_times.models / n, m_window_times.submit / n, m_window_times.tags / n,
+			m_window_times.ui / n, m_window_times.present / n};
 		m_window_start = now;
 		m_window_frames = 0;
-		m_window_ms = m_window_worst_ms = m_window_world_ms = 0;
+		m_window_ms = m_window_worst_ms = 0;
+		m_window_times = {};
 	}
 }
 
@@ -245,7 +255,9 @@ void DebugMenu::DrawCard(Canvas &canvas, TextRenderer &text, const ZoneSession &
 	if (section(Performance, "PERFORMANCE")) {
 		row(m_fps > 0 ? Format("%.0f fps   %.1f ms (worst %.0f)", m_fps, m_frame_ms, m_worst_ms) : "measuring...");
 		if (world) {
-			row(Format("World %.1f ms   %zuk triangles", m_world_ms, (stats.triangles + 500) / 1000));
+			row(Format("Zone %.1f  Models %.1f  Submit %.1f ms", m_times.zone, m_times.models, m_times.submit));
+			row(Format("Tags %.1f  UI %.1f  Present %.1f ms", m_times.tags, m_times.ui, m_times.present));
+			row(Format("%zuk triangles   %s", (stats.triangles + 500) / 1000, stats.renderer));
 			row(Format("Models %zu drawn, %zu built, %zu spawns", stats.spawns_drawn, stats.spawns_built, stats.spawns));
 		}
 	}

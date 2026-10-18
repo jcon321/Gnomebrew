@@ -60,7 +60,7 @@ namespace render
 		return true;
 	}
 
-	void Sky::Draw(Rasterizer &rasterizer, uint64_t now_ms)
+	void Sky::Draw(Renderer &renderer, uint64_t now_ms)
 	{
 		for (size_t i = 0; i < m_layers.size(); ++i) {
 			StaticMesh &layer = m_layers[i];
@@ -70,7 +70,7 @@ namespace render
 				for (size_t v = 0; v < layer.vertices.size(); ++v)
 					layer.vertices[v].u = m_base_uvs[i][v * 2] + drift;
 			}
-			DrawStaticMesh(rasterizer, layer, now_ms);
+			DrawStaticMesh(renderer, layer, now_ms);
 		}
 	}
 }

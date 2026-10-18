@@ -5,7 +5,7 @@
 // rasterizer materials.
 
 #include "pfs.h"
-#include "rasterizer.h"
+#include "renderer.h"
 #include "wld.h"
 
 #include <map>

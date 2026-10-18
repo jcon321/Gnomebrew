@@ -31,7 +31,8 @@ class ZoneView
 public:
 	enum class CameraView { FirstPerson, Chase };
 
-	explicit ZoneView(std::string eq_dir);
+	// renderer: the GPU one, or nullptr for the software Rasterizer.
+	ZoneView(std::string eq_dir, std::unique_ptr<render::Renderer> renderer = nullptr);
 	~ZoneView();
 
 	void StartLoading(const ZoneInfo &info);
@@ -90,10 +91,17 @@ public:
 	// For the preview tool.
 	const render::CharacterModel *Model() const { return m_model.get(); }
 	size_t TrianglesDrawn() const { return m_triangles_drawn; }
+	// CPU time of the last Render's parts, ms (the debug menu's performance rows).
+	struct RenderTimes
+	{
+		double zone = 0, models = 0, submit = 0;
+	};
+	const RenderTimes &Times() const { return m_times; }
 	// For the debug menu: what the last frame drew, and how we're moving and looking.
 	struct DebugStats
 	{
 		size_t triangles = 0;
+		const char *renderer = ""; // Renderer::Name
 		size_t spawns_drawn = 0, spawns_built = 0, spawns = 0; // models drawn, built, spawns tracked
 		size_t models_cached = 0;                               // distinct spawn models loaded
 		float heading = 0;                                      // 0..512, 0 north, 128 west
@@ -153,7 +161,7 @@ private:
 	render::ZoneScene m_zone;
 	render::Sky m_sky;
 	render::CharacterModels m_models;
-	render::Rasterizer m_rasterizer;
+	std::unique_ptr<render::Renderer> m_renderer;
 
 	std::optional<render::CharacterAppearance> m_appearance;
 	bool m_model_dirty = false;
@@ -203,4 +211,5 @@ private:
 	float m_pitch = -12;    // degrees, negative looks down
 	float m_distance = 0;   // chase camera distance; 0 = from the character's height
 	size_t m_triangles_drawn = 0;
+	RenderTimes m_times;
 };

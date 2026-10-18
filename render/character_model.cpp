@@ -273,7 +273,7 @@ namespace render
 		return it == m_animations.end() ? 0 : static_cast<uint32_t>(it->second.length * it->second.frame_ms);
 	}
 
-	void CharacterModel::Draw(Rasterizer &rasterizer, const Transform &placement, const Vec3 &light_direction, float ambient,
+	void CharacterModel::Draw(Renderer &renderer, const Transform &placement, const Vec3 &light_direction, float ambient,
 		float diffuse, uint64_t time_ms, const std::string &animation) const
 	{
 		auto it = m_animations.find(animation);
@@ -284,24 +284,51 @@ namespace render
 		scaled.scale *= m_scale;
 		for (auto &bone : bones)
 			bone = scaled * bone;
-		m_vertices.resize(m_positions.size());
+		// Each bone as a matrix, once (Quat::Rotate expanded), with the light turned into its
+		// space: a vertex is then a matrix multiply and a dot product.
 		Vec3 light = Normalize(light_direction);
-		std::vector<float> intensity(m_positions.size());
+		m_bone_matrices.resize(bones.size());
+		for (size_t b = 0; b < bones.size(); ++b) {
+			const Quat &q = bones[b].rotation;
+			float r[3][3] = {
+				{1 - 2 * (q.y * q.y + q.z * q.z), 2 * (q.x * q.y - q.w * q.z), 2 * (q.x * q.z + q.w * q.y)},
+				{2 * (q.x * q.y + q.w * q.z), 1 - 2 * (q.x * q.x + q.z * q.z), 2 * (q.y * q.z - q.w * q.x)},
+				{2 * (q.x * q.z - q.w * q.y), 2 * (q.y * q.z + q.w * q.x), 1 - 2 * (q.x * q.x + q.y * q.y)},
+			};
+			BoneMatrix &out = m_bone_matrices[b];
+			for (int i = 0; i < 3; ++i)
+				for (int j = 0; j < 3; ++j)
+					out.m[i][j] = r[i][j] * bones[b].scale;
+			out.translation = bones[b].translation;
+			out.light = {r[0][0] * light.x + r[1][0] * light.y + r[2][0] * light.z,
+				r[0][1] * light.x + r[1][1] * light.y + r[2][1] * light.z,
+				r[0][2] * light.x + r[1][2] * light.y + r[2][2] * light.z};
+		}
+		m_vertices.resize(m_positions.size());
+		m_intensity.resize(m_positions.size());
 		for (size_t i = 0; i < m_positions.size(); ++i) {
-			const Transform &bone = bones[m_bones[i]];
-			m_vertices[i].position = bone.Apply(m_positions[i]);
+			const BoneMatrix &bone = m_bone_matrices[m_bones[i]];
+			const Vec3 &p = m_positions[i];
+			m_vertices[i].position = {bone.m[0][0] * p.x + bone.m[0][1] * p.y + bone.m[0][2] * p.z + bone.translation.x,
+				bone.m[1][0] * p.x + bone.m[1][1] * p.y + bone.m[1][2] * p.z + bone.translation.y,
+				bone.m[2][0] * p.x + bone.m[2][1] * p.y + bone.m[2][2] * p.z + bone.translation.z};
 			m_vertices[i].u = m_uvs[i * 2];
 			m_vertices[i].v = m_uvs[i * 2 + 1];
-			intensity[i] = ambient + diffuse * std::max(0.0f, Dot(bone.ApplyDirection(m_normals[i]), light));
+			m_intensity[i] = ambient + diffuse * std::max(0.0f, Dot(m_normals[i], bone.light));
 		}
+		// The light at half (it reaches past 1 in full light), doubled back with each batch's tint
+		// by the renderer's vertex light, so every batch draws the same vertices.
+		for (size_t i = 0; i < m_vertices.size(); ++i)
+			m_vertices[i].color = PackLight(m_intensity[i] * 0.5f, m_intensity[i] * 0.5f, m_intensity[i] * 0.5f);
+		bool first = true;
 		for (const auto &batch : m_batches) {
-			// Tints multiply the light, per batch, so recolor the batch's vertices first.
 			float tr = ((batch.tint >> 16) & 0xff) / 255.0f, tg = ((batch.tint >> 8) & 0xff) / 255.0f,
 			      tb = (batch.tint & 0xff) / 255.0f;
-			for (uint32_t index : batch.indices)
-				m_vertices[index].color = PackLight(intensity[index] * tr, intensity[index] * tg, intensity[index] * tb);
-			rasterizer.Draw(m_vertices.data(), m_vertices.size(), batch.indices.data(), batch.indices.size(), batch.material);
+			renderer.SetVertexLight({tr * 2, tg * 2, tb * 2}, {0, 0, 0});
+			renderer.Draw(m_vertices.data(), m_vertices.size(), batch.indices.data(), batch.indices.size(), batch.material, !first);
+			first = false;
 		}
+		renderer.SetVertexLight({1, 1, 1}, {0, 0, 0});
 	}
 
 	size_t CharacterModel::TriangleCount() const

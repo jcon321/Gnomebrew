@@ -1,6 +1,8 @@
 // eqclient_gui: Win32 host for the front end. Owns the window, a 32-bit DIB the
 // size of its client area (the game resolution) that FrontEnd draws into, GDI
-// text, and input translation.
+// text, and input translation. Frames go out through Direct3D 11, which also
+// draws the 3D views (win32_d3d11.cpp), or with GDI and the software rasterizer
+// when Direct3D isn't available or Renderer=software.
 //
 // All settings live in my-client.ini next to the exe (the EQ folder is only read
 // for assets; its eqclient.ini is never used). Missing keys are written with their
@@ -10,17 +12,21 @@
 //              User=myname            (remembered from the last login)
 //   [Display]  Width=1920             (game resolution: the window's size)
 //              Height=1080
+//              Renderer=d3d11         (or software: the CPU rasterizer and GDI)
+//              VSync=1                (d3d11: wait for the monitor's refresh; 0 runs as fast as it can)
 //   [Defaults] LastCharSel=0          (remembered character select slot, like eqclient.ini's)
 //   eqclient_gui.exe --eqdir C:\TAKP --login 192.168.0.18:6000 --size 1920x1080
 
 #include "eqstr.h"
 #include "frontend.h"
+#include "win32_d3d11.h"
 #include "win32_text.h"
 
 #include <windows.h>
 #include <shellapi.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <memory>
 #include <string>
@@ -45,6 +51,7 @@ namespace
 		bool grabbed = false; // FrontEnd::MouseGrab: the cursor is held at grab_x, grab_y
 		int grab_x = 0, grab_y = 0;
 		FrontEnd *frontend = nullptr;
+		D3d11Device *gpu = nullptr; // null: GDI presents the DIB
 		FILE *log = nullptr;
 	};
 
@@ -264,7 +271,8 @@ namespace
 		case WM_PAINT: {
 			PAINTSTRUCT paint;
 			HDC dc = BeginPaint(window, &paint);
-			Present(dc);
+			if (!g_app.gpu)
+				Present(dc); // with Direct3D the next frame repaints
 			EndPaint(window, &paint);
 			return 0;
 		}
@@ -348,12 +356,16 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	IniDefault(ini, L"Login", L"User", L"");
 	IniDefault(ini, L"Display", L"Width", L"1920");
 	IniDefault(ini, L"Display", L"Height", L"1080");
+	IniDefault(ini, L"Display", L"Renderer", L"d3d11");
+	IniDefault(ini, L"Display", L"VSync", L"1");
 	IniDefault(ini, L"Defaults", L"LastCharSel", L"0");
 	std::wstring eq_dir = IniString(ini, L"Paths", L"EQDir");
 	std::wstring login = IniString(ini, L"Login", L"Server");
 	std::wstring user = IniString(ini, L"Login", L"User");
 	int width = GetPrivateProfileIntW(L"Display", L"Width", 1920, ini.c_str());
 	int height = GetPrivateProfileIntW(L"Display", L"Height", 1080, ini.c_str());
+	std::wstring renderer = IniString(ini, L"Display", L"Renderer");
+	bool vsync = GetPrivateProfileIntW(L"Display", L"VSync", 1, ini.c_str()) != 0;
 	int last_character = GetPrivateProfileIntW(L"Defaults", L"LastCharSel", 0, ini.c_str());
 
 	int argc = 0;
@@ -366,6 +378,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 			login = argv[++i];
 		else if (arg == L"--size")
 			swscanf(argv[++i], L"%dx%d", &width, &height);
+		else if (arg == L"--renderer")
+			renderer = argv[++i];
 	}
 	if (argv)
 		LocalFree(argv);
@@ -450,6 +464,26 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 		return 1;
 	}
 
+	std::unique_ptr<D3d11Device> gpu;
+	if (renderer != L"software") {
+		gpu = std::make_unique<D3d11Device>();
+		std::string gpu_error;
+		if (gpu->Create(g_app.window, width, height, vsync, gpu_error)) {
+			Log("Direct3D 11 on " + gpu->AdapterName() +
+				(vsync ? ", vsync" : gpu->Tearing() ? ", no vsync" : ", no vsync (but tearing unsupported: refresh rate)"));
+			gpu->SetCanvas(g_app.surface.pixels, g_app.surface.width, g_app.surface.height, g_app.surface.width);
+			D3d11Device *device = gpu.get();
+			ui.make_renderer = [device] { return device->MakeRenderer(); };
+			g_app.gpu = device;
+		}
+		else {
+			Log("Direct3D 11 unavailable (" + gpu_error + "); using the software renderer");
+			gpu.reset();
+		}
+	}
+	else
+		Log("software renderer (Renderer=software)");
+
 	GdiTextRenderer text;
 	text.AddSurface(g_app.surface.dc, g_app.surface.pixels, g_app.surface.width, g_app.surface.height);
 	FrontEnd frontend(art, strings, text, config, ui);
@@ -461,6 +495,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	Canvas canvas(g_app.surface.pixels, g_app.surface.width, g_app.surface.height, g_app.surface.width);
 	MSG message{};
 	bool running = true;
+	bool gpu_lost_logged = false;
 	while (running) {
 		while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
 			if (message.message == WM_QUIT) {
@@ -480,11 +515,27 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 		}
 
 		uint64_t now = NowMs();
+		if (gpu)
+			gpu->BeginFrame();
 		frontend.Update(now);
 		frontend.Render(canvas, now);
+		auto present_start = std::chrono::steady_clock::now();
+		auto present_ms = [&] {
+			return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - present_start).count();
+		};
+		if (gpu) {
+			// Present waits for the vertical blank with vsync; without it, frames run flat out.
+			if (!gpu->Present() && !gpu_lost_logged) {
+				Log("Direct3D device lost");
+				gpu_lost_logged = true;
+			}
+			frontend.SetPresentMs(present_ms());
+			continue;
+		}
 		HDC dc = GetDC(g_app.window);
 		Present(dc);
 		ReleaseDC(g_app.window, dc);
+		frontend.SetPresentMs(present_ms());
 
 		// About 60 frames a second; input wakes the loop early.
 		uint64_t spent = NowMs() - now;
@@ -499,6 +550,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	WritePrivateProfileStringW(L"Defaults", L"LastCharSel", std::to_wstring(frontend.LastCharacter()).c_str(), ini.c_str());
 
 	g_app.frontend = nullptr;
+	g_app.gpu = nullptr;
 	DestroySurface(g_app.surface);
 	if (g_app.log)
 		fclose(g_app.log);

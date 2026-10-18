@@ -4,7 +4,7 @@
 // objects.wld places from <zone>_obj.s3d, all transformed into world space and
 // lit once at load (lights.wld point lights over a flat ambient).
 
-#include "rasterizer.h"
+#include "renderer.h"
 #include "textures.h"
 
 #include <string>
@@ -24,7 +24,8 @@ namespace render
 		};
 		Vec3 center;
 		float radius = 0;
-		std::vector<Vertex> vertices;
+		std::vector<Vertex> vertices; // empty once a ZoneScene has moved them into its StaticVertices
+		size_t first_vertex = 0, vertex_count = 0; // where they went
 		std::vector<Batch> batches;
 	};
 
@@ -38,7 +39,7 @@ namespace render
 	{
 	public:
 		bool Load(const std::string &eq_dir, const std::string &zone, std::string &error, const ZoneLighting &lighting = ZoneLighting());
-		void Draw(Rasterizer &rasterizer, uint64_t now_ms) const;
+		void Draw(Renderer &renderer, uint64_t now_ms) const;
 		// Highest solid surface at or below `from` (searching down to `from.z - depth`).
 		bool FloorBelow(const Vec3 &from, float depth, float &floor_z) const;
 		// The first solid surface on the segment from `from` to `to`, as a fraction of its length,
@@ -53,14 +54,26 @@ namespace render
 	private:
 		void AddMesh(const WldMesh &mesh, const Transform &transform, bool solid, const std::vector<WldLight> &lights,
 			const ZoneLighting &lighting);
+		void BuildGrid();
+		// The solid triangles (indices into m_collision / 3) a top-down box touches, in order.
+		void Candidates(float x0, float y0, float x1, float y1, std::vector<uint32_t> &out) const;
 
 		PfsArchive m_zone_archive, m_object_archive;
 		TextureCache m_textures;
 		std::vector<StaticMesh> m_meshes;
+		StaticVertices m_vertices; // every mesh's, once loaded
 		std::vector<Vec3> m_collision; // solid triangles, 3 vertices each
+		// m_collision's triangles listed by the top-down grid cells their bounds touch, so the
+		// floor and wall tests look at the triangles nearby instead of the whole zone.
+		float m_cell_size = 16;
+		float m_grid_x = 0, m_grid_y = 0; // the grid's low corner
+		int m_grid_w = 0, m_grid_h = 0;
+		std::vector<uint32_t> m_cell_start; // per cell, into m_cell_triangles; one more at the end
+		std::vector<uint32_t> m_cell_triangles;
 		size_t m_object_count = 0;
 		std::vector<std::string> m_warnings;
 	};
 
-	void DrawStaticMesh(Rasterizer &rasterizer, const StaticMesh &mesh, uint64_t now_ms);
+	// pool: where the mesh's vertices are, when they've moved to a StaticVertices.
+	void DrawStaticMesh(Renderer &renderer, const StaticMesh &mesh, uint64_t now_ms, const StaticVertices *pool = nullptr);
 }

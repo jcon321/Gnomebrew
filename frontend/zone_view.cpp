@@ -3,6 +3,7 @@
 #include "actor_tags.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 
@@ -37,7 +38,10 @@ namespace
 	}
 }
 
-ZoneView::ZoneView(std::string eq_dir) : m_eq_dir(std::move(eq_dir)) {}
+ZoneView::ZoneView(std::string eq_dir, std::unique_ptr<render::Renderer> renderer)
+	: m_eq_dir(std::move(eq_dir)), m_renderer(renderer ? std::move(renderer) : std::make_unique<render::Rasterizer>())
+{
+}
 
 void ZoneView::SetGameTime(int hour, float minute)
 {
@@ -307,6 +311,7 @@ ZoneView::DebugStats ZoneView::Stats() const
 {
 	DebugStats stats;
 	stats.triangles = m_triangles_drawn;
+	stats.renderer = m_renderer->Name();
 	stats.spawns = m_actors.size();
 	for (const auto &[id, actor] : m_actors) {
 		stats.spawns_built += actor.model ? 1 : 0;
@@ -357,7 +362,7 @@ uint16_t ZoneView::PickSpawn(int x, int y) const
 			continue;
 		float height = actor.model->MaxZ() - actor.model->MinZ();
 		float fx, fy, tx, ty;
-		if (!m_rasterizer.Project(actor.feet, fx, fy) || !m_rasterizer.Project(actor.feet + render::Vec3{0, 0, height}, tx, ty))
+		if (!m_renderer->Project(actor.feet, fx, fy) || !m_renderer->Project(actor.feet + render::Vec3{0, 0, height}, tx, ty))
 			continue;
 		float half = std::max(6.0f, (fy - ty) / 3);
 		float center = (fx + tx) / 2;
@@ -448,13 +453,18 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 		m_loader.join();
 	PlacePlayer();
 
+	using Clock = std::chrono::steady_clock;
+	auto since = [](Clock::time_point start) { return std::chrono::duration<double, std::milli>(Clock::now() - start).count(); };
+	Clock::time_point start = Clock::now();
 	float distance;
 	render::Camera camera = MakeCamera(distance);
-	m_rasterizer.Begin(canvas.Width(), canvas.Height(), camera);
+	m_renderer->Begin(canvas.Width(), canvas.Height(), camera);
 	DayLight light = Lighting();
-	m_rasterizer.SetVertexLight({1, 1, 1}, light.ambient);
-	m_zone.Draw(m_rasterizer, now_ms);
-	m_rasterizer.SetVertexLight({1, 1, 1}, {0, 0, 0});
+	m_renderer->SetVertexLight({1, 1, 1}, light.ambient);
+	m_zone.Draw(*m_renderer, now_ms);
+	m_renderer->SetVertexLight({1, 1, 1}, {0, 0, 0});
+	m_times.zone = since(start);
+	start = Clock::now();
 	// Characters: the ambient light, and a directional light that weakens with the daylight.
 	float level = (light.ambient.x + light.ambient.y + light.ambient.z) / 3;
 	m_model_ambient = std::max(0.08f, level * 0.6f);
@@ -475,22 +485,25 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 			if (length > 0)
 				time = length - 1 - time % length;
 		}
-		m_model->Draw(m_rasterizer, placement, light_direction, m_model_ambient, m_model_diffuse, time, m_animation);
+		m_model->Draw(*m_renderer, placement, light_direction, m_model_ambient, m_model_diffuse, time, m_animation);
 	}
 	m_camera_position = camera.position;
 	DrawSpawns();
+	m_times.models = since(start);
+	start = Clock::now();
 	// The sky dims with the day period, toward a deep blue at night.
 	bool sky = m_sky.Loaded();
 	render::Vec3 sky_tint{light.sky + 0.03f * (1 - light.sky), light.sky + 0.04f * (1 - light.sky), light.sky + 0.10f * (1 - light.sky)};
 	if (sky) {
-		m_rasterizer.BeginBackground();
-		m_rasterizer.SetVertexLight(sky_tint, {0, 0, 0});
-		m_sky.Draw(m_rasterizer, now_ms);
-		m_rasterizer.EndBackground();
+		m_renderer->BeginBackground();
+		m_renderer->SetVertexLight(sky_tint, {0, 0, 0});
+		m_sky.Draw(*m_renderer, now_ms);
+		m_renderer->EndBackground();
 	}
-	m_triangles_drawn = m_rasterizer.TriangleCount();
-	m_rasterizer.Finish(canvas.Row(0), canvas.Stride(), sky ? ScaleColor(m_sky.HorizonColor(), sky_tint) : camera.fog_color);
+	m_triangles_drawn = m_renderer->TriangleCount();
+	m_renderer->Finish(canvas.Row(0), canvas.Stride(), sky ? ScaleColor(m_sky.HorizonColor(), sky_tint) : camera.fog_color);
 	DrawDebugOverlays(canvas);
+	m_times.submit = since(start);
 }
 
 float ZoneView::FarPlane() const
@@ -505,13 +518,13 @@ void ZoneView::DrawDebugOverlays(Canvas &canvas) const
 	int stride = canvas.Stride(), width = canvas.Width(), height = canvas.Height();
 	auto line = [&](const render::Vec3 &a, const render::Vec3 &b, uint32_t color) {
 		float ax, ay, bx, by;
-		if (m_rasterizer.Project(a, ax, ay) && m_rasterizer.Project(b, bx, by))
+		if (m_renderer->Project(a, ax, ay) && m_renderer->Project(b, bx, by))
 			render::DrawLine(pixels, stride, width, height, ax, ay, bx, by, color);
 	};
 	if (m_debug_draw.wireframe) {
 		// Everything drawn (after Finish, so name tags still hide behind walls), as outlines on black.
 		canvas.Fill({0, 0, width, height}, 0x000000);
-		m_rasterizer.DrawEdges(pixels, stride, 0x40a060);
+		m_renderer->DrawEdges(pixels, stride, 0x40a060);
 	}
 	if (m_debug_draw.walls && m_placed) {
 		// What MoveHorizontally stops at: solid triangles steeper than a walkable slope, within reach.
@@ -646,14 +659,14 @@ void ZoneView::DrawSpawns()
 		float height = model.MaxZ() - model.MinZ();
 		render::Vec3 center = actor.feet + render::Vec3{0, 0, height * 0.5f};
 		actor.distance = render::Length(center - m_camera_position);
-		if (actor.distance > far_plane + height || !m_rasterizer.SphereVisible(center, height * 0.75f))
+		if (actor.distance > far_plane + height || !m_renderer->SphereVisible(center, height * 0.75f))
 			continue;
 		render::Transform placement;
 		placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(actor.heading));
 		placement.translation = actor.feet + render::Vec3{0, 0, model.OriginOverFeet()};
 		render::Vec3 to_camera = render::Normalize(m_camera_position - center);
 		render::Vec3 light{to_camera.x, to_camera.y, 1.2f};
-		model.Draw(m_rasterizer, placement, light, m_model_ambient, m_model_diffuse, static_cast<uint64_t>(actor.animation_ms),
+		model.Draw(*m_renderer, placement, light, m_model_ambient, m_model_diffuse, static_cast<uint64_t>(actor.animation_ms),
 			actor.animation);
 		actor.drawn = true;
 	}
@@ -670,7 +683,7 @@ std::vector<ZoneView::NameTag> ZoneView::NameTags(float range) const
 			continue;
 		float sx, sy;
 		render::Vec3 top = actor.feet + render::Vec3{0, 0, actor.model->MaxZ() - actor.model->MinZ() + 0.6f};
-		if (m_rasterizer.Project(top, sx, sy) && !m_rasterizer.Occluded(top))
+		if (m_renderer->Project(top, sx, sy) && !m_renderer->Occluded(top))
 			tags.push_back({id, static_cast<int>(sx), static_cast<int>(sy), actor.distance});
 	}
 	std::sort(tags.begin(), tags.end(), [](const NameTag &a, const NameTag &b) { return a.distance < b.distance; });
@@ -683,7 +696,7 @@ bool ZoneView::NamePosition(int &x, int &y) const
 		return false;
 	float sx, sy;
 	render::Vec3 top = m_feet + render::Vec3{0, 0, m_model->MaxZ() - m_model->MinZ() + 0.6f};
-	if (!m_rasterizer.Project(top, sx, sy))
+	if (!m_renderer->Project(top, sx, sy))
 		return false;
 	x = static_cast<int>(sx);
 	y = static_cast<int>(sy);

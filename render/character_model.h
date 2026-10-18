@@ -5,7 +5,7 @@
 // equipment list and playing one of their animations: P01 standing idle, L01
 // walk, L02 run, L03 running jump, L04 standing jump, L05 falling.
 
-#include "rasterizer.h"
+#include "renderer.h"
 #include "skeleton.h"
 #include "textures.h"
 
@@ -38,7 +38,7 @@ namespace render
 	public:
 		// placement: model space -> world. Lit by a directional light (toward `light_direction`) over ambient.
 		// `time_ms` runs the animation (looping); a missing one plays the idle.
-		void Draw(Rasterizer &rasterizer, const Transform &placement, const Vec3 &light_direction, float ambient,
+		void Draw(Renderer &renderer, const Transform &placement, const Vec3 &light_direction, float ambient,
 			float diffuse, uint64_t time_ms, const std::string &animation = "P01") const;
 		bool HasAnimation(const std::string &animation) const { return m_animations.count(animation) != 0; }
 		uint32_t AnimationMs(const std::string &animation) const; // one loop
@@ -72,6 +72,15 @@ namespace render
 		float m_min_z = 0, m_max_z = 0, m_head_z = 0;
 		float m_scale = 1;
 		float m_origin_over_feet = 0;
+		// Draw's scratch: the posed bones as matrices, and the vertices' light.
+		struct BoneMatrix
+		{
+			float m[3][3]; // rotation times scale
+			Vec3 translation;
+			Vec3 light; // the light direction in the bone's space
+		};
+		mutable std::vector<BoneMatrix> m_bone_matrices;
+		mutable std::vector<float> m_intensity;
 		mutable std::vector<Vertex> m_vertices;
 	};
 

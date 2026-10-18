@@ -37,7 +37,7 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 	m_user.text = config.username;
 	if (!m_ui.eq_dir.empty() && m_ui.definitions) {
 		// Character select's zone takes a moment to load; start while the player logs in.
-		m_charselect_view = std::make_unique<CharacterSelectView>(m_ui.eq_dir);
+		m_charselect_view = std::make_unique<CharacterSelectView>(m_ui.eq_dir, MakeRenderer());
 		m_charselect_view->StartLoading();
 	}
 	m_rules.CheckInstall(m_ui.eq_dir);
@@ -1242,7 +1242,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			// character (OP_ZoneEntry came first) in it.
 			if (m_ui.eq_dir.empty())
 				break;
-			m_zone_view = std::make_unique<ZoneView>(m_ui.eq_dir);
+			m_zone_view = std::make_unique<ZoneView>(m_ui.eq_dir, MakeRenderer());
 			m_zone_view->StartLoading(m_zone.Info());
 			const ZoneSpawn &me = m_zone.Self();
 			render::CharacterAppearance appearance;
@@ -1496,11 +1496,17 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 		AddZoneLog("Couldn't load the zone: " + m_zone_view->Error(), ZoneGrey);
 		m_zone_error_logged = true;
 	}
-	double world_ms = 0;
+	using Clock = std::chrono::steady_clock;
+	auto since = [](Clock::time_point start) { return std::chrono::duration<double, std::milli>(Clock::now() - start).count(); };
+	DebugMenu::FrameTimes times;
+	times.present = m_present_ms;
 	if (world) {
-		auto start = std::chrono::steady_clock::now();
 		m_zone_view->Render(canvas, now_ms);
-		world_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+		const ZoneView::RenderTimes &render_times = m_zone_view->Times();
+		times.zone = render_times.zone;
+		times.models = render_times.models;
+		times.submit = render_times.submit;
+		Clock::time_point tags_start = Clock::now();
 		// TurnCharacterNameSpritesOn / TurnNPCNameSpritesOn: names over heads, ours in the chase
 		// view, the nearest few dozen within 120 units.
 		auto tags = m_zone_view->NameTags(120);
@@ -1522,6 +1528,7 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 			m_text.Draw(canvas, tags[i].x - size.w / 2 + 1, tags[i].y - size.h + 1, name, text_height, 0x000000);
 			m_text.Draw(canvas, tags[i].x - size.w / 2, tags[i].y - size.h, name, text_height, color);
 		}
+		times.tags = since(tags_start);
 	}
 	else {
 		canvas.Fill({0, 0, width, height}, 0x000000);
@@ -1530,6 +1537,7 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 		m_text.Draw(canvas, (width - size.w) / 2, height / 2 - size.h / 2, loading, 20, ZoneWhite);
 	}
 
+	Clock::time_point ui_start = Clock::now();
 	// Bottom left: the chat log, the last lines that fit, newest at the bottom.
 	int bottom = height - Height;
 	Rect log{10, bottom + 350, ChatWidth, 92};
@@ -1541,7 +1549,6 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 		m_text.Draw(canvas, log.x + 4, ry, m_zone_log[i].text, FontSize::Small, m_zone_log[i].color);
 
 	// Top left and right: the debug menu's stat card and radar, above the chat.
-	m_debug.Frame(world_ms);
 	m_debug.Draw(canvas, m_text, m_zone, m_zone_view.get(), log.y - 10);
 
 	m_text.Draw(canvas, 10, bottom + 450, "Say:", FontSize::Normal, ZoneGrey);
@@ -1557,4 +1564,6 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 		TextSize size = m_text.Measure(help, FontSize::Small);
 		m_text.Draw(canvas, width - size.w - 10, height - size.h - 8, help, FontSize::Small, ZoneGrey);
 	}
+	times.ui = since(ui_start);
+	m_debug.Frame(times);
 }

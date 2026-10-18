@@ -38,7 +38,10 @@ namespace
 	}
 }
 
-CharacterSelectView::CharacterSelectView(std::string eq_dir) : m_eq_dir(std::move(eq_dir)) {}
+CharacterSelectView::CharacterSelectView(std::string eq_dir, std::unique_ptr<render::Renderer> renderer)
+	: m_eq_dir(std::move(eq_dir)), m_renderer(renderer ? std::move(renderer) : std::make_unique<render::Rasterizer>())
+{
+}
 
 CharacterSelectView::~CharacterSelectView()
 {
@@ -187,25 +190,25 @@ void CharacterSelectView::Render(Canvas &canvas, uint64_t now_ms)
 	camera.near_plane = 0.5f;
 	camera.far_plane = 5000; // CCharacterSelect::SetLoadZoneWeather: SetYon(5000)
 
-	m_rasterizer.Begin(canvas.Width(), canvas.Height(), camera);
-	m_zone.Draw(m_rasterizer, now_ms);
+	m_renderer->Begin(canvas.Width(), canvas.Height(), camera);
+	m_zone.Draw(*m_renderer, now_ms);
 	if (m_model) {
 		render::Transform placement;
 		placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(m_heading));
 		placement.translation = m_position - render::Vec3{0, 0, m_model->MinZ()};
 		// Light from over the camera's shoulder.
 		render::Vec3 light = render::Normalize(offset) + render::Vec3{0, 0, 0.8f};
-		m_model->Draw(m_rasterizer, placement, light, 0.45f, 0.65f, now_ms);
+		m_model->Draw(*m_renderer, placement, light, 0.45f, 0.65f, now_ms);
 	}
 	// The sky, around the camera, wherever the zone leaves the screen open.
 	bool sky = m_sky.Loaded();
 	if (sky) {
-		m_rasterizer.BeginBackground();
-		m_sky.Draw(m_rasterizer, now_ms);
-		m_rasterizer.EndBackground();
+		m_renderer->BeginBackground();
+		m_sky.Draw(*m_renderer, now_ms);
+		m_renderer->EndBackground();
 	}
-	m_triangles_drawn = m_rasterizer.TriangleCount();
-	m_rasterizer.Finish(canvas.Row(0), canvas.Stride(), sky ? m_sky.HorizonColor() : 0x000000);
+	m_triangles_drawn = m_renderer->TriangleCount();
+	m_renderer->Finish(canvas.Row(0), canvas.Stride(), sky ? m_sky.HorizonColor() : 0x000000);
 }
 
 bool CharacterSelectView::NamePosition(int &x, int &y) const
@@ -214,7 +217,7 @@ bool CharacterSelectView::NamePosition(int &x, int &y) const
 		return false;
 	float sx, sy;
 	render::Vec3 top = m_position + render::Vec3{0, 0, m_model->MaxZ() - m_model->MinZ() + 0.6f};
-	if (!m_rasterizer.Project(top, sx, sy))
+	if (!m_renderer->Project(top, sx, sy))
 		return false;
 	x = static_cast<int>(sx);
 	y = static_cast<int>(sy);

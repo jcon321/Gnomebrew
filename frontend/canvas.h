@@ -1,8 +1,15 @@
 #pragma once
 
-// A 32-bit 0x00RRGGBB pixel surface (a view over memory the platform owns, such
+// A 32-bit 0xTTRRGGBB pixel surface (a view over memory the platform owns, such
 // as a Win32 DIB section) plus the 2D operations eqmain.dll uses on its
 // DirectDraw surfaces: blits with a magenta color key, tiling and darkening.
+//
+// The top byte is how much of a GPU-drawn 3D view behind the canvas shows
+// through (0 none, 255 all), with RRGGBB the canvas's own color added over it.
+// A GPU Renderer::Finish sets its block to 0xff000000; everything drawn on the
+// canvas writes 0 there, and blending and darkening scale it like a color, so
+// the Windows host can composite the canvas over the view (win32_d3d11.cpp).
+// Without a GPU view everything stays 0 and the byte is ignored.
 
 #include "bitmap.h"
 

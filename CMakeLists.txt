@@ -56,6 +56,7 @@ target_compile_options(eqclient PRIVATE ${MYCLIENT_WARNINGS})
 # render: the 3D view (zone and model loading, software rasterizer). Portable.
 find_package(Threads REQUIRED)
 add_library(eqrender STATIC
+    render/renderer.cpp
     render/rasterizer.cpp
     render/textures.cpp
     render/skeleton.cpp
@@ -87,8 +88,9 @@ target_link_libraries(eqfrontend PUBLIC eqcore eqrender)
 target_compile_options(eqfrontend PRIVATE ${MYCLIENT_WARNINGS})
 
 if(WIN32)
-    add_executable(eqclient_gui WIN32 frontend/win32_main.cpp frontend/win32_text.cpp)
-    target_link_libraries(eqclient_gui PRIVATE eqfrontend gdi32 user32 shell32 winmm)
+    # Direct3D 11 draws the 3D views and presents; d3dcompiler_47.dll is loaded at runtime.
+    add_executable(eqclient_gui WIN32 frontend/win32_main.cpp frontend/win32_text.cpp frontend/win32_d3d11.cpp)
+    target_link_libraries(eqclient_gui PRIVATE eqfrontend gdi32 user32 shell32 winmm d3d11 dxgi)
     target_compile_options(eqclient_gui PRIVATE ${MYCLIENT_WARNINGS})
     if(MINGW)
         # Self-contained exe: no libstdc++/libgcc/libwinpthread DLLs to ship.

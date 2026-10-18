@@ -14,7 +14,7 @@ namespace render
 		bool Load(const std::string &eq_dir, int type, std::string &error);
 		bool Loaded() const { return !m_layers.empty(); }
 		// Draws into a pass whose camera sits at the origin.
-		void Draw(Rasterizer &rasterizer, uint64_t now_ms);
+		void Draw(Renderer &renderer, uint64_t now_ms);
 		uint32_t HorizonColor() const { return m_horizon; } // fills below the dome
 
 	private:

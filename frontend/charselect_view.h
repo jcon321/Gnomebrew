@@ -24,7 +24,8 @@
 class CharacterSelectView
 {
 public:
-	explicit CharacterSelectView(std::string eq_dir);
+	// renderer: the GPU one, or nullptr for the software Rasterizer.
+	CharacterSelectView(std::string eq_dir, std::unique_ptr<render::Renderer> renderer = nullptr);
 	~CharacterSelectView();
 
 	void StartLoading();
@@ -62,7 +63,7 @@ private:
 	render::ZoneScene m_zone;
 	render::Sky m_sky;
 	render::CharacterModels m_models;
-	render::Rasterizer m_rasterizer;
+	std::unique_ptr<render::Renderer> m_renderer;
 
 	// What's selected, applied once loading finishes.
 	std::optional<render::CharacterAppearance> m_appearance;

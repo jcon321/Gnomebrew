@@ -26,16 +26,16 @@ A from-scratch EQMac (TAKP-era) client. Two programs share one core:
 core/       portable: RDP session, login/world protocol, DES, inflate, PFS (.pak/.s3d), BMP, DDS, TGA, XML, WLD, eqtext.txt,
             character creation rules
 console/    eqclient
-render/     portable 3D: software rasterizer, textures, zone scenes, sky, skeletons, race models
+render/     portable 3D: renderer interface, software rasterizer, textures, zone scenes, sky, skeletons, race models
 frontend/   the front end: canvas, widgets, screens, SIDL UI engine, character select scene, character creation (portable)
-            + win32_main.cpp / win32_text.cpp (Windows host)
+            + win32_main.cpp / win32_text.cpp / win32_d3d11.cpp (Windows host, Direct3D 11 renderer)
 tools/      frontend_preview and scene_preview (Linux), cross-check-windows.sh
 third_party/rdplib/  vendored rdplib (MIT, by solar), unmodified
 cmake/      llvm-mingw.cmake (Linux -> Windows cross toolchain)
 ```
 
 The core and the front-end logic are portable, so both compile and run on Linux too. Only the
-window, input and GDI text glue is Windows-specific.
+window, input, GDI text and Direct3D glue is Windows-specific.
 
 ## Building
 
@@ -83,6 +83,8 @@ User=
 [Display]
 Width=1920
 Height=1080
+Renderer=d3d11
+VSync=1
 
 [Defaults]
 LastCharSel=0
@@ -98,6 +100,11 @@ LastCharSel=0
 - `Server` is the login server. It isn't read from `eqhost.txt`, so you can't hit the live TAKP
   server by accident.
 - `Width` and `Height` are the game resolution, which is the window's size (default 1920x1080).
+- `Renderer` is `d3d11` (the GPU draws the 3D views and presents the window) or `software` (the
+  CPU rasterizer, with GDI presenting, capped near 60 fps). If Direct3D 11 or `d3dcompiler_47.dll`
+  isn't available, the GUI uses the software renderer and says why in `my-client.log`.
+  `--renderer software` overrides it for one run.
+- `VSync=1` waits for the monitor's refresh with Direct3D; `0` runs as fast as it can (to measure).
   Character select is drawn at this size, like eqgame: the SIDL windows at their real pixel size, the
   3D scene filling the rest. A window that doesn't fit the screen's work area is shrunk to fit.
 - eqmain's screens (start, login, server select) are 640x480 art. They're
@@ -229,8 +236,24 @@ front end, standing in for `eqgfx_dx8.dll`: perspective-correct textures with mi
 filtering where they're magnified, masked and blended materials, vertex lighting, and strips
 rasterized on worker threads. The sky is a background layer: it's drawn after the solid geometry,
 only on pixels the zone left empty, and before translucent surfaces, so a hidden sky costs nothing.
-At 1920x1080 a character select frame takes about 24-31 ms on a 4-core VM. Things
-learned about the files:
+At 1920x1080 a character select frame takes about 24-31 ms on a 4-core VM.
+
+On Windows the views draw through Direct3D 11 instead (`frontend/win32_d3d11.cpp`, behind the same
+`render::Renderer` interface). It keeps the software rasterizer's rules: the same lit vertex colors
+and fog, masked texels under half alpha dropped, the sky only where nothing was drawn, and
+translucent triangles sorted back to front. Depth is reversed (1 near, 0 far) for precision across a
+zone. Textures are uploaded the first time they're drawn and freed with them, and so are a zone's
+vertices (all its meshes in one buffer); each frame only sends the visible meshes' indices, grouped
+by material into a draw call each. The vertex light is applied in the shader, so models and the sky
+send their vertices once per frame rather than once per material, with tints as each batch's light. The 2D front end is
+still drawn on the CPU into the canvas, which is blended over the 3D view each frame. The canvas's
+top byte is how much of the view shows through: a GPU view sets its block to `0xff000000`, drawing
+writes 0, and alpha blends and darkening scale it, so the chat backdrop and the SIDL windows
+look the same as before. GDI doesn't know about that byte, so text that lands on the view is drawn
+white on black into a scratch DIB and blended in by its coverage. Name tags behind walls read the
+depth buffer back a few frames late (the newest copy the GPU has finished, without waiting).
+
+Things learned about the files:
 
 - WLD x/y are the server's y/x (z is up; +x is north), checked against the EQEmu map `load2.map`.
 - Bone tracks are quaternions `{w, x, y, z}` plus a shift divided by its own denominator.
