@@ -150,9 +150,13 @@ namespace render
 			info.blend = Blend::Masked;
 			info.masked = true;
 			break;
-		case 0x0b: // additive, unlit
-		case 0x10:
-		case 0x17:
+		case 0x0b: // additive, unlit (fire)
+		case 0x17: // additive, unlit (sky)
+			info.blend = Blend::Additive;
+			info.masked = true;
+			info.unlit = true;
+			break;
+		case 0x10: // additive
 			info.blend = Blend::Additive;
 			info.masked = true;
 			break;

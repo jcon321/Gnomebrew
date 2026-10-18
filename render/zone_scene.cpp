@@ -122,6 +122,17 @@ namespace render
 						}
 					}
 				}
+				// The placement's vertex colors run through the meshes in turn.
+				size_t vertices = 0;
+				for (const auto &m : meshes)
+					vertices += m.positions.size();
+				if (!placement.colors.empty() && placement.colors.size() == vertices) {
+					size_t next = 0;
+					for (auto &m : meshes) {
+						m.colors.assign(placement.colors.begin() + next, placement.colors.begin() + next + m.positions.size());
+						next += m.positions.size();
+					}
+				}
 				for (const auto &m : meshes)
 					AddMesh(m, transform, true, lights, lighting);
 				++m_object_count;
@@ -258,6 +269,12 @@ namespace render
 		for (const auto &v : out.vertices)
 			out.radius = std::max(out.radius, Length(v.position - out.center));
 
+		// Unlit materials (fire) are full bright: their triangles get copies of the vertices,
+		// white and out of the ambient light's reach.
+		StaticMesh unlit;
+		unlit.center = out.center;
+		unlit.radius = out.radius;
+		std::map<uint16_t, uint32_t> unlit_vertex;
 		std::map<uint16_t, size_t> batch_of;
 		for (const auto &t : mesh.triangles) {
 			if (solid && !(t.flags & 0x10))
@@ -270,6 +287,7 @@ namespace render
 			MaterialInfo info = DescribeRenderMethod(source.render_method);
 			if (!info.visible)
 				continue;
+			StaticMesh &target = info.unlit ? unlit : out;
 			auto found = batch_of.find(t.material);
 			if (found == batch_of.end()) {
 				StaticMesh::Batch batch;
@@ -280,14 +298,29 @@ namespace render
 				for (const auto &name : source.textures)
 					if (const Texture *texture = m_textures.Get(name, info.masked))
 						batch.frames.push_back(texture);
-				found = batch_of.emplace(t.material, out.batches.size()).first;
-				out.batches.push_back(std::move(batch));
+				found = batch_of.emplace(t.material, target.batches.size()).first;
+				target.batches.push_back(std::move(batch));
 			}
-			auto &indices = out.batches[found->second].indices;
-			indices.insert(indices.end(), {t.v[0], t.v[1], t.v[2]});
+			auto &indices = target.batches[found->second].indices;
+			for (int k = 0; k < 3; ++k) {
+				if (!info.unlit) {
+					indices.push_back(t.v[k]);
+					continue;
+				}
+				auto copy = unlit_vertex.find(t.v[k]);
+				if (copy == unlit_vertex.end()) {
+					copy = unlit_vertex.emplace(t.v[k], static_cast<uint32_t>(unlit.vertices.size())).first;
+					Vertex v = out.vertices[t.v[k]];
+					v.color = 0x00ffffff;
+					unlit.vertices.push_back(v);
+				}
+				indices.push_back(copy->second);
+			}
 		}
 		if (!out.batches.empty())
 			m_meshes.push_back(std::move(out));
+		if (!unlit.batches.empty())
+			m_meshes.push_back(std::move(unlit));
 	}
 
 	void ZoneScene::Draw(Renderer &renderer, uint64_t now_ms) const

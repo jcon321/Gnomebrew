@@ -401,20 +401,49 @@ bool WldFile::ReadSkeleton(int index, WldSkeleton &skeleton) const
 // scale y, scale x, vertex color ref.
 std::vector<WldPlacement> WldFile::Placements() const
 {
+	// 0x15: actor definition name, flags, sphere ref, then by flag: 0x01 current action,
+	// 0x02 location (x y z, three rotations, one unused), 0x04 bounding radius, 0x08 scale,
+	// 0x10 sound ref, 0x100 vertex color ref (0x33).
 	std::vector<WldPlacement> placements;
 	for (const auto &f : m_fragments) {
-		if (f.type != 0x15 || f.size < 48)
+		if (f.type != 0x15 || f.size < 12)
 			continue;
 		WldPlacement placement;
 		placement.actor = String(Get<int32_t>(f.offset));
 		if (placement.actor.empty())
 			continue;
-		size_t p = f.offset + 12;
-		placement.position = {Get<float>(p), Get<float>(p + 4), Get<float>(p + 8)};
-		placement.rotation = {Get<float>(p + 12), Get<float>(p + 16), Get<float>(p + 20)};
-		placement.scale = Get<float>(p + 28);
+		uint32_t flags = Get<uint32_t>(f.offset + 4);
+		size_t p = f.offset + 12, end = f.offset + f.size;
+		if (flags & 0x01)
+			p += 4;
+		if (flags & 0x02) {
+			if (p + 28 > end)
+				continue;
+			placement.position = {Get<float>(p), Get<float>(p + 4), Get<float>(p + 8)};
+			placement.rotation = {Get<float>(p + 12), Get<float>(p + 16), Get<float>(p + 20)};
+			p += 28;
+		}
+		if (flags & 0x04)
+			p += 4;
+		if ((flags & 0x08) && p + 4 <= end) {
+			placement.scale = Get<float>(p);
+			p += 4;
+		}
 		if (!(placement.scale > 0))
 			placement.scale = 1;
+		if (flags & 0x10)
+			p += 4;
+		if ((flags & 0x100) && p + 4 <= end) {
+			// 0x33: 0x32 ref, flags. 0x32: flags, count, three words, then the colors.
+			const Fragment *instance = Ref(Get<int32_t>(p));
+			const Fragment *track = instance && instance->type == 0x33 ? Ref(Get<int32_t>(instance->offset)) : nullptr;
+			if (track && track->type == 0x32 && track->size >= 20) {
+				uint32_t count = Get<uint32_t>(track->offset + 4);
+				if (20 + static_cast<size_t>(count) * 4 <= track->size)
+					for (uint32_t i = 0; i < count; ++i)
+						placement.colors.push_back(Get<uint32_t>(track->offset + 20 + i * 4));
+			}
+		}
 		placements.push_back(std::move(placement));
 	}
 	return placements;

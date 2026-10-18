@@ -62,6 +62,9 @@ struct WldPlacement
 	WldVec3 position;
 	WldVec3 rotation; // 0..512 units: [0] about z (heading), [1] about y, [2] about x
 	float scale = 1;
+	// The object's own vertex colors (0x33 -> 0x32), its meshes' vertices in turn, lit like a
+	// zone mesh's (0xAARRGGBB, AA its exposure to the ambient light); empty when not given.
+	std::vector<uint32_t> colors;
 };
 
 // A point light (0x28 -> 0x1c -> 0x1b) from lights.wld.

@@ -414,7 +414,10 @@ Not yet: the real client's messages use `CConfirmationDialog`; these use the fro
   (`EQWorldData::AdvanceTime`). Zones of time type 1, 2 and 5 take their ambient light from the client's
   hourly red, green and blue tables (`SetAmbientLight`); other zones get 0.1. As eqgfx's
   `calculateMeshLighting` does, a zone vertex is its baked color plus its alpha times the ambient light,
-  so nights outdoors go dark blue but lamp-lit corners stay lit. The sky dims along `SetSkyBackground`'s
+  so nights outdoors go dark blue but lamp-lit corners stay lit. Placed objects are lit the same way by
+  their own colors: each `objects.wld` placement (0x15, flag 0x100) points through a 0x33 to a 0x32 with
+  one color per vertex of its actor's meshes in turn, baked with the torches near it. Materials of render
+  method 0x0B (fire) and 0x17 are additive and unlit, drawn full bright. The sky dims along `SetSkyBackground`'s
   60 day periods (night until 3:00, dawn to 9:00, day to 15:00, dusk to 20:48), and the fog darkens with
   the light. The sun and moon aren't drawn yet.
 

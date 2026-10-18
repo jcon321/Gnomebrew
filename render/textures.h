@@ -38,6 +38,7 @@ namespace render
 		bool masked = false;
 		Blend blend = Blend::Opaque;
 		uint8_t opacity = 255;
+		bool unlit = false; // full bright: no vertex light, no ambient (fire, the sky)
 	};
 
 	MaterialInfo DescribeRenderMethod(uint32_t render_method);
