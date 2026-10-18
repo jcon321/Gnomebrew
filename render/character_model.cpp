@@ -56,6 +56,13 @@ namespace render
 			return true;
 		}
 
+		// IsShieldModel (@004a9e6b): the IT numbers that are shields.
+		bool IsShieldModel(unsigned it)
+		{
+			return (it >= 200 && it <= 228) || (it >= 10530 && it <= 10544) || (it >= 10664 && it <= 10671) ||
+			       (it >= 11001 && it <= 11020);
+		}
+
 		uint32_t PackLight(float r, float g, float b)
 		{
 			auto channel = [](float c) { return static_cast<uint32_t>(std::clamp(c, 0.0f, 1.0f) * 255.0f + 0.5f); };
@@ -86,7 +93,7 @@ namespace render
 		return IsPlayerRace(race) ? ActorTag(race, gender) : std::string();
 	}
 
-	bool CharacterModels::AddSource(const std::string &eq_dir, const std::string &name)
+	bool CharacterModels::AddSource(std::vector<std::unique_ptr<Source>> &to, const std::string &eq_dir, const std::string &name)
 	{
 		auto source = std::make_unique<Source>();
 		std::vector<uint8_t> data;
@@ -95,21 +102,25 @@ namespace render
 		if (!source->archive.Read(name + ".wld", data) || !source->wld.Load(std::move(data)))
 			return false;
 		source->textures.AddArchive(&source->archive);
-		m_sources.push_back(std::move(source));
+		to.push_back(std::move(source));
 		return true;
 	}
 
 	bool CharacterModels::Open(const std::string &eq_dir, std::string &error, bool creatures)
 	{
 		m_sources.clear();
-		if (!AddSource(eq_dir, "global_chr")) {
+		m_items.clear();
+		if (!AddSource(m_sources, eq_dir, "global_chr")) {
 			error = "Couldn't read global_chr.s3d in " + eq_dir;
 			return false;
 		}
 		for (const char *name : {"global2_chr", "global3_chr", "global4_chr", "global5_chr", "global6_chr", "global7_chr"}) {
 			if (creatures || std::string(name) == "global4_chr" || std::string(name) == "global7_chr")
-				AddSource(eq_dir, name);
+				AddSource(m_sources, eq_dir, name);
 		}
+		// CDisplay::InitWorld's order (GEquip6 goes with the low-poly Vah Shir we use).
+		for (const char *name : {"gequip", "gequip8", "gequip2", "gequip5", "gequip4", "gequip3", "gequip6"})
+			AddSource(m_items, eq_dir, name);
 		return true;
 	}
 
@@ -119,13 +130,23 @@ namespace render
 		// Zone models are searched before the global ones.
 		size_t before = m_sources.size();
 		for (const std::string &name : {zone + "_chr", zone + "_chr2", zone + "2_chr"})
-			AddSource(eq_dir, name);
+			AddSource(m_sources, eq_dir, name);
 		std::rotate(m_sources.begin(), m_sources.begin() + static_cast<long>(before), m_sources.end());
 		return m_sources.size() > before;
 	}
 
-	std::unique_ptr<CharacterModel> CharacterModels::Build(const CharacterAppearance &appearance, std::string &error)
+	std::unique_ptr<CharacterModel> CharacterModels::Build(const CharacterAppearance &requested, std::string &error)
 	{
+		// EQPlayer::EQPlayer: on a player race (LegalPlayerRace) an NPC's body texture dresses the chest
+		// to the feet instead, and from then on it's dressed slot by slot; the head and the weapons stay
+		// as sent.
+		CharacterAppearance appearance = requested;
+		if (appearance.texture < 0x80 && (appearance.race <= 12 || appearance.race == 128 || appearance.race == 130)) {
+			for (int slot = 1; slot <= 6; ++slot)
+				appearance.equip[slot] = appearance.texture;
+			appearance.texture = 0xff;
+		}
+
 		// CDisplay::CreatePlayerActor: the race's actor, or race 75's when the zone doesn't have it.
 		auto find = [this](const std::string &tag, Source *&source, int &actor) {
 			for (auto &candidate : m_sources) {
@@ -203,14 +224,34 @@ namespace render
 				head_mesh = head_named(HeadForMaterial(appearance.equip[0], appearance.race));
 		}
 
+		// A robe (chest 10 to 16) as CDisplay_SwapMaterial puts it on: the robed body
+		// (<tag>01_DMSPRITEDEF, CDisplay_SwapBody) with the bare chest (material 00) under it, and its
+		// cloth (CLK04nn..CLK10nn, ReplaceCloakMaterials: the robe - 6) in the chest's tint. Not on a Vah Shir.
+		unsigned chest = appearance.equip[1];
+		bool robe = !npc_texture && appearance.race != 130 && chest >= 10 && chest <= 16;
+		std::string bare_body = code + "_DMSPRITEDEF";
+		int robe_body = -1;
+		if (robe) {
+			robe_body = source->wld.Find(code + "01_DMSPRITEDEF");
+			if (robe_body >= 0 && source->wld.Fragments()[robe_body].type != 0x36)
+				robe_body = -1;
+		}
+
 		// Material names follow RRRPPMMVV_MDF (race, part, material, variant). A player's slots each
 		// swap in their material (CDisplay_SwapMaterial), and the face goes on the head
-		// (CDisplay_SwapFace); an NPC's body texture goes on every part instead (SwapNPCMaterials),
+		// (CDisplay_SwapFace); a creature's body texture goes on every part instead (SwapNPCMaterials),
 		// untinted. Skeletons (race 60) only have the one.
 		unsigned body_texture = appearance.texture < 31 && !(appearance.race == 60) ? appearance.texture : 0;
 		auto material_for = [&](const WldMaterial &material, int &slot) {
 			slot = -1;
 			std::string upper = Upper(material.name);
+			if (robe && upper.size() > 9 && upper.compare(0, 3, "CLK") == 0 && Digits(upper, 3, 2)) {
+				slot = 1;
+				char name[64];
+				snprintf(name, sizeof(name), "CLK%02u%s", chest - 6, upper.c_str() + 5);
+				WldMaterial found;
+				return source->wld.FindMaterial(name, found) ? found : material;
+			}
 			if (upper.size() <= 8 || upper.compare(0, 3, code) != 0 || !Digits(upper, 5, 4))
 				return material;
 			std::string swapped = upper;
@@ -230,7 +271,8 @@ namespace render
 					snprintf(name, sizeof(name), "%sHE%02u%u%c_MDF", code.c_str(), 0u, appearance.face % 10u, upper[8]);
 				else
 					snprintf(name, sizeof(name), "%s%s%02u%s_MDF", code.c_str(), upper.substr(3, 2).c_str(),
-						appearance.equip[slot] <= 99 ? appearance.equip[slot] : 0u, upper.substr(7, 2).c_str());
+						slot == 1 && robe ? 0u : appearance.equip[slot] <= 99 ? appearance.equip[slot] : 0u,
+						upper.substr(7, 2).c_str());
 				swapped = name;
 			}
 			WldMaterial found;
@@ -247,27 +289,28 @@ namespace render
 
 		model->m_min_z = 1e30f;
 		model->m_max_z = -1e30f;
-		WldMesh mesh;
-		for (int &index : skeleton.meshes) {
-			if (head_mesh >= 0 && Upper(source->wld.Fragments()[index].name) == bare_head)
-				index = head_mesh;
-			if (!source->wld.ReadMesh(index, mesh))
-				continue;
+		// A mesh's vertices on their bones (the body), or all on the one `point` an item hangs from.
+		auto append = [&](const WldMesh &mesh, Source &from, int point) {
+			bool body = point < 0;
 			uint32_t base = static_cast<uint32_t>(model->m_positions.size());
-			size_t v = 0;
-			for (const auto &piece : mesh.pieces)
-				for (uint16_t k = 0; k < piece.count && v < mesh.positions.size(); ++k, ++v)
-					model->m_bones.push_back(piece.bone < bones.size() ? piece.bone : 0);
-			model->m_bones.resize(base + mesh.positions.size(), 0);
+			if (body) {
+				size_t v = 0;
+				for (const auto &piece : mesh.pieces)
+					for (uint16_t k = 0; k < piece.count && v < mesh.positions.size(); ++k, ++v)
+						model->m_bones.push_back(piece.bone < bones.size() ? piece.bone : 0);
+			}
+			model->m_bones.resize(base + mesh.positions.size(), body ? 0 : static_cast<uint16_t>(point));
 			for (size_t i = 0; i < mesh.positions.size(); ++i) {
 				Vec3 p{mesh.positions[i].x, mesh.positions[i].y, mesh.positions[i].z};
 				model->m_positions.push_back(p);
 				model->m_normals.push_back(Normalize({mesh.normals[i].x, mesh.normals[i].y, mesh.normals[i].z}));
 				model->m_uvs.push_back(mesh.uvs[i * 2]);
 				model->m_uvs.push_back(mesh.uvs[i * 2 + 1]);
-				float z = bones[model->m_bones[base + i]].Apply(p).z;
-				model->m_min_z = std::min(model->m_min_z, z);
-				model->m_max_z = std::max(model->m_max_z, z);
+				if (body) {
+					float z = bones[model->m_bones[base + i]].Apply(p).z;
+					model->m_min_z = std::min(model->m_min_z, z);
+					model->m_max_z = std::max(model->m_max_z, z);
+				}
 			}
 			std::map<uint16_t, size_t> batch_of; // SIZE_MAX: not drawn
 			for (const auto &t : mesh.triangles) {
@@ -276,7 +319,7 @@ namespace render
 				auto found = batch_of.find(t.material);
 				if (found == batch_of.end()) {
 					int slot = -1;
-					WldMaterial material = material_for(mesh.materials[t.material], slot);
+					WldMaterial material = body ? material_for(mesh.materials[t.material], slot) : mesh.materials[t.material];
 					MaterialInfo info = DescribeRenderMethod(material.render_method);
 					if (!info.visible) {
 						batch_of.emplace(t.material, SIZE_MAX);
@@ -287,8 +330,8 @@ namespace render
 					batch.material.opacity = info.opacity;
 					batch.material.two_sided = info.blend != Blend::Opaque;
 					if (!material.textures.empty())
-						batch.material.texture = source->textures.Get(material.textures[0], info.masked);
-					batch.tint = tint_for(material, slot);
+						batch.material.texture = from.textures.Get(material.textures[0], info.masked);
+					batch.tint = body ? tint_for(material, slot) : 0xffffffu;
 					found = batch_of.emplace(t.material, model->m_batches.size()).first;
 					model->m_batches.push_back(std::move(batch));
 				}
@@ -297,6 +340,70 @@ namespace render
 				auto &indices = model->m_batches[found->second].indices;
 				indices.insert(indices.end(), {base + t.v[0], base + t.v[1], base + t.v[2]});
 			}
+		};
+		WldMesh mesh;
+		for (int &index : skeleton.meshes) {
+			std::string name = Upper(source->wld.Fragments()[index].name);
+			if (head_mesh >= 0 && name == bare_head)
+				index = head_mesh;
+			else if (robe_body >= 0 && name == bare_body)
+				index = robe_body;
+			if (source->wld.ReadMesh(index, mesh))
+				append(mesh, *source, -1);
+		}
+
+		// EQPlayer::DisplayWeaponsAndArmor -> CDisplay_UpdateItemSlot2: IT<primary> in the right hand
+		// (<tag>R_POINT_DAG), IT<secondary> in the left (L_POINT_DAG), or on the arm (SHIELD_POINT_DAG)
+		// when it's a shield. CDisplay::ChangeDag hangs an item's skeleton (IT<n>_HS_DEF, here in its
+		// base pose) there, else its mesh (IT<n>_DMSPRITEDEF). Models without the point hold nothing;
+		// race 14 never does.
+		auto append_item = [&](unsigned it, int point) {
+			std::vector<Source *> order;
+			for (auto &from : m_items)
+				order.push_back(from.get());
+			for (auto &from : m_sources)
+				order.push_back(from.get());
+			char name[64];
+			snprintf(name, sizeof(name), "IT%u_HS_DEF", it);
+			for (Source *from : order) {
+				int index = from->wld.Find(name);
+				WldSkeleton item;
+				if (index < 0 || from->wld.Fragments()[index].type != 0x10 || !from->wld.ReadSkeleton(index, item))
+					continue;
+				std::vector<Transform> pose = PoseSkeleton(item, nullptr, 0);
+				for (int part : item.meshes) {
+					WldMesh piece;
+					if (from->wld.ReadMesh(part, piece)) {
+						SkinMesh(piece, pose);
+						append(piece, *from, point);
+					}
+				}
+				return;
+			}
+			snprintf(name, sizeof(name), "IT%u_DMSPRITEDEF", it);
+			for (Source *from : order) {
+				int index = from->wld.Find(name);
+				WldMesh item;
+				if (index >= 0 && from->wld.Fragments()[index].type == 0x36 && from->wld.ReadMesh(index, item)) {
+					append(item, *from, point);
+					return;
+				}
+			}
+		};
+		auto bone_named = [&](const std::string &name) {
+			for (size_t i = 0; i < skeleton.bones.size(); ++i)
+				if (Upper(skeleton.bones[i].name) == name)
+					return static_cast<int>(i);
+			return -1;
+		};
+		for (int slot : {7, 8}) {
+			unsigned it = appearance.equip[slot];
+			if (it == 0 || appearance.race == 14)
+				continue;
+			const char *point = slot == 7 ? "R_POINT_DAG" : IsShieldModel(it) ? "SHIELD_POINT_DAG" : "L_POINT_DAG";
+			int bone = bone_named(code + point);
+			if (bone >= 0)
+				append_item(it, bone);
 		}
 		if (model->m_positions.empty()) {
 			error = "model " + code + " has no meshes";

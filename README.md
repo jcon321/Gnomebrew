@@ -164,7 +164,7 @@ class, face and armor, a free camera anywhere in a zone (server coordinates, hea
 the in-zone view with a character standing at a server position (`--fog` and `--sky` stand in for
 the zone's `OP_NewZone`). In that mode `--walk MS` runs forward first (and `--turn`), `--npc RACE
 GENDER SIZE X Y Z HEADING` stands spawns around (each followed by any of `--npc-look TEXTURE HELM`,
-`--npc-move SPEED TURN`, `--npc-stance S` and `--npc-fly F`), `--spawn-ms MS` runs them that long first
+`--npc-equip M,M,...` (the nine equipment slots as the server sends them), `--npc-move SPEED TURN`, `--npc-stance S` and `--npc-fly F`), `--spawn-ms MS` runs them that long first
 and prints what they do, `--time HOUR MINUTE` sets the time of day, and `--debug-draw` turns on the
 debug menu's render toggles. `--frames N` times N renders.
 
@@ -232,8 +232,13 @@ does the same, from these decompiled functions:
 - **Model:** the classic race models (`global_chr.s3d`, plus `global4_chr` for Iksar and `global7_chr`
   for Vah Shir) play their `P01` standing idle; races without one borrow another model's (the human
   female plays the wood elf female's). Face and armor materials from the character list swap the
-  body textures (`HUMCH0201.BMP` is the chest in material 2, chain), and tints multiply them. Models
-  are scaled to their race's default height / 5 (`EQPlayer::SetHeights`), standing 3.125 x that over the floor.
+  body textures (`HUMCH0201.BMP` is the chest in material 2, chain), and tints multiply them. A robe
+  (chest 10 to 16, `CDisplay_SwapMaterial`) swaps in the robed body mesh (`HUM01_DMSPRITEDEF`) and its
+  cloth (`CLK04` to `CLK10`). An NPC of a player race wears its body texture from the chest to the feet
+  (`EQPlayer::EQPlayer`), which is how a priest in texture 11 gets his robe. The primary and secondary
+  are IT model numbers (`gequip*.s3d`): the primary hangs from the right hand's `R_POINT` bone, and the
+  secondary from `L_POINT`, or from `SHIELD_POINT` on the forearm when it's a shield
+  (`CDisplay_UpdateItemSlot2`, `IsShieldModel`). Models are scaled to their race's default height / 5 (`EQPlayer::SetHeights`), standing 3.125 x that over the floor.
 
 The renderer (`render/`) is a portable software rasterizer drawing into the same surface as the
 front end, standing in for `eqgfx_dx8.dll`: perspective-correct textures with mipmaps and bilinear

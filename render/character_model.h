@@ -2,8 +2,9 @@
 
 // Player race models (the classic ones the TAKP client uses: global_chr.s3d,
 // global4_chr.s3d for Iksar, global7_chr.s3d for Vah Shir) and the creatures,
-// dressed from the equipment list (or an NPC's body texture and helm) and playing
-// any of their animations by track code (see animations.h).
+// dressed from the equipment list (or an NPC's body texture and helm), holding
+// their weapons and shield (the IT models in gequip*.s3d) and playing any of their
+// animations by track code (see animations.h).
 
 #include "point_lights.h"
 #include "renderer.h"
@@ -25,7 +26,8 @@ namespace render
 		uint16_t race = 1;
 		uint8_t gender = 0;
 		uint8_t face = 0;
-		uint32_t equip[EquipSlots] = {}; // material per slot (0 none, 1 leather, 2 chain, 3 plate, ...)
+		uint32_t equip[EquipSlots] = {}; // material per armor slot (0 none, 1 leather, 2 chain, 3 plate, 10-16 robes);
+		                                 // the IT model number for primary and secondary (0 empty)
 		uint32_t tint[EquipSlots] = {};  // 0xFFRRGGBB when tinted
 		float height = 0;                // the spawn's size; 0 = the race's default
 		uint8_t texture = 0xff;          // 0xFF: dressed per slot; else an NPC's body texture (Spawn_Struct bodytexture)
@@ -102,7 +104,7 @@ namespace render
 	{
 	public:
 		// global_chr.s3d (required), global4_chr.s3d (Iksar) and global7_chr.s3d (Vah Shir); with
-		// `creatures` all of global2..7_chr.s3d.
+		// `creatures` all of global2..7_chr.s3d. And the weapons and shields, gequip*.s3d.
 		bool Open(const std::string &eq_dir, std::string &error, bool creatures = false);
 		// A zone's own models, <zone>_chr.s3d and friends, searched first.
 		bool AddZone(const std::string &eq_dir, const std::string &zone);
@@ -115,8 +117,9 @@ namespace render
 			WldFile wld;
 			TextureCache textures;
 		};
-		bool AddSource(const std::string &eq_dir, const std::string &name);
+		bool AddSource(std::vector<std::unique_ptr<Source>> &to, const std::string &eq_dir, const std::string &name);
 		std::vector<std::unique_ptr<Source>> m_sources;
+		std::vector<std::unique_ptr<Source>> m_items; // gequip*.s3d, searched after the models
 		std::map<std::string, std::shared_ptr<const std::map<std::string, SkeletonAnimation>>> m_animation_sets; // by model code
 	};
 }

@@ -16,7 +16,8 @@
 // OP_NewZone (default: the client's fallback fog, 500 to 600 in grey, sky 1).
 // --walk runs forward that long first (turning left -1 or right 1 with --turn). --npc RACE GENDER
 // SIZE X Y Z HEADING (repeatable) stands a spawn there; after it, --npc-look TEXTURE HELM gives it an
-// NPC's body texture and helm (255 0: dressed per slot), --npc-move SPEED TURN sets it walking (the
+// NPC's body texture and helm (255 0: dressed per slot), --npc-equip M,M,... its equipment as the server sends it
+// (head to feet materials, then the primary and secondary IT numbers), --npc-move SPEED TURN sets it walking (the
 // update's speed, and turn per tick), --npc-stance S its stance (100, 110 sitting, 111, 115) and
 // --npc-fly F its fly mode, --npc-light TYPE the light it carries (2 a torch, 4 a lantern...). --spawn-ms MS runs the spawns that long first, printing where they are
 // and what they play each second. --time HOUR MINUTE sets Norrath's time (hour
@@ -264,6 +265,14 @@ int main(int argc, char **argv)
 			spawns.rbegin()->second.body_texture = static_cast<uint8_t>(atoi(argv[++i]));
 			spawns.rbegin()->second.helm = static_cast<uint8_t>(atoi(argv[++i]));
 			spawns.rbegin()->second.equipment[0] = spawns.rbegin()->second.helm;
+		}
+		else if (arg == "--npc-equip" && i + 1 < argc && !spawns.empty()) {
+			std::string list = argv[++i];
+			for (int slot = 0; slot < render::EquipSlots && !list.empty(); ++slot) {
+				spawns.rbegin()->second.equipment[slot] = static_cast<uint16_t>(atoi(list.c_str()));
+				size_t comma = list.find(',');
+				list = comma == std::string::npos ? "" : list.substr(comma + 1);
+			}
 		}
 		else if (arg == "--npc-move" && i + 2 < argc && !spawns.empty()) {
 			spawns.rbegin()->second.speed = static_cast<float>(atof(argv[++i]));
