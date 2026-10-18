@@ -36,15 +36,23 @@ namespace render
 	std::string RaceModelCode(uint16_t race, uint8_t gender);
 	float RaceHeight(uint16_t race); // a player race's default height
 
+	struct ModelLighting
+	{
+		Vec3 ambient{0.5f, 0.5f, 0.5f};
+		Vec3 sun_direction{0, 0, -1}; // the way it shines
+		Vec3 sun_color;
+		const std::vector<PointLight> *lights = nullptr;
+	};
+
 	class CharacterModel
 	{
 	public:
-		// placement: model space -> world. Lit by a directional light (toward `light_direction`) over ambient,
-		// and by `lights` (calculateMeshLighting: color x 0.05 radius^2 x cos / distance^2 each, up to full).
-		// `time_ms` runs the animation (looping, or stopping on its last frame); a missing one plays the idle.
-		void Draw(Renderer &renderer, const Transform &placement, const Vec3 &light_direction, float ambient,
-			float diffuse, uint64_t time_ms, const std::string &animation = "P01", bool loop = true,
-			const std::vector<PointLight> *lights = nullptr) const;
+		// placement: model space -> world. Lit as calculateMeshLighting (@1004da40) lights an actor:
+		// the ambient, the sun (color x the cosine) and `lights` (color x 0.05 radius^2 x cos /
+		// distance^2 each), up to full. `time_ms` runs the animation (looping, or stopping on its
+		// last frame); a missing one plays the idle.
+		void Draw(Renderer &renderer, const Transform &placement, const ModelLighting &lighting, uint64_t time_ms,
+			const std::string &animation = "P01", bool loop = true) const;
 		bool HasAnimation(const std::string &animation) const { return m_animations->count(animation) != 0; }
 		uint32_t AnimationMs(const std::string &animation) const; // one loop
 
@@ -83,7 +91,7 @@ namespace render
 			float m[3][3]; // rotation times scale
 			float inverse_scale;
 			Vec3 translation;
-			Vec3 light; // the light direction in the bone's space
+			Vec3 light; // toward the sun, in the bone's space
 		};
 		mutable std::vector<BoneMatrix> m_bone_matrices;
 		mutable std::vector<Vec3> m_intensity;

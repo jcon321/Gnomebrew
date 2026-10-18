@@ -54,6 +54,7 @@ namespace render
 		m_vertices = {};
 		m_regions = {};
 		m_collision.clear();
+		m_collision_exposure.clear();
 		m_cell_start.clear();
 		m_cell_triangles.clear();
 		m_grid_w = m_grid_h = 0;
@@ -88,6 +89,15 @@ namespace render
 		WldRegionMap region_map;
 		if (zone_wld.ReadRegionMap(region_map))
 			m_regions.Load(region_map);
+		m_static_lights.clear();
+		m_static_light_regions.clear();
+		for (const auto &light : lights) {
+			m_static_lights.push_back({ToVec(light.position), {light.r, light.g, light.b}, light.radius});
+			m_static_light_regions.push_back(m_regions.RegionsTouched(ToVec(light.position), light.radius));
+		}
+		uint32_t constant = 0;
+		zone_wld.ConstantAmbient(constant);
+		m_constant_ambient = {((constant >> 16) & 0xff) / 256.0f, ((constant >> 8) & 0xff) / 256.0f, (constant & 0xff) / 256.0f};
 		for (int i = 0; i < static_cast<int>(zone_wld.Fragments().size()); ++i) {
 			if (zone_wld.Fragments()[i].type == 0x36 && zone_wld.ReadMesh(i, mesh))
 				AddMesh(mesh, Transform{}, true, lights, lighting);
@@ -234,6 +244,8 @@ namespace render
 		for (size_t i = 0; i < mesh.positions.size(); ++i) {
 			Vertex &v = out.vertices[i];
 			v.position = transform.Apply(ToVec(mesh.positions[i]));
+			if (i < mesh.normals.size())
+				v.normal = Normalize(transform.ApplyDirection(ToVec(mesh.normals[i])));
 			v.u = mesh.uvs[i * 2];
 			v.v = mesh.uvs[i * 2 + 1];
 			low = {std::min(low.x, v.position.x), std::min(low.y, v.position.y), std::min(low.z, v.position.z)};
@@ -242,9 +254,15 @@ namespace render
 			// Flat ambient, the mesh's own (small, additive) vertex colors, and the point lights.
 			// The colors' alpha is how much of the zone's ambient light reaches the vertex; it rides
 			// along in the top byte for Renderer::SetVertexLight.
+			// applyLightingToMesh adds the world's constant ambient to meshes without colors only.
 			float r = lighting.ambient, g = lighting.ambient, b = lighting.ambient;
 			uint32_t exposure = 0xff;
-			if (!mesh.colors.empty()) {
+			if (mesh.colors.empty()) {
+				r += m_constant_ambient.x;
+				g += m_constant_ambient.y;
+				b += m_constant_ambient.z;
+			}
+			else {
 				uint32_t c = mesh.colors[i];
 				r += ((c >> 16) & 0xff) / 255.0f;
 				g += ((c >> 8) & 0xff) / 255.0f;
@@ -277,9 +295,18 @@ namespace render
 		std::map<uint16_t, uint32_t> unlit_vertex;
 		std::map<uint16_t, size_t> batch_of;
 		for (const auto &t : mesh.triangles) {
-			if (solid && !(t.flags & 0x10))
+			if (solid && !(t.flags & 0x10)) {
 				for (int k = 0; k < 3; ++k)
 					m_collision.push_back(out.vertices[t.v[k]].position);
+				// s3dGetActorScaledAmbient: the third of its vertices' alphas / 256, 1 without colors.
+				float exposure = 1;
+				if (!mesh.colors.empty()) {
+					exposure = 0;
+					for (int k = 0; k < 3; ++k)
+						exposure += (out.vertices[t.v[k]].color >> 24) * (1.0f / 256) / 3;
+				}
+				m_collision_exposure.push_back(exposure);
+			}
 
 			if (t.material >= mesh.materials.size())
 				continue;
@@ -319,17 +346,34 @@ namespace render
 		}
 		if (!out.batches.empty())
 			m_meshes.push_back(std::move(out));
-		if (!unlit.batches.empty())
+		if (!unlit.batches.empty()) {
+			unlit.unlit = true;
 			m_meshes.push_back(std::move(unlit));
+		}
 	}
 
-	void ZoneScene::Draw(Renderer &renderer, uint64_t now_ms) const
+	void ZoneScene::Draw(Renderer &renderer, uint64_t now_ms, const std::vector<PointLight> &lights, bool sun) const
 	{
-		for (const auto &mesh : m_meshes)
+		// A light reaches a mesh when their spheres meet (the client: when its sphere reaches
+		// the mesh's region).
+		uint32_t set = ~0u;
+		for (const auto &mesh : m_meshes) {
+			uint32_t mask = 0;
+			if (!mesh.unlit)
+				for (size_t i = 0; i < lights.size() && i < Renderer::SceneLightLimit; ++i)
+					if (Length(lights[i].position - mesh.center) < lights[i].radius + mesh.radius)
+						mask |= 1u << i;
+			uint32_t state = mask | (sun && !mesh.unlit ? 1u << 31 : 0);
+			if (state != set) {
+				renderer.SetDynamicLights(sun && !mesh.unlit, mask);
+				set = state;
+			}
 			DrawStaticMesh(renderer, mesh, now_ms, &m_vertices);
+		}
+		renderer.SetDynamicLights(false, 0);
 	}
 
-	bool ZoneScene::FloorBelow(const Vec3 &from, float depth, float &floor_z) const
+	bool ZoneScene::FloorBelow(const Vec3 &from, float depth, float &floor_z, float *exposure) const
 	{
 		thread_local std::vector<uint32_t> nearby;
 		Candidates(from.x, from.y, from.x, from.y, nearby);
@@ -349,6 +393,8 @@ namespace render
 			if (z <= from.z + 0.01f && z >= from.z - depth && (!found || z > floor_z)) {
 				floor_z = z;
 				found = true;
+				if (exposure)
+					*exposure = t < m_collision_exposure.size() ? m_collision_exposure[t] : 1;
 			}
 		}
 		return found;

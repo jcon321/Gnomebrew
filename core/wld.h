@@ -160,6 +160,8 @@ public:
 
 	std::vector<WldPlacement> Placements() const;
 	std::vector<WldLight> Lights() const;
+	// The world's constant ambient light (0x35, s3dSetWorldConstantAmbient), 0x00RRGGBB; false when none.
+	bool ConstantAmbient(uint32_t &color) const;
 	// The zone's BSP tree and region groups; false when there's no tree.
 	bool ReadRegionMap(WldRegionMap &map) const;
 

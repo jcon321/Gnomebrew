@@ -19,6 +19,18 @@ namespace render
 		m_background = false;
 		m_light_scale = {1, 1, 1};
 		m_light_add = {0, 0, 0};
+		m_dynamic_sun = false;
+		m_point_mask = 0;
+		++m_light_generation;
+	}
+
+	void Renderer::SetSceneLights(const Vec3 &sun_direction, const Vec3 &sun_color, const std::vector<PointLight> &points)
+	{
+		m_sun_direction = sun_direction;
+		m_sun_color = sun_color;
+		m_point_count = std::min(points.size(), SceneLightLimit);
+		std::copy_n(points.begin(), m_point_count, m_points);
+		++m_light_generation;
 	}
 
 	bool Renderer::SphereVisible(const Vec3 &center, float radius) const
@@ -46,12 +58,37 @@ namespace render
 		return true;
 	}
 
-	void Renderer::LightVertex(uint32_t color, float &r, float &g, float &b) const
+	void Renderer::LightVertex(const Vertex &vertex, float &r, float &g, float &b) const
 	{
+		uint32_t color = vertex.color;
 		float exposure = static_cast<float>(color >> 24) * (1.0f / 255);
-		r = std::min(255.0f, static_cast<float>((color >> 16) & 0xff) * m_light_scale.x + m_light_add.x * exposure);
-		g = std::min(255.0f, static_cast<float>((color >> 8) & 0xff) * m_light_scale.y + m_light_add.y * exposure);
-		b = std::min(255.0f, static_cast<float>(color & 0xff) * m_light_scale.z + m_light_add.z * exposure);
+		r = static_cast<float>((color >> 16) & 0xff) * m_light_scale.x + m_light_add.x * exposure;
+		g = static_cast<float>((color >> 8) & 0xff) * m_light_scale.y + m_light_add.y * exposure;
+		b = static_cast<float>(color & 0xff) * m_light_scale.z + m_light_add.z * exposure;
+		if (m_dynamic_sun) {
+			float facing = -Dot(vertex.normal, m_sun_direction) * exposure * 255.0f;
+			if (facing > 0) {
+				r += m_sun_color.x * facing;
+				g += m_sun_color.y * facing;
+				b += m_sun_color.z * facing;
+			}
+		}
+		for (uint32_t mask = m_point_mask, i = 0; mask; mask >>= 1, ++i) {
+			if (!(mask & 1))
+				continue;
+			Vec3 d = m_points[i].position - vertex.position;
+			float facing = Dot(d, vertex.normal);
+			if (facing <= 0)
+				continue;
+			float distance2 = Dot(d, d);
+			Vec3 add = m_points[i].Strength() * (facing / (distance2 * std::sqrt(distance2)) * 255.0f);
+			r += add.x;
+			g += add.y;
+			b += add.z;
+		}
+		r = std::min(255.0f, r);
+		g = std::min(255.0f, g);
+		b = std::min(255.0f, b);
 	}
 
 	void DrawLine(uint32_t *pixels, int stride, int width, int height, float x0, float y0, float x1, float y1, uint32_t color)

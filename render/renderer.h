@@ -6,6 +6,7 @@
 // triangles a batch at a time between Begin and Finish and share the camera math.
 
 #include "math3d.h"
+#include "point_lights.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -49,6 +50,7 @@ namespace render
 		// 0xAARRGGBB: RRGGBB is the light (0xffffff draws the texture as is), AA how much of the
 		// light set with SetVertexLight's `add` reaches it (a zone vertex's exposure to the ambient light).
 		uint32_t color = 0xffffff;
+		Vec3 normal; // for the sun and the carried lights (SetDynamicLights)
 	};
 
 	// Vertices that never change once made, such as all of a zone's meshes in one array: a GPU
@@ -99,6 +101,21 @@ namespace render
 			m_light_scale = scale;
 			m_light_add = add * 255.0f;
 		}
+		// The lights that change as the game runs, once a frame: the sun (a directional light,
+		// shining along sun_direction, colored with the time of day) and the lights spawns carry
+		// (SceneLightLimit at most).
+		static constexpr size_t SceneLightLimit = 8;
+		void SetSceneLights(const Vec3 &sun_direction, const Vec3 &sun_color, const std::vector<PointLight> &points);
+		// Which of them light the vertices drawn after it, added to SetVertexLight's light as
+		// calculateMeshLighting adds them: the sun, color x the cosine x AA (like the ambient), and
+		// the scene lights whose bits are set in point_mask, Strength x the cosine / distance^2.
+		// Begin turns them off.
+		void SetDynamicLights(bool sun, uint32_t point_mask)
+		{
+			m_dynamic_sun = sun;
+			m_point_mask = point_mask & ((1u << m_point_count) - 1);
+			++m_light_generation;
+		}
 		// reuse_vertices: the same vertex array as the previous Draw, unchanged since (the next
 		// batch of a mesh), so the renderer can keep what it made of it instead of taking it again.
 		virtual void Draw(const Vertex *vertices, size_t vertex_count, const uint32_t *indices, size_t index_count,
@@ -125,8 +142,8 @@ namespace render
 
 	protected:
 		Vec3 Eye() const { return m_background ? Vec3{0, 0, 0} : m_camera.position; }
-		// The lit 0..255 color of a vertex under SetVertexLight.
-		void LightVertex(uint32_t color, float &r, float &g, float &b) const;
+		// The lit 0..255 color of a vertex under SetVertexLight and SetDynamicLights.
+		void LightVertex(const Vertex &vertex, float &r, float &g, float &b) const;
 
 		int m_width = 0, m_height = 0;
 		Camera m_camera;
@@ -134,5 +151,11 @@ namespace render
 		float m_focal = 1, m_tan_x = 1, m_tan_y = 1;
 		bool m_background = false;
 		Vec3 m_light_scale{1, 1, 1}, m_light_add{0, 0, 0};
+		Vec3 m_sun_direction{0, 0, -1}, m_sun_color;
+		PointLight m_points[SceneLightLimit];
+		size_t m_point_count = 0;
+		bool m_dynamic_sun = false;
+		uint32_t m_point_mask = 0;
+		uint32_t m_light_generation = 0; // changes with the dynamic lights
 	};
 }

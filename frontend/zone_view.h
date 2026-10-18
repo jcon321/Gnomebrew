@@ -85,6 +85,8 @@ public:
 	{
 		render::Vec3 ambient{0.6f, 0.6f, 0.6f}; // added to the zone's baked lighting
 		float sky = 1;                           // the sky's brightness
+		render::Vec3 sun_direction{0, 0, -1};    // the way the sun shines (SetSunLight)
+		render::Vec3 sun_color;                  // 0 where the time of day doesn't pass
 	};
 	DayLight Lighting() const;
 
@@ -161,6 +163,8 @@ private:
 	void PlaceCarriedLights(uint64_t now_ms);
 	// The (up to 3) carried lights that light something centered at `center`.
 	const std::vector<render::PointLight> *LightsFor(const render::Vec3 &center);
+	// How a character centered at `center` is lit (calculateMeshLighting).
+	render::ModelLighting ModelLightingAt(const render::Vec3 &center);
 	float FarPlane() const; // the fog's end, or the zone's max clip with the debug menu's no fog
 	void DrawDebugOverlays(Canvas &canvas) const;
 	void ChooseAnimation(float ms);
@@ -216,7 +220,7 @@ private:
 	std::set<std::string> m_missing_models;
 	render::Vec3 m_camera_position;
 	bool m_have_time = false;
-	float m_model_ambient = 0.5f, m_model_diffuse = 0.6f;
+	DayLight m_daylight; // this frame's
 	uint8_t m_my_light = 0; // our ZoneSpawn::light
 	std::vector<render::PointLight> m_carried_lights;
 	std::vector<std::vector<int>> m_carried_light_regions;

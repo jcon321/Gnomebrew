@@ -65,6 +65,7 @@ namespace render
 		// What m_view was made from: reused by the next batch while the vertices and light are the same.
 		const Vertex *m_view_source = nullptr;
 		Vec3 m_view_scale, m_view_add;
+		uint32_t m_view_lights = 0; // Renderer::m_light_generation then
 		bool m_view_background = false;
 		std::vector<ScreenTriangle> m_triangles;
 		std::vector<uint32_t> m_order; // opaque in draw order, then translucent back to front

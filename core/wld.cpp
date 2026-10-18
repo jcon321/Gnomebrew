@@ -449,6 +449,17 @@ std::vector<WldPlacement> WldFile::Placements() const
 	return placements;
 }
 
+bool WldFile::ConstantAmbient(uint32_t &color) const
+{
+	// 0x35 is only the color, where other fragments have their name: blue, green, red, alpha.
+	for (const auto &f : m_fragments)
+		if (f.type == 0x35 && f.offset >= 4) {
+			color = Get<uint32_t>(f.offset - 4) & 0xffffff;
+			return true;
+		}
+	return false;
+}
+
 // 0x28: light instance ref, flags, x y z, radius. 0x1c -> 0x1b: flags, frames,
 // [current frame], [sleep], [levels], [colors r g b].
 std::vector<WldLight> WldFile::Lights() const

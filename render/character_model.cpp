@@ -324,9 +324,10 @@ namespace render
 		return it == m_animations->end() ? 0 : static_cast<uint32_t>(it->second.length * it->second.frame_ms);
 	}
 
-	void CharacterModel::Draw(Renderer &renderer, const Transform &placement, const Vec3 &light_direction, float ambient,
-		float diffuse, uint64_t time_ms, const std::string &animation, bool loop, const std::vector<PointLight> *lights) const
+	void CharacterModel::Draw(Renderer &renderer, const Transform &placement, const ModelLighting &lighting,
+		uint64_t time_ms, const std::string &animation, bool loop) const
 	{
+		const std::vector<PointLight> *lights = lighting.lights;
 		auto it = m_animations->find(animation);
 		if (it == m_animations->end())
 			it = m_animations->find("P01");
@@ -337,7 +338,7 @@ namespace render
 			bone = scaled * bone;
 		// Each bone as a matrix, once (Quat::Rotate expanded), with the light turned into its
 		// space: a vertex is then a matrix multiply and a dot product.
-		Vec3 light = Normalize(light_direction);
+		Vec3 light = Normalize(lighting.sun_direction * -1.0f);
 		m_bone_matrices.resize(bones.size());
 		for (size_t b = 0; b < bones.size(); ++b) {
 			const Quat &q = bones[b].rotation;
@@ -366,8 +367,7 @@ namespace render
 				bone.m[2][0] * p.x + bone.m[2][1] * p.y + bone.m[2][2] * p.z + bone.translation.z};
 			m_vertices[i].u = m_uvs[i * 2];
 			m_vertices[i].v = m_uvs[i * 2 + 1];
-			float level = ambient + diffuse * std::max(0.0f, Dot(m_normals[i], bone.light));
-			m_intensity[i] = {level, level, level};
+			m_intensity[i] = lighting.ambient + lighting.sun_color * std::max(0.0f, Dot(m_normals[i], bone.light));
 		}
 		if (lights && !lights->empty()) {
 			std::vector<Vec3> strengths;
@@ -388,12 +388,12 @@ namespace render
 					float distance2 = Dot(d, d);
 					added = added + strengths[l] * (facing / (distance2 * std::sqrt(distance2)));
 				}
-				// Lights brighten up to full, never past what the vertex had.
-				Vec3 &out = m_intensity[i];
-				out = {std::max(out.x, std::min(out.x + added.x, 1.0f)), std::max(out.y, std::min(out.y + added.y, 1.0f)),
-					std::max(out.z, std::min(out.z + added.z, 1.0f))};
+				m_intensity[i] = m_intensity[i] + added;
 			}
 		}
+		// The client's light stops at full (the texture as it is).
+		for (Vec3 &v : m_intensity)
+			v = {std::min(v.x, 1.0f), std::min(v.y, 1.0f), std::min(v.z, 1.0f)};
 		// The light at half (it reaches past 1 in full light), doubled back with each batch's tint
 		// by the renderer's vertex light, so every batch draws the same vertices.
 		for (size_t i = 0; i < m_vertices.size(); ++i)

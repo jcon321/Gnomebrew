@@ -28,6 +28,7 @@ namespace render
 		std::vector<Vertex> vertices; // empty once a ZoneScene has moved them into its StaticVertices
 		size_t first_vertex = 0, vertex_count = 0; // where they went
 		std::vector<Batch> batches;
+		bool unlit = false; // full bright (fire): no dynamic lights
 	};
 
 	struct ZoneLighting
@@ -40,9 +41,12 @@ namespace render
 	{
 	public:
 		bool Load(const std::string &eq_dir, const std::string &zone, std::string &error, const ZoneLighting &lighting = ZoneLighting());
-		void Draw(Renderer &renderer, uint64_t now_ms) const;
-		// Highest solid surface at or below `from` (searching down to `from.z - depth`).
-		bool FloorBelow(const Vec3 &from, float depth, float &floor_z) const;
+		// `lights`: the scene lights given to the renderer (SetSceneLights), which light the meshes
+		// they reach, as the sun does when `sun`.
+		void Draw(Renderer &renderer, uint64_t now_ms, const std::vector<PointLight> &lights = {}, bool sun = false) const;
+		// Highest solid surface at or below `from` (searching down to `from.z - depth`), and how
+		// exposed it is to the ambient light (its vertices' alpha, 1 without colors).
+		bool FloorBelow(const Vec3 &from, float depth, float &floor_z, float *exposure = nullptr) const;
 		// The first solid surface on the segment from `from` to `to`, as a fraction of its length,
 		// and that surface's unit normal (facing `from`).
 		bool SegmentHit(const Vec3 &from, const Vec3 &to, float &fraction, Vec3 *normal = nullptr) const;
@@ -51,6 +55,13 @@ namespace render
 		const std::vector<Vec3> &SolidTriangles() const { return m_collision; } // 3 vertices each
 		size_t ObjectCount() const { return m_object_count; }
 		const ZoneRegions &Regions() const { return m_regions; } // water, lava, zone lines
+		// lights.wld's lights, which are baked into the zone's colors but light characters as
+		// they go (createPointLightFromFileContext gives their flag 0x100 a scene influence), and
+		// the regions each reaches.
+		const std::vector<PointLight> &StaticLights() const { return m_static_lights; }
+		const std::vector<std::vector<int>> &StaticLightRegions() const { return m_static_light_regions; }
+		// The world's constant ambient (0x35), added to what has no baked colors; 0 in most zones.
+		const Vec3 &ConstantAmbient() const { return m_constant_ambient; }
 		const std::vector<std::string> &Warnings() const { return m_warnings; }
 
 	private:
@@ -65,7 +76,11 @@ namespace render
 		std::vector<StaticMesh> m_meshes;
 		StaticVertices m_vertices; // every mesh's, once loaded
 		ZoneRegions m_regions;
+		std::vector<PointLight> m_static_lights;
+		std::vector<std::vector<int>> m_static_light_regions;
+		Vec3 m_constant_ambient;
 		std::vector<Vec3> m_collision; // solid triangles, 3 vertices each
+		std::vector<float> m_collision_exposure; // each one's, s3dGetActorScaledAmbient's
 		// m_collision's triangles listed by the top-down grid cells their bounds touch, so the
 		// floor and wall tests look at the triangles nearby instead of the whole zone.
 		float m_cell_size = 16;

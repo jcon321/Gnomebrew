@@ -197,8 +197,11 @@ void CharacterSelectView::Render(Canvas &canvas, uint64_t now_ms)
 		placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(m_heading));
 		placement.translation = m_position + render::Vec3{0, 0, m_model->OriginOverFeet()}; // PositionOnFloor
 		// Light from over the camera's shoulder.
-		render::Vec3 light = render::Normalize(offset) + render::Vec3{0, 0, 0.8f};
-		m_model->Draw(*m_renderer, placement, light, 0.45f, 0.65f, now_ms);
+		render::ModelLighting lighting;
+		lighting.ambient = {0.45f, 0.45f, 0.45f};
+		lighting.sun_direction = (render::Normalize(offset) + render::Vec3{0, 0, 0.8f}) * -1.0f;
+		lighting.sun_color = {0.65f, 0.65f, 0.65f};
+		m_model->Draw(*m_renderer, placement, lighting, now_ms);
 	}
 	// The sky, around the camera, wherever the zone leaves the screen open.
 	bool sky = m_sky.Loaded();

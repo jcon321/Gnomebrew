@@ -131,11 +131,13 @@ namespace render
 	{
 		auto same = [](const Vec3 &a, const Vec3 &b) { return a.x == b.x && a.y == b.y && a.z == b.z; };
 		bool transformed = reuse_vertices && m_view_source == vertices && m_view.size() == vertex_count &&
-		                   m_view_background == m_background && same(m_view_scale, m_light_scale) && same(m_view_add, m_light_add);
+		                   m_view_background == m_background && same(m_view_scale, m_light_scale) &&
+		                   same(m_view_add, m_light_add) && m_view_lights == m_light_generation;
 		m_view.resize(vertex_count);
 		m_view_source = vertices;
 		m_view_scale = m_light_scale;
 		m_view_add = m_light_add;
+		m_view_lights = m_light_generation;
 		m_view_background = m_background;
 		Vec3 eye = Eye();
 		for (size_t i = 0; i < vertex_count && !transformed; ++i) {
@@ -147,7 +149,7 @@ namespace render
 			out.z = Dot(d, m_forward);
 			out.u = in.u;
 			out.v = in.v;
-			LightVertex(in.color, out.r, out.g, out.b);
+			LightVertex(in, out.r, out.g, out.b);
 		}
 
 		const float near_z = m_camera.near_plane, far_z = m_camera.far_plane;

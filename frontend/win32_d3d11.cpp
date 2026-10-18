@@ -36,12 +36,17 @@ cbuffer Constants : register(b0)
 	float4 fog_color;   // rgb
 	float4 fog;         // x: start, y: 1 / (end - start), 0 for none
 	float4 clear_color; // rgb
+	float4 sun_direction; // xyz: the way the sun shines
+	float4 sun_color;     // rgb
+	float4 light_position[8]; // xyz: the lights spawns carry
+	float4 light_strength[8]; // rgb: color x 0.05 radius^2
 };
 
 cbuffer Batch : register(b1)
 {
 	float4 light_scale; // rgb, and the material's opacity in a
 	float4 light_add;   // rgb
+	float4 dynamic_lights; // x: the sun on, y: the carried lights' mask
 };
 
 Texture2D image : register(t0);
@@ -52,6 +57,7 @@ struct VertexIn
 	float3 position : POSITION;
 	float2 uv : TEXCOORD0;
 	float4 color : COLOR0;
+	float3 normal : NORMAL;
 };
 
 struct PixelIn
@@ -69,7 +75,21 @@ PixelIn SceneVS(VertexIn input)
 	PixelIn output;
 	output.position = float4(dot(d, right.xyz), dot(d, up.xyz), depth.x * z + depth.y, z);
 	output.uv = input.uv;
-	output.color = float4(min(input.color.rgb * light_scale.rgb + light_add.rgb * input.color.a, 1), light_scale.a);
+	float3 shade = input.color.rgb * light_scale.rgb + light_add.rgb * input.color.a;
+	if (dynamic_lights.x > 0)
+		shade += sun_color.rgb * max(0, -dot(input.normal, sun_direction.xyz)) * input.color.a;
+	uint mask = (uint)dynamic_lights.y;
+	for (uint i = 0; i < 8; ++i) {
+		if (mask & (1u << i)) {
+			float3 to = light_position[i].xyz - input.position;
+			float facing = dot(to, input.normal);
+			if (facing > 0) {
+				float distance2 = dot(to, to);
+				shade += light_strength[i].rgb * (facing / (distance2 * sqrt(distance2)));
+			}
+		}
+	}
+	output.color = float4(min(shade, 1), light_scale.a);
 	output.depth = z;
 	return output;
 }
@@ -116,6 +136,8 @@ float4 CompositePS(float4 position : SV_Position) : SV_Target
 	struct PassConstants
 	{
 		float eye[4], right[4], up[4], forward[4], depth[4], fog_color[4], fog[4], clear_color[4];
+		float sun_direction[4], sun_color[4];
+		float light_position[8][4], light_strength[8][4];
 	};
 
 	void SetColor(float *out, uint32_t rgb)
@@ -146,12 +168,14 @@ float4 CompositePS(float4 position : SV_Position) : SV_Target
 	{
 		float x, y, z, u, v;
 		uint32_t color; // R8G8B8A8
+		float nx, ny, nz;
 
 		static GpuVertex From(const render::Vertex &in)
 		{
 			uint32_t c = in.color; // 0xAARRGGBB
 			return {in.position.x, in.position.y, in.position.z, in.u, in.v,
-				((c >> 16) & 0xff) | (c & 0xff00) | ((c & 0xff) << 16) | (c & 0xff000000)};
+				((c >> 16) & 0xff) | (c & 0xff00) | ((c & 0xff) << 16) | (c & 0xff000000), in.normal.x, in.normal.y,
+				in.normal.z};
 		}
 	};
 
@@ -314,8 +338,9 @@ namespace
 		void DrawEdges(uint32_t *pixels, int stride, uint32_t color) const override;
 
 	private:
-		// The Batch constants: the vertex light's scale and the opacity, its add.
-		using Light = std::array<float, 8>;
+		// The Batch constants: the vertex light's scale and the opacity, its add, and the dynamic
+		// lights (the sun on, the carried lights' mask).
+		using Light = std::array<float, 12>;
 		// One Draw: a run of the frame's indices.
 		struct Batch
 		{
@@ -457,7 +482,8 @@ namespace
 		if (count == 0)
 			return;
 		Light light = {m_light_scale.x, m_light_scale.y, m_light_scale.z, material.opacity / 255.0f,
-			m_light_add.x / 255.0f, m_light_add.y / 255.0f, m_light_add.z / 255.0f, 0};
+			m_light_add.x / 255.0f, m_light_add.y / 255.0f, m_light_add.z / 255.0f, 0, m_dynamic_sun ? 1.0f : 0.0f,
+			static_cast<float>(m_point_mask), 0, 0};
 		m_batches.push_back(
 			{first, count, m.TextureView(material.texture), material.blend, material.two_sided, m_background, light, pool, buffer});
 		m_triangle_count += count / 3;
@@ -481,6 +507,12 @@ namespace
 			pass.fog[1] = 1.0f / (m_camera.fog_end - m_camera.fog_start);
 		}
 		SetColor(pass.clear_color, clear_color);
+		SetVector(pass.sun_direction, m_sun_direction);
+		SetVector(pass.sun_color, m_sun_color);
+		for (size_t i = 0; i < m_point_count; ++i) {
+			SetVector(pass.light_position[i], m_points[i].position);
+			SetVector(pass.light_strength[i], m_points[i].Strength());
+		}
 		return pass;
 	}
 
@@ -972,6 +1004,7 @@ bool D3d11Device::Create(HWND window, int width, int height, bool vsync, std::st
 			{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
 			{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0},
 			{"COLOR", 0, DXGI_FORMAT_R8G8B8A8_UNORM, 0, 20, D3D11_INPUT_PER_VERTEX_DATA, 0},
+			{"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 24, D3D11_INPUT_PER_VERTEX_DATA, 0},
 		};
 		compiled =
 			SUCCEEDED(device->CreateVertexShader(scene_vs->GetBufferPointer(), scene_vs->GetBufferSize(), nullptr, &m->scene_vs)) &&
@@ -1006,7 +1039,7 @@ bool D3d11Device::Create(HWND window, int width, int height, bool vsync, std::st
 	pass.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
 	pass.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 	D3D11_BUFFER_DESC batch = pass;
-	batch.ByteWidth = 32;
+	batch.ByteWidth = 48;
 	made = made && SUCCEEDED(device->CreateBuffer(&pass, nullptr, &m->scene_pass)) &&
 	       SUCCEEDED(device->CreateBuffer(&pass, nullptr, &m->background_pass)) &&
 	       SUCCEEDED(device->CreateBuffer(&batch, nullptr, &m->batch_constants));

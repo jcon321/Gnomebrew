@@ -1,18 +1,19 @@
 #pragma once
 
-// The lights that light characters, as the client has them.
+// The lights that light characters (and the carried ones the zone too), as the client has them.
 //
-// The zone's own lights (lights.wld) don't: they come with flags 0x100 and no scene influence,
-// and EQGfx's processPhysicsEffects (@10050b50) only takes the lights whose flags share a bit
-// with 0x30000000 (their light is baked into the zone's and the objects' vertex colors instead).
-// What does is the light a spawn carries: its LightType (Spawn_Struct byte 94, an equipped
-// torch, lantern or lightstone), which CDisplay::ChangeLight (@004af2a3) makes with
-// CDisplay::CreateLight (@004af3d5) from the lights CDisplay::InitCommonLights (@004a3d65)
-// defines, 2 units in front of the spawn and 4 over its center, and CDisplay::MoveLight keeps there.
+// A light reaches what EQGfx's processPhysicsEffects (@10050b50) is drawing when its flags share
+// a bit with the mask: 0x30000000 for characters and meshes without baked colors, 0x20000000 for
+// meshes with them. The zone's own lights (lights.wld, flag 0x100) get 0x10000000 from
+// createPointLightFromFileContext, so they light characters but not the zone, whose colors they're
+// baked into. The light a spawn carries (its LightType, Spawn_Struct byte 94: an equipped torch,
+// lantern or lightstone) gets both from CDisplay::CreateLight (@004af3d5), which CDisplay::ChangeLight
+// (@004af2a3) calls with a light CDisplay::InitCommonLights (@004a3d65) defines, 2 units in front of
+// the spawn and 4 over its center, where CDisplay::MoveLight keeps it.
 //
-// A vertex's light is then (calculateMeshLighting, @1004da40) its ambient plus, for each of the 3
-// lights brightest at the actor's center (0.05 radius^2 / (distance^2 + 1)) among those whose
-// sphere reaches its region, the light's color x 0.05 radius^2 x cos / distance^2.
+// A character's vertex light is then its ambient plus, for each of the 3 lights brightest at its
+// center (0.05 radius^2 / (distance^2 + 1)) among those whose sphere reaches its region, the light's
+// color x 0.05 radius^2 x cos / distance^2 (applyPhysicsAndLightingEffects, calculateMeshLighting).
 
 #include "math3d.h"
 

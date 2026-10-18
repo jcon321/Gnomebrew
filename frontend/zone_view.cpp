@@ -73,6 +73,15 @@ ZoneView::DayLight ZoneView::Lighting() const
 		float level = m_info.time_type == 4 ? 0.5f : 0.1f;
 		light.ambient = {level, level, level};
 	}
+	// SetSunLight: the sun, a directional light the same color (unclamped), none where time
+	// doesn't pass. Its angle (ProcessSky / SetSkyBackground) turns 128 every 6 hours: 320 at 3:00,
+	// overhead (0) at noon, 256 at midnight; it shines along (0, sin(512 - angle), -cos(512 - angle)).
+	if (outdoors) {
+		light.sun_color = light.ambient;
+		float angle = 320 + ((hour * 60 + minute) - 180) / 360 * 128;
+		float a = render::HeadingToRadians(512 - angle);
+		light.sun_direction = {0, std::sin(a), -std::cos(a)};
+	}
 	light.ambient = {std::min(light.ambient.x, 0.99f), std::min(light.ambient.y, 0.99f), std::min(light.ambient.z, 0.99f)};
 
 	// SetSkyBackground / ProcessSky: the day period, in steps of 12 game minutes. Night until
@@ -479,25 +488,28 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 	render::Camera camera = MakeCamera(distance);
 	m_renderer->Begin(canvas.Width(), canvas.Height(), camera);
 	DayLight light = Lighting();
+	m_daylight = light;
+	// The zone: its baked light, the ambient over its vertices' exposure, the sun, and the lights
+	// spawns carry (the nearest few to the camera).
+	PlaceCarriedLights(now_ms);
+	std::vector<render::PointLight> scene_lights = m_carried_lights;
+	std::sort(scene_lights.begin(), scene_lights.end(), [&](const render::PointLight &a, const render::PointLight &b) {
+		return render::Length(a.position - camera.position) < render::Length(b.position - camera.position);
+	});
+	if (scene_lights.size() > render::Renderer::SceneLightLimit)
+		scene_lights.resize(render::Renderer::SceneLightLimit);
+	m_renderer->SetSceneLights(light.sun_direction, light.sun_color, scene_lights);
 	m_renderer->SetVertexLight({1, 1, 1}, light.ambient);
-	m_zone.Draw(*m_renderer, now_ms);
+	m_zone.Draw(*m_renderer, now_ms, scene_lights, true);
 	m_renderer->SetVertexLight({1, 1, 1}, {0, 0, 0});
 	m_times.zone = since(start);
 	start = Clock::now();
-	// Characters: the ambient light, and a directional light that weakens with the daylight.
-	float level = (light.ambient.x + light.ambient.y + light.ambient.z) / 3;
-	m_model_ambient = std::max(0.08f, level * 0.6f);
-	m_model_diffuse = 0.1f + 0.55f * std::clamp(level / 0.9f, 0.0f, 1.0f);
 	// Our own model isn't drawn in first person, or with the camera pushed into our head.
 	m_model_shown = m_model && m_view == CameraView::Chase && distance >= 1.5f;
-	PlaceCarriedLights(now_ms);
 	if (m_model_shown) {
 		render::Transform placement;
 		placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(m_heading));
 		placement.translation = m_feet + render::Vec3{0, 0, m_model->OriginOverFeet()};
-		// Lit from high over the camera's shoulder.
-		float yaw = render::HeadingToRadians(m_heading + m_orbit);
-		render::Vec3 light_direction{-std::cos(yaw), -std::sin(yaw), 1.2f};
 		// The animation's own clock once we're moving (the preview tool never moves: real time).
 		uint64_t time = m_last_move_ms ? static_cast<uint64_t>(m_animation_ms) : now_ms;
 		if (m_animation_reversed) {
@@ -506,8 +518,8 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 				time = length - 1 - time % length;
 		}
 		bool held = m_animation == "L03" || m_animation == "L04" || m_animation == "L05"; // jumps and falls stop at the end
-		m_model->Draw(*m_renderer, placement, light_direction, m_model_ambient, m_model_diffuse, time, m_animation, !held,
-			LightsFor(m_feet + render::Vec3{0, 0, m_height / 5 * 3.125f}));
+		m_model->Draw(*m_renderer, placement, ModelLightingAt(m_feet + render::Vec3{0, 0, m_height / 5 * 3.125f}), time,
+			m_animation, !held);
 	}
 	m_camera_position = camera.position;
 	DrawSpawns();
@@ -653,13 +665,39 @@ void ZoneView::PlaceCarriedLights(uint64_t now_ms)
 		add(view.light, view.Feet(), view.center_height, view.actor.Heading(), view.actor.BodyEnvironment());
 }
 
+render::ModelLighting ZoneView::ModelLightingAt(const render::Vec3 &center)
+{
+	// s3dGetActorScaledAmbient: the ambient and the sun times the exposure of the floor under the
+	// actor (straight down 400), full where there's none (applyLightingToMesh,
+	// applyPhysicsAndLightingEffects); the world's constant ambient as it is.
+	float floor_z, exposure = 1;
+	if (!m_zone.FloorBelow(center, 400, floor_z, &exposure))
+		exposure = 1;
+	render::ModelLighting lighting;
+	lighting.ambient = m_daylight.ambient * exposure + m_zone.ConstantAmbient();
+	lighting.sun_direction = m_daylight.sun_direction;
+	lighting.sun_color = m_daylight.sun_color * exposure;
+	lighting.lights = LightsFor(center);
+	return lighting;
+}
+
 const std::vector<render::PointLight> *ZoneView::LightsFor(const render::Vec3 &center)
 {
-	if (m_carried_lights.empty())
-		return nullptr;
+	// The 3 brightest of the zone's own lights and the carried ones that reach its region.
 	int region = m_zone.Regions().Empty() ? -1 : m_zone.Regions().RegionAt(center);
-	render::SelectLights(m_carried_lights, m_carried_light_regions, center, region, 3, m_lights_for);
-	return &m_lights_for;
+	thread_local std::vector<render::PointLight> carried;
+	render::SelectLights(m_zone.StaticLights(), m_zone.StaticLightRegions(), center, region, 3, m_lights_for);
+	render::SelectLights(m_carried_lights, m_carried_light_regions, center, region, 3, carried);
+	m_lights_for.insert(m_lights_for.end(), carried.begin(), carried.end());
+	auto score = [&](const render::PointLight &light) {
+		render::Vec3 d = light.position - center;
+		return light.radius * light.radius * 0.05f / (render::Dot(d, d) + 1);
+	};
+	std::sort(m_lights_for.begin(), m_lights_for.end(),
+		[&](const render::PointLight &a, const render::PointLight &b) { return score(a) > score(b); });
+	if (m_lights_for.size() > 3)
+		m_lights_for.resize(3);
+	return m_lights_for.empty() ? nullptr : &m_lights_for;
 }
 
 void ZoneView::PoseSpawn(SpawnView &view, const ZoneSpawn &spawn, uint64_t now_ms)
@@ -704,11 +742,8 @@ void ZoneView::DrawSpawns()
 		render::Transform placement;
 		placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(view.actor.Heading()));
 		placement.translation = view.Feet() + render::Vec3{0, 0, model.OriginOverFeet()};
-		render::Vec3 to_camera = render::Normalize(m_camera_position - center);
-		render::Vec3 light{to_camera.x, to_camera.y, 1.2f};
-		model.Draw(*m_renderer, placement, light, m_model_ambient, m_model_diffuse, view.actor.AnimationTime(model),
-			render::AnimationCode(view.actor.Animation()), view.actor.AnimationLoops(),
-			LightsFor(view.Feet() + render::Vec3{0, 0, view.center_height}));
+		model.Draw(*m_renderer, placement, ModelLightingAt(view.Feet() + render::Vec3{0, 0, view.center_height}),
+			view.actor.AnimationTime(model), render::AnimationCode(view.actor.Animation()), view.actor.AnimationLoops());
 		view.drawn = true;
 	}
 }
