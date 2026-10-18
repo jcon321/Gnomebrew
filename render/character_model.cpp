@@ -56,20 +56,6 @@ namespace render
 			return true;
 		}
 
-		// Whether a model is built on a player race's skeleton, its own or the one it plays
-		// the animations of (the Qeynos citizens' is the elf male's, the Rivervale citizens' the dwarf's).
-		bool OnPlayerSkeleton(const std::string &code)
-		{
-			static const char *const players[] = {"HUM", "HUF", "BAM", "BAF", "ERM", "ERF", "ELM", "ELF", "HIM", "HIF",
-				"DAM", "DAF", "HAM", "HAF", "DWM", "DWF", "TRM", "TRF", "OGM", "OGF", "HOM", "HOF", "GNM", "GNF", "IKM",
-				"IKF", "KEM", "KEF"};
-			std::string source = AnimationSource(code);
-			for (const char *player : players)
-				if (code == player || source == player)
-					return true;
-			return false;
-		}
-
 		uint32_t PackLight(float r, float g, float b)
 		{
 			auto channel = [](float c) { return static_cast<uint32_t>(std::clamp(c, 0.0f, 1.0f) * 255.0f + 0.5f); };
@@ -77,8 +63,7 @@ namespace render
 		}
 	}
 
-	// Default player heights (the spawn size the server sends for each race). The models are
-	// built at assorted sizes (the dwarf female is as tall as a human), so each is scaled to fit.
+	// Default player heights (SetHeights' table, and the spawn size the server sends for each race).
 	float RaceHeight(uint16_t race)
 	{
 		switch (race) {
@@ -318,31 +303,18 @@ namespace render
 			return nullptr;
 		}
 		model->m_skeleton = std::move(skeleton);
-		if (player_race || OnPlayerSkeleton(code)) {
-			// Player race models come in assorted sizes (the female halfling's is half again the
-			// male's); each is scaled to the race's height, its feet on the floor. Ours, and also for
-			// the citizens made from them (the Rivervale citizens are the halfling's, the Qeynos ones
-			// the human's), which SetHeights' size / 5 below would leave as mismatched.
-			float height = appearance.height > 0 ? appearance.height : player_race ? RaceHeight(appearance.race) : 6;
-			if (model->m_max_z > model->m_min_z)
-				model->m_scale = height / (model->m_max_z - model->m_min_z);
-			model->m_min_z *= model->m_scale;
-			model->m_max_z *= model->m_scale;
-			model->m_head_z *= model->m_scale;
-			model->m_origin_over_feet = -model->m_min_z;
-		}
-		else {
-			// EQPlayer::SetHeights: the actor's scale is the height / 5 (6 when it's not given;
-			// races 63, and 42 and 120 neuter, a little under half that), its origin 3.125 * scale over the feet.
-			float height = appearance.height > 0 ? appearance.height : 6;
-			if (appearance.race == 63 || ((appearance.race == 42 || appearance.race == 120) && appearance.gender == 2))
-				height *= 0.45f;
-			model->m_scale = height * 0.2f;
-			model->m_min_z *= model->m_scale;
-			model->m_max_z *= model->m_scale;
-			model->m_head_z *= model->m_scale;
-			model->m_origin_over_feet = 3.125f * model->m_scale;
-		}
+		// EQPlayer::SetHeights: the actor's scale is the height / 5 (the race's default when it's not
+		// given; races 63, and 42 and 120 neuter, a little under half that), its origin 3.125 * scale
+		// over the feet. The models are built for that, feet ~3.125 under the origin and ~6.5 tall
+		// once their bones' scales are applied (the halfling male's pelvis scales him by 1.6).
+		float height = appearance.height > 0 ? appearance.height : player_race ? RaceHeight(appearance.race) : 6;
+		if (appearance.race == 63 || ((appearance.race == 42 || appearance.race == 120) && appearance.gender == 2))
+			height *= 0.45f;
+		model->m_scale = height * 0.2f;
+		model->m_min_z *= model->m_scale;
+		model->m_max_z *= model->m_scale;
+		model->m_head_z *= model->m_scale;
+		model->m_origin_over_feet = 3.125f * model->m_scale;
 		return model;
 	}
 

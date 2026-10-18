@@ -233,7 +233,7 @@ does the same, from these decompiled functions:
   for Vah Shir) play their `P01` standing idle; races without one borrow another model's (the human
   female plays the wood elf female's). Face and armor materials from the character list swap the
   body textures (`HUMCH0201.BMP` is the chest in material 2, chain), and tints multiply them. Models
-  are scaled to their race's default height.
+  are scaled to their race's default height / 5 (`EQPlayer::SetHeights`), standing 3.125 x that over the floor.
 
 The renderer (`render/`) is a portable software rasterizer drawing into the same surface as the
 front end, standing in for `eqgfx_dx8.dll`: perspective-correct textures with mipmaps and bilinear
@@ -260,7 +260,10 @@ depth buffer back a few frames late (the newest copy the GPU has finished, witho
 Things learned about the files:
 
 - WLD x/y are the server's y/x (z is up; +x is north), checked against the EQEmu map `load2.map`.
-- Bone tracks are quaternions `{w, x, y, z}` plus a shift divided by its own denominator.
+- Bone tracks are 8 int16s a frame, as EQGfx's `processTransformationNode` reads them: a quaternion
+  `{w, x, y, z}` / 16384, a shift / 256, and the bone's scale / 256 (unsigned), which multiplies down to
+  its children's shifts, scales and meshes. It isn't the shift's denominator: the halfling, dwarf and
+  gnome males' pelvis is 1.6 (410), without which they're two thirds the size of their females.
 - BMP textures are used bottom-up (v = 0 is the bottom row); the zones' DDS textures (DXT1/3/5) are
   stored that way already.
 - Zone lighting is the `lights.wld` point lights (linear falloff) over a flat ambient, plus the meshes'
@@ -375,11 +378,10 @@ Not yet: the real client's messages use `CConfirmationDialog`; these use the fro
   at most every 150 ms and stops repeating an unchanged update after 6.
 - **Other spawns:** each race's model is `EQPlayer::GetActorTag`'s (`render/actor_tags.cpp`, the client's
   race table): `<tag>_ACTORDEF` from `<zone>_chr.s3d`, `<zone>_chr2.s3d` or `global*_chr.s3d`, else race 75's
-  (`CreatePlayerActor`). Player races are scaled to their height like ours, feet on the floor, and so are the
-  citizens built on a player race's skeleton (Rivervale's are the halfling's, Qeynos's the human's): the female
-  halfling, dwarf and gnome meshes are ~6.6 units tall against the males' ~4.2, so `EQPlayer::SetHeights`'
-  size / 5 left Rivervale's bankers under their counters. The rest get size / 5, with the model's origin at
-  the spawn's z. Their names float over them within 120 units,
+  (`CreatePlayerActor`). Every model, player races included, is sized by `EQPlayer::SetHeights`: size / 5,
+  with the model's origin `ModelHeightOffset` (3.125 x size / 5) over the feet. The models are built for
+  that, ~6.5 units tall with their feet ~3.125 under the origin, once their bones' scales are applied:
+  a halfling (3.5) is 4.7 tall, a human (6) 8. Their names float over them within 120 units,
   hidden by anything in front.
 - **How they look:** the spawn's `bodytexture` (byte 101) is the client's `EQPlayer::Texture`. 0xFF (players)
   dresses each slot from the equipment list; anything else is an NPC's texture for every part

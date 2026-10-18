@@ -195,7 +195,7 @@ void CharacterSelectView::Render(Canvas &canvas, uint64_t now_ms)
 	if (m_model) {
 		render::Transform placement;
 		placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(m_heading));
-		placement.translation = m_position - render::Vec3{0, 0, m_model->MinZ()};
+		placement.translation = m_position + render::Vec3{0, 0, m_model->OriginOverFeet()}; // PositionOnFloor
 		// Light from over the camera's shoulder.
 		render::Vec3 light = render::Normalize(offset) + render::Vec3{0, 0, 0.8f};
 		m_model->Draw(*m_renderer, placement, light, 0.45f, 0.65f, now_ms);

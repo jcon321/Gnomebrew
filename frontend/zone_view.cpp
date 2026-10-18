@@ -213,9 +213,9 @@ void ZoneView::PlacePlayer()
 	// The server's z is the model's center height, size / 5 * 3.125 over the feet
 	// (Mob::CalcZOffset). Settle the feet onto the floor right below, like
 	// EQPlayer::PositionOnFloor, in case the zone's floor and the server's map differ a little.
-	float height = m_model ? m_model->MaxZ() - m_model->MinZ() : 6;
-	if (m_appearance && m_appearance->height > 0)
-		height = m_appearance->height;
+	float height = 6; // the size, which the model is drawn 1.25 x as tall as
+	if (m_appearance)
+		height = m_appearance->height > 0 ? m_appearance->height : render::RaceHeight(m_appearance->race);
 	m_height = height;
 	m_feet = {m_server_position.y, m_server_position.x, m_server_position.z - height / 5 * 3.125f}; // WLD x/y are the server's y/x
 	float floor_z;
@@ -493,7 +493,7 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 	if (m_model_shown) {
 		render::Transform placement;
 		placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(m_heading));
-		placement.translation = m_feet - render::Vec3{0, 0, m_model->MinZ()};
+		placement.translation = m_feet + render::Vec3{0, 0, m_model->OriginOverFeet()};
 		// Lit from high over the camera's shoulder.
 		float yaw = render::HeadingToRadians(m_heading + m_orbit);
 		render::Vec3 light_direction{-std::cos(yaw), -std::sin(yaw), 1.2f};

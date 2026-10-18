@@ -24,6 +24,7 @@ namespace render
 			}
 			out.shift = {a.shift.x + (b.shift.x - a.shift.x) * t, a.shift.y + (b.shift.y - a.shift.y) * t,
 				a.shift.z + (b.shift.z - a.shift.z) * t};
+			out.scale = a.scale + (b.scale - a.scale) * t;
 			return out;
 		}
 	}
@@ -84,6 +85,7 @@ namespace render
 			Transform local;
 			local.rotation = {pose.w, pose.x, pose.y, pose.z};
 			local.translation = {pose.shift.x, pose.shift.y, pose.shift.z};
+			local.scale = pose.scale; // scales the bone's mesh, and its children's shifts and scales
 			// Parents come before children in the bone list.
 			world[i] = bone.parent >= 0 && static_cast<size_t>(bone.parent) < i ? world[bone.parent] * local : local;
 		}

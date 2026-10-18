@@ -300,12 +300,13 @@ bool WldFile::ReadTrackFrames(int track_instance, std::vector<WldBoneTransform> 
 	for (size_t i = 0; i < count && i < limit; ++i) {
 		size_t p = def->offset + 8 + i * 16;
 		float w = Get<int16_t>(p), x = Get<int16_t>(p + 2), y = Get<int16_t>(p + 4), z = Get<int16_t>(p + 6);
-		float denominator = Get<int16_t>(p + 14);
-		if (denominator == 0)
-			denominator = 1;
+		// As processTransformationNode (EQGfx) reads it: the rotation / 16384, the shift / 256, and
+		// last the bone's scale / 256 (not the shift's denominator).
 		WldBoneTransform pose;
-		pose.shift = {Get<int16_t>(p + 8) / denominator, Get<int16_t>(p + 10) / denominator,
-			Get<int16_t>(p + 12) / denominator};
+		pose.shift = {Get<int16_t>(p + 8) / 256.0f, Get<int16_t>(p + 10) / 256.0f, Get<int16_t>(p + 12) / 256.0f};
+		pose.scale = Get<uint16_t>(p + 14) / 256.0f;
+		if (pose.scale == 0)
+			pose.scale = 1;
 		float length = std::sqrt(w * w + x * x + y * y + z * z);
 		if (length > 0) {
 			pose.w = w / length;

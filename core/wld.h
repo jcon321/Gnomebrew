@@ -78,6 +78,7 @@ struct WldBoneTransform
 {
 	float w = 1, x = 0, y = 0, z = 0;
 	WldVec3 shift;
+	float scale = 1; // this bone's and, multiplied down, its children's (the halfling male's pelvis is 1.6)
 };
 
 // A skeleton (0x10). Bones are in parent-before-child order; the meshes are the

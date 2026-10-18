@@ -45,7 +45,7 @@ namespace render
 		bool HasAnimation(const std::string &animation) const { return m_animations->count(animation) != 0; }
 		uint32_t AnimationMs(const std::string &animation) const; // one loop
 
-		// Model-space extent of the idle's first frame, after scaling to the race's height.
+		// Extent of the idle's first frame, scaled (model space).
 		float MinZ() const { return m_min_z; }
 		float MaxZ() const { return m_max_z; }
 		float HeadZ() const { return m_head_z; } // the head bone
