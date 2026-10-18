@@ -65,8 +65,8 @@ private:
 		int height;
 		uint32_t color;
 		int gap = 3; // below
-		enum class Action { None, Fold, Toggle, Pick } action = Action::None;
-		int value = 0; // the section, the toggle, or the spawn id
+		enum class Action { None, Fold, Toggle, Pick, Vision } action = Action::None;
+		int value = 0; // the section, the toggle, the spawn id, or the vision
 		std::string right; // right-aligned, dim
 		bool highlight = false;
 	};

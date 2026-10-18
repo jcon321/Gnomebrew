@@ -31,6 +31,11 @@ class ZoneView
 {
 public:
 	enum class CameraView { FirstPerson, Chase };
+	// EQ_Character's Vision1 (infravision) and Vision2 (ultravision), which win over Vision1.
+	enum class Vision : uint8_t { None, Infravision, Ultravision };
+	// EQ_Character::InitInnates: the dark elf sees in ultravision; the human, barbarian and
+	// erudite in neither; everyone else in infravision.
+	static Vision RaceVision(uint16_t race);
 
 	// renderer: the GPU one, or nullptr for the software Rasterizer.
 	ZoneView(std::string eq_dir, std::unique_ptr<render::Renderer> renderer = nullptr);
@@ -87,6 +92,9 @@ public:
 		float sky = 1;                           // the sky's brightness
 		render::Vec3 sun_direction{0, 0, -1};    // the way the sun shines (SetSunLight)
 		render::Vec3 sun_color;                  // 0 where the time of day doesn't pass
+		// Infravision and ultravision (SetAmbientLight): the world's special ambient, added to
+		// everything, and the glow infravision gives warm-blooded spawns at night.
+		render::Vec3 special, glow;
 	};
 	DayLight Lighting() const;
 
@@ -145,7 +153,11 @@ public:
 	struct DebugDraw
 	{
 		bool wireframe = false, no_fog = false, walls = false, floor = false;
+		int vision = -1; // a Vision, or -1: our own (our race's; spells and items to come)
 	};
+	// What we see in: the debug menu's choice, or our own (our race's; spells and items to come).
+	Vision CurrentVision() const;
+	Vision OwnVision() const;
 	void SetDebugDraw(const DebugDraw &draw) { m_debug_draw = draw; }
 	const render::Vec3 &Feet() const { return m_feet; }
 
@@ -164,7 +176,10 @@ private:
 	// The (up to 3) carried lights that light something centered at `center`.
 	const std::vector<render::PointLight> *LightsFor(const render::Vec3 &center);
 	// How a character centered at `center` is lit (calculateMeshLighting).
-	render::ModelLighting ModelLightingAt(const render::Vec3 &center);
+	// `warm`: infravision makes it glow at night (not undead, constructs or vampires).
+	render::ModelLighting ModelLightingAt(const render::Vec3 &center, bool warm = true);
+	// The floor's exposure under `center` (s3dGetActorScaledAmbient), 1 where there's none.
+	float ExposureAt(const render::Vec3 &center) const;
 	float FarPlane() const; // the fog's end, or the zone's max clip with the debug menu's no fog
 	void DrawDebugOverlays(Canvas &canvas) const;
 	void ChooseAnimation(float ms);
@@ -212,6 +227,7 @@ private:
 		float distance = 0; // from the camera, last frame
 		bool drawn = false;
 		uint8_t light = 0;         // ZoneSpawn::light
+		bool warm = true;          // body type not 3, 5, 8 or 12 (SetPlayerConstantAmbient2)
 		float center_height = 0;   // ModelHeightOffset: the server's z over the feet
 		const render::Vec3 &Feet() const { return actor.Feet(); }
 	};
@@ -221,6 +237,11 @@ private:
 	render::Vec3 m_camera_position;
 	bool m_have_time = false;
 	DayLight m_daylight; // this frame's
+	// SetAmbientLight: our floor's exposure, followed 0.01 a frame, and whether infravision's glow
+	// is on (from sky light under 0.53 until over 0.7).
+	float m_vision_exposure = 1;
+	bool m_infravision_glow = false;
+	uint64_t m_vision_ms = 0;
 	uint8_t m_my_light = 0; // our ZoneSpawn::light
 	std::vector<render::PointLight> m_carried_lights;
 	std::vector<std::vector<int>> m_carried_light_regions;

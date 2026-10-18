@@ -47,6 +47,7 @@ cbuffer Batch : register(b1)
 	float4 light_scale; // rgb, and the material's opacity in a
 	float4 light_add;   // rgb
 	float4 dynamic_lights; // x: the sun on, y: the carried lights' mask
+	float4 light_base;     // rgb: added to every vertex
 };
 
 Texture2D image : register(t0);
@@ -75,7 +76,7 @@ PixelIn SceneVS(VertexIn input)
 	PixelIn output;
 	output.position = float4(dot(d, right.xyz), dot(d, up.xyz), depth.x * z + depth.y, z);
 	output.uv = input.uv;
-	float3 shade = input.color.rgb * light_scale.rgb + light_add.rgb * input.color.a;
+	float3 shade = input.color.rgb * light_scale.rgb + light_add.rgb * input.color.a + light_base.rgb;
 	if (dynamic_lights.x > 0)
 		shade += sun_color.rgb * max(0, -dot(input.normal, sun_direction.xyz)) * input.color.a;
 	uint mask = (uint)dynamic_lights.y;
@@ -338,9 +339,9 @@ namespace
 		void DrawEdges(uint32_t *pixels, int stride, uint32_t color) const override;
 
 	private:
-		// The Batch constants: the vertex light's scale and the opacity, its add, and the dynamic
-		// lights (the sun on, the carried lights' mask).
-		using Light = std::array<float, 12>;
+		// The Batch constants: the vertex light's scale and the opacity, its add, the dynamic
+		// lights (the sun on, the carried lights' mask), and its base.
+		using Light = std::array<float, 16>;
 		// One Draw: a run of the frame's indices.
 		struct Batch
 		{
@@ -483,7 +484,8 @@ namespace
 			return;
 		Light light = {m_light_scale.x, m_light_scale.y, m_light_scale.z, material.opacity / 255.0f,
 			m_light_add.x / 255.0f, m_light_add.y / 255.0f, m_light_add.z / 255.0f, 0, m_dynamic_sun ? 1.0f : 0.0f,
-			static_cast<float>(m_point_mask), 0, 0};
+			static_cast<float>(m_point_mask), 0, 0, m_light_base.x / 255.0f, m_light_base.y / 255.0f,
+			m_light_base.z / 255.0f, 0};
 		m_batches.push_back(
 			{first, count, m.TextureView(material.texture), material.blend, material.two_sided, m_background, light, pool, buffer});
 		m_triangle_count += count / 3;
@@ -1039,7 +1041,7 @@ bool D3d11Device::Create(HWND window, int width, int height, bool vsync, std::st
 	pass.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
 	pass.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 	D3D11_BUFFER_DESC batch = pass;
-	batch.ByteWidth = 48;
+	batch.ByteWidth = 64;
 	made = made && SUCCEEDED(device->CreateBuffer(&pass, nullptr, &m->scene_pass)) &&
 	       SUCCEEDED(device->CreateBuffer(&pass, nullptr, &m->background_pass)) &&
 	       SUCCEEDED(device->CreateBuffer(&batch, nullptr, &m->batch_constants));

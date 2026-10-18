@@ -64,7 +64,7 @@ namespace render
 		std::vector<ViewVertex> m_view;
 		// What m_view was made from: reused by the next batch while the vertices and light are the same.
 		const Vertex *m_view_source = nullptr;
-		Vec3 m_view_scale, m_view_add;
+		Vec3 m_view_scale, m_view_add, m_view_base;
 		uint32_t m_view_lights = 0; // Renderer::m_light_generation then
 		bool m_view_background = false;
 		std::vector<ScreenTriangle> m_triangles;

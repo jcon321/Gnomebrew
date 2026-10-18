@@ -19,6 +19,7 @@ namespace render
 		m_background = false;
 		m_light_scale = {1, 1, 1};
 		m_light_add = {0, 0, 0};
+		m_light_base = {0, 0, 0};
 		m_dynamic_sun = false;
 		m_point_mask = 0;
 		++m_light_generation;
@@ -62,9 +63,9 @@ namespace render
 	{
 		uint32_t color = vertex.color;
 		float exposure = static_cast<float>(color >> 24) * (1.0f / 255);
-		r = static_cast<float>((color >> 16) & 0xff) * m_light_scale.x + m_light_add.x * exposure;
-		g = static_cast<float>((color >> 8) & 0xff) * m_light_scale.y + m_light_add.y * exposure;
-		b = static_cast<float>(color & 0xff) * m_light_scale.z + m_light_add.z * exposure;
+		r = static_cast<float>((color >> 16) & 0xff) * m_light_scale.x + m_light_add.x * exposure + m_light_base.x;
+		g = static_cast<float>((color >> 8) & 0xff) * m_light_scale.y + m_light_add.y * exposure + m_light_base.y;
+		b = static_cast<float>(color & 0xff) * m_light_scale.z + m_light_add.z * exposure + m_light_base.z;
 		if (m_dynamic_sun) {
 			float facing = -Dot(vertex.normal, m_sun_direction) * exposure * 255.0f;
 			if (facing > 0) {

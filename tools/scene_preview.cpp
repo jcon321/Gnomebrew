@@ -21,7 +21,8 @@
 // --npc-fly F its fly mode, --npc-light TYPE the light it carries (2 a torch, 4 a lantern...). --spawn-ms MS runs the spawns that long first, printing where they are
 // and what they play each second. --time HOUR MINUTE sets Norrath's time (hour
 // 1..24, 1 is midnight) for the zone's time type (--time-type, default 2: outdoors).
-// --debug-draw wireframe,nofog,walls,floor turns on the debug menu's render toggles.
+// --debug-draw wireframe,nofog,walls,floor turns on the debug menu's render toggles, and --vision
+// own|none|infra|ultra picks what we see in at night (own: the race's).
 // --frames renders N times and prints the average frame time. --size picks the
 // image size (default 640x480).
 
@@ -250,6 +251,10 @@ int main(int argc, char **argv)
 		else if (arg == "--time" && i + 2 < argc) {
 			game_hour = atoi(argv[++i]);
 			game_minute = static_cast<float>(atof(argv[++i]));
+		}
+		else if (arg == "--vision" && i + 1 < argc) {
+			std::string v = argv[++i];
+			debug_draw.vision = v == "none" ? 0 : v == "infra" ? 1 : v == "ultra" ? 2 : -1;
 		}
 		else if (arg == "--time-type" && i + 1 < argc)
 			info.time_type = static_cast<uint8_t>(atoi(argv[++i]));

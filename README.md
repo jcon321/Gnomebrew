@@ -436,7 +436,13 @@ Not yet: the real client's messages use `CConfirmationDialog`; these use the fro
   lamps that light it. The world's constant ambient (fragment 0x35, 0 in most zones) is added to what has no
   baked colors. Everything stops at
   full light (the DLL clamps each
-  channel to 255). Not done: infravision and ultravision's glow at night (`SetPlayerConstantAmbient2`). The sky dims along `SetSkyBackground`'s
+  channel to 255). Infravision and ultravision (`EQ_Character` Vision1/Vision2: the dark elf has
+  ultravision, the human, barbarian and erudite neither, everyone else infravision) raise the ambient to
+  their color, (82, 55, 164) or (75, 38, 38), and add it times (1 - our floor's exposure, followed 0.01 a
+  frame) to everything as the world's special ambient; infravision also gives every warm-blooded spawn
+  (body type not 3, 5, 8 or 12) a constant red of 100 while the sky's light is under 0.53 (until it's over
+  0.7: `SetPlayerConstantAmbient2`, the color `CDisplay` keeps at 0x2e10). The debug menu's RENDER section
+  picks the vision to try (ours stands in for spells and items to come). The sky dims along `SetSkyBackground`'s
   60 day periods (night until 3:00, dawn to 9:00, day to 15:00, dusk to 20:48), and the fog darkens with
   the light. The sun and moon aren't drawn yet.
 

@@ -93,13 +93,15 @@ namespace render
 		void EndBackground() { m_background = false; }
 		bool SphereVisible(const Vec3 &center, float radius) const;
 		// Light applied to the vertex colors of the triangles drawn after it, channel by channel:
-		// color * scale + add * AA / 255 (0..1). Begin resets it to (1, 0): the colors as given. The
-		// time of day uses it to add the ambient light to a zone's baked lighting (as eqgfx's
-		// calculateMeshLighting does: vertex color + vertex alpha * ambient) and to dim the sky.
-		void SetVertexLight(const Vec3 &scale, const Vec3 &add)
+		// color * scale + add * AA / 255 + base (0..1). Begin resets it to (1, 0, 0): the colors as
+		// given. The time of day uses it to add the ambient light to a zone's baked lighting (as
+		// eqgfx's calculateMeshLighting does: vertex color + vertex alpha * ambient), and the
+		// world's special ambient (infravision, ultravision) as base; and to dim the sky.
+		void SetVertexLight(const Vec3 &scale, const Vec3 &add, const Vec3 &base = {})
 		{
 			m_light_scale = scale;
 			m_light_add = add * 255.0f;
+			m_light_base = base * 255.0f;
 		}
 		// The lights that change as the game runs, once a frame: the sun (a directional light,
 		// shining along sun_direction, colored with the time of day) and the lights spawns carry
@@ -150,7 +152,7 @@ namespace render
 		Vec3 m_right, m_up, m_forward;
 		float m_focal = 1, m_tan_x = 1, m_tan_y = 1;
 		bool m_background = false;
-		Vec3 m_light_scale{1, 1, 1}, m_light_add{0, 0, 0};
+		Vec3 m_light_scale{1, 1, 1}, m_light_add{0, 0, 0}, m_light_base{0, 0, 0};
 		Vec3 m_sun_direction{0, 0, -1}, m_sun_color;
 		PointLight m_points[SceneLightLimit];
 		size_t m_point_count = 0;

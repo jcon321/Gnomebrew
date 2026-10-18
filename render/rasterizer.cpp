@@ -132,11 +132,12 @@ namespace render
 		auto same = [](const Vec3 &a, const Vec3 &b) { return a.x == b.x && a.y == b.y && a.z == b.z; };
 		bool transformed = reuse_vertices && m_view_source == vertices && m_view.size() == vertex_count &&
 		                   m_view_background == m_background && same(m_view_scale, m_light_scale) &&
-		                   same(m_view_add, m_light_add) && m_view_lights == m_light_generation;
+		                   same(m_view_add, m_light_add) && same(m_view_base, m_light_base) && m_view_lights == m_light_generation;
 		m_view.resize(vertex_count);
 		m_view_source = vertices;
 		m_view_scale = m_light_scale;
 		m_view_add = m_light_add;
+		m_view_base = m_light_base;
 		m_view_lights = m_light_generation;
 		m_view_background = m_background;
 		Vec3 eye = Eye();

@@ -183,6 +183,9 @@ bool DebugMenu::OnMouse(const InputEvent &event)
 			if (bool *flag = Toggle(hit.value))
 				*flag = !*flag;
 			break;
+		case Line::Action::Vision:
+			m_draw.vision = hit.value;
+			break;
 		case Line::Action::Pick:
 			m_target = m_target == hit.value ? 0 : static_cast<uint16_t>(hit.value);
 			break;
@@ -348,6 +351,8 @@ void DebugMenu::DrawCard(Canvas &canvas, TextRenderer &text, const ZoneSession &
 		if (world) {
 			row(Format("Ambient %.2f %.2f %.2f   sky light %.2f", stats.light.ambient.x, stats.light.ambient.y,
 				stats.light.ambient.z, stats.light.sky));
+			row(Format("Vision ambient %.2f %.2f %.2f%s", stats.light.special.x, stats.light.special.y,
+				stats.light.special.z, stats.light.glow.x > 0 ? "   infravision glow" : ""));
 			row(Format("%zuk triangles, %zu objects", (stats.zone_triangles + 500) / 1000, stats.zone_objects));
 		}
 	}
@@ -358,6 +363,17 @@ void DebugMenu::DrawCard(Canvas &canvas, TextRenderer &text, const ZoneSession &
 			Line &line = *row(std::string(*Toggle(i) ? "[x] " : "[  ] ") + names[i], *Toggle(i) ? White : Grey);
 			line.action = Line::Action::Toggle;
 			line.value = i;
+		}
+		// What we see in at night: ours (our race's; spells and items to come) or one to try.
+		static const char *const visions[] = {"None", "Infravision", "Ultravision"};
+		for (int v = -1; v < 3; ++v) {
+			std::string name = std::string("Vision: ") + (v < 0 ? "my own" : visions[v]);
+			if (v < 0 && view)
+				name += std::string(" (") + visions[static_cast<int>(view->OwnVision())] + ")";
+			bool chosen = m_draw.vision == v;
+			Line &line = *row(std::string(chosen ? "(o) " : "(  ) ") + name, chosen ? White : Grey);
+			line.action = Line::Action::Vision;
+			line.value = v;
 		}
 	}
 

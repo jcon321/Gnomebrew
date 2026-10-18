@@ -51,6 +51,30 @@ void ZoneView::SetGameTime(int hour, float minute)
 	m_minute = minute;
 }
 
+ZoneView::Vision ZoneView::RaceVision(uint16_t race)
+{
+	switch (race) {
+	case 1:  // human
+	case 2:  // barbarian
+	case 3:  // erudite
+		return Vision::None;
+	case 6:  // dark elf
+		return Vision::Ultravision;
+	default:
+		return Vision::Infravision;
+	}
+}
+
+ZoneView::Vision ZoneView::CurrentVision() const
+{
+	return m_debug_draw.vision >= 0 ? static_cast<Vision>(m_debug_draw.vision) : OwnVision();
+}
+
+ZoneView::Vision ZoneView::OwnVision() const
+{
+	return m_appearance ? RaceVision(m_appearance->race) : Vision::None;
+}
+
 ZoneView::DayLight ZoneView::Lighting() const
 {
 	DayLight light;
@@ -87,6 +111,22 @@ ZoneView::DayLight ZoneView::Lighting() const
 	const float least = 0.18f;
 	light.ambient = {std::clamp(light.ambient.x, least, 0.99f), std::clamp(light.ambient.y, least, 0.99f),
 		std::clamp(light.ambient.z, least, 0.99f)};
+
+	// Infravision and ultravision raise the ambient to their color, and add it as the world's
+	// special ambient the less exposed we stand (CEverQuest_EnterZone2's colors, dimmer in Vex
+	// Thal); infravision's glow is a constant red on the warm-blooded (CDisplay's 0x2e10).
+	Vision vision = CurrentVision();
+	if (vision != Vision::None) {
+		bool vexthal = m_info.short_name == "vexthal";
+		render::Vec3 color = vision == Vision::Ultravision ? (vexthal ? render::Vec3{25, 25, 50} : render::Vec3{82, 55, 164})
+		                                                   : (vexthal ? render::Vec3{25, 13, 13} : render::Vec3{75, 38, 38});
+		color = color * (1.0f / 255);
+		light.ambient = {std::max(light.ambient.x, color.x), std::max(light.ambient.y, color.y),
+			std::max(light.ambient.z, color.z)};
+		light.special = color * (1 - m_vision_exposure);
+	}
+	if (vision == Vision::Infravision && m_infravision_glow)
+		light.glow = {100 / 256.0f, 0, 0};
 
 	// SetSkyBackground / ProcessSky: the day period, in steps of 12 game minutes. Night until
 	// 3:00, dawn to 9:00 (periods 44, 45 .. 59, 0 .. 13), day to 15:00 (14), dusk to 20:48 (14 .. 43).
@@ -361,7 +401,7 @@ ZoneView::DebugStats ZoneView::Stats() const
 		stats.have_floor = m_zone.FloorBelow(m_feet + render::Vec3{0, 0, 2}, 1000, stats.floor_z);
 	stats.zone_triangles = m_zone.TriangleCount();
 	stats.zone_objects = m_zone.ObjectCount();
-	stats.light = Lighting();
+	stats.light = m_daylight;
 	return stats;
 }
 
@@ -491,7 +531,19 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 	float distance;
 	render::Camera camera = MakeCamera(distance);
 	m_renderer->Begin(canvas.Width(), canvas.Height(), camera);
+	// SetAmbientLight follows our floor's exposure 0.01 a frame (here 0.6 a second), and turns
+	// infravision's glow on when the sky's light falls under 0.53, off when it's over 0.7.
+	float elapsed = m_vision_ms && now_ms > m_vision_ms ? (now_ms - m_vision_ms) / 1000.0f : 0;
+	m_vision_ms = now_ms;
+	float exposure = ExposureAt(m_feet + render::Vec3{0, 0, m_height / 5 * 3.125f});
+	float step = std::min(0.6f * elapsed, std::fabs(exposure - m_vision_exposure));
+	m_vision_exposure += exposure > m_vision_exposure ? step : -step;
 	DayLight light = Lighting();
+	bool glow = CurrentVision() == Vision::Infravision && (light.sky < 0.53f || (m_infravision_glow && light.sky <= 0.7f));
+	if (glow != m_infravision_glow) {
+		m_infravision_glow = glow;
+		light = Lighting();
+	}
 	m_daylight = light;
 	// The zone: its baked light, the ambient over its vertices' exposure, the sun, and the lights
 	// spawns carry (the nearest few to the camera).
@@ -503,7 +555,7 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 	if (scene_lights.size() > render::Renderer::SceneLightLimit)
 		scene_lights.resize(render::Renderer::SceneLightLimit);
 	m_renderer->SetSceneLights(light.sun_direction, light.sun_color, scene_lights);
-	m_renderer->SetVertexLight({1, 1, 1}, light.ambient);
+	m_renderer->SetVertexLight({1, 1, 1}, light.ambient, light.special);
 	m_zone.Draw(*m_renderer, now_ms, scene_lights, true);
 	m_renderer->SetVertexLight({1, 1, 1}, {0, 0, 0});
 	m_times.zone = since(start);
@@ -669,16 +721,24 @@ void ZoneView::PlaceCarriedLights(uint64_t now_ms)
 		add(view.light, view.Feet(), view.center_height, view.actor.Heading(), view.actor.BodyEnvironment());
 }
 
-render::ModelLighting ZoneView::ModelLightingAt(const render::Vec3 &center)
+float ZoneView::ExposureAt(const render::Vec3 &center) const
 {
-	// s3dGetActorScaledAmbient: the ambient and the sun times the exposure of the floor under the
-	// actor (straight down 400), full where there's none (applyLightingToMesh,
-	// applyPhysicsAndLightingEffects); the world's constant ambient as it is.
 	float floor_z, exposure = 1;
 	if (!m_zone.FloorBelow(center, 400, floor_z, &exposure))
 		exposure = 1;
+	return exposure;
+}
+
+render::ModelLighting ZoneView::ModelLightingAt(const render::Vec3 &center, bool warm)
+{
+	// s3dGetActorScaledAmbient: the ambient and the sun times the exposure of the floor under the
+	// actor (straight down 400), full where there's none (applyLightingToMesh,
+	// applyPhysicsAndLightingEffects); the world's constant and special ambient as they are, and
+	// infravision's glow (the actor's constant ambient) on the warm-blooded.
+	float exposure = ExposureAt(center);
 	render::ModelLighting lighting;
-	lighting.ambient = m_daylight.ambient * exposure + m_zone.ConstantAmbient();
+	lighting.ambient = m_daylight.ambient * exposure + m_zone.ConstantAmbient() + m_daylight.special +
+	                   (warm ? m_daylight.glow : render::Vec3{});
 	lighting.sun_direction = m_daylight.sun_direction;
 	lighting.sun_color = m_daylight.sun_color * exposure;
 	lighting.lights = LightsFor(center);
@@ -711,6 +771,7 @@ void ZoneView::PoseSpawn(SpawnView &view, const ZoneSpawn &spawn, uint64_t now_m
 	float size = spawn.size > 0 ? spawn.size : (render::IsPlayerRace(spawn.race) ? render::RaceHeight(spawn.race) : 6);
 	view.actor.Update(spawn, size, m_info.gravity, now_ms);
 	view.light = spawn.light;
+	view.warm = spawn.body_type != 3 && spawn.body_type != 5 && spawn.body_type != 8 && spawn.body_type != 12;
 	view.center_height = size / 5 * 3.125f;
 
 	// Build the model once they're close enough to be seen (and again when their look changes).
@@ -746,7 +807,7 @@ void ZoneView::DrawSpawns()
 		render::Transform placement;
 		placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(view.actor.Heading()));
 		placement.translation = view.Feet() + render::Vec3{0, 0, model.OriginOverFeet()};
-		model.Draw(*m_renderer, placement, ModelLightingAt(view.Feet() + render::Vec3{0, 0, view.center_height}),
+		model.Draw(*m_renderer, placement, ModelLightingAt(view.Feet() + render::Vec3{0, 0, view.center_height}, view.warm),
 			view.actor.AnimationTime(model), render::AnimationCode(view.actor.Animation()), view.actor.AnimationLoops());
 		view.drawn = true;
 	}
