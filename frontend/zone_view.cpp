@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <utility>
 
 namespace
 {
@@ -290,11 +291,14 @@ bool ZoneView::Move(const MoveControls &controls, uint64_t now_ms, bool looking)
 	PlacePlayer();
 	float ms = m_last_move_ms ? static_cast<float>(now_ms - m_last_move_ms) : 0;
 	m_last_move_ms = now_ms;
+	// A jump pressed on a frame that's too short to move in waits for the next one.
+	m_jump_pressed = m_jump_pressed || controls.jump;
 	if (!m_placed || ms <= 0)
 		return false;
 
 	// We swim where we look: the view's pitch from where each camera starts out.
 	MoveControls swim = controls;
+	swim.jump = std::exchange(m_jump_pressed, false);
 	swim.pitch = (m_pitch - (m_view == CameraView::Chase ? -12.0f : 0.0f)) * 512 / 360;
 	bool jumped = m_movement.Step(swim, ms, m_zone);
 	m_feet = m_movement.Feet();
@@ -316,7 +320,8 @@ bool ZoneView::Move(const MoveControls &controls, uint64_t now_ms, bool looking)
 void ZoneView::ChooseAnimation(float ms)
 {
 	// What the character is doing picks the animation, as EQPlayer's animation tracks do:
-	// L01 walk (backwards for back), L02 run, L03/L04 jump running/standing, L05 falling, P01 idle.
+	// L01 walk (backwards for back), L02 run, L03/L04 jump running/standing, L05 falling, L08
+	// crouching (a standing jump winding up), P01 idle.
 	std::string animation;
 	bool reversed = false;
 	float rate = 1;
@@ -332,8 +337,10 @@ void ZoneView::ChooseAnimation(float ms)
 		else if (m_animation == "L03" || m_animation == "L04")
 			animation = m_animation;
 		else if (velocity.z > 0)
-			animation = speed != 0 ? "L03" : "L04";
+			animation = moving ? "L03" : "L04";
 	}
+	else if (m_movement.Crouching())
+		animation = "L08";
 	// ProcessAnimation in water: P06 swimming while we move (faster with the speed), L09 treading water.
 	float across = std::sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
 	if (m_movement.Swimming()) {
@@ -356,7 +363,7 @@ void ZoneView::ChooseAnimation(float ms)
 	if (animation == "L01" || animation == "L02")
 		rate = MoveAnimationRate(across);
 	if (m_model && !m_model->HasAnimation(animation))
-		animation = animation == "L03" || animation == "L04" || animation == "L05" || animation == "P06" || animation == "L09" ? "P01" : animation;
+		animation = animation == "L01" || animation == "L02" ? animation : "P01";
 	if (animation != m_animation) {
 		m_animation = animation;
 		m_animation_ms = 0;
@@ -364,8 +371,8 @@ void ZoneView::ChooseAnimation(float ms)
 	m_animation_reversed = reversed;
 	m_animation_rate = rate;
 	m_animation_ms += ms * rate;
-	// Jumps and falls hold their last frame instead of looping.
-	if (m_model && (animation == "L03" || animation == "L04" || animation == "L05")) {
+	// Jumps, falls and the crouch hold their last frame instead of looping.
+	if (m_model && (animation == "L03" || animation == "L04" || animation == "L05" || animation == "L08")) {
 		double length = m_model->AnimationMs(animation);
 		if (length > 0)
 			m_animation_ms = std::min(m_animation_ms, length);
@@ -573,7 +580,8 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 			if (length > 0)
 				time = length - 1 - time % length;
 		}
-		bool held = m_animation == "L03" || m_animation == "L04" || m_animation == "L05"; // jumps and falls stop at the end
+		// Jumps, falls and the crouch stop at the end.
+		bool held = m_animation == "L03" || m_animation == "L04" || m_animation == "L05" || m_animation == "L08";
 		m_model->Draw(*m_renderer, placement, ModelLightingAt(m_feet + render::Vec3{0, 0, m_height / 5 * 3.125f}), time,
 			m_animation, !held);
 	}

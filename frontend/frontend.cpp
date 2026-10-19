@@ -598,6 +598,10 @@ void FrontEnd::Update(uint64_t now_ms)
 			m_zone.SetMovement(m_zone_view->Movement());
 		if (jumped)
 			m_zone.Jump();
+		if (m_zone_view->Crouching() != m_crouch_sent) {
+			m_crouch_sent = !m_crouch_sent;
+			m_zone.SetStance(m_crouch_sent ? 111 : 100);
+		}
 		std::string zone_line = m_zone_view->TakeZoneLine();
 		if (!zone_line.empty())
 			HandleZoneLine(zone_line);
@@ -1198,7 +1202,7 @@ void FrontEnd::EnterZoneScreen(bool zoning)
 	m_debug.Reset();
 	m_mouse_turn = m_mouse_pan = m_mouse_grabbed = false;
 	m_keys = HeldKeys{};
-	m_jump_requested = false;
+	m_jump_requested = m_crouch_sent = false;
 	if (!zoning)
 		AddZoneLog("Entering the zone...", ZoneGrey);
 

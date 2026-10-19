@@ -413,6 +413,19 @@ void ZoneSession::Jump()
 	Send(ZoneOp::Jump, nullptr, 0, "OP_Jump");
 }
 
+void ZoneSession::SetStance(uint8_t stance)
+{
+	if (m_state != State::InZone)
+		return;
+	// SpawnAppearance_Struct: {u16 spawn id, u16 type, u32 value}.
+	uint8_t body[8] = {};
+	uint32_t value = stance;
+	memcpy(body, &m_my_id, 2);
+	memcpy(body + 2, &AppearanceAnimation, 2);
+	memcpy(body + 4, &value, 4);
+	Send(ZoneOp::SpawnAppearance, body, sizeof(body), "OP_SpawnAppearance " + std::to_string(stance));
+}
+
 void ZoneSession::SendMovement(uint64_t now_ms)
 {
 	// DoPassageOfTime flags an update every second.

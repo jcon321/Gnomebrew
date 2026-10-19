@@ -99,7 +99,9 @@ namespace
 
 	uint64_t NowMs()
 	{
-		return GetTickCount64();
+		// Not GetTickCount64: its 16 ms steps leave frames at vsync rates with no time passed.
+		return static_cast<uint64_t>(
+			std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
 	}
 
 	// Moves the real cursor to (x, y) in the window's client area.

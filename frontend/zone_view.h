@@ -57,6 +57,7 @@ public:
 	// drag being held, which keeps the chase camera where it's put while moving.
 	bool Move(const MoveControls &controls, uint64_t now_ms, bool looking);
 	bool Placed() const { return m_placed; }
+	bool Crouching() const { return m_movement.Crouching(); } // a standing jump winding up
 	ZoneMovement Movement() const; // for OP_ClientUpdate
 
 	// Everyone else, every frame: their models, carried on from their last update.
@@ -209,6 +210,7 @@ private:
 	PlayerMovement m_movement;
 	bool m_placed = false;
 	uint64_t m_last_move_ms = 0;
+	bool m_jump_pressed = false; // a press that came on a frame with no time to move in
 	std::string m_animation = "P01";
 	double m_animation_ms = 0;
 	float m_animation_rate = 1;

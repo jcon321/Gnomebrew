@@ -232,6 +232,7 @@ private:
 	HeldKeys m_keys;
 	bool m_run = true;
 	bool m_jump_requested = false;
+	bool m_crouch_sent = false; // the stance last sent for a standing jump's wind-up
 	// Mouse drags in the zone: the right button turns the character and tilts the view, the left
 	// button (in the chase view) circles the camera around them, and both run forward. Drags
 	// measure from where they started (m_look_x, m_look_y), where the host holds the cursor.

@@ -13,6 +13,8 @@ namespace
 	constexpr float AirFriction = 0.99f;
 	constexpr float JumpHeightModifier = 1.35f; // EQPlayer::SetHeights
 	constexpr float MaxTurnRate = 12;           // heading units per tick
+	constexpr float JumpCooldownMs = 1500;      // ProcessControls: since the last jump
+	constexpr float JumpWindUpMs = 500;         // DoMainLoop: how long a press stays armed
 	// process_physics applies the friction once a frame, not once a tick, so the real client
 	// stops (and gets up to speed) quicker the faster it draws, and jumps a little lower. We
 	// play like it does at 60 frames a second, a third of a tick each; the top speed doesn't
@@ -48,6 +50,8 @@ void PlayerMovement::Place(const render::Vec3 &feet, float heading, float height
 	m_on_ground = true;
 	m_eye = m_height * 0.9f;
 	m_clock_ms = m_swim_jump_ms = 0;
+	m_last_jump_ms = -JumpCooldownMs;
+	m_jump_armed = m_crouching = false;
 	m_feet_region = m_body_region = m_head_region = -2;
 	m_feet_environment = m_body_environment = m_head_environment = render::Environment::Dry;
 	m_slippery = m_was_swimming = false;
@@ -106,13 +110,40 @@ bool PlayerMovement::Step(const MoveControls &controls, float ms, const render::
 		}
 	}
 
+	// ProcessControls: a press on the ground, out of the water, 1.5 s after the last jump arms one.
+	if (controls.jump && !swimming && !m_jump_armed && m_on_ground && m_clock_ms - m_last_jump_ms > JumpCooldownMs) {
+		m_jump_armed = true;
+		m_jump_armed_ms = m_clock_ms;
+	}
+	// DoMainLoop: for half a second, moving forward jumps at once, pushed along the heading, and
+	// standing still crouches; then the crouch stands back up and jumps straight up. Backing up
+	// calls it off (the real client leaves us crouched; we stand, having no duck key yet).
 	bool jumped = false;
-	if (controls.jump && m_on_ground && !swimming) {
-		// DoMainLoop: the jump, and push_along_heading(1).
-		m_velocity.z += 1.65f * JumpHeightModifier;
-		m_velocity += Along(m_heading, 1.0f);
-		m_on_ground = false;
-		jumped = true;
+	if (m_jump_armed) {
+		bool push = false;
+		if (m_clock_ms - m_jump_armed_ms < JumpWindUpMs) {
+			if (m_speed > 0) {
+				m_jump_armed = m_crouching = false;
+				jumped = m_on_ground;
+				push = true;
+			}
+			else if (m_speed < 0)
+				m_jump_armed = m_crouching = false;
+			else
+				m_crouching = true;
+		}
+		else {
+			m_jump_armed = false;
+			jumped = m_crouching && m_on_ground;
+			m_crouching = false;
+		}
+		if (jumped) {
+			m_velocity.z += 1.65f * JumpHeightModifier;
+			if (push)
+				m_velocity += Along(m_heading, 1.0f); // push_along_heading(1)
+			m_on_ground = false;
+			m_last_jump_ms = m_clock_ms;
+		}
 	}
 
 	// A frame (at 60 a second) at most per step: water damps a lot each frame, and collision

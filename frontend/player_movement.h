@@ -12,7 +12,11 @@
 //     A strafe pushes a quarter turn to the side at half the run (or walk) speed, on top of
 //     the forward push, or at strafe speed x that standing still: running and strafing is
 //     about 12% faster than running.
-//   DoMainLoop's jump: MovementSpeedZ += 1.65 * JumpHeightModifier (1.35), pushed 1 along the heading.
+//   The jump: ProcessControls arms it on a press, on the ground, 1.5 s after the last jump.
+//     For the next half second DoMainLoop jumps at once when we move forward (MovementSpeedZ
+//     += 1.65 * JumpHeightModifier (1.35), pushed 1 along the heading); standing still,
+//     ChangeStance crouches (stance 111, L08), and at the half second stands back up and
+//     jumps straight up; backing up calls it off.
 // In water (the body's region, ActorInfo::SwimmingWaterType 5 to 10) process_physics keeps
 // gravity but damps far harder: across v = v * 0.95 + push * 0.025 (lava, slime and VW: 0.94,
 // 0.02), up and down v = v * 0.2 + speed * sin(pitch) * 0.8 (0.15): we swim where we look,
@@ -45,7 +49,7 @@ struct MoveControls
 	bool forward = false, back = false, left = false, right = false;
 	bool strafe = false; // mouse look: left and right strafe instead of turning
 	bool run = true;
-	bool jump = false; // start a jump if we're on the ground
+	bool jump = false; // the jump key went down
 	float pitch = 0;   // where we look, 512ths of a turn, + up: the way we swim
 };
 
@@ -67,6 +71,7 @@ public:
 	float Strafe() const { return m_strafe; }              // sideways push: + left, - right
 	const render::Vec3 &Velocity() const { return m_velocity; } // per tick, world space
 	bool OnGround() const { return m_on_ground; }
+	bool Crouching() const { return m_crouching; } // a standing jump winding up (stance 111)
 	float RunSpeed() const { return m_run_speed; }
 	float Height() const { return m_height; }
 	render::Environment FeetEnvironment() const { return m_feet_environment; }
@@ -99,6 +104,10 @@ private:
 	int m_swim_skill = 0;
 	float m_pitch = 0;
 	float m_clock_ms = 0, m_swim_jump_ms = 0; // DoSwimJump's 1.5 s
+	float m_last_jump_ms = 0;  // when the last jump went up
+	float m_jump_armed_ms = 0; // when the press armed one
+	bool m_jump_armed = false;
+	bool m_crouching = false;
 	// The regions last seen at the feet, body and eyes (MovePlayer redoes them when they change).
 	int m_feet_region = -2, m_body_region = -2, m_head_region = -2;
 	render::Environment m_feet_environment = render::Environment::Dry;

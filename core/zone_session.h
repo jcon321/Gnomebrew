@@ -183,6 +183,8 @@ public:
 	// (DoPassageOfTime), at most every 150 ms, and not more than 6 identical updates in a row.
 	void SetMovement(const ZoneMovement &movement);
 	void Jump(); // OP_Jump
+	// ChangeStance: OP_SpawnAppearance with our stance (100 standing, 111 crouching...).
+	void SetStance(uint8_t stance);
 	// /camp: OP_Camp, then OP_Logout once the 30 second camp timer has run (Handle_OP_Logout expects that).
 	bool Camp();
 	// Ask to leave for another zone (a zone line): our position, then OP_ZoneChange. The answer
