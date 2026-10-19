@@ -132,6 +132,7 @@ public:
 		                    head_environment = render::Environment::Dry;
 		std::string region_types; // the body's region's group types, comma-separated
 		size_t zone_triangles = 0, zone_objects = 0;
+		size_t meshes_in_view = 0, meshes_hidden = 0; // zone meshes in the view, and hidden behind others
 		DayLight light;
 	};
 	DebugStats Stats() const;
@@ -154,6 +155,7 @@ public:
 	struct DebugDraw
 	{
 		bool wireframe = false, no_fog = false, walls = false, floor = false;
+		bool no_culling = false; // draw what the zone hides too (no Umbra)
 		int vision = -1; // a Vision, or -1: our own (our race's; spells and items to come)
 	};
 	// What we see in: the debug menu's choice, or our own (our race's; spells and items to come).

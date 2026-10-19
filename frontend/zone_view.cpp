@@ -389,6 +389,8 @@ ZoneView::DebugStats ZoneView::Stats() const
 	stats.head_environment = m_movement.HeadEnvironment();
 	for (const std::string &type : m_zone.Regions().Types(m_zone.Regions().RegionAt(m_feet + render::Vec3{0, 0, m_height * 0.625f})))
 		stats.region_types += (stats.region_types.empty() ? "" : ", ") + type;
+	stats.meshes_in_view = m_zone.MeshesInView();
+	stats.meshes_hidden = m_zone.MeshesHidden();
 	stats.spawns = m_actors.size();
 	for (const auto &[id, actor] : m_actors) {
 		stats.spawns_built += actor.model ? 1 : 0;
@@ -563,6 +565,7 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 		scene_lights.resize(render::Renderer::SceneLightLimit);
 	m_renderer->SetSceneLights(light.sun_direction, light.sun_color, scene_lights);
 	m_renderer->SetVertexLight({1, 1, 1}, light.ambient, light.special);
+	m_zone.SetOcclusionCulling(!m_debug_draw.no_culling);
 	m_zone.Draw(*m_renderer, now_ms, scene_lights, true);
 	m_renderer->SetVertexLight({1, 1, 1}, {0, 0, 0});
 	m_times.zone = since(start);
@@ -810,7 +813,8 @@ void ZoneView::DrawSpawns()
 		float height = model.MaxZ() - model.MinZ();
 		render::Vec3 center = view.Feet() + render::Vec3{0, 0, height * 0.5f};
 		view.distance = render::Length(center - m_camera_position);
-		if (view.distance > far_plane + height || !m_renderer->SphereVisible(center, height * 0.75f))
+		if (view.distance > far_plane + height || !m_renderer->SphereVisible(center, height * 0.75f) ||
+			!m_zone.InView(center, height * 0.75f))
 			continue;
 		render::Transform placement;
 		placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(view.actor.Heading()));

@@ -284,6 +284,8 @@ namespace render
 		if (out.vertices.empty())
 			return;
 		out.center = (low + high) * 0.5f;
+		out.low = low;
+		out.high = high;
 		for (const auto &v : out.vertices)
 			out.radius = std::max(out.radius, Length(v.position - out.center));
 
@@ -292,6 +294,8 @@ namespace render
 		StaticMesh unlit;
 		unlit.center = out.center;
 		unlit.radius = out.radius;
+		unlit.low = low;
+		unlit.high = high;
 		std::map<uint16_t, uint32_t> unlit_vertex;
 		std::map<uint16_t, size_t> batch_of;
 		for (const auto &t : mesh.triangles) {
@@ -314,6 +318,9 @@ namespace render
 			MaterialInfo info = DescribeRenderMethod(source.render_method);
 			if (!info.visible)
 				continue;
+			if (solid && !(t.flags & 0x10) && info.blend == Blend::Opaque && !info.masked)
+				for (int k = 0; k < 3; ++k)
+					out.occluders.push_back(out.vertices[t.v[k]].position);
 			StaticMesh &target = info.unlit ? unlit : out;
 			auto found = batch_of.find(t.material);
 			if (found == batch_of.end()) {
@@ -346,18 +353,55 @@ namespace render
 		}
 		if (!out.batches.empty())
 			m_meshes.push_back(std::move(out));
+		else
+			unlit.occluders = std::move(out.occluders);
 		if (!unlit.batches.empty()) {
 			unlit.unlit = true;
 			m_meshes.push_back(std::move(unlit));
 		}
 	}
 
-	void ZoneScene::Draw(Renderer &renderer, uint64_t now_ms, const std::vector<PointLight> &lights, bool sun) const
+	void ZoneScene::Draw(Renderer &renderer, uint64_t now_ms, const std::vector<PointLight> &lights, bool sun)
 	{
+		// Umbra's resolveVisibility: the meshes in view nearest first, each hidden when the
+		// occluders written before it cover it, or else writing its own. They're drawn after, in
+		// their usual order.
+		m_hidden.assign(m_meshes.size(), 0);
+		m_order.clear();
+		m_meshes_in_view = m_meshes_hidden = 0;
+		m_occlusion_ready = m_occlusion_culling;
+		if (m_occlusion_culling) {
+			const Vec3 &eye = renderer.CurrentCamera().position;
+			float aspect = renderer.Height() > 0 ? static_cast<float>(renderer.Width()) / renderer.Height() : 1;
+			m_occlusion.Begin(renderer.CurrentCamera(), aspect);
+			for (size_t i = 0; i < m_meshes.size(); ++i) {
+				const StaticMesh &mesh = m_meshes[i];
+				if (!renderer.SphereVisible(mesh.center, mesh.radius))
+					continue;
+				Vec3 nearest{std::clamp(eye.x, mesh.low.x, mesh.high.x), std::clamp(eye.y, mesh.low.y, mesh.high.y),
+					std::clamp(eye.z, mesh.low.z, mesh.high.z)};
+				m_order.push_back({Length(nearest - eye), static_cast<uint32_t>(i)});
+			}
+			std::sort(m_order.begin(), m_order.end());
+			for (const auto &[distance, i] : m_order) {
+				const StaticMesh &mesh = m_meshes[i];
+				if (!m_occlusion.BoxVisible(mesh.low, mesh.high)) {
+					m_hidden[i] = 1;
+					++m_meshes_hidden;
+					continue;
+				}
+				m_occlusion.Write(mesh.occluders.data(), mesh.occluders.size() / 3);
+			}
+			m_meshes_in_view = m_order.size();
+		}
+
 		// A light reaches a mesh when their spheres meet (the client: when its sphere reaches
 		// the mesh's region).
 		uint32_t set = ~0u;
-		for (const auto &mesh : m_meshes) {
+		for (size_t m = 0; m < m_meshes.size(); ++m) {
+			if (m_hidden[m])
+				continue;
+			const StaticMesh &mesh = m_meshes[m];
 			uint32_t mask = 0;
 			if (!mesh.unlit)
 				for (size_t i = 0; i < lights.size() && i < Renderer::SceneLightLimit; ++i)
@@ -371,6 +415,12 @@ namespace render
 			DrawStaticMesh(renderer, mesh, now_ms, &m_vertices);
 		}
 		renderer.SetDynamicLights(false, 0);
+	}
+
+	bool ZoneScene::InView(const Vec3 &center, float radius) const
+	{
+		Vec3 r{radius, radius, radius};
+		return !m_occlusion_ready || m_occlusion.BoxVisible(center - r, center + r);
 	}
 
 	bool ZoneScene::FloorBelow(const Vec3 &from, float depth, float &floor_z, float *exposure) const

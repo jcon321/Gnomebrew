@@ -162,6 +162,7 @@ bool *DebugMenu::Toggle(int index)
 	case 1: return &m_draw.no_fog;
 	case 2: return &m_draw.walls;
 	case 3: return &m_draw.floor;
+	case 4: return &m_draw.no_culling;
 	default: return nullptr;
 	}
 }
@@ -262,6 +263,8 @@ void DebugMenu::DrawCard(Canvas &canvas, TextRenderer &text, const ZoneSession &
 			row(Format("Tags %.1f  UI %.1f  Present %.1f ms", m_times.tags, m_times.ui, m_times.present));
 			row(Format("%zuk triangles   %s", (stats.triangles + 500) / 1000, stats.renderer));
 			row(Format("Models %zu drawn, %zu built, %zu spawns", stats.spawns_drawn, stats.spawns_built, stats.spawns));
+			if (!m_draw.no_culling)
+				row(Format("Zone meshes %zu in view, %zu hidden", stats.meshes_in_view, stats.meshes_hidden));
 		}
 	}
 
@@ -358,8 +361,8 @@ void DebugMenu::DrawCard(Canvas &canvas, TextRenderer &text, const ZoneSession &
 	}
 
 	if (section(Render, "RENDER")) {
-		static const char *const names[] = {"Wireframe", "No fog", "Collision walls", "Floor marker"};
-		for (int i = 0; i < 4; ++i) {
+		static const char *const names[] = {"Wireframe", "No fog", "Collision walls", "Floor marker", "No occlusion culling"};
+		for (int i = 0; i < 5; ++i) {
 			Line &line = *row(std::string(*Toggle(i) ? "[x] " : "[  ] ") + names[i], *Toggle(i) ? White : Grey);
 			line.action = Line::Action::Toggle;
 			line.value = i;

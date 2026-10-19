@@ -22,7 +22,7 @@
 // --npc-fly F its fly mode, --npc-light TYPE the light it carries (2 a torch, 4 a lantern...). --spawn-ms MS runs the spawns that long first, printing where they are
 // and what they play each second. --time HOUR MINUTE sets Norrath's time (hour
 // 1..24, 1 is midnight) for the zone's time type (--time-type, default 2: outdoors).
-// --debug-draw wireframe,nofog,walls,floor turns on the debug menu's render toggles, and --vision
+// --debug-draw wireframe,nofog,walls,floor,noculling turns on the debug menu's render toggles, and --vision
 // own|none|infra|ultra picks what we see in at night (own: the race's).
 // --frames renders N times and prints the average frame time. --size picks the
 // image size (default 640x480).
@@ -184,6 +184,7 @@ namespace
 		}
 		printf("%zu triangles drawn, %.1f ms per frame\n", view.TrianglesDrawn(), total / frames);
 		ZoneView::DebugStats stats = view.Stats();
+		printf("zone meshes %zu in view, %zu hidden\n", stats.meshes_in_view, stats.meshes_hidden);
 		if (stats.have_floor)
 			printf("feet at z %.2f, floor %.2f below them\n", stats.feet_z, stats.feet_z - stats.floor_z);
 		if (!WritePng(out, pixels, Width, Height)) {
@@ -248,6 +249,7 @@ int main(int argc, char **argv)
 			debug_draw.no_fog = list.find("nofog") != std::string::npos;
 			debug_draw.walls = list.find("walls") != std::string::npos;
 			debug_draw.floor = list.find("floor") != std::string::npos;
+			debug_draw.no_culling = list.find("noculling") != std::string::npos;
 		}
 		else if (arg == "--time" && i + 2 < argc) {
 			game_hour = atoi(argv[++i]);
@@ -370,6 +372,7 @@ int main(int argc, char **argv)
 	if (!sky.Load(eq_dir, 1, error))
 		printf("  no sky: %s\n", error.c_str());
 
+	scene.SetOcclusionCulling(!debug_draw.no_culling);
 	render::Rasterizer rasterizer;
 	std::vector<uint32_t> pixels(static_cast<size_t>(Width) * Height);
 	double total = 0;
@@ -386,6 +389,7 @@ int main(int argc, char **argv)
 		total += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
 	}
 	printf("%zu triangles drawn, %.1f ms per frame\n", rasterizer.TriangleCount(), total / frames);
+	printf("zone meshes %zu in view, %zu hidden\n", scene.MeshesInView(), scene.MeshesHidden());
 	if (!WritePng(out, pixels, Width, Height)) {
 		fprintf(stderr, "couldn't write %s\n", out.c_str());
 		return 1;

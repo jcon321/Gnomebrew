@@ -133,6 +133,10 @@ namespace render
 		// earlier pass, such as the sky).
 		virtual void Finish(uint32_t *pixels, int stride, uint32_t clear_color, bool clear = true) = 0;
 
+		// The view given to the last Begin.
+		const Camera &CurrentCamera() const { return m_camera; }
+		int Width() const { return m_width; }
+		int Height() const { return m_height; }
 		// Screen position of a world point under the camera given to the last Begin.
 		bool Project(const Vec3 &point, float &x, float &y) const;
 		// After Finish: whether something drawn is in front of the point (name tags behind walls).

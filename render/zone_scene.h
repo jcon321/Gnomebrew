@@ -4,6 +4,7 @@
 // objects.wld places from <zone>_obj.s3d, all transformed into world space and
 // lit once at load (lights.wld point lights over a flat ambient).
 
+#include "occlusion.h"
 #include "renderer.h"
 #include "textures.h"
 #include "zone_regions.h"
@@ -25,6 +26,9 @@ namespace render
 		};
 		Vec3 center;
 		float radius = 0;
+		Vec3 low, high; // bounds
+		// Umbra's write model: the solid triangles with an opaque, unmasked material, 3 vertices each.
+		std::vector<Vec3> occluders;
 		std::vector<Vertex> vertices; // empty once a ZoneScene has moved them into its StaticVertices
 		size_t first_vertex = 0, vertex_count = 0; // where they went
 		std::vector<Batch> batches;
@@ -43,7 +47,14 @@ namespace render
 		bool Load(const std::string &eq_dir, const std::string &zone, std::string &error, const ZoneLighting &lighting = ZoneLighting());
 		// `lights`: the scene lights given to the renderer (SetSceneLights), which light the meshes
 		// they reach, as the sun does when `sun`.
-		void Draw(Renderer &renderer, uint64_t now_ms, const std::vector<PointLight> &lights = {}, bool sun = false) const;
+		// With occlusion culling on, only what the zone's meshes don't hide (OcclusionBuffer).
+		void Draw(Renderer &renderer, uint64_t now_ms, const std::vector<PointLight> &lights = {}, bool sun = false);
+		void SetOcclusionCulling(bool on) { m_occlusion_culling = on; }
+		// After Draw: whether a sphere could be seen past the zone (spawns); always, with culling off.
+		bool InView(const Vec3 &center, float radius) const;
+		// The last Draw's meshes in the view and those of them the occlusion culling hid.
+		size_t MeshesInView() const { return m_meshes_in_view; }
+		size_t MeshesHidden() const { return m_meshes_hidden; }
 		// Highest solid surface at or below `from` (searching down to `from.z - depth`), and how
 		// exposed it is to the ambient light (its vertices' alpha, 1 without colors).
 		bool FloorBelow(const Vec3 &from, float depth, float &floor_z, float *exposure = nullptr) const;
@@ -74,6 +85,12 @@ namespace render
 		PfsArchive m_zone_archive, m_object_archive;
 		TextureCache m_textures;
 		std::vector<StaticMesh> m_meshes;
+		bool m_occlusion_culling = true;
+		OcclusionBuffer m_occlusion;
+		bool m_occlusion_ready = false; // m_occlusion holds the last Draw's view
+		std::vector<std::pair<float, uint32_t>> m_order; // meshes in view, nearest first
+		std::vector<uint8_t> m_hidden; // per mesh, for the last Draw
+		size_t m_meshes_in_view = 0, m_meshes_hidden = 0;
 		StaticVertices m_vertices; // every mesh's, once loaded
 		ZoneRegions m_regions;
 		std::vector<PointLight> m_static_lights;

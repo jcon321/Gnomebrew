@@ -8,7 +8,7 @@
 //     SERVER SYNC where the zone last heard we are (our latest OP_ClientUpdate) against where we are;
 //     CAMERA; NETWORK ping, traffic, resends; PACKETS the latest in and out;
 //     ZONE the zone header (fog, clip, sky, gravity, safe point) and the light;
-//     RENDER toggles: wireframe, no fog, collision walls, floor marker;
+//     RENDER toggles: wireframe, no fog, collision walls, floor marker, no occlusion culling;
 //     TARGET a spawn clicked in the world or in NEARBY (else the nearest), in detail;
 //     NEARBY the nearest spawns.
 //   Top right, the radar: spawns within RadarRange, north up.
