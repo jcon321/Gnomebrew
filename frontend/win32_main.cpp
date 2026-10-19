@@ -618,9 +618,18 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	if (gpu)
 		WritePrivateProfileStringW(L"Display", L"VSync", gpu->VSync() ? L"1" : L"0", ini.c_str()); // the debug menu's toggle
 
+	// The sound goes first, step by step in the log: the waveOut and MIDI timer threads, then the
+	// MIDI synth (midiOutReset and midiOutClose). The front end's sound only talks to the mixer.
+	Log("exit: stopping the sound device");
+	sound_device.Stop();
+	Log("exit: closing the MIDI synth");
+	mixer.SetSynth(nullptr);
+	Log("exit: sound closed");
+
 	g_app.frontend = nullptr;
 	g_app.gpu = nullptr;
 	DestroySurface(g_app.surface);
+	Log("exit: done");
 	if (g_app.log)
 		fclose(g_app.log);
 	return 0;
