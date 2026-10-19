@@ -26,6 +26,8 @@ public:
 	bool Create(HWND window, int width, int height, bool vsync, std::string &error);
 	const std::string &AdapterName() const;
 	bool Tearing() const; // without vsync, frames go out as soon as they're done (not at the refresh rate)
+	bool VSync() const;
+	void SetVSync(bool on); // from the next Present
 
 	// The canvas the front end draws into, the size of the window. A renderer's Finish into
 	// a block of it draws the 3D view in that part of the window.

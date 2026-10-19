@@ -163,6 +163,7 @@ bool *DebugMenu::Toggle(int index)
 	case 2: return &m_draw.walls;
 	case 3: return &m_draw.floor;
 	case 4: return &m_draw.no_culling;
+	case 5: return m_set_vsync ? &m_vsync : nullptr;
 	default: return nullptr;
 	}
 }
@@ -181,8 +182,11 @@ bool DebugMenu::OnMouse(const InputEvent &event)
 			m_folded[hit.value] = !m_folded[hit.value];
 			break;
 		case Line::Action::Toggle:
-			if (bool *flag = Toggle(hit.value))
+			if (bool *flag = Toggle(hit.value)) {
 				*flag = !*flag;
+				if (flag == &m_vsync)
+					m_set_vsync(m_vsync);
+			}
 			break;
 		case Line::Action::Vision:
 			m_draw.vision = hit.value;
@@ -361,8 +365,10 @@ void DebugMenu::DrawCard(Canvas &canvas, TextRenderer &text, const ZoneSession &
 	}
 
 	if (section(Render, "RENDER")) {
-		static const char *const names[] = {"Wireframe", "No fog", "Collision walls", "Floor marker", "No occlusion culling"};
-		for (int i = 0; i < 5; ++i) {
+		static const char *const names[] = {"Wireframe", "No fog", "Collision walls", "Floor marker", "No occlusion culling", "VSync"};
+		for (int i = 0; i < 6; ++i) {
+			if (!Toggle(i))
+				continue;
 			Line &line = *row(std::string(*Toggle(i) ? "[x] " : "[  ] ") + names[i], *Toggle(i) ? White : Grey);
 			line.action = Line::Action::Toggle;
 			line.value = i;

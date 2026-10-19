@@ -8,7 +8,7 @@
 //     SERVER SYNC where the zone last heard we are (our latest OP_ClientUpdate) against where we are;
 //     CAMERA; NETWORK ping, traffic, resends; PACKETS the latest in and out;
 //     ZONE the zone header (fog, clip, sky, gravity, safe point) and the light;
-//     RENDER toggles: wireframe, no fog, collision walls, floor marker, no occlusion culling;
+//     RENDER toggles: wireframe, no fog, collision walls, floor marker, no occlusion culling, vsync;
 //     TARGET a spawn clicked in the world or in NEARBY (else the nearest), in detail;
 //     NEARBY the nearest spawns.
 //   Top right, the radar: spawns within RadarRange, north up.
@@ -23,6 +23,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -52,6 +53,12 @@ public:
 
 	void SelectTarget(uint16_t id) { m_target = id; } // 0: back to the nearest
 	const ZoneView::DebugDraw &Drawing() const { return m_draw; }
+	// The host's vsync and how to change it; no toggle when `set` is unset (the software renderer).
+	void SetVSync(bool on, std::function<void(bool)> set)
+	{
+		m_vsync = on;
+		m_set_vsync = std::move(set);
+	}
 
 private:
 	enum Section { Performance, Movement, Sync, Camera, Network, Packets, ZoneHeader, Render, Target, Nearby, SectionCount };
@@ -101,6 +108,8 @@ private:
 
 	bool m_folded[SectionCount] = {false, false, true, true, false, true, true, false, false, false};
 	ZoneView::DebugDraw m_draw;
+	bool m_vsync = false;
+	std::function<void(bool)> m_set_vsync;
 	uint16_t m_target = 0;
 	Rect m_card{0, 0, 0, 0}; // where the card was drawn
 	std::vector<Hit> m_hits;

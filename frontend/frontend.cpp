@@ -37,6 +37,7 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 	m_world.SetLogger([this](const std::string &line) { Log(line); });
 	m_zone.SetLogger([this](const std::string &line) { Log(line); });
 	m_zone.SetStringTable(m_ui.eqstr);
+	m_debug.SetVSync(m_ui.vsync, m_ui.set_vsync);
 	m_user.text = config.username;
 	if (!m_ui.eq_dir.empty() && m_ui.definitions) {
 		// Character select's zone takes a moment to load; start while the player logs in.

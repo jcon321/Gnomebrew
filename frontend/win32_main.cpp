@@ -13,7 +13,8 @@
 //   [Display]  Width=1920             (game resolution: the window's size)
 //              Height=1080
 //              Renderer=d3d11         (or software: the CPU rasterizer and GDI)
-//              VSync=1                (d3d11: wait for the monitor's refresh; 0 runs as fast as it can)
+//              VSync=1                (d3d11: wait for the monitor's refresh; 0 runs as fast as it can;
+//                                      the debug menu toggles it, kept on exit)
 //   [Defaults] LastCharSel=0          (remembered character select slot, like eqclient.ini's)
 //   eqclient_gui.exe --eqdir C:\TAKP --login 192.168.0.18:6000 --size 1920x1080
 
@@ -476,6 +477,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 			gpu->SetCanvas(g_app.surface.pixels, g_app.surface.width, g_app.surface.height, g_app.surface.width);
 			D3d11Device *device = gpu.get();
 			ui.make_renderer = [device] { return device->MakeRenderer(); };
+			ui.vsync = vsync;
+			ui.set_vsync = [device](bool on) { device->SetVSync(on); };
 			g_app.gpu = device;
 		}
 		else {
@@ -550,6 +553,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 		Log("missing UI texture: " + name);
 	WritePrivateProfileStringW(L"Login", L"User", Widen(frontend.Username()).c_str(), ini.c_str());
 	WritePrivateProfileStringW(L"Defaults", L"LastCharSel", std::to_wstring(frontend.LastCharacter()).c_str(), ini.c_str());
+	if (gpu)
+		WritePrivateProfileStringW(L"Display", L"VSync", gpu->VSync() ? L"1" : L"0", ini.c_str()); // the debug menu's toggle
 
 	g_app.frontend = nullptr;
 	g_app.gpu = nullptr;

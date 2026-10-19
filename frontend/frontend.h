@@ -50,6 +50,9 @@ struct GameData
 	std::string eq_dir; // for the 3D character select scene; empty skips it
 	// The 3D views' renderer (the host's GPU one); unset, they use the software Rasterizer.
 	std::function<std::unique_ptr<render::Renderer>()> make_renderer;
+	// The host's vsync, for the debug menu: whether it's on, and how to change it; unset without one.
+	bool vsync = false;
+	std::function<void(bool)> set_vsync;
 };
 
 class FrontEnd

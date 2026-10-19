@@ -856,6 +856,16 @@ bool D3d11Device::Tearing() const
 	return m->tearing;
 }
 
+bool D3d11Device::VSync() const
+{
+	return m->vsync;
+}
+
+void D3d11Device::SetVSync(bool on)
+{
+	m->vsync = on;
+}
+
 bool D3d11Device::Create(HWND window, int width, int height, bool vsync, std::string &error)
 {
 	m->window = window;
@@ -906,10 +916,11 @@ bool D3d11Device::Create(HWND window, int width, int height, bool vsync, std::st
 		adapter->GetParent(IID_PPV_ARGS(&factory2));
 	if (factory2) {
 		// Without vsync, a flip model swap chain in a window still runs at the refresh rate
-		// unless it may tear (Windows 10 and later).
+		// unless it may tear (Windows 10 and later). Allowed even with vsync, which the debug
+		// menu can turn off.
 		BOOL tearing = FALSE;
 		ComPtr<IDXGIFactory5> factory5;
-		if (!vsync && SUCCEEDED(factory2.As(&factory5)) &&
+		if (SUCCEEDED(factory2.As(&factory5)) &&
 		    FAILED(factory5->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &tearing, sizeof(tearing))))
 			tearing = FALSE;
 		DXGI_SWAP_CHAIN_DESC1 desc{};
