@@ -289,6 +289,9 @@ bool ZoneView::Move(const MoveControls &controls, uint64_t now_ms, bool looking)
 	if (m_loader.joinable())
 		m_loader.join();
 	PlacePlayer();
+	// EQSwitch_UpdateDoorStates: the doors move first, so a lift carries us.
+	m_doors.Update(m_zone, now_ms);
+	DoorSounds();
 	float ms = m_last_move_ms ? static_cast<float>(now_ms - m_last_move_ms) : 0;
 	m_last_move_ms = now_ms;
 	// A jump pressed on a frame that's too short to move in waits for the next one.
@@ -314,7 +317,101 @@ bool ZoneView::Move(const MoveControls &controls, uint64_t now_ms, bool looking)
 		m_orbit *= std::pow(0.9f, ms * 0.02f);
 	}
 	ChooseAnimation(ms);
+	if (m_sound) {
+		// Hear from where we are now (the front end sets it again for the frame).
+		Hearing hearing = SoundListener(false);
+		m_sound->SetListener({hearing.position.x, hearing.position.y, hearing.position.z},
+			{hearing.forward.x, hearing.forward.y, hearing.forward.z});
+		ActorSound::Actor me = MyActor();
+		bool wet;
+		float landing = m_movement.TakeLanding(wet);
+		if (landing < 0)
+			m_my_sound.Landed(*m_sound, me, landing, wet, m_safe_fall);
+		render::Environment feet = m_movement.FeetEnvironment(), head = m_movement.HeadEnvironment();
+		m_my_sound.FeetChanged(*m_sound, me, m_sound_feet, feet, m_movement.Velocity().z);
+		ActorSound::HeadChanged(*m_sound, m_sound_head, head);
+		m_sound_feet = feet;
+		m_sound_head = head;
+		m_my_sound.Animation(*m_sound, me, SoundAnimation(jumped), now_ms);
+	}
 	return jumped;
+}
+
+void ZoneView::DoorSounds()
+{
+	if (!m_sound)
+		return;
+	for (uint8_t type : m_doors.TakeSpawnedTypes())
+		m_sound->LoadDoorSounds(type);
+	for (const auto &sound : m_doors.TakeSounds())
+		m_sound->PlaySoundAt(sound.slot, {sound.position.x, sound.position.y, sound.position.z});
+}
+
+ActorSound::Actor ZoneView::MyActor() const
+{
+	ActorSound::Actor me;
+	me.ours = true;
+	me.type = 0;
+	if (m_appearance) {
+		me.race = m_appearance->race;
+		me.gender = m_appearance->gender;
+		me.texture = m_appearance->texture;
+		me.primary = static_cast<int>(m_appearance->equip[7]);
+		me.secondary = static_cast<int>(m_appearance->equip[8]);
+	}
+	me.height = m_height;
+	me.center = m_feet + render::Vec3{0, 0, m_height / 5 * 3.125f};
+	return me;
+}
+
+int ZoneView::SoundAnimation(bool jumped) const
+{
+	// ProcessAnimation's pick, which unlike our track goes back to walking or running once a jump's
+	// rise slows. The jump itself is the frame it starts.
+	const render::Vec3 &velocity = m_movement.Velocity();
+	bool moving = std::fabs(velocity.x) >= 0.001f || std::fabs(velocity.y) >= 0.001f;
+	if (jumped)
+		return moving ? render::Anim::RunJump : render::Anim::StandJump;
+	if (m_movement.Swimming())
+		return moving ? render::Anim::Swim : render::Anim::TreadWater;
+	if (m_movement.Crouching())
+		return render::Anim::Crouch;
+	bool air = !m_movement.OnGround();
+	if (moving) {
+		if (air && velocity.z < -3.2f)
+			return render::Anim::Fall;
+		return m_movement.Speed() > m_walk_speed ? render::Anim::Run : render::Anim::Walk;
+	}
+	if (air && velocity.z < -2.25f)
+		return render::Anim::Fall;
+	return render::Anim::Idle;
+}
+
+void ZoneView::SpawnSounds(SpawnView &view, const ZoneSpawn &spawn, uint16_t id, uint64_t now_ms)
+{
+	ActorSound::Actor actor;
+	actor.key = id;
+	actor.type = spawn.npc;
+	actor.race = spawn.race;
+	actor.gender = spawn.gender;
+	actor.texture = spawn.body_texture;
+	actor.height = view.size;
+	actor.center = view.Feet() + render::Vec3{0, 0, view.center_height};
+	actor.primary = spawn.equipment[7];
+	actor.secondary = spawn.equipment[8];
+	actor.stance = spawn.stance;
+	actor.hp = spawn.hp;
+	if (view.model) // animated this frame
+		for (int played : view.actor.Played())
+			view.sound.Animation(*m_sound, actor, played, now_ms);
+	bool wet;
+	float landing = view.actor.TakeLanding(wet);
+	if (landing < 0)
+		view.sound.Landed(*m_sound, actor, landing, wet);
+	render::Environment feet = view.actor.FeetEnvironment();
+	view.sound.FeetChanged(*m_sound, actor, view.sound_feet, feet, view.actor.Velocity().z);
+	view.sound_feet = feet;
+	view.sound.Follow(*m_sound, actor);
 }
 
 void ZoneView::ChooseAnimation(float ms)
@@ -455,6 +552,21 @@ uint16_t ZoneView::PickSpawn(int x, int y) const
 		}
 	}
 	return best;
+}
+
+ZoneDoors::Use ZoneView::ClickDoor(int x, int y, int16_t disarm, uint8_t &id, int16_t &skill) const
+{
+	// CDisplay::GetClickedActor: what's under the cursor, unless the zone is in front of it.
+	if (!m_loaded || !m_error.empty())
+		return ZoneDoors::Use::Nothing;
+	render::Vec3 from = m_renderer->CurrentCamera().position;
+	render::Vec3 direction = m_renderer->ViewRay(static_cast<float>(x), static_cast<float>(y));
+	float distance, fraction;
+	int door = m_zone.DoorHit(from, direction, FarPlane(), distance);
+	if (door < 0 || m_zone.SegmentHit(from, from + direction * distance, fraction, nullptr, false))
+		return ZoneDoors::Use::Nothing;
+	render::Vec3 center = m_feet + render::Vec3{0, 0, m_height / 5 * 3.125f};
+	return m_doors.Click(door, center, m_height, disarm, id, skill);
 }
 
 ZoneMovement ZoneView::Movement() const
@@ -699,14 +811,24 @@ void ZoneView::UpdateSpawns(const std::map<uint16_t, ZoneSpawn> &spawns, uint16_
 		return;
 	if (m_loader.joinable())
 		m_loader.join();
-	for (auto it = m_actors.begin(); it != m_actors.end();)
-		it = spawns.count(it->first) ? std::next(it) : m_actors.erase(it);
+	for (auto it = m_actors.begin(); it != m_actors.end();) {
+		if (spawns.count(it->first)) {
+			++it;
+			continue;
+		}
+		if (m_sound)
+			m_sound->RemoveActorLoop(it->first);
+		it = m_actors.erase(it);
+	}
 	auto me = spawns.find(my_id);
 	m_my_light = me != spawns.end() ? me->second.light : 0;
 	for (const auto &[id, spawn] : spawns) {
 		if (id == my_id || id == 0)
 			continue;
-		PoseSpawn(m_actors[id], spawn, now_ms);
+		SpawnView &view = m_actors[id];
+		PoseSpawn(view, spawn, now_ms);
+		if (m_sound)
+			SpawnSounds(view, spawn, id, now_ms);
 	}
 }
 
@@ -730,6 +852,24 @@ void ZoneView::PlaceCarriedLights(uint64_t now_ms)
 		add(m_my_light, m_feet, m_height / 5 * 3.125f, m_heading, m_movement.BodyEnvironment());
 	for (const auto &[id, view] : m_actors)
 		add(view.light, view.Feet(), view.center_height, view.actor.Heading(), view.actor.BodyEnvironment());
+}
+
+ZoneView::Hearing ZoneView::SoundListener(bool surroundings) const
+{
+	Hearing hearing;
+	hearing.position = m_feet + render::Vec3{0, 0, m_height / 5 * 3.125f}; // the server's z: the model's center
+	float yaw = render::HeadingToRadians(m_heading + m_orbit);
+	hearing.forward = {std::cos(yaw), std::sin(yaw), 0};
+	if (!surroundings || !m_loaded || !m_error.empty())
+		return hearing;
+	hearing.covered = ExposureAt(hearing.position) < 0.48f;
+	// ActorInfo's ZCeiling over its Z: the first thing straight up.
+	const float reach = 1000;
+	render::Vec3 from = m_feet + render::Vec3{0, 0, 1};
+	float fraction;
+	if (m_zone.SegmentHit(from, from + render::Vec3{0, 0, reach}, fraction, nullptr, false))
+		hearing.ceiling = fraction * reach + 1;
+	return hearing;
 }
 
 float ZoneView::ExposureAt(const render::Vec3 &center) const
@@ -784,6 +924,7 @@ void ZoneView::PoseSpawn(SpawnView &view, const ZoneSpawn &spawn, uint64_t now_m
 	view.light = spawn.light;
 	view.warm = spawn.body_type != 3 && spawn.body_type != 5 && spawn.body_type != 8 && spawn.body_type != 12;
 	view.center_height = size / 5 * 3.125f;
+	view.size = size;
 
 	// Build the model once they're close enough to be seen (and again when their look changes).
 	// Up close they move with the floor and the water under them; far off they just carry on.

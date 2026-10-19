@@ -14,6 +14,7 @@
 #include "charselect_view.h"
 #include "creation_rules.h"
 #include "debug_menu.h"
+#include "eq_sound.h"
 #include "eqtext.h"
 #include "login_client.h"
 #include "sidl.h"
@@ -53,6 +54,9 @@ struct GameData
 	// The host's vsync, for the debug menu: whether it's on, and how to change it; unset without one.
 	bool vsync = false;
 	std::function<void(bool)> set_vsync;
+	// The host's sound: the mix our sound plays into (unset: none), and its volumes.
+	audio::Mixer *mixer = nullptr;
+	audio::EqSound::Settings sound;
 };
 
 class FrontEnd
@@ -94,6 +98,7 @@ public:
 	int LastCharacter() const { return m_config.last_character; } // the slot to remember (LastCharSel)
 	const ZoneSession &Zone() const { return m_zone; }
 	const CharacterSelectView *CharacterScene() const { return m_charselect_view.get(); }
+	const audio::EqSound *Sound() const { return m_sound.get(); }
 	const ZoneView *ZoneScene() const { return m_zone_view.get(); }
 	CharacterCreation *Creation() { return m_creation.get(); }
 	// For tools: the window-pixel center of a visible SIDL control on character select or creation.
@@ -152,6 +157,10 @@ private:
 	void HandleZoneEvents(const std::vector<ZoneSession::Event> &events);
 	void AddZoneLog(const std::string &text, uint32_t color);
 	void StartCamp();
+
+	// EqSoundManager::GiveTime's callers (character select and the world display): the listener and
+	// the emitters' surroundings from the zone, then the sound's frame.
+	void SoundFrame(uint64_t now_ms);
 
 	void RenderStart(Canvas &canvas);
 	void RenderLogin(Canvas &canvas, uint64_t now_ms);
@@ -244,6 +253,12 @@ private:
 	int m_look_x = 0, m_look_y = 0;
 	bool m_world_click = false; // the left button went down on the world
 	int m_click_travel = 0;     // pixels the mouse moved since, to tell a click from a drag
+
+	// sound
+	std::unique_ptr<audio::EqSound> m_sound;
+	bool m_opening_played = false;   // CDisplay::InitDDraw's opening music, once a run of eqgame
+	bool m_main_loop_started = false; // the zone's first frame (DoMainLoop ends the opening music)
+	uint64_t m_sound_surroundings_ms = 0;
 
 	LoginSession m_session;
 	WorldSession m_world;

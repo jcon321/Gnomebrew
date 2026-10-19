@@ -24,6 +24,7 @@
 #include "zone_session.h"
 
 #include <cstdint>
+#include <vector>
 
 namespace render
 {
@@ -54,6 +55,13 @@ public:
 	uint64_t AnimationTime(const render::CharacterModel &model) const;
 	bool AnimationLoops() const { return m_end == End::Loop; }
 	render::Environment BodyEnvironment() const { return m_body_environment; }
+	render::Environment FeetEnvironment() const { return m_feet_environment; }
+	const render::Vec3 &Velocity() const { return m_velocity; } // per tick
+	// For the sounds: the animations PlayAnimationTrack2 played in the last Animate, in order (it
+	// plays the moving and idling ones every frame), and the hardest the feet met the floor going
+	// down since the last call (per tick, negative; 0 for none), with whether the body was in water.
+	const std::vector<int> &Played() const { return m_played; }
+	float TakeLanding(bool &in_water);
 
 private:
 	enum class Kind
@@ -114,4 +122,7 @@ private:
 	uint8_t m_stance = 100;
 	bool m_dead = false;
 	uint32_t m_action_serial = 0;
+	std::vector<int> m_played;
+	float m_landing = 0;
+	bool m_landing_wet = false;
 };

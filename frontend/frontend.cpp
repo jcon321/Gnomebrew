@@ -45,6 +45,10 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 		m_charselect_view->StartLoading();
 	}
 	m_rules.CheckInstall(m_ui.eq_dir);
+	if (m_ui.mixer && !m_ui.eq_dir.empty()) {
+		m_sound = std::make_unique<audio::EqSound>(*m_ui.mixer, m_ui.eq_dir, m_ui.sound);
+		m_debug.SetSound(m_sound.get());
+	}
 	EnterStart();
 }
 
@@ -70,6 +74,13 @@ void FrontEnd::EnterStart()
 	m_zone_view.reset();
 	m_entering_world = false;
 	m_logging_in = false;
+	// Out of eqgame: its music and the zone's sounds go with it (eqmain has none).
+	if (m_sound) {
+		m_sound->SetMusicSelection(audio::EqSound::CharacterSelect, false);
+		m_sound->SetMusicSelection(audio::EqSound::Opening, false);
+		m_sound->SetCurrentZone("");
+	}
+	m_opening_played = false;
 
 	// displayLuclinOptionsScreen: five 228x34 buttons in a column at x=400.
 	const char *keys[] = {"SISATEXT_CONNECTBUTTON", "SISATEXT_ACCOUNTBUTTON", "SISATEXT_CREDITSBUTTON",
@@ -612,6 +623,42 @@ void FrontEnd::Update(uint64_t now_ms)
 		m_last_list_request_ms = now_ms;
 		m_session.RequestServerList();
 	}
+	SoundFrame(now_ms);
+}
+
+void FrontEnd::SoundFrame(uint64_t now_ms)
+{
+	if (!m_sound)
+		return;
+	bool world = m_screen == Screen::Zone && m_zone_view && m_zone_view->Loaded() && m_zone_view->Error().empty() &&
+	             m_zone_view->Placed();
+	if (world) {
+		if (!m_main_loop_started) { // DoMainLoop
+			m_main_loop_started = true;
+			m_sound->SetMusicSelection(audio::EqSound::Opening, false);
+		}
+		// SetupEmitterEnvironment, every half second: day or night, covered or not; and
+		// SetGenericEnvironment's ceiling (the client's every frame).
+		bool surroundings = now_ms - m_sound_surroundings_ms >= 500;
+		ZoneView::Hearing hearing = m_zone_view->SoundListener(surroundings);
+		m_sound->SetListener({hearing.position.x, hearing.position.y, hearing.position.z},
+			{hearing.forward.x, hearing.forward.y, hearing.forward.z});
+		if (surroundings) {
+			m_sound_surroundings_ms = now_ms;
+			int hour;
+			float minute;
+			if (m_zone.GameTime(hour, minute))
+				m_sound->SetNight(hour < 5 || hour > 18);
+			using Environment = audio::EqSound::Environment;
+			float ceiling = hearing.ceiling < 0 ? 1e6f : hearing.ceiling;
+			m_sound->SetEnvironment(ceiling <= 20 ? Environment::LowCeiling
+			                        : ceiling <= 500 && hearing.covered ? Environment::HighCeiling
+			                                                            : Environment::Outside);
+		}
+	}
+	// GiveTime runs at character select and in the world (not while a zone loads).
+	if (world || m_screen == Screen::CharacterSelect || m_screen == Screen::CharacterCreate)
+		m_sound->GiveTime(now_ms);
 }
 
 // ---------------------------------------------------------------- rendering
@@ -852,6 +899,14 @@ void FrontEnd::EnterCharacterSelect()
 	m_screen = Screen::CharacterSelect;
 	m_submitting = false;
 	m_entering_world = false;
+	// CDisplay::InitDDraw starts the opening music when eqgame starts, and initializeNetworkGame
+	// character select's whenever it's entered (the same eqtheme.mp3).
+	if (m_sound) {
+		if (!m_opening_played)
+			m_sound->SetMusicSelection(audio::EqSound::Opening, true);
+		m_opening_played = true;
+		m_sound->SetMusicSelection(audio::EqSound::CharacterSelect, true);
+	}
 
 	// CCharacterSelect::AlternateBackgroundAvailable: Rotate starts checked.
 	if (auto *rotate = m_charselect.Find("Rotate_Button"))
@@ -1204,8 +1259,11 @@ void FrontEnd::EnterZoneScreen(bool zoning)
 	m_mouse_turn = m_mouse_pan = m_mouse_grabbed = false;
 	m_keys = HeldKeys{};
 	m_jump_requested = m_crouch_sent = false;
+	m_main_loop_started = false;
 	if (!zoning)
 		AddZoneLog("Entering the zone...", ZoneGrey);
+	if (m_sound) // DoCharacterSelection, entering the world
+		m_sound->SetMusicSelection(audio::EqSound::CharacterSelect, false);
 
 	// The chat sits along the bottom left of the window, over the 3D view.
 	int bottom = m_game_height - Height;
@@ -1257,6 +1315,9 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 				break;
 			m_zone_view = std::make_unique<ZoneView>(m_ui.eq_dir, MakeRenderer());
 			m_zone_view->StartLoading(m_zone.Info());
+			m_zone_view->SetSound(m_sound.get());
+			if (m_sound) // StartWorldDisplay
+				m_sound->SetCurrentZone(m_zone.Info().short_name);
 			const ZoneSpawn &me = m_zone.Self();
 			render::CharacterAppearance appearance;
 			appearance.race = me.race ? me.race : m_zone.Profile().race;
@@ -1269,14 +1330,26 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			}
 			m_zone_view->SetPlayer(appearance, me.walk_speed, me.run_speed);
 			m_zone_view->SetPlayerPosition(me.x, me.y, me.z, me.heading);
+			if (!m_zone.Doors().empty())
+				m_zone_view->SetDoors(m_zone.Doors(), m_now_ms);
 			break;
 		}
+		case Type::DoorsSpawned:
+			if (m_zone_view)
+				m_zone_view->SetDoors(m_zone.Doors(), m_now_ms);
+			break;
+		case Type::DoorMoved:
+			if (m_zone_view)
+				m_zone_view->MoveDoor(static_cast<uint8_t>(event.id), static_cast<uint8_t>(event.value), m_now_ms);
+			break;
 		case Type::InZone:
 			m_zoning = false;
 			AddZoneLog(std::to_string(m_zone.Spawns().size()) + " spawns in the zone.", ZoneGrey);
 			if (m_zone_view) {
 				int16_t swimming = m_zone.Profile().skills[50];
 				m_zone_view->SetSwimSkill(swimming >= 0 && swimming <= 252 ? swimming : 0);
+				int16_t safe_fall = m_zone.Profile().skills[39];
+				m_zone_view->SetSafeFallSkill(safe_fall >= 0 && safe_fall <= 252 ? safe_fall : 0);
 			}
 			break;
 		case Type::ZoneApproved:
@@ -1463,10 +1536,24 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 		}
 		break;
 	case InputEvent::Type::MouseUp:
-		// A click that didn't drag picks the debug menu's target: a spawn under the cursor, or
-		// nobody (back to the nearest).
-		if (m_world_click && m_click_travel <= 3 && m_zone_view)
-			m_debug.SelectTarget(m_zone_view->PickSpawn(event.x, event.y));
+		// A click that didn't drag uses the door or switch under the cursor (CEverQuest_ClickedSwitch),
+		// or else picks the debug menu's target: a spawn under the cursor, or nobody (back to the nearest).
+		if (m_world_click && m_click_travel <= 3 && m_zone_view) {
+			uint8_t door = 0;
+			int16_t skill = 0;
+			int16_t disarm = m_zone.Profile().skills[17]; // disarm traps
+			switch (m_zone_view->ClickDoor(event.x, event.y, disarm, door, skill)) {
+			case ZoneDoors::Use::Ask:
+				m_zone.ClickDoor(door, 0xffff, skill);
+				break;
+			case ZoneDoors::Use::TooFar:
+				AddZoneLog(EqString(1462, "You can't reach that, get closer."), ZoneYellow);
+				break;
+			case ZoneDoors::Use::Nothing:
+				m_debug.SelectTarget(m_zone_view->PickSpawn(event.x, event.y));
+				break;
+			}
+		}
 		m_world_click = false;
 		break;
 	case InputEvent::Type::MouseMove:

@@ -191,6 +191,15 @@ bool DebugMenu::OnMouse(const InputEvent &event)
 		case Line::Action::Vision:
 			m_draw.vision = hit.value;
 			break;
+		case Line::Action::Sound:
+			if (m_sound) {
+				audio::EqSound::Switches switches = m_sound->GetSwitches();
+				bool *flag = hit.value == 0 ? &switches.sound : hit.value == 1 ? &switches.music
+				           : hit.value == 2 ? &switches.ambience : &switches.game;
+				*flag = !*flag;
+				m_sound->SetSwitches(switches);
+			}
+			break;
 		case Line::Action::Pick:
 			m_target = m_target == hit.value ? 0 : static_cast<uint16_t>(hit.value);
 			break;
@@ -361,6 +370,30 @@ void DebugMenu::DrawCard(Canvas &canvas, TextRenderer &text, const ZoneSession &
 			row(Format("Vision ambient %.2f %.2f %.2f%s", stats.light.special.x, stats.light.special.y,
 				stats.light.special.z, stats.light.glow.x > 0 ? "   infravision glow" : ""));
 			row(Format("%zuk triangles, %zu objects", (stats.zone_triangles + 500) / 1000, stats.zone_objects));
+		}
+	}
+
+	if (m_sound && section(Sound, "SOUND")) {
+		audio::EqSound::Stats sound = m_sound->GetStats();
+		row("Music " + (sound.music.empty() ? std::string("none") : sound.music) +
+			(sound.music_track ? Format("   track %d", sound.music_track) : ""));
+		row(Format("Voices %zu   ambient %zu of 4   creature loops %zu", sound.voices, sound.ambient_voices, sound.actor_loops));
+		static const char *const environments[] = {"-", "outside", "high ceiling", "low ceiling"};
+		row(Format("Emitters %zu of %zu in range   %s, %s", sound.emitters_in_range, sound.emitters,
+			sound.time_of_day == 2 ? "night" : sound.time_of_day == 1 ? "day" : "-",
+			environments[sound.environment >= 0 && sound.environment <= 3 ? sound.environment : 0]));
+		for (const auto &playing : sound.ambient)
+			row(Format("  %s  %.0f away", playing.name.c_str(), playing.distance));
+		if (!sound.missing.empty())
+			row("Missing " + sound.missing.back() + (sound.missing.size() > 1 ? Format(" +%zu", sound.missing.size() - 1) : ""));
+		const audio::EqSound::Switches &switches = m_sound->GetSwitches();
+		const std::pair<const char *, bool> toggles[] = {{"Sound", switches.sound}, {"Music", switches.music},
+			{"Zone ambience", switches.ambience}, {"Game sounds (doors, steps, creatures)", switches.game}};
+		for (int i = 0; i < 4; ++i) {
+			bool on = toggles[i].second && (i == 0 || switches.sound);
+			Line &line = *row(std::string(toggles[i].second ? "[x] " : "[  ] ") + toggles[i].first, on ? White : Grey);
+			line.action = Line::Action::Sound;
+			line.value = i;
 		}
 	}
 

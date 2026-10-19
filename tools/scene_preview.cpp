@@ -24,17 +24,25 @@
 // 1..24, 1 is midnight) for the zone's time type (--time-type, default 2: outdoors).
 // --debug-draw wireframe,nofog,walls,floor,noculling turns on the debug menu's render toggles, and --vision
 // own|none|infra|ultra picks what we see in at night (own: the race's).
+// --door NAME TYPE X Y Z HEADING INCLINE SIZE PARAM (repeatable) puts a door or switch there as OP_SpawnDoor
+// would (its id the count so far), --door-open MS opens them all (OP_MoveDoor 2) and runs that long first,
+// printing where they are, and --click X Y clicks the window there after drawing (what EQSwitch::UseSwitch says).
 // --frames renders N times and prints the average frame time. --size picks the
 // image size (default 640x480).
 
 #include "charselect_view.h"
+#include "eq_sound.h"
+#include "mixer.h"
 #include "zone_view.h"
 #include "png_writer.h"
 #include "rasterizer.h"
 #include "sky.h"
 #include "zone_scene.h"
 
+#include <algorithm>
 #include <chrono>
+#include <cmath>
+#include <memory>
 #include <map>
 #include <cstdio>
 #include <cstdlib>
@@ -44,6 +52,58 @@
 
 namespace
 {
+	// --sound: what the doors, we and the spawns sound like, mixed to a WAV as the frames run
+	// (no zone music or ambience).
+	struct SoundCapture
+	{
+		std::unique_ptr<audio::Mixer> mixer;
+		std::unique_ptr<audio::EqSound> sound;
+		std::vector<float> mix;
+		double owed = 0; // frames of audio the clock has moved on by and we haven't mixed
+
+		void Frame(ZoneView &view, uint64_t now, float ms)
+		{
+			if (!sound)
+				return;
+			ZoneView::Hearing hearing = view.SoundListener(false);
+			sound->SetListener({hearing.position.x, hearing.position.y, hearing.position.z},
+				{hearing.forward.x, hearing.forward.y, hearing.forward.z});
+			sound->GiveTime(now);
+			owed += ms * audio::Mixer::Rate / 1000.0;
+			int frames = static_cast<int>(owed);
+			owed -= frames;
+			size_t at = mix.size();
+			mix.resize(at + static_cast<size_t>(frames) * 2);
+			mixer->Render(mix.data() + at, frames);
+		}
+	};
+	SoundCapture g_sound;
+
+	void WriteWav(const std::string &path, const std::vector<float> &stereo)
+	{
+		FILE *file = fopen(path.c_str(), "wb");
+		if (!file)
+			return;
+		auto u32 = [&](uint32_t v) { fwrite(&v, 4, 1, file); };
+		auto u16 = [&](uint16_t v) { fwrite(&v, 2, 1, file); };
+		uint32_t bytes = static_cast<uint32_t>(stereo.size() * 2);
+		fwrite("RIFF", 1, 4, file);
+		u32(36 + bytes);
+		fwrite("WAVEfmt ", 1, 8, file);
+		u32(16);
+		u16(1);
+		u16(2);
+		u32(audio::Mixer::Rate);
+		u32(audio::Mixer::Rate * 4);
+		u16(4);
+		u16(16);
+		fwrite("data", 1, 4, file);
+		u32(bytes);
+		for (float sample : stereo)
+			u16(static_cast<uint16_t>(static_cast<int16_t>(std::lround(std::clamp(sample, -1.0f, 1.0f) * 32767))));
+		fclose(file);
+	}
+
 	int CharacterSelect(const std::string &eq_dir, const std::string &out, const render::CharacterAppearance &appearance,
 		uint8_t class_id, float camera_heading, int frames, int Width, int Height)
 	{
@@ -85,7 +145,8 @@ namespace
 	int InZone(const std::string &eq_dir, const std::string &out, const ZoneInfo &info, const render::CharacterAppearance &appearance,
 		float x, float y, float z, float heading, float orbit, float pitch, bool first_person, int zoom, int walk_ms, int turn, int frames,
 		int Width, int Height, const std::map<uint16_t, ZoneSpawn> &spawns, int game_hour, float game_minute,
-		const ZoneView::DebugDraw &debug_draw, int spawn_ms)
+		const ZoneView::DebugDraw &debug_draw, int spawn_ms, const std::vector<ZoneDoor> &doors, int door_open_ms, int click_x,
+		int click_y, int jump_ms)
 	{
 		auto t0 = std::chrono::steady_clock::now();
 		ZoneView view(eq_dir);
@@ -101,6 +162,7 @@ namespace
 
 		std::vector<uint32_t> pixels(static_cast<size_t>(Width) * Height);
 		Canvas canvas(pixels.data(), Width, Height, Width);
+		view.SetSound(g_sound.sound.get());
 		view.SetDebugDraw(debug_draw);
 		view.SetPlayer(appearance, 0.46f, 0.7f);
 		view.SetPlayerPosition(x, y, z, heading);
@@ -111,21 +173,38 @@ namespace
 			view.CycleCamera();
 		view.Orbit(orbit);
 		view.Pitch(pitch);
+		uint64_t now = 1000; // Move's clock
+		if (!doors.empty()) {
+			// The doors move as Move runs, on its clock (before any walk, which they can be in the way of).
+			view.SetDoors(doors, now);
+			view.Move(MoveControls(), now, false);
+			if (door_open_ms > 0) {
+				for (const ZoneDoor &door : doors)
+					view.MoveDoor(door.id, 2, now);
+				for (int ms = 0; ms <= door_open_ms; ms += 16) {
+					now += 16;
+					view.Move(MoveControls(), now, false);
+					g_sound.Frame(view, now, 16);
+				}
+			}
+			printf("%zu doors, %zu with a model\n", view.DoorCount(), view.DoorsShown());
+		}
 		if (walk_ms > 0) {
 			// Hold forward (and turn, with --turn) for walk_ms of 16 ms frames, then report where we got.
 			MoveControls controls;
 			controls.forward = true;
 			controls.left = turn < 0;
 			controls.right = turn > 0;
-			uint64_t now = 1000;
 			view.Move(controls, now, false);
 			double total = 0;
 			int steps = 0;
 			for (int ms = 0; ms < walk_ms; ms += 16, ++steps) {
 				now += 16;
 				auto start = std::chrono::steady_clock::now();
+				controls.jump = jump_ms >= 0 && ms >= jump_ms && ms < jump_ms + 16;
 				view.Move(controls, now, false);
 				total += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+				g_sound.Frame(view, now, 16);
 				std::string zone_line = view.TakeZoneLine();
 				if (!zone_line.empty()) {
 					ZoneMovement at = view.Movement();
@@ -158,6 +237,7 @@ namespace
 				auto start = std::chrono::steady_clock::now();
 				view.UpdateSpawns(spawns, 0, spawn_clock);
 				spawn_total += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+				g_sound.Frame(view, spawn_clock, 16);
 				if ((ms % 1000 >= 16 && ms != spawn_ms) || spawns.size() > 12)
 					continue;
 				for (const auto &[id, spawn] : spawns) {
@@ -183,6 +263,16 @@ namespace
 					view.Feet().z);
 		}
 		printf("%zu triangles drawn, %.1f ms per frame\n", view.TrianglesDrawn(), total / frames);
+		if (click_x >= 0) {
+			uint8_t id = 0;
+			int16_t skill = 0;
+			static const char *const uses[] = {"nothing", "too far", "ask the zone"};
+			ZoneDoors::Use use = view.ClickDoor(click_x, click_y, 0, id, skill);
+			printf("click at %d, %d: %s", click_x, click_y, uses[static_cast<int>(use)]);
+			if (use == ZoneDoors::Use::Ask)
+				printf(" (door %u)", id);
+			printf("\n");
+		}
 		ZoneView::DebugStats stats = view.Stats();
 		printf("zone meshes %zu in view, %zu hidden\n", stats.meshes_in_view, stats.meshes_hidden);
 		if (stats.have_floor)
@@ -202,7 +292,8 @@ int main(int argc, char **argv)
 		fprintf(stderr, "usage: %s EQDIR OUT.png [--zone NAME] [--at X Y Z] [--heading H] [--pitch P] [--frames N]\n", argv[0]);
 		return 2;
 	}
-	std::string eq_dir = argv[1], out = argv[2], zone = "load2";
+	std::string eq_dir = argv[1], out = argv[2], zone = "load2", sound_out;
+	int jump_ms = -1;
 	float server_x = 1475, server_y = 600, server_z = -175, heading = 256, pitch = 0;
 	int frames = 1;
 	int width = 640, height = 480;
@@ -213,6 +304,8 @@ int main(int argc, char **argv)
 	bool player = false, first_person = false;
 	float orbit = 0;
 	int zoom = 0, walk_ms = 0, turn = 0, spawn_ms = 0;
+	std::vector<ZoneDoor> doors;
+	int door_open_ms = 0, click_x = -1, click_y = -1;
 	std::map<uint16_t, ZoneSpawn> spawns;
 	int game_hour = 0;
 	float game_minute = 0;
@@ -242,6 +335,26 @@ int main(int argc, char **argv)
 			spawn.body_texture = 0; // an NPC's default texture (a player race's guard is 255 and dressed)
 			spawn.updated_ms = 1000;
 			spawns[spawn.id] = spawn;
+		}
+		else if (arg == "--door" && i + 9 < argc) {
+			ZoneDoor door;
+			door.id = static_cast<uint8_t>(doors.size() + 1);
+			door.name = argv[++i];
+			door.type = static_cast<uint8_t>(atoi(argv[++i]));
+			door.x = static_cast<float>(atof(argv[++i]));
+			door.y = static_cast<float>(atof(argv[++i]));
+			door.z = static_cast<float>(atof(argv[++i]));
+			door.heading = static_cast<float>(atof(argv[++i]));
+			door.incline = static_cast<int16_t>(atoi(argv[++i]));
+			door.size = static_cast<int16_t>(atoi(argv[++i]));
+			door.param = static_cast<int16_t>(atoi(argv[++i]));
+			doors.push_back(door);
+		}
+		else if (arg == "--door-open" && i + 1 < argc)
+			door_open_ms = atoi(argv[++i]);
+		else if (arg == "--click" && i + 2 < argc) {
+			click_x = atoi(argv[++i]);
+			click_y = atoi(argv[++i]);
 		}
 		else if (arg == "--debug-draw" && i + 1 < argc) {
 			std::string list = argv[++i];
@@ -336,6 +449,10 @@ int main(int argc, char **argv)
 			frames = atoi(argv[++i]);
 		else if (arg == "--size" && i + 1 < argc)
 			sscanf(argv[++i], "%dx%d", &width, &height);
+		else if (arg == "--sound" && i + 1 < argc)
+			sound_out = argv[++i];
+		else if (arg == "--jump" && i + 1 < argc)
+			jump_ms = atoi(argv[++i]);
 	}
 
 	if (player) {
@@ -343,8 +460,23 @@ int main(int argc, char **argv)
 		bool have_heading = false;
 		for (int i = 3; i < argc; ++i)
 			have_heading = have_heading || std::string(argv[i]) == "--heading";
-		return InZone(eq_dir, out, info, appearance, server_x, server_y, server_z, have_heading ? heading : 0, orbit, pitch,
-			first_person, zoom, walk_ms, turn, frames, width, height, spawns, game_hour, game_minute, debug_draw, spawn_ms);
+		if (!sound_out.empty()) {
+			g_sound.mixer = std::make_unique<audio::Mixer>();
+			audio::EqSound::Settings settings;
+			settings.music_volume = 0;
+			g_sound.sound = std::make_unique<audio::EqSound>(*g_sound.mixer, eq_dir, settings);
+			g_sound.sound->SetWaveLogger([](const std::string &line) {
+				printf("  [sound %.2fs] %s\n", g_sound.mix.size() / 2.0 / audio::Mixer::Rate, line.c_str());
+			});
+		}
+		int result = InZone(eq_dir, out, info, appearance, server_x, server_y, server_z, have_heading ? heading : 0, orbit,
+			pitch, first_person, zoom, walk_ms, turn, frames, width, height, spawns, game_hour, game_minute, debug_draw, spawn_ms,
+			doors, door_open_ms, click_x, click_y, jump_ms);
+		if (g_sound.sound) {
+			WriteWav(sound_out, g_sound.mix);
+			printf("wrote %s (%.1f s of sound)\n", sound_out.c_str(), g_sound.mix.size() / 2.0 / audio::Mixer::Rate);
+		}
+		return result;
 	}
 	if (character)
 		return CharacterSelect(eq_dir, out, appearance, static_cast<uint8_t>(class_id), camera_heading, frames, width, height);

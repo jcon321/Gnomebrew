@@ -8,6 +8,8 @@
 //     SERVER SYNC where the zone last heard we are (our latest OP_ClientUpdate) against where we are;
 //     CAMERA; NETWORK ping, traffic, resends; PACKETS the latest in and out;
 //     ZONE the zone header (fog, clip, sky, gravity, safe point) and the light;
+//     SOUND the music track playing, the voices, the zone's emitters in range and the ambient sounds
+//       playing, and switches for all sound, the music, the zone's ambience and the game's sounds;
 //     RENDER toggles: wireframe, no fog, collision walls, floor marker, no occlusion culling, vsync;
 //     TARGET a spawn clicked in the world or in NEARBY (else the nearest), in detail;
 //     NEARBY the nearest spawns.
@@ -15,6 +17,7 @@
 // Frame rates and traffic are averaged over a second, so they read steadily.
 
 #include "canvas.h"
+#include "eq_sound.h"
 #include "rdp_session.h"
 #include "text.h"
 #include "widgets.h"
@@ -52,6 +55,7 @@ public:
 	bool OnMouse(const InputEvent &event);
 
 	void SelectTarget(uint16_t id) { m_target = id; } // 0: back to the nearest
+	void SetSound(audio::EqSound *sound) { m_sound = sound; }
 	const ZoneView::DebugDraw &Drawing() const { return m_draw; }
 	// The host's vsync and how to change it; no toggle when `set` is unset (the software renderer).
 	void SetVSync(bool on, std::function<void(bool)> set)
@@ -61,7 +65,7 @@ public:
 	}
 
 private:
-	enum Section { Performance, Movement, Sync, Camera, Network, Packets, ZoneHeader, Render, Target, Nearby, SectionCount };
+	enum Section { Performance, Movement, Sync, Camera, Network, Packets, ZoneHeader, Sound, Render, Target, Nearby, SectionCount };
 	struct Line
 	{
 		Line(std::string line, int text_height, uint32_t rgb, int below = 3)
@@ -72,7 +76,7 @@ private:
 		int height;
 		uint32_t color;
 		int gap = 3; // below
-		enum class Action { None, Fold, Toggle, Pick, Vision } action = Action::None;
+		enum class Action { None, Fold, Toggle, Pick, Vision, Sound } action = Action::None;
 		int value = 0; // the section, the toggle, the spawn id, or the vision
 		std::string right; // right-aligned, dim
 		bool highlight = false;
@@ -106,11 +110,12 @@ private:
 	double m_in_rate = 0, m_out_rate = 0; // bytes a second
 	double m_packets_in_rate = 0, m_packets_out_rate = 0;
 
-	bool m_folded[SectionCount] = {false, false, true, true, false, true, true, false, false, false};
+	bool m_folded[SectionCount] = {false, false, true, true, false, true, true, false, false, false, false};
 	ZoneView::DebugDraw m_draw;
 	bool m_vsync = false;
 	std::function<void(bool)> m_set_vsync;
 	uint16_t m_target = 0;
+	audio::EqSound *m_sound = nullptr;
 	Rect m_card{0, 0, 0, 0}; // where the card was drawn
 	std::vector<Hit> m_hits;
 };

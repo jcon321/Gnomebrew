@@ -59,8 +59,19 @@ namespace render
 		// exposed it is to the ambient light (its vertices' alpha, 1 without colors).
 		bool FloorBelow(const Vec3 &from, float depth, float &floor_z, float *exposure = nullptr) const;
 		// The first solid surface on the segment from `from` to `to`, as a fraction of its length,
-		// and that surface's unit normal (facing `from`).
-		bool SegmentHit(const Vec3 &from, const Vec3 &to, float &fraction, Vec3 *normal = nullptr) const;
+		// and that surface's unit normal (facing `from`). `doors`: the doors count too.
+		bool SegmentHit(const Vec3 &from, const Vec3 &to, float &fraction, Vec3 *normal = nullptr, bool doors = true) const;
+
+		// Doors and other switches (CDisplay::CreateActor's "<name>_ACTORDEF" from the zone's
+		// _obj.s3d), drawn and solid where they are, lit like the zone's objects where they're
+		// added. AddDoor returns the door's number, or -1 when the zone has no such model.
+		int AddDoor(const std::string &name, const Transform &placement);
+		void PlaceDoor(int door, const Transform &placement);
+		// t3dGetScaledActorBoundingRadius.
+		float DoorRadius(int door) const;
+		// The nearest door the ray from `from` along the unit `direction` hits within `range`,
+		// and how far along; -1 for none.
+		int DoorHit(const Vec3 &from, const Vec3 &direction, float range, float &distance) const;
 
 		size_t TriangleCount() const;
 		const std::vector<Vec3> &SolidTriangles() const { return m_collision; } // 3 vertices each
@@ -76,13 +87,35 @@ namespace render
 		const std::vector<std::string> &Warnings() const { return m_warnings; }
 
 	private:
+		// A mesh's batches into `meshes` (two, when some materials are full bright) and its solid
+		// triangles into `collision` (3 vertices each) with each one's exposure.
 		void AddMesh(const WldMesh &mesh, const Transform &transform, bool solid, const std::vector<WldLight> &lights,
-			const ZoneLighting &lighting);
+			const ZoneLighting &lighting, std::vector<StaticMesh> &meshes, std::vector<Vec3> &collision,
+			std::vector<float> &exposure);
+		// An object's meshes from the _obj.s3d actor definition, skinned to its skeleton's rest pose.
+		std::vector<WldMesh> ObjectMeshes(int actor) const;
+		void DrawDoors(Renderer &renderer, uint64_t now_ms, const std::vector<PointLight> &lights, bool sun) const;
 		void BuildGrid();
 		// The solid triangles (indices into m_collision / 3) a top-down box touches, in order.
 		void Candidates(float x0, float y0, float x1, float y1, std::vector<uint32_t> &out) const;
 
 		PfsArchive m_zone_archive, m_object_archive;
+		WldFile m_object_models; // the _obj.s3d's, for the doors
+		std::vector<WldLight> m_lights;
+		ZoneLighting m_lighting;
+		struct Door
+		{
+			// The model in its own space, lit where it was added, and `placed` where it is now.
+			std::vector<StaticMesh> meshes, placed;
+			std::vector<Vec3> collision, placed_collision; // solid triangles, 3 vertices each
+			std::vector<float> exposure;                   // each one's
+			std::vector<Vec3> triangles, placed_triangles; // every drawn one, for clicks
+			float radius = 0;                              // the models' bounding radius, unscaled
+			Transform placement;
+			Vec3 low, high, center; // placed
+			float placed_radius = 0;
+		};
+		std::vector<Door> m_doors;
 		TextureCache m_textures;
 		std::vector<StaticMesh> m_meshes;
 		bool m_occlusion_culling = true;

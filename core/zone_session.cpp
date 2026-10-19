@@ -306,6 +306,7 @@ bool ZoneSession::Begin(const std::string &host, uint16_t port, const std::strin
 	m_recent_packets.clear();
 	m_last_sent = SentPosition{};
 	m_zone_points.clear();
+	m_doors.clear();
 	m_zone_target = 0;
 	m_camp_started_ms = 0;
 
@@ -377,6 +378,19 @@ bool ZoneSession::Say(const std::string &text)
 	memcpy(&body[134], &skill, 2);
 	memcpy(&body[136], message.c_str(), message.size());
 	return Send(ZoneOp::ChannelMessage, body.data(), body.size(), "OP_ChannelMessage say: " + message);
+}
+
+bool ZoneSession::ClickDoor(uint8_t door, uint16_t item, int16_t skill)
+{
+	if (m_state != State::InZone)
+		return false;
+	// ClickDoor_Struct: door id, a byte unused, then UseSwitch's lockpick/disarm skill (i16), the item
+	// held (u16, 0xffff none) and who's using it (our spawn id).
+	uint8_t body[8] = {door, 0};
+	memcpy(body + 2, &skill, 2);
+	memcpy(body + 4, &item, 2);
+	memcpy(body + 6, &m_my_id, 2);
+	return Send(ZoneOp::ClickDoor, body, sizeof(body), "OP_ClickDoor " + std::to_string(door));
 }
 
 void ZoneSession::SetMovement(const ZoneMovement &movement)
@@ -823,6 +837,47 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 			m_zone_points.push_back(point);
 		}
 		Log("[zone]    " + std::to_string(m_zone_points.size()) + " zone points");
+		break;
+	}
+	case ZoneOp::SpawnDoor: {
+		// A u16 count, then the Door_Structs deflated (EntityList::MakeDoorSpawnPacket).
+		std::vector<uint8_t> doors;
+		uint16_t count = Read<uint16_t>(data, 0);
+		if (data.size() < 2 || !Inflate::Zlib(data.data() + 2, data.size() - 2, doors)) {
+			Log("[zone]    couldn't inflate OP_SpawnDoor");
+			break;
+		}
+		m_doors.clear();
+		for (size_t i = 0; i < count && (i + 1) * 44 <= doors.size(); ++i) {
+			size_t at = i * 44;
+			ZoneDoor door;
+			door.name = CString(doors, at, 16);
+			door.y = Read<float>(doors, at + 16);
+			door.x = Read<float>(doors, at + 20);
+			door.z = Read<float>(doors, at + 24);
+			door.heading = Read<float>(doors, at + 28);
+			door.incline = Read<int16_t>(doors, at + 32);
+			door.size = Read<int16_t>(doors, at + 34);
+			door.id = doors[at + 38];
+			door.type = doors[at + 39];
+			door.open = doors[at + 40];
+			door.inverted = doors[at + 41];
+			door.param = Read<int16_t>(doors, at + 42);
+			m_doors.push_back(door);
+		}
+		Log("[zone]    " + std::to_string(m_doors.size()) + " doors");
+		events.push_back({Event::Type::DoorsSpawned});
+		break;
+	}
+	case ZoneOp::MoveDoor: {
+		if (data.size() < 2)
+			break;
+		Event e(Event::Type::DoorMoved);
+		e.id = data[0];
+		e.value = data[1];
+		if (m_verbose)
+			Log("[zone]    door " + std::to_string(e.id) + " -> " + std::to_string(e.value));
+		events.push_back(e);
 		break;
 	}
 	case ZoneOp::ZoneChange: {

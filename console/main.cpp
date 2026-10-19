@@ -28,6 +28,7 @@ namespace
 			"  --idle SECONDS        without --char, stay at character select this long (default 0)\n"
 			"  --zone SECONDS        with --char, enter the zone, stay this long, then /camp (30s) and log out\n"
 			"  --say TEXT            with --zone, /say this once in the zone\n"
+			"  --click-door ID       with --zone, use door ID once in the zone and print the doors that move\n"
 			"  --zone-to ID          with --zone, once in, ask to zone to zone ID (the zone checks it against its\n"
 			"                        zone points), go there through world, then stay and camp there\n"
 			"  --no-retry            don't retry once after 'Invalid username or password'\n"
@@ -101,7 +102,7 @@ namespace
 	}
 
 	bool RunZone(const ZoneHandoff &handoff, int seconds, const std::string &say, bool verbose, uint32_t zone_to = 0,
-		const LoginResult *login = nullptr, const WorldOptions *world = nullptr)
+		const LoginResult *login = nullptr, const WorldOptions *world = nullptr, int click_door = -1)
 	{
 		ZoneSession zone;
 		zone.SetLogger([](const std::string &line) { printf("%s\n", line.c_str()); });
@@ -120,6 +121,10 @@ namespace
 					PrintNearby(zone);
 					if (!say.empty())
 						zone.Say(say);
+					if (click_door >= 0) {
+						printf("[zone] using door %d\n", click_door);
+						zone.ClickDoor(static_cast<uint8_t>(click_door), 0xffff, 0);
+					}
 					if (zone_to != 0) {
 						printf("[zone] asking to zone to %u\n", zone_to);
 						zone.RequestZoneChange(zone_to);
@@ -142,6 +147,9 @@ namespace
 						return false;
 					return RunZone(next, seconds, "", verbose);
 				}
+				case ZoneSession::Event::Type::DoorMoved:
+					printf("[zone] door %u -> state %d\n", event.id, event.value);
+					break;
 				case ZoneSession::Event::Type::LoggedOut:
 					printf("[done] %s camped out of %s\n", handoff.character.c_str(), zone.Info().long_name.c_str());
 					return true;
@@ -169,6 +177,7 @@ int main(int argc, char **argv)
 	int zone_seconds = -1;
 	std::string say_text;
 	uint32_t zone_to = 0;
+	int click_door = -1;
 
 	for (int i = 1; i < argc; ++i) {
 		std::string arg = argv[i];
@@ -202,6 +211,8 @@ int main(int argc, char **argv)
 			zone_seconds = atoi(next().c_str());
 		else if (arg == "--say")
 			say_text = next();
+		else if (arg == "--click-door")
+			click_door = atoi(next().c_str());
 		else if (arg == "--zone-to")
 			zone_to = static_cast<uint32_t>(atoi(next().c_str()));
 		else if (arg == "--no-retry")
@@ -248,5 +259,5 @@ int main(int argc, char **argv)
 			handoff.address.c_str(), handoff.port);
 		return 0;
 	}
-	return RunZone(handoff, zone_seconds, say_text, login.verbose, zone_to, &result, &world) ? 0 : 1;
+	return RunZone(handoff, zone_seconds, say_text, login.verbose, zone_to, &result, &world, click_door) ? 0 : 1;
 }

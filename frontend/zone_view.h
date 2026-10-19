@@ -9,12 +9,14 @@
 // The zone loads on a background thread; Render draws nothing until it's ready.
 // Positions are the server's (x, y, z; heading 0..512 counterclockwise from north).
 
+#include "actor_sound.h"
 #include "canvas.h"
 #include "character_model.h"
 #include "player_movement.h"
 #include "rasterizer.h"
 #include "sky.h"
 #include "spawn_actor.h"
+#include "zone_doors.h"
 #include "zone_scene.h"
 #include "zone_session.h"
 
@@ -51,6 +53,9 @@ public:
 	void SetPlayer(const render::CharacterAppearance &appearance, float walk_speed, float run_speed);
 	void SetPlayerPosition(float x, float y, float z, float heading);
 	void SetSwimSkill(int skill) { m_movement.SetSwimSkill(skill); } // the profile's swimming skill
+	void SetSafeFallSkill(int skill) { m_safe_fall = skill; }        // for the landing sounds
+	// The sound the doors, we and the spawns make (none when unset).
+	void SetSound(audio::EqSound *sound) { m_sound = sound; }
 	// The zone line (a "DRNTP..." region type) our feet stepped into since the last call, once.
 	std::string TakeZoneLine() { return m_movement.TakeZoneLine(); }
 	// Runs our movement up to now. Returns true when a jump started. `looking` is a mouse
@@ -59,6 +64,15 @@ public:
 	bool Placed() const { return m_placed; }
 	bool Crouching() const { return m_movement.Crouching(); } // a standing jump winding up
 	ZoneMovement Movement() const; // for OP_ClientUpdate
+
+	// The doors and switches (OP_SpawnDoor), and one's new state (OP_MoveDoor). They move as Move runs.
+	void SetDoors(const std::vector<ZoneDoor> &doors, uint64_t now_ms) { m_doors.Spawn(doors, now_ms); }
+	void MoveDoor(uint8_t id, uint8_t state, uint64_t now_ms) { m_doors.ChangeState(id, state, now_ms); }
+	size_t DoorCount() const { return m_doors.Count(); }
+	size_t DoorsShown() const { return m_doors.Shown(); }
+	// A left click on the window at (x, y), after Render: the door it's on, if any, and whether we
+	// can use it (EQSwitch::UseSwitch). `disarm` is our disarm traps skill; `id` and `skill` are for OP_ClickDoor.
+	ZoneDoors::Use ClickDoor(int x, int y, int16_t disarm, uint8_t &id, int16_t &skill) const;
 
 	// Everyone else, every frame: their models, carried on from their last update.
 	void UpdateSpawns(const std::map<uint16_t, ZoneSpawn> &spawns, uint16_t my_id, uint64_t now_ms);
@@ -98,6 +112,18 @@ public:
 		render::Vec3 special, glow;
 	};
 	DayLight Lighting() const;
+
+	// For the sound: where we hear from (our character's center, where the client puts its 3D
+	// listener) and the way the camera faces; and what's over us, for the zone's emitters
+	// (CDisplay::SetupEmitterEnvironment and SetGenericEnvironment): whether the floor under us is
+	// covered (its exposure under 0.48), and how high the ceiling is over the floor (none: -1).
+	struct Hearing
+	{
+		render::Vec3 position, forward{1, 0, 0};
+		bool covered = false;
+		float ceiling = -1;
+	};
+	Hearing SoundListener(bool surroundings) const; // surroundings: work out covered and ceiling too
 
 	void Render(Canvas &canvas, uint64_t now_ms);
 	// Where to draw the name over our character's head, after Render (chase view only).
@@ -186,6 +212,11 @@ private:
 	float FarPlane() const; // the fog's end, or the zone's max clip with the debug menu's no fog
 	void DrawDebugOverlays(Canvas &canvas) const;
 	void ChooseAnimation(float ms);
+	// The sounds: the doors' (EQSwitch::ChangeState), ours and a spawn's (actor_sound.h).
+	void DoorSounds();
+	ActorSound::Actor MyActor() const;
+	int SoundAnimation(bool jumped) const; // what ProcessAnimation would ask PlayAnimationTrack for, for us
+	void SpawnSounds(SpawnView &view, const ZoneSpawn &spawn, uint16_t id, uint64_t now_ms);
 	render::Camera MakeCamera(float &distance) const; // distance: the chase camera's, after walls pull it in
 
 	std::string m_eq_dir;
@@ -210,6 +241,7 @@ private:
 	float m_height = 6;  // the model's
 	float m_walk_speed = 0.46f, m_run_speed = 0.7f;
 	PlayerMovement m_movement;
+	ZoneDoors m_doors;
 	bool m_placed = false;
 	uint64_t m_last_move_ms = 0;
 	bool m_jump_pressed = false; // a press that came on a frame with no time to move in
@@ -233,6 +265,9 @@ private:
 		uint8_t light = 0;         // ZoneSpawn::light
 		bool warm = true;          // body type not 3, 5, 8 or 12 (SetPlayerConstantAmbient2)
 		float center_height = 0;   // ModelHeightOffset: the server's z over the feet
+		float size = 6;
+		ActorSound sound;
+		render::Environment sound_feet = render::Environment::Dry; // the feet's, as the sound last saw them
 		const render::Vec3 &Feet() const { return actor.Feet(); }
 	};
 	std::map<uint16_t, SpawnView> m_actors;
@@ -252,6 +287,10 @@ private:
 	std::vector<render::PointLight> m_lights_for; // LightsFor's
 	int m_hour = 12;
 	float m_minute = 0;
+	audio::EqSound *m_sound = nullptr;
+	ActorSound m_my_sound;
+	render::Environment m_sound_feet = render::Environment::Dry, m_sound_head = render::Environment::Dry;
+	int m_safe_fall = 0;
 
 	CameraView m_view = CameraView::Chase;
 	float m_orbit = 0;      // chase camera heading relative to the character's

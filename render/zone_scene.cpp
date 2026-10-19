@@ -18,6 +18,49 @@ namespace render
 			return (channel(r) << 16) | (channel(g) << 8) | channel(b);
 		}
 
+		// Where a triangle's top-down projection is under (x, y), the triangle's height there.
+		bool HeightAt(const Vec3 &a, const Vec3 &b, const Vec3 &c, float x, float y, float &z)
+		{
+			// Barycentric coordinates of (x, y) in the triangle's top-down projection.
+			float d = (b.y - c.y) * (a.x - c.x) + (c.x - b.x) * (a.y - c.y);
+			if (std::fabs(d) < 1e-6f)
+				return false;
+			float l1 = ((b.y - c.y) * (x - c.x) + (c.x - b.x) * (y - c.y)) / d;
+			float l2 = ((c.y - a.y) * (x - c.x) + (a.x - c.x) * (y - c.y)) / d;
+			float l3 = 1 - l1 - l2;
+			if (l1 < 0 || l2 < 0 || l3 < 0)
+				return false;
+			z = l1 * a.z + l2 * b.z + l3 * c.z;
+			return true;
+		}
+
+		// Moller-Trumbore, both sides: how far along `d` from `from` the triangle is (t >= 0).
+		bool RayHit(const Vec3 &from, const Vec3 &d, const Vec3 &a, const Vec3 &b, const Vec3 &c, float &t)
+		{
+			Vec3 e1 = b - a, e2 = c - a;
+			Vec3 p = Cross(d, e2);
+			float det = Dot(e1, p);
+			if (std::fabs(det) < 1e-8f)
+				return false;
+			float inv = 1 / det;
+			Vec3 s = from - a;
+			float u = Dot(s, p) * inv;
+			if (u < 0 || u > 1)
+				return false;
+			Vec3 q = Cross(s, e1);
+			float v = Dot(d, q) * inv;
+			if (v < 0 || u + v > 1)
+				return false;
+			t = Dot(e2, q) * inv;
+			return t >= 0;
+		}
+
+		bool BoxesMeet(const Vec3 &low1, const Vec3 &high1, const Vec3 &low2, const Vec3 &high2)
+		{
+			return low1.x <= high2.x && low2.x <= high1.x && low1.y <= high2.y && low2.y <= high1.y && low1.z <= high2.z &&
+			       low2.z <= high1.z;
+		}
+
 		// Placement rotations are in 512ths of a turn: [0] about z (heading), then y, then x.
 		Quat PlacementRotation(const WldVec3 &rotation)
 		{
@@ -60,6 +103,8 @@ namespace render
 		m_grid_w = m_grid_h = 0;
 		m_warnings.clear();
 		m_object_count = 0;
+		m_doors.clear();
+		m_lighting = lighting;
 
 		std::string base = eq_dir + "/" + zone;
 		if (!m_zone_archive.Open(base + ".s3d")) {
@@ -67,19 +112,21 @@ namespace render
 			return false;
 		}
 		std::vector<uint8_t> data;
-		WldFile zone_wld, objects_wld, lights_wld, object_models;
+		WldFile zone_wld, objects_wld, lights_wld;
+		m_object_models = WldFile();
 		if (!m_zone_archive.Read(zone + ".wld", data) || !zone_wld.Load(std::move(data))) {
 			error = "Couldn't read " + zone + ".wld";
 			return false;
 		}
 		m_textures.AddArchive(&m_zone_archive);
-		std::vector<WldLight> lights;
+		m_lights.clear();
 		if (m_zone_archive.Read("lights.wld", data) && lights_wld.Load(std::move(data)))
-			lights = lights_wld.Lights();
+			m_lights = lights_wld.Lights();
+		const std::vector<WldLight> &lights = m_lights;
 		bool have_objects = m_object_archive.Open(base + "_obj.s3d");
 		if (have_objects) {
 			m_textures.AddArchive(&m_object_archive);
-			if (!m_object_archive.Read(zone + "_obj.wld", data) || !object_models.Load(std::move(data))) {
+			if (!m_object_archive.Read(zone + "_obj.wld", data) || !m_object_models.Load(std::move(data))) {
 				m_warnings.push_back("couldn't read " + zone + "_obj.wld");
 				have_objects = false;
 			}
@@ -100,13 +147,13 @@ namespace render
 		m_constant_ambient = {((constant >> 16) & 0xff) / 256.0f, ((constant >> 8) & 0xff) / 256.0f, (constant & 0xff) / 256.0f};
 		for (int i = 0; i < static_cast<int>(zone_wld.Fragments().size()); ++i) {
 			if (zone_wld.Fragments()[i].type == 0x36 && zone_wld.ReadMesh(i, mesh))
-				AddMesh(mesh, Transform{}, true, lights, lighting);
+				AddMesh(mesh, Transform{}, true, lights, lighting, m_meshes, m_collision, m_collision_exposure);
 		}
 
 		if (have_objects && m_zone_archive.Read("objects.wld", data) && objects_wld.Load(std::move(data))) {
 			std::map<std::string, int> unknown;
 			for (const auto &placement : objects_wld.Placements()) {
-				int actor = object_models.Find(placement.actor);
+				int actor = m_object_models.Find(placement.actor);
 				if (actor < 0) {
 					++unknown[placement.actor];
 					continue;
@@ -116,22 +163,7 @@ namespace render
 				transform.translation = ToVec(placement.position);
 				transform.scale = placement.scale;
 
-				std::vector<WldMesh> meshes;
-				for (int index : object_models.ActorMeshes(actor)) {
-					if (object_models.ReadMesh(index, mesh))
-						meshes.push_back(mesh);
-				}
-				int skeleton_index = object_models.ActorSkeleton(actor);
-				WldSkeleton skeleton;
-				if (skeleton_index >= 0 && object_models.ReadSkeleton(skeleton_index, skeleton)) {
-					auto bones = PoseSkeleton(skeleton, nullptr, 0);
-					for (int index : skeleton.meshes) {
-						if (object_models.ReadMesh(index, mesh)) {
-							SkinMesh(mesh, bones);
-							meshes.push_back(mesh);
-						}
-					}
-				}
+				std::vector<WldMesh> meshes = ObjectMeshes(actor);
 				// The placement's vertex colors run through the meshes in turn.
 				size_t vertices = 0;
 				for (const auto &m : meshes)
@@ -144,7 +176,7 @@ namespace render
 					}
 				}
 				for (const auto &m : meshes)
-					AddMesh(m, transform, true, lights, lighting);
+					AddMesh(m, transform, true, lights, lighting, m_meshes, m_collision, m_collision_exposure);
 				++m_object_count;
 			}
 			for (const auto &[name, count] : unknown)
@@ -235,8 +267,30 @@ namespace render
 		}
 	}
 
+	std::vector<WldMesh> ZoneScene::ObjectMeshes(int actor) const
+	{
+		std::vector<WldMesh> meshes;
+		WldMesh mesh;
+		for (int index : m_object_models.ActorMeshes(actor)) {
+			if (m_object_models.ReadMesh(index, mesh))
+				meshes.push_back(mesh);
+		}
+		int skeleton_index = m_object_models.ActorSkeleton(actor);
+		WldSkeleton skeleton;
+		if (skeleton_index >= 0 && m_object_models.ReadSkeleton(skeleton_index, skeleton)) {
+			auto bones = PoseSkeleton(skeleton, nullptr, 0);
+			for (int index : skeleton.meshes) {
+				if (m_object_models.ReadMesh(index, mesh)) {
+					SkinMesh(mesh, bones);
+					meshes.push_back(mesh);
+				}
+			}
+		}
+		return meshes;
+	}
+
 	void ZoneScene::AddMesh(const WldMesh &mesh, const Transform &transform, bool solid, const std::vector<WldLight> &lights,
-		const ZoneLighting &lighting)
+		const ZoneLighting &lighting, std::vector<StaticMesh> &meshes, std::vector<Vec3> &collision, std::vector<float> &exposures)
 	{
 		StaticMesh out;
 		out.vertices.resize(mesh.positions.size());
@@ -301,7 +355,7 @@ namespace render
 		for (const auto &t : mesh.triangles) {
 			if (solid && !(t.flags & 0x10)) {
 				for (int k = 0; k < 3; ++k)
-					m_collision.push_back(out.vertices[t.v[k]].position);
+					collision.push_back(out.vertices[t.v[k]].position);
 				// s3dGetActorScaledAmbient: the third of its vertices' alphas / 256, 1 without colors.
 				float exposure = 1;
 				if (!mesh.colors.empty()) {
@@ -309,7 +363,7 @@ namespace render
 					for (int k = 0; k < 3; ++k)
 						exposure += (out.vertices[t.v[k]].color >> 24) * (1.0f / 256) / 3;
 				}
-				m_collision_exposure.push_back(exposure);
+				exposures.push_back(exposure);
 			}
 
 			if (t.material >= mesh.materials.size())
@@ -352,12 +406,12 @@ namespace render
 			}
 		}
 		if (!out.batches.empty())
-			m_meshes.push_back(std::move(out));
+			meshes.push_back(std::move(out));
 		else
 			unlit.occluders = std::move(out.occluders);
 		if (!unlit.batches.empty()) {
 			unlit.unlit = true;
-			m_meshes.push_back(std::move(unlit));
+			meshes.push_back(std::move(unlit));
 		}
 	}
 
@@ -414,6 +468,7 @@ namespace render
 			}
 			DrawStaticMesh(renderer, mesh, now_ms, &m_vertices);
 		}
+		DrawDoors(renderer, now_ms, lights, sun);
 		renderer.SetDynamicLights(false, 0);
 	}
 
@@ -428,29 +483,29 @@ namespace render
 		thread_local std::vector<uint32_t> nearby;
 		Candidates(from.x, from.y, from.x, from.y, nearby);
 		bool found = false;
-		for (uint32_t t : nearby) {
-			const Vec3 &a = m_collision[t * 3], &b = m_collision[t * 3 + 1], &c = m_collision[t * 3 + 2];
-			// Barycentric coordinates of (x, y) in the triangle's top-down projection.
-			float d = (b.y - c.y) * (a.x - c.x) + (c.x - b.x) * (a.y - c.y);
-			if (std::fabs(d) < 1e-6f)
-				continue;
-			float l1 = ((b.y - c.y) * (from.x - c.x) + (c.x - b.x) * (from.y - c.y)) / d;
-			float l2 = ((c.y - a.y) * (from.x - c.x) + (a.x - c.x) * (from.y - c.y)) / d;
-			float l3 = 1 - l1 - l2;
-			if (l1 < 0 || l2 < 0 || l3 < 0)
-				continue;
-			float z = l1 * a.z + l2 * b.z + l3 * c.z;
-			if (z <= from.z + 0.01f && z >= from.z - depth && (!found || z > floor_z)) {
+		auto test = [&](const Vec3 *triangle, float triangle_exposure) {
+			float z;
+			if (HeightAt(triangle[0], triangle[1], triangle[2], from.x, from.y, z) && z <= from.z + 0.01f &&
+				z >= from.z - depth && (!found || z > floor_z)) {
 				floor_z = z;
 				found = true;
 				if (exposure)
-					*exposure = t < m_collision_exposure.size() ? m_collision_exposure[t] : 1;
+					*exposure = triangle_exposure;
 			}
+		};
+		for (uint32_t t : nearby)
+			test(&m_collision[t * 3], t < m_collision_exposure.size() ? m_collision_exposure[t] : 1);
+		Vec3 low{from.x, from.y, from.z - depth}, high{from.x, from.y, from.z + 0.01f};
+		for (const Door &door : m_doors) {
+			if (!BoxesMeet(low, high, door.low, door.high))
+				continue;
+			for (size_t t = 0; t * 3 < door.placed_collision.size(); ++t)
+				test(&door.placed_collision[t * 3], t < door.exposure.size() ? door.exposure[t] : 1);
 		}
 		return found;
 	}
 
-	bool ZoneScene::SegmentHit(const Vec3 &from, const Vec3 &to, float &fraction, Vec3 *normal) const
+	bool ZoneScene::SegmentHit(const Vec3 &from, const Vec3 &to, float &fraction, Vec3 *normal, bool doors) const
 	{
 		// Moller-Trumbore against the solid triangles near the segment, both sides.
 		Vec3 d = to - from;
@@ -460,37 +515,159 @@ namespace render
 		Candidates(low.x, low.y, high.x, high.y, nearby);
 		bool found = false;
 		fraction = 1;
-		for (uint32_t triangle : nearby) {
-			const Vec3 &a = m_collision[triangle * 3], &b = m_collision[triangle * 3 + 1], &c = m_collision[triangle * 3 + 2];
+		auto test = [&](const Vec3 *triangle) {
+			const Vec3 &a = triangle[0], &b = triangle[1], &c = triangle[2];
 			if (std::max({a.x, b.x, c.x}) < low.x || std::min({a.x, b.x, c.x}) > high.x || std::max({a.y, b.y, c.y}) < low.y ||
 				std::min({a.y, b.y, c.y}) > high.y || std::max({a.z, b.z, c.z}) < low.z || std::min({a.z, b.z, c.z}) > high.z)
-				continue;
-			Vec3 e1 = b - a, e2 = c - a;
-			Vec3 p = Cross(d, e2);
-			float det = Dot(e1, p);
-			if (std::fabs(det) < 1e-8f)
-				continue;
-			float inv = 1 / det;
-			Vec3 s = from - a;
-			float u = Dot(s, p) * inv;
-			if (u < 0 || u > 1)
-				continue;
-			Vec3 q = Cross(s, e1);
-			float v = Dot(d, q) * inv;
-			if (v < 0 || u + v > 1)
-				continue;
-			float t = Dot(e2, q) * inv;
-			if (t >= 0 && t < fraction) {
+				return;
+			float t;
+			if (RayHit(from, d, a, b, c, t) && t < fraction) {
 				fraction = t;
 				found = true;
 				if (normal) {
-					*normal = Normalize(Cross(e1, e2));
+					*normal = Normalize(Cross(b - a, c - a));
 					if (Dot(*normal, d) > 0)
 						*normal = *normal * -1.0f;
 				}
 			}
-		}
+		};
+		for (uint32_t triangle : nearby)
+			test(&m_collision[triangle * 3]);
+		if (doors)
+			for (const Door &door : m_doors) {
+				if (!BoxesMeet(low, high, door.low, door.high))
+					continue;
+				for (size_t t = 0; t * 3 < door.placed_collision.size(); ++t)
+					test(&door.placed_collision[t * 3]);
+			}
 		return found;
+	}
+
+	int ZoneScene::AddDoor(const std::string &name, const Transform &placement)
+	{
+		int actor = m_object_models.Find(name + "_ACTORDEF");
+		if (actor < 0 || m_object_models.Fragments()[actor].type != 0x14)
+			return -1;
+		// Lit like an object where it stands now, then taken back into its own space to move.
+		Door door;
+		for (const WldMesh &mesh : ObjectMeshes(actor)) {
+			AddMesh(mesh, placement, true, m_lights, m_lighting, door.meshes, door.collision, door.exposure);
+			door.radius = std::max(door.radius, mesh.radius);
+		}
+		if (door.meshes.empty())
+			return -1;
+		Quat inverse{placement.rotation.w, -placement.rotation.x, -placement.rotation.y, -placement.rotation.z};
+		float shrink = placement.scale != 0 ? 1 / placement.scale : 1;
+		auto local = [&](const Vec3 &p) { return inverse.Rotate(p - placement.translation) * shrink; };
+		for (auto &mesh : door.meshes) {
+			for (auto &v : mesh.vertices) {
+				v.position = local(v.position);
+				v.normal = inverse.Rotate(v.normal);
+			}
+			for (const auto &batch : mesh.batches)
+				for (uint32_t index : batch.indices)
+					door.triangles.push_back(mesh.vertices[index].position);
+			mesh.occluders.clear();
+		}
+		for (auto &p : door.collision)
+			p = local(p);
+		door.placed = door.meshes;
+		m_doors.push_back(std::move(door));
+		int index = static_cast<int>(m_doors.size()) - 1;
+		PlaceDoor(index, placement);
+		return index;
+	}
+
+	void ZoneScene::PlaceDoor(int index, const Transform &placement)
+	{
+		if (index < 0 || index >= static_cast<int>(m_doors.size()))
+			return;
+		Door &door = m_doors[index];
+		door.placement = placement;
+		auto grow = [](Vec3 &low, Vec3 &high, const Vec3 &p) {
+			low = {std::min(low.x, p.x), std::min(low.y, p.y), std::min(low.z, p.z)};
+			high = {std::max(high.x, p.x), std::max(high.y, p.y), std::max(high.z, p.z)};
+		};
+		Vec3 low{1e30f, 1e30f, 1e30f}, high{-1e30f, -1e30f, -1e30f};
+		for (size_t m = 0; m < door.meshes.size(); ++m) {
+			const StaticMesh &from = door.meshes[m];
+			StaticMesh &to = door.placed[m];
+			to.low = {1e30f, 1e30f, 1e30f};
+			to.high = {-1e30f, -1e30f, -1e30f};
+			for (size_t i = 0; i < from.vertices.size(); ++i) {
+				to.vertices[i].position = placement.Apply(from.vertices[i].position);
+				to.vertices[i].normal = placement.ApplyDirection(from.vertices[i].normal);
+				grow(to.low, to.high, to.vertices[i].position);
+			}
+			to.center = (to.low + to.high) * 0.5f;
+			to.radius = Length(to.high - to.low) * 0.5f;
+			grow(low, high, to.low);
+			grow(low, high, to.high);
+		}
+		door.placed_collision.resize(door.collision.size());
+		for (size_t i = 0; i < door.collision.size(); ++i) {
+			door.placed_collision[i] = placement.Apply(door.collision[i]);
+			grow(low, high, door.placed_collision[i]);
+		}
+		door.placed_triangles.resize(door.triangles.size());
+		for (size_t i = 0; i < door.triangles.size(); ++i)
+			door.placed_triangles[i] = placement.Apply(door.triangles[i]);
+		door.low = low;
+		door.high = high;
+		door.center = (low + high) * 0.5f;
+		door.placed_radius = Length(high - low) * 0.5f;
+	}
+
+	float ZoneScene::DoorRadius(int index) const
+	{
+		if (index < 0 || index >= static_cast<int>(m_doors.size()))
+			return 0;
+		return m_doors[index].radius * m_doors[index].placement.scale;
+	}
+
+	int ZoneScene::DoorHit(const Vec3 &from, const Vec3 &direction, float range, float &distance) const
+	{
+		int best = -1;
+		distance = range;
+		for (size_t i = 0; i < m_doors.size(); ++i) {
+			const Door &door = m_doors[i];
+			// Past the sphere around it, or behind us: missed.
+			Vec3 to_center = door.center - from;
+			float along = Dot(to_center, direction);
+			if (along < -door.placed_radius || Length(to_center - direction * along) > door.placed_radius)
+				continue;
+			const auto &triangles = door.placed_triangles;
+			for (size_t t = 0; t + 2 < triangles.size(); t += 3) {
+				float hit;
+				if (RayHit(from, direction, triangles[t], triangles[t + 1], triangles[t + 2], hit) && hit < distance) {
+					distance = hit;
+					best = static_cast<int>(i);
+				}
+			}
+		}
+		return best;
+	}
+
+	void ZoneScene::DrawDoors(Renderer &renderer, uint64_t now_ms, const std::vector<PointLight> &lights, bool sun) const
+	{
+		uint32_t set = ~0u;
+		for (const Door &door : m_doors) {
+			if (!renderer.SphereVisible(door.center, door.placed_radius) || !InView(door.center, door.placed_radius))
+				continue;
+			for (const StaticMesh &mesh : door.placed) {
+				uint32_t mask = 0;
+				if (!mesh.unlit)
+					for (size_t i = 0; i < lights.size() && i < Renderer::SceneLightLimit; ++i)
+						if (Length(lights[i].position - mesh.center) < lights[i].radius + mesh.radius)
+							mask |= 1u << i;
+				uint32_t state = mask | (sun && !mesh.unlit ? 1u << 31 : 0);
+				if (state != set) {
+					renderer.SetDynamicLights(sun && !mesh.unlit, mask);
+					set = state;
+				}
+				DrawStaticMesh(renderer, mesh, now_ms);
+			}
+		}
 	}
 
 	size_t ZoneScene::TriangleCount() const

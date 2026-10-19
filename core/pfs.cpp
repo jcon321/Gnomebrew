@@ -28,29 +28,43 @@ std::string ToLower(std::string s)
 	return s;
 }
 
-bool PfsArchive::Open(const std::string &path)
+bool PfsArchive::Open(const std::string &path, bool lazy)
 {
 	m_path = path;
 	m_entries.clear();
+	m_data.clear();
+	m_file.reset();
 
-	std::ifstream file(path, std::ios::binary);
-	if (!file)
+	auto file = std::make_unique<std::ifstream>(path, std::ios::binary);
+	if (!*file)
 		return false;
-	m_data.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+	if (lazy) {
+		file->seekg(0, std::ios::end);
+		m_size = static_cast<size_t>(file->tellg());
+		m_file = std::move(file);
+	}
+	else {
+		m_data.assign(std::istreambuf_iterator<char>(*file), std::istreambuf_iterator<char>());
+		m_size = m_data.size();
+	}
 
 	uint32_t dir_offset = 0, count = 0;
-	if (!ReadU32(m_data, 0, dir_offset) || m_data.size() < 12 || memcmp(&m_data[4], "PFS ", 4) != 0)
+	std::vector<uint8_t> magic;
+	if (!ReadU32At(0, dir_offset) || !Bytes(4, 4, magic) || memcmp(magic.data(), "PFS ", 4) != 0)
 		return false;
-	if (!ReadU32(m_data, dir_offset, count))
+	if (!ReadU32At(dir_offset, count))
 		return false;
 
+	std::vector<uint8_t> directory;
+	if (!Bytes(dir_offset + 4, static_cast<size_t>(count) * 12, directory))
+		return false;
 	std::vector<Entry> files;
 	Entry names_entry{0, 0};
 	bool have_names = false;
 	for (uint32_t i = 0; i < count; ++i) {
 		uint32_t crc, offset, size;
-		size_t at = dir_offset + 4 + static_cast<size_t>(i) * 12;
-		if (!ReadU32(m_data, at, crc) || !ReadU32(m_data, at + 4, offset) || !ReadU32(m_data, at + 8, size))
+		size_t at = static_cast<size_t>(i) * 12;
+		if (!ReadU32(directory, at, crc) || !ReadU32(directory, at + 4, offset) || !ReadU32(directory, at + 8, size))
 			return false;
 		if (crc == NameDirectoryCrc || crc == RepackedNameDirectoryCrc) {
 			names_entry = {offset, size};
@@ -82,20 +96,53 @@ bool PfsArchive::Open(const std::string &path)
 	return true;
 }
 
+bool PfsArchive::Bytes(size_t offset, size_t size, std::vector<uint8_t> &out) const
+{
+	if (offset > m_size || size > m_size - offset)
+		return false;
+	if (!m_file) {
+		out.assign(m_data.begin() + static_cast<long>(offset), m_data.begin() + static_cast<long>(offset + size));
+		return true;
+	}
+	out.resize(size);
+	m_file->clear();
+	m_file->seekg(static_cast<std::streamoff>(offset));
+	m_file->read(reinterpret_cast<char *>(out.data()), static_cast<std::streamsize>(size));
+	return static_cast<size_t>(m_file->gcount()) == size;
+}
+
+bool PfsArchive::ReadU32At(size_t offset, uint32_t &value) const
+{
+	if (!m_file)
+		return ReadU32(m_data, offset, value);
+	std::vector<uint8_t> bytes;
+	return Bytes(offset, 4, bytes) && ReadU32(bytes, 0, value);
+}
+
 bool PfsArchive::ReadEntry(const Entry &entry, std::vector<uint8_t> &out) const
 {
 	out.clear();
 	out.reserve(entry.size);
 	size_t pos = entry.offset;
+	std::vector<uint8_t> block; // lazy: the compressed block, read from the file
 	while (out.size() < entry.size) {
 		uint32_t deflated = 0, inflated = 0;
-		if (!ReadU32(m_data, pos, deflated) || !ReadU32(m_data, pos + 4, inflated))
+		if (!ReadU32At(pos, deflated) || !ReadU32At(pos + 4, inflated))
 			return false;
 		pos += 8;
-		if (pos + deflated > m_data.size())
-			return false;
+		const uint8_t *data;
+		if (m_file) {
+			if (!Bytes(pos, deflated, block))
+				return false;
+			data = block.data();
+		}
+		else {
+			if (pos + deflated > m_data.size())
+				return false;
+			data = &m_data[pos];
+		}
 		size_t before = out.size();
-		if (!Inflate::Zlib(&m_data[pos], deflated, out) || out.size() - before != inflated)
+		if (!Inflate::Zlib(data, deflated, out) || out.size() - before != inflated)
 			return false;
 		pos += deflated;
 	}

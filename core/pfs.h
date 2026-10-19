@@ -7,14 +7,18 @@
 // sorted by offset.
 
 #include <cstdint>
+#include <fstream>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
 class PfsArchive
 {
 public:
-	bool Open(const std::string &path);
+	// lazy: read only the directory now and each file from disk when it's asked for, instead of
+	// holding the whole archive in memory (the sound packs, snd1..14.pfs, are 113 MB together).
+	bool Open(const std::string &path, bool lazy = false);
 	bool Read(const std::string &name, std::vector<uint8_t> &out) const; // name is case-insensitive
 	bool Contains(const std::string &name) const;
 	std::vector<std::string> Names() const;
@@ -28,9 +32,14 @@ private:
 	};
 
 	bool ReadEntry(const Entry &entry, std::vector<uint8_t> &out) const;
+	// `size` bytes at `offset`, from memory or (lazy) the file.
+	bool Bytes(size_t offset, size_t size, std::vector<uint8_t> &out) const;
+	bool ReadU32At(size_t offset, uint32_t &value) const;
 
 	std::string m_path;
 	std::vector<uint8_t> m_data;
+	std::unique_ptr<std::ifstream> m_file; // lazy
+	size_t m_size = 0;
 	std::map<std::string, Entry> m_entries; // lowercase name -> entry
 };
 

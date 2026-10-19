@@ -217,6 +217,10 @@ void PlayerMovement::Tick(float t, const render::ZoneScene &scene)
 		z = floor_z;
 	if (z <= floor_z + 0.001f) {
 		z = floor_z;
+		if (m_velocity.z < m_landing) {
+			m_landing = m_velocity.z;
+			m_landing_wet = swimming;
+		}
 		if (m_velocity.z < 0)
 			m_velocity.z = 0;
 		m_on_ground = true;
@@ -308,4 +312,12 @@ render::Vec3 PlayerMovement::MoveHorizontally(const render::Vec3 &start, render:
 		move = rest - wall * render::Dot(rest, wall);
 	}
 	return feet;
+}
+
+float PlayerMovement::TakeLanding(bool &in_water)
+{
+	float landing = m_landing;
+	in_water = m_landing_wet;
+	m_landing = 0;
+	return landing;
 }

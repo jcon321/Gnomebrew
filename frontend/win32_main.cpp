@@ -15,11 +15,18 @@
 //              Renderer=d3d11         (or software: the CPU rasterizer and GDI)
 //              VSync=1                (d3d11: wait for the monitor's refresh; 0 runs as fast as it can;
 //                                      the debug menu toggles it, kept on exit)
+//   [Sound]    Sound=1                (0: no sound at all, as eqclient.ini's Sound=FALSE)
+//              MusicVolume=10         (0..20, the options' music level)
+//              SoundVolume=10         (0..20, the options' sound level)
+//              Music=midi             (the XMI music: midi, Windows' MIDI synth like the real client;
+//                                      sf2, through SoundFont below, in our own mix)
+//              SoundFont=synthus2.sf2 (in the EQ folder, or a full path; synthusr.sf2 if it's missing)
 //   [Defaults] LastCharSel=0          (remembered character select slot, like eqclient.ini's)
 //   eqclient_gui.exe --eqdir C:\TAKP --login 192.168.0.18:6000 --size 1920x1080
 
 #include "eqstr.h"
 #include "frontend.h"
+#include "win32_audio.h"
 #include "win32_d3d11.h"
 #include "win32_text.h"
 
@@ -27,6 +34,7 @@
 #include <shellapi.h>
 
 #include <algorithm>
+#include <vector>
 #include <chrono>
 #include <cstdio>
 #include <memory>
@@ -361,6 +369,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	IniDefault(ini, L"Display", L"Height", L"1080");
 	IniDefault(ini, L"Display", L"Renderer", L"d3d11");
 	IniDefault(ini, L"Display", L"VSync", L"1");
+	IniDefault(ini, L"Sound", L"Sound", L"1");
+	IniDefault(ini, L"Sound", L"MusicVolume", L"10");
+	IniDefault(ini, L"Sound", L"SoundVolume", L"10");
+	IniDefault(ini, L"Sound", L"Music", L"midi");
+	IniDefault(ini, L"Sound", L"SoundFont", L"synthus2.sf2");
 	IniDefault(ini, L"Defaults", L"LastCharSel", L"0");
 	std::wstring eq_dir = IniString(ini, L"Paths", L"EQDir");
 	std::wstring login = IniString(ini, L"Login", L"Server");
@@ -370,6 +383,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	std::wstring renderer = IniString(ini, L"Display", L"Renderer");
 	bool vsync = GetPrivateProfileIntW(L"Display", L"VSync", 1, ini.c_str()) != 0;
 	int last_character = GetPrivateProfileIntW(L"Defaults", L"LastCharSel", 0, ini.c_str());
+	bool sound_on = GetPrivateProfileIntW(L"Sound", L"Sound", 1, ini.c_str()) != 0;
+	int music_volume = std::clamp(static_cast<int>(GetPrivateProfileIntW(L"Sound", L"MusicVolume", 10, ini.c_str())), 0, 20);
+	int sound_volume = std::clamp(static_cast<int>(GetPrivateProfileIntW(L"Sound", L"SoundVolume", 10, ini.c_str())), 0, 20);
+	std::wstring music_synth = IniString(ini, L"Sound", L"Music");
+	std::wstring soundfont = IniString(ini, L"Sound", L"SoundFont");
 
 	int argc = 0;
 	wchar_t **argv = CommandLineToArgvW(GetCommandLineW(), &argc);
@@ -488,6 +506,50 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	}
 	else
 		Log("software renderer (Renderer=software)");
+
+	// The sound: the mix, its synth for the XMI music, and waveOut. Both outlive the front end.
+	audio::Mixer mixer;
+	WaveOutDevice sound_device;
+	if (sound_on) {
+		std::shared_ptr<audio::MidiSynth> synth;
+		std::string synth_error;
+		if (music_synth != L"sf2") {
+			synth = MakeWindowsMidiSynth(synth_error);
+			if (synth)
+				Log("music: Windows MIDI (the MIDI mapper)");
+			else
+				Log("music: " + synth_error + "; trying the SoundFont");
+		}
+		if (!synth) {
+			std::string base = Narrow(eq_dir) + "\\";
+			std::string font = Narrow(soundfont);
+			std::vector<std::string> fonts;
+			if (!font.empty())
+				fonts.push_back(font.find(':') != std::string::npos || font[0] == '\\' ? font : base + font);
+			fonts.push_back(base + "synthusr.sf2");
+			for (const auto &path : fonts) {
+				if ((synth = audio::MakeSoundFontSynth(path, audio::Mixer::Rate, synth_error))) {
+					Log("music: SoundFont " + path);
+					break;
+				}
+			}
+			if (!synth)
+				Log("music: " + synth_error + "; no XMI music");
+		}
+		mixer.SetSynth(synth);
+		std::string device_error;
+		if (sound_device.Start(mixer, device_error)) {
+			ui.mixer = &mixer;
+			ui.sound.music_volume = music_volume / 20.0f;
+			ui.sound.sound_volume = sound_volume / 20.0f;
+			Log("sound: waveOut " + std::to_string(audio::Mixer::Rate) + " Hz, music " + std::to_string(music_volume) +
+				"/20, sounds " + std::to_string(sound_volume) + "/20");
+		}
+		else
+			Log("sound: " + device_error);
+	}
+	else
+		Log("sound off (Sound=0)");
 
 	GdiTextRenderer text;
 	text.AddSurface(g_app.surface.dc, g_app.surface.pixels, g_app.surface.width, g_app.surface.height);

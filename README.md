@@ -13,8 +13,10 @@ A from-scratch EQMac (TAKP-era) client. Two programs share one core:
   person). Over the view are the chat log (Enter to chat), a CAMP button for a proper camp-out, and
   the debug menu (F11): a stat card in sections that fold (your details, frame rate, movement and
   the floor under you, where the zone last heard you are, camera, network, the latest packets, the
-  zone header and light, render toggles for wireframe / no fog / collision walls / a floor marker,
-  a target clicked in the world or the list, and the nearest spawns) and a 2D radar.
+  zone header and light, the sound, render toggles for wireframe / no fog / collision walls / a floor
+  marker, a target clicked in the world or the list, and the nearest spawns) and a 2D radar. Music plays
+  from character select on (eqtheme.mp3, then each zone's own), and the zones' ambient sounds (waterfalls,
+  torches, wildlife) around you, as the real client plays them.
 - **`eqclient`** (console, Linux and Windows): logs in, authenticates to world, lists
   characters, can create a test character (`--create`), and with `--char` and `--zone` enters
   the zone, lists nearby spawns, can `--say` something, then camps out. Used for testing
@@ -26,16 +28,20 @@ A from-scratch EQMac (TAKP-era) client. Two programs share one core:
 core/       portable: RDP session, login/world protocol, DES, inflate, PFS (.pak/.s3d), BMP, DDS, TGA, XML, WLD, eqtext.txt,
             character creation rules
 console/    eqclient
+audio/      portable sound: the mix (WAV, MP3, positional voices), XMI music and its synths, the client's sound manager
 render/     portable 3D: renderer interface, software rasterizer, textures, zone scenes, sky, skeletons, race models
 frontend/   the front end: canvas, widgets, screens, SIDL UI engine, character select scene, character creation (portable)
-            + win32_main.cpp / win32_text.cpp / win32_d3d11.cpp (Windows host, Direct3D 11 renderer)
-tools/      frontend_preview and scene_preview (Linux), cross-check-windows.sh
+            + win32_main.cpp / win32_text.cpp / win32_d3d11.cpp / win32_audio.cpp (Windows host, Direct3D 11
+            renderer, waveOut and MIDI out)
+tools/      frontend_preview, scene_preview and sound_preview (Linux), cross-check-windows.sh
 third_party/rdplib/  vendored rdplib (MIT, by solar), unmodified
+third_party/minimp3/  vendored minimp3.h (CC0, lieff/minimp3 @ea99364), unmodified: the MP3 music
+third_party/tinysoundfont/  vendored tsf.h (MIT, schellingb/TinySoundFont @853a0a1), unmodified: the SoundFont synth
 cmake/      llvm-mingw.cmake (Linux -> Windows cross toolchain)
 ```
 
 The core and the front-end logic are portable, so both compile and run on Linux too. Only the
-window, input, GDI text and Direct3D glue is Windows-specific.
+window, input, GDI text, Direct3D and sound output glue is Windows-specific.
 
 ## Building
 
@@ -86,6 +92,13 @@ Height=1080
 Renderer=d3d11
 VSync=1
 
+[Sound]
+Sound=1
+MusicVolume=10
+SoundVolume=10
+Music=midi
+SoundFont=synthus2.sf2
+
 [Defaults]
 LastCharSel=0
 ```
@@ -109,6 +122,13 @@ LastCharSel=0
   3D scene filling the rest. A window that doesn't fit the screen's work area is shrunk to fit.
 - eqmain's screens (start, login, server select) are 640x480 art. They're
   drawn at their native size in the middle of the window, black around them, not scaled.
+- `Sound=0` turns all sound off (the real client's `Sound=FALSE`). `MusicVolume` and `SoundVolume` are
+  the options' music and sound levels, 0 to 20 (10 by default, half volume, as the client starts).
+  `Music` is where the XMI music (the zones before Luclin) goes: `midi`, Windows' MIDI synth (the
+  Microsoft GS Wavetable Synth), which is where the real client's went (Miles' XMIDI driver on the MIDI
+  mapper); or `sf2`, our own mix through `SoundFont`, one of the General MIDI banks EverQuest ships
+  (`synthus2.sf2`, `synthusr.sf2`; in the EQ folder unless it's a full path). Without a MIDI out, `midi`
+  falls back to the SoundFont. The MP3 music and the sounds always play through our mix (waveOut).
 - `LastCharSel` is the character select slot to start on. Like the real client's `[Defaults]
   LastCharSel`, it's saved as you select characters (written when the GUI exits).
 
@@ -130,6 +150,7 @@ build/eqclient -u USER -p PASS [options]
   --create NAME         create a Human Warrior with this name first (for testing)
   --zone SECONDS        with --char: enter the zone, stay this long, then /camp (30 s) and log out
   --say TEXT            with --zone: /say this once in the zone
+  --click-door ID       with --zone: use door ID once in, and print the doors that move (OP_MoveDoor)
   --zone-to ID          with --zone: once in, zone to zone ID (OP_ZoneChange; the zone checks it against
                         its zone points), through world to the next zone, then stay and camp there
   --idle SECONDS        without --char, stay at character select this long (default 0)
@@ -156,7 +177,8 @@ build/scene_preview EQDIR OUT.png [--zone NAME] [--at X Y Z] [--heading H] [--pi
 build/scene_preview EQDIR OUT.png --player RACE GENDER --zone NAME --at X Y Z [--heading H] [--face F] [--equip M,M,...]
                     [--orbit H] [--pitch P] [--first-person] [--zoom N] [--walk MS [--turn -1|1]] [--npc ...]
                     [--time HOUR MINUTE] [--time-type T] [--fog START END RRGGBB] [--sky N] [--frames N] [--size WxH]
-                    [--debug-draw wireframe,nofog,walls,floor]
+                    [--debug-draw wireframe,nofog,walls,floor] [--door NAME TYPE X Y Z HEADING INCLINE SIZE PARAM]
+                    [--door-open MS] [--click X Y] [--jump MS] [--sound OUT.wav]
 ```
 
 `scene_preview` renders the 3D view to a PNG: the character select scene for any race, gender,
@@ -166,7 +188,26 @@ the zone's `OP_NewZone`). In that mode `--walk MS` runs forward first (and `--tu
 GENDER SIZE X Y Z HEADING` stands spawns around (each followed by any of `--npc-look TEXTURE HELM`,
 `--npc-equip M,M,...` (the nine equipment slots as the server sends them), `--npc-move SPEED TURN`, `--npc-stance S` and `--npc-fly F`), `--spawn-ms MS` runs them that long first
 and prints what they do, `--time HOUR MINUTE` sets the time of day, and `--debug-draw` turns on the
-debug menu's render toggles. `--frames N` times N renders.
+debug menu's render toggles. `--door` puts a door there as `OP_SpawnDoor` would (copy a row of the
+server's `doors` table), `--door-open MS` opens them all and runs that long before any `--walk`, and
+`--click X Y` reports what a left click there would do. `--jump MS` jumps that far into the walk, and
+`--sound OUT.wav` mixes what the doors, we and the spawns sound like as it runs (no zone music or
+ambience), printing each wave played. `--frames N` times N renders.
+
+```
+build/sound_preview EQDIR OUT.wav [--zone NAME] [--at X Y Z] [--heading H] [--walk X Y Z] [--seconds S]
+                    [--music opening|charselect|combat|death|ID]... [--night] [--environment 1|2|3]
+                    [--soundfont FILE] [--music-volume V] [--sound-volume V]
+build/sound_preview EQDIR --emitters ZONE
+build/sound_preview EQDIR --xmi FILE INDEX OUT.mid
+```
+
+`sound_preview` runs the client's sound without a window or a sound card and writes the mix to a WAV:
+standing at a server position in a zone (or walking from there to `--walk`'s over the time), with the
+music selections given turned on, the XMI music through a SoundFont (default `synthus2.sf2`). Each second
+it prints the music track and the voices playing, and at the end each second's loudness. `--night` and
+`--environment` (1 outside, 2 a high ceiling, 3 a low one) set what the emitters see. `--emitters` prints
+a zone's `.emt`, and `--xmi` writes one of an `.xmi`'s sequences out as a standard MIDI file.
 
 ## How the front end was recovered
 
@@ -377,6 +418,21 @@ Not yet: the real client's messages use `CConfirmationDialog`; these use the fro
   `OP_SendLoginInfo`: it answers `OP_EnterWorld` with the character in the game, we enter as it, and it
   sends the next zone's address. A refusal prints the client's `eqstr` message for it (not experienced
   enough, not ready, expansion...) and moves us to the zone's safe point. The chat carries over.
+- **Doors and switches** (`frontend/zone_doors.cpp`, the client's `EQSwitch`): levers, lifts, traps and
+  the like are all "doors". `OP_SpawnDoor` is a u16 count and the 44-byte `Door_Struct`s deflated; each
+  is the actor `<name>_ACTORDEF` from `<zone>_obj.s3d`, scaled to its size / 100, turned to its heading and
+  tilted by its incline (eqgfx takes these as a placement's heading and pitch, `createActorFromFileContext`).
+  Types 50 (pressure plates), 54, and 57 with an incline of 1 (teleporters) are invisible, and 53 has no
+  model. `EQSwitch_UpdateDoorStates` moves them each frame in 50 ms ticks by type: 0-8 swing a quarter
+  turn at 8 a tick (5-7 the other way), 10-27 slide sideways, 30/35/40/130 tip over, 59-81 and the traps
+  rise or sink (lifts go their parameter's distance at 0.45 a tick), 100-107 spin, and one left open
+  closes by itself after `GetSwitchStateChangeTime` (10 s for types 0 and 5, 20 s for most). A left
+  click on one (the first door the ray from the camera hits before the zone) is `EQSwitch::UseSwitch`:
+  nothing while it moves, "You can't reach that, get closer." (1462) beyond a quarter of its radius +
+  our height + 20, else `OP_ClickDoor` (8 bytes: id, skill, item 0xffff, our spawn id). The zone
+  answers everyone with `OP_MoveDoor {id, state}` (2 opening, 3 closing), which is `ChangeState`. A
+  door is solid where it stands, so closed doors block, lifts carry, and the camera stops at them.
+  Not done: sounds, keys and lockpicks, pressure plates and touch teleporters, the particle-effect switches.
 - **Position updates:** `OP_ClientUpdate` as `pack_physics` packs it (the speed * 10, the heading in
   256ths, its change per tick, y/x/z*10, and the velocities in 16ths per tick). `ProcessControls` flags an
   update when the heading moves 2 or the speed 0.2, `DoPassageOfTime` every second, and `DoMainLoop` sends
@@ -453,6 +509,93 @@ Not yet: the real client's messages use `CConfirmationDialog`; these use the fro
 
 The zone screen fills the window: the 3D view, with the chat at the bottom left, our details and the
 nearest spawns at the top left, and the radar at the top right.
+
+## Sound
+
+`audio/eq_sound.cpp` is the client's `EqSoundManager` (@004d482a) and what's under it (Miles' sound
+objects, `MusicManager`, the emitters), on our own mix (`audio/mixer.cpp`) instead of Miles.
+
+- **Files:** a sound is a loose file in the EQ folder, else in `snd1.pfs` to `snd14.pfs` (the fourteen
+  `EqSoundManager` mounts; `snd15`-`17` and the `snd21`-`61` copies aren't). The 2000-odd waves are all
+  mono 8- or 16-bit PCM. Music is `.mp3`, or `.xmi`: Miles' Extended MIDI, several sequences to a file,
+  each MIDI without running status whose delays are runs of bytes under 0x80 at a fixed 120 ticks a
+  second (the files' tempo events are left over; their notes fall on the beats at 120 a second), and whose
+  note-ons carry their durations. Controllers 116 and 117 are Miles' FOR and NEXT loops and 110-120 its
+  own (not passed on), and the sequence volume scales every channel's volume controller, as
+  `AIL_set_sequence_volume` does.
+- **Music** is `MusicManager`'s list of tracks (`MusicManager::Set`: an asset and sequence, a loop count,
+  a priority and three fades). Turning a track on or off leaves `MusicManager::GiveTime` to pick the one
+  that plays: the active track with the lowest priority number, the playing one keeping a tie. The one it
+  replaces fades out over its switch fade, or its stop fade when nothing follows. A track whose asset is
+  still sounding fades back up instead of starting over (`SoundObject_PlayOrAdjustSoundVolume`), so
+  walking between two areas of a zone's `.xmi` keeps the tune going until it has faded right out (Ak'Anon's
+  fade out over 50 s). `LoadGlobalMusic`'s tracks: 1, the opening, and 4, character select, are both
+  `eqtheme.mp3` at priority 10 (`CDisplay::InitDDraw` turns 1 on, the main loop off; character select
+  turns 4 on and entering the world off); 2 combat (priority 3, `combattheme1` or `2.mp3` at random); 8
+  death (priority 2, played once); and `gl.xmi`'s sequences for the merchant, bank and guild windows.
+  Volumes are the options' levels / 20 (`CEverQuest_loadOptions`. TAKP's function list has
+  `SetMusicVolume` and `SetWaveVolume` swapped: `SoundVolume` goes to the one it calls `SetMusicVolume`,
+  which sets the emitters' volume).
+- **Zone emitters:** `<zone>.emt` (`EmitterLoad`; `<zone>_sounds.eff` is the fallback, but every zone with
+  sounds has an `.emt`), a line each: a leading number, the file, then the columns its header names, in
+  world coordinates (the WLD's: the server's y, x, z). An `.xmi` or `.mp3` one is a music track of
+  priority 10000 + its activation range, on while we're in that range. A `.wav` one (`SoundEmitter::GiveTime`)
+  wants to play while we're in range and its repeat delay (min + rand() % (max - min) ms, rolled again each
+  time) has passed: looping (loop type 0, or no delays) it holds its voice until we leave the range and it
+  fades out, else it plays once each time the delay comes round. A randomized one plays somewhere within
+  that distance around us, level with us. The day and night columns follow `SetupEmitterEnvironment`
+  (night is an hour under 5 or over 18 on the 1..24 clock, so before 4:00 and from 18:00; every half second); the environment column `SetGenericEnvironment`:
+  1 outside, 2 a ceiling under 500 over a covered floor (exposure under 0.48), 3 a ceiling within 20.
+  An emitter for another is off.
+- **Voices** come from the client's pools (`SoundManager::InitializeSoundSystem` and the constructor): 6
+  plain and 6 positional on channel 0, 1 plain (MP3 music) and 2 positional on channel 1, 4 positional on
+  channel 2 (the emitters), and the one sequence. A sound whose pool is empty doesn't play, so at most four
+  emitters sound at once, a held loop keeps its voice until it's let go (even out of earshot: Shar Vahl's
+  emitters have a 10000 activation range), and a new MP3 or XMI waits for the last to fade out.
+- **Positional voices** are "Miles Fast 2D Positional Audio", the provider the client asks for: full
+  volume within the emitter's full-volume radius, min / distance past it, silent past its maximum (and not
+  started there), panned by where it is relative to the way the camera faces. The listener is our
+  character (`SetListenerLocation` in `RealRender_World`). Volume changes are straight-line fades, as
+  `updateSampleVolume` steps them, and a voice faded to 0 ends.
+
+- **Game sounds** are `EqSoundManager`'s 4000 numbered waves (`WaveLoad`, `WavePlay`): `LoadGlobalWaves`'
+  lists (the jumps and the rest of each sex and size's, from 32; the footsteps, water, spells, weapons and so
+  on from 92), the doors' and the creatures'.
+- **Doors** (`EQSwitch::LoadDoorSoundEffects`, `ChangeState`): each type loads its waves as it spawns
+  (metal, stone, sliding doors, the drawbridge, portcullises, levers, traps and spears), and changing state
+  plays its type's for opening, closing, or (portcullises and the drawbridge) shutting, where the door is
+  (`CDisplay_PlaySoundAtLocation`: full volume within 5, silent past 80). Wood doors use the global
+  `DoorWd_O`/`DoorWd_C`. A door closing by itself (`ToggleDoorState`) goes round `ChangeState`, so it's quiet.
+- **Creatures and us** (`frontend/actor_sound.cpp`): `EQPlayer::SetSounds` gives each race (by sex, body
+  texture, and for one race its height) a set of sounds: idle and fidget loops, jump, get hit, gasps,
+  drowning, death, attacks, casting, and its walk and run (a loop, or footsteps like ours). It's a 6.7 KB
+  function of nested switches, so its table (`audio/actor_sound_table.cpp`) was taken by running it in
+  Ghidra's emulator for every race, sex and texture. `CDisplay_PlayAnimationSound` runs with every
+  `PlayAnimationTrack2`, so each frame with what the actor's doing: our footsteps (one of four, every 500
+  ms), a spawn's walk or run loop on its `EqMobileEmitter` (which follows it, heard within 24 times half its
+  height, and goes back to its idle loop at each change of animation), fidget loops, jumps, ladders, sitting
+  and kneeling, drowning, dying, and attacks (the race's own one time in three, or by what's in hand,
+  `CDisplay_GetItemType`: a weapon's whoosh, bare-handed kicks, stabs and punches, the whip). They play from
+  the actor (`EQPlayer::PlaySoundA`: full volume within half its height, out to 24 times that); ours on a
+  channel of our own at 0.8, and not over themselves. Landing (`CDisplay::CheckForUnderFloor`) at 1.25 a
+  tick or faster out of water thumps; ours past 2.5 is `fall_hit` when `TakeFallDamage` would hurt (by the
+  fall and our safe fall skill; only the sound). Our jump sound plays as the jump starts (our track holds
+  the jump; the client's goes back to walking once the rise slows, which is when our footsteps carry on).
+
+- **Water** (`EQPlayer::feetEnvironmentChange`, `headEnvironmentChange`): anyone's feet coming out of water
+  or lava (`WaterOut`), or going into water at 1 a tick up or down or faster (`WaterIn`); our head going
+  under plays `WatUndLp` (`Torch_Lp` in lava) once where we are, and coming up stops it. Our own sounds
+  have the client's two voices, so a splash out right after a long splash in can find none.
+- **The debug menu's SOUND section** shows the track playing and its number (1 the opening, 4 character
+  select, 17 on the zones' music), the voices, the ambient ones by name and distance (of four), the
+  creatures' loops, the emitters switched on and in range, the time of day and ceiling the emitters see,
+  and the files the zone wanted that aren't there; and switches for all sound, the music (MusicManager's
+  own, `/music`: what's playing fades out), the zone's ambience and the game's sounds (doors, steps, jumps,
+  splashes, creatures). The switches last until the client exits.
+
+Not yet: everything triggered by game events the client doesn't have yet (combat and death music,
+spell, item and hit sounds, the merchant/bank music, rain and wind, thunder), and EAX reverb (the
+per-zone room types `SetCurrentZone` sets, and underwater's).
 
 ## Protocol
 

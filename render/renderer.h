@@ -139,6 +139,11 @@ namespace render
 		int Height() const { return m_height; }
 		// Screen position of a world point under the camera given to the last Begin.
 		bool Project(const Vec3 &point, float &x, float &y) const;
+		// The unit direction from the camera through a screen position (Project's inverse).
+		Vec3 ViewRay(float x, float y) const
+		{
+			return Normalize(m_forward + m_right * ((x - m_width * 0.5f) / m_focal) - m_up * ((y - m_height * 0.5f) / m_focal));
+		}
 		// After Finish: whether something drawn is in front of the point (name tags behind walls).
 		virtual bool Occluded(const Vec3 &point) const = 0;
 

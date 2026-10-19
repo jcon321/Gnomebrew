@@ -74,7 +74,9 @@ namespace ZoneOp
 	constexpr uint16_t ExpUpdate = 0x4199;
 	constexpr uint16_t CharInventory = 0x41f6;
 	constexpr uint16_t ItemPacket = 0x4164;
-	constexpr uint16_t SpawnDoor = 0x41f7;
+	constexpr uint16_t SpawnDoor = 0x41f7;     // u16 count, then the Door_Structs (44 bytes each) deflated
+	constexpr uint16_t MoveDoor = 0x408e;      // {u8 door id, u8 action}: EQSwitch::ChangeState's state
+	constexpr uint16_t ClickDoor = 0x408d;     // ClickDoor_Struct, 8 bytes (EQSwitch::UseSwitch)
 	constexpr uint16_t GroundSpawn = 0x402c;
 	constexpr uint16_t SendZonepoints = 0x40b4; // u32 count + ZonePoint_Entry (24 bytes) each: the teleport table
 	constexpr uint16_t ZoneChange = 0x40a3;     // ZoneChange_Struct, 76 bytes, both directions
@@ -161,6 +163,8 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::CharInventory, "OP_CharInventory"},
 	{ZoneOp::ItemPacket, "OP_ItemPacket"},
 	{ZoneOp::SpawnDoor, "OP_SpawnDoor"},
+	{ZoneOp::MoveDoor, "OP_MoveDoor"},
+	{ZoneOp::ClickDoor, "OP_ClickDoor"},
 	{ZoneOp::GroundSpawn, "OP_GroundSpawn"},
 	{ZoneOp::SendZonepoints, "OP_SendZonepoints"},
 	{ZoneOp::ZoneChange, "OP_ZoneChange"},

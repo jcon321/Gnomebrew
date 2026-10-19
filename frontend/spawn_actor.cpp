@@ -155,6 +155,10 @@ void SpawnActor::Physics(float t, const ZoneScene &scene, bool floor)
 			m_feet.z = floor_z;
 		m_on_ground = m_feet.z <= floor_z + 0.001f;
 		if (m_on_ground) {
+			if (m_velocity.z < m_landing) { // CheckForUnderFloor: the feet under the floor, going down
+				m_landing = m_velocity.z;
+				m_landing_wet = water;
+			}
 			m_feet.z = floor_z;
 			m_velocity.z = std::max(m_velocity.z, 0.0f);
 		}
@@ -182,8 +186,17 @@ void SpawnActor::UpdateEnvironment(const ZoneScene &scene)
 	}
 }
 
+float SpawnActor::TakeLanding(bool &in_water)
+{
+	float landing = m_landing;
+	in_water = m_landing_wet;
+	m_landing = 0;
+	return landing;
+}
+
 void SpawnActor::Animate(const ZoneSpawn &spawn, const CharacterModel &model, float ms, uint64_t now_ms)
 {
+	m_played.clear();
 	bool dead = spawn.npc == 2 || spawn.npc == 3;
 	if (!m_animated) {
 		// Seen for the first time: already lying, sitting or ducking, at the end of getting there.
@@ -387,6 +400,7 @@ bool SpawnActor::Play(const ZoneSpawn &spawn, const CharacterModel &model, int i
 		rate = id == Anim::Run ? rate * 0.4f : 0.5f;
 	else if ((spawn.race == 42 || spawn.race == 120) && spawn.gender == 2 && id != Anim::Walk)
 		rate = 0.5f;
+	m_played.push_back(id); // CDisplay_PlayAnimationSound, for every track played
 	if (!restart && id == m_animation && reversed == m_reversed && !(m_end == End::Once && Finished(model))) {
 		m_rate = rate;
 		m_kind = kind;

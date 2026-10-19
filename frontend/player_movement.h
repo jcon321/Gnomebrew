@@ -80,6 +80,9 @@ public:
 	bool Swimming() const { return render::Swimming(m_body_environment); }
 	// The zone line ("DRNTP..." region type) the feet last stepped into, once; empty for none.
 	std::string TakeZoneLine();
+	// The hardest the feet met the floor going down since the last call (per tick, negative; 0 for
+	// none), and whether the body was in water (CheckForUnderFloor's landing sounds).
+	float TakeLanding(bool &in_water);
 
 private:
 	void Tick(float ticks, const render::ZoneScene &scene);
@@ -116,4 +119,6 @@ private:
 	bool m_slippery = false;
 	bool m_was_swimming = false;
 	std::string m_zone_line;
+	float m_landing = 0;
+	bool m_landing_wet = false;
 };

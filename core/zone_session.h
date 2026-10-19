@@ -112,6 +112,22 @@ struct ZoneSpawn
 	std::string DisplayName() const; // "a rat", like the client's CleanName
 };
 
+// A door or other switch from OP_SpawnDoor (Door_Struct, 44 bytes), as
+// EQSwitch_DoorLoadingCode reads it.
+struct ZoneDoor
+{
+	uint8_t id = 0;
+	std::string name;        // the model: "<name>_ACTORDEF" in the zone's _obj.s3d
+	float y = 0, x = 0, z = 0; // the server's coordinates
+	float heading = 0;       // 0..512
+	int16_t incline = 0;     // 0..512, a tilt (trapdoors, drawbridges)
+	int16_t size = 100;      // percent
+	uint8_t type = 0;        // the open type: how it moves (EQSwitch_UpdateDoorStates)
+	uint8_t open = 0;        // doorIsOpen
+	uint8_t inverted = 0;    // open is its resting state
+	int16_t param = 0;       // how far lifts move, a teleporter's destination...
+};
+
 // Our position and motion as pack_physics puts them in OP_ClientUpdate: the server's
 // coordinates (z is the model's center), heading 0..512, and the speeds per 50 ms tick.
 struct ZoneMovement
@@ -150,6 +166,8 @@ public:
 			Chat,         // chat
 			Message,      // text: system/special message
 			TimeOfDay,    // text: "hour:minute"
+			DoorsSpawned, // Doors() is set
+			DoorMoved,    // id: the door, value: its new state (OP_MoveDoor)
 			LoggedOut,    // camp finished; the zone closes the connection
 			ZoneApproved, // value: the zone we're going to; OP_DeleteSpawn is sent
 			ZoneDenied,   // value: the answer (ZoningMessage: 0 down, -1 not ready, -7 not experienced...)
@@ -192,6 +210,11 @@ public:
 	bool RequestZoneChange(uint32_t zone_id);
 	// OP_SendZonepoints: the zone lines' teleport table.
 	const std::vector<ZonePoint> &ZonePoints() const { return m_zone_points; }
+	// OP_SpawnDoor's doors and switches.
+	const std::vector<ZoneDoor> &Doors() const { return m_doors; }
+	// EQSwitch::UseSwitch: we used a door, holding `item` (0xffff none) with `skill` (disarm traps).
+	// The zone answers everyone with OP_MoveDoor when it opens.
+	bool ClickDoor(uint8_t door, uint16_t item, int16_t skill);
 	void Close();
 
 	State GetState() const { return m_state; }
@@ -256,6 +279,7 @@ private:
 	uint64_t m_started_ms = 0;
 	uint64_t m_camp_started_ms = 0;
 	std::vector<ZonePoint> m_zone_points;
+	std::vector<ZoneDoor> m_doors;
 	uint32_t m_zone_target = 0;
 	uint64_t m_zone_state_ms = 0; // when ZoneRequested or Departing began
 	int m_time_hour = 0, m_time_minute = 0;
