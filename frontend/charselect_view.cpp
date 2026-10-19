@@ -163,9 +163,14 @@ void CharacterSelectView::Render(Canvas &canvas, uint64_t now_ms)
 	if (m_model) {
 		uint16_t race = m_appearance->race;
 		uint8_t gender = m_appearance->gender;
-		if (race == 9 || race == 10 || race == 128) // troll, ogre, iksar (CDisplay_SetCCreateCamera)
+		// CDisplay_SetCCreateCamera(0): 6 out (7 for a troll, ogre or iksar), and with the new UI
+		// the height + 2 more. The eye is SetHeights' CameraHeightOffset, 6.2 x the scale
+		// (the origin is 3.125 x it over the feet).
+		float scale = m_model->OriginOverFeet() / 3.125f;
+		if (race == 9 || race == 10 || race == 128)
 			zoom = 7;
-		eye = (m_model->HeadZ() - m_model->MinZ()) * 1.05f;
+		zoom += scale * 5 + 2;
+		eye = 6.2f * scale;
 		if (m_close_up) {
 			// CDisplay_SetCCreateCamera(100) plus CFacePick::Activate's 1.5, level with the face.
 			zoom = gender == 0 || race == 3 || race == 5 ? 1.5f : 1.3f;
