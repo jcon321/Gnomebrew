@@ -653,3 +653,10 @@ A rejected world login gets no error packet. The server just drops the connectio
   arguments.
 - **Camping:** `0x4207` Camp, then `0x4150` Logout 30 seconds later (the server's camp timer), and
   `0x4159` LogoutReply.
+
+
+  ## Thanks
+  Thank you to the following projects & their contributors
+  - [EQMacEmu](https://github.com/EQMacEmu)
+  - [Zeal](https://github.com/CoastalRedwood/Zeal)
+  - [TakpUnderthehood](https://github.com/adonislive/TAKP-Client-Underthehood)
