@@ -437,10 +437,11 @@ void ZoneDoors::Update(render::ZoneScene &scene, uint64_t now_ms)
 		bool moved = at.x != door.at.x || at.y != door.at.y || at.z != door.at.z || heading != door.heading || incline != door.incline;
 		if (door.tried && !moved)
 			continue;
-		// t3dSetActorLocation: turned to its heading, then tilted by its incline.
+		// t3dSetActorLocation: turned to its heading, then tilted by its incline, the actor's pitch,
+		// which updateActorTransformMatrix turns about y the other way (-pitch).
 		render::Transform placement;
 		placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(door.heading)) *
-		                     render::AxisAngle({0, 1, 0}, render::HeadingToRadians(door.incline));
+		                     render::AxisAngle({0, 1, 0}, -render::HeadingToRadians(door.incline));
 		placement.translation = door.at;
 		placement.scale = door.scale;
 		if (!door.tried) {
