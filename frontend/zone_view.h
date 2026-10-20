@@ -177,11 +177,13 @@ public:
 	// The spawn drawn under a window pixel, nearest first (after Render); 0 for none.
 	uint16_t PickSpawn(int x, int y) const;
 	// Debug drawing: triangle outlines instead of the scene, no fog (out to the zone's max clip),
-	// collision walls near us outlined, and a marker on the floor under our feet.
+	// no clip plane (no far plane or fog at all), collision walls near us outlined, and a marker
+	// on the floor under our feet.
 	struct DebugDraw
 	{
 		bool wireframe = false, no_fog = false, walls = false, floor = false;
 		bool no_culling = false; // draw what the zone hides too (no Umbra)
+		bool no_clip = false;
 		int vision = -1; // a Vision, or -1: our own (our race's; spells and items to come)
 	};
 	// What we see in: the debug menu's choice, or our own (our race's; spells and items to come).
@@ -192,6 +194,10 @@ public:
 
 private:
 	static constexpr float MinDistance = 3, MaxDistance = 200;
+	// The options' Clip Plane slider (0.1 to 4 in steps of 0.2; 1, eqgame's default, is the zone's
+	// own fog), at its maximum: the view reaches the zone's max clip.
+	static constexpr float ClipPlane = 4;
+	static constexpr float NoClipFarPlane = 1e7f; // the debug menu's no clip plane
 
 	void Load();
 	void PlacePlayer();
@@ -209,7 +215,9 @@ private:
 	render::ModelLighting ModelLightingAt(const render::Vec3 &center, bool warm = true);
 	// The floor's exposure under `center` (s3dGetActorScaledAmbient), 1 where there's none.
 	float ExposureAt(const render::Vec3 &center) const;
-	float FarPlane() const; // the fog's end, or the zone's max clip with the debug menu's no fog
+	// CDisplay::SetFog: the zone's fog moved out by the Clip Plane slider (it keeps its depth).
+	void FogRange(float &start, float &end) const;
+	float FarPlane() const; // the fog's end, at least the zone's max clip with no fog, unbounded with no clip
 	void DrawDebugOverlays(Canvas &canvas) const;
 	void ChooseAnimation(float ms);
 	// The sounds: the doors' (EQSwitch::ChangeState), ours and a spawn's (actor_sound.h).

@@ -10,7 +10,8 @@
 //     ZONE the zone header (fog, clip, sky, gravity, safe point) and the light;
 //     SOUND the music track playing, the voices, the zone's emitters in range and the ambient sounds
 //       playing, and switches for all sound, the music, the zone's ambience and the game's sounds;
-//     RENDER toggles: wireframe, no fog, collision walls, floor marker, no occlusion culling, vsync;
+//     RENDER toggles: wireframe, no fog, collision walls, floor marker, no occlusion culling, no clip
+//     plane, vsync;
 //     TARGET a spawn clicked in the world or in NEARBY (else the nearest), in detail;
 //     NEARBY the nearest spawns.
 //   Top right, the radar: spawns within RadarRange, north up.

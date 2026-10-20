@@ -163,7 +163,8 @@ bool *DebugMenu::Toggle(int index)
 	case 2: return &m_draw.walls;
 	case 3: return &m_draw.floor;
 	case 4: return &m_draw.no_culling;
-	case 5: return m_set_vsync ? &m_vsync : nullptr;
+	case 5: return &m_draw.no_clip;
+	case 6: return m_set_vsync ? &m_vsync : nullptr;
 	default: return nullptr;
 	}
 }
@@ -398,8 +399,9 @@ void DebugMenu::DrawCard(Canvas &canvas, TextRenderer &text, const ZoneSession &
 	}
 
 	if (section(Render, "RENDER")) {
-		static const char *const names[] = {"Wireframe", "No fog", "Collision walls", "Floor marker", "No occlusion culling", "VSync"};
-		for (int i = 0; i < 6; ++i) {
+		static const char *const names[] = {"Wireframe", "No fog", "Collision walls", "Floor marker", "No occlusion culling",
+			"No clip plane", "VSync"};
+		for (int i = 0; i < 7; ++i) {
 			if (!Toggle(i))
 				continue;
 			Line &line = *row(std::string(*Toggle(i) ? "[x] " : "[  ] ") + names[i], *Toggle(i) ? White : Grey);

@@ -22,7 +22,7 @@
 // --npc-fly F its fly mode, --npc-light TYPE the light it carries (2 a torch, 4 a lantern...). --spawn-ms MS runs the spawns that long first, printing where they are
 // and what they play each second. --time HOUR MINUTE sets Norrath's time (hour
 // 1..24, 1 is midnight) for the zone's time type (--time-type, default 2: outdoors).
-// --debug-draw wireframe,nofog,walls,floor,noculling turns on the debug menu's render toggles, and --vision
+// --debug-draw wireframe,nofog,walls,floor,noculling,noclip turns on the debug menu's render toggles, and --vision
 // own|none|infra|ultra picks what we see in at night (own: the race's).
 // --door NAME TYPE X Y Z HEADING INCLINE SIZE PARAM (repeatable) puts a door or switch there as OP_SpawnDoor
 // would (its id the count so far), --door-open MS opens them all (OP_MoveDoor 2) and runs that long first,
@@ -363,6 +363,7 @@ int main(int argc, char **argv)
 			debug_draw.walls = list.find("walls") != std::string::npos;
 			debug_draw.floor = list.find("floor") != std::string::npos;
 			debug_draw.no_culling = list.find("noculling") != std::string::npos;
+			debug_draw.no_clip = list.find("noclip") != std::string::npos;
 		}
 		else if (arg == "--time" && i + 2 < argc) {
 			game_hour = atoi(argv[++i]);

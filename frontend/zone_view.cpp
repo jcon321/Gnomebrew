@@ -168,11 +168,13 @@ void ZoneView::Load()
 	render::ZoneLighting lighting;
 	lighting.ambient = 0;
 	lighting.point_lights = false; // already baked into the vertex colors
+	float fog_start, fog_end;
+	FogRange(fog_start, fog_end); // CDisplay::SetFog: no sky when the fog ends within 101
 	if (!m_zone.Load(m_eq_dir, m_info.short_name, error, lighting))
 		m_error = error;
 	else if (!m_models.Open(m_eq_dir, error, true))
 		m_error = error;
-	else if (m_info.sky != 0 && m_info.fog_end >= 101 && !m_sky.Load(m_eq_dir, m_info.sky, error))
+	else if (m_info.sky != 0 && fog_end >= 101 && !m_sky.Load(m_eq_dir, m_info.sky, error))
 		fprintf(stderr, "[zone view] %s\n", error.c_str()); // the zone still draws, over the fog color
 	if (m_error.empty())
 		m_models.AddZone(m_eq_dir, m_info.short_name);
@@ -597,9 +599,8 @@ render::Camera ZoneView::MakeCamera(float &distance) const
 	camera.near_plane = 0.3f;
 	// CDisplay::SetFog: the yon is the fog's end; everything past it is the sky or the fog color.
 	camera.far_plane = FarPlane();
-	camera.fog = !m_debug_draw.no_fog;
-	camera.fog_start = m_info.fog_start;
-	camera.fog_end = camera.far_plane;
+	camera.fog = !m_debug_draw.no_fog && !m_debug_draw.no_clip;
+	FogRange(camera.fog_start, camera.fog_end);
 	// The fog darkens with the light (at night it fades into the dark, not into daylight grey).
 	DayLight light = Lighting();
 	float level = std::clamp((light.ambient.x + light.ambient.y + light.ambient.z) / 3 / 0.9f, 0.12f, 1.0f);
@@ -719,9 +720,29 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 	m_times.submit = since(start);
 }
 
+void ZoneView::FogRange(float &start, float &end) const
+{
+	start = m_info.fog_start;
+	end = m_info.fog_end;
+	if (ClipPlane != 1) {
+		// Below 1 the end comes in from the fog's toward the min clip (at 0.1); above, it goes out
+		// toward the max clip (at 4).
+		float depth = end - start;
+		if (ClipPlane <= 1)
+			end = m_info.min_clip + (ClipPlane - 0.1f) * (m_info.fog_end - m_info.min_clip);
+		else
+			end = m_info.fog_end + (ClipPlane - 1) * (m_info.max_clip - m_info.fog_end) / 3;
+		start = std::max(end - depth, 0.0f);
+	}
+}
+
 float ZoneView::FarPlane() const
 {
-	float far_plane = std::max(m_info.fog_end, 50.0f);
+	if (m_debug_draw.no_clip)
+		return NoClipFarPlane;
+	float fog_start, fog_end;
+	FogRange(fog_start, fog_end);
+	float far_plane = std::max(fog_end, 50.0f);
 	return m_debug_draw.no_fog ? std::max(far_plane, m_info.max_clip) : far_plane;
 }
 
@@ -928,7 +949,7 @@ void ZoneView::PoseSpawn(SpawnView &view, const ZoneSpawn &spawn, uint64_t now_m
 
 	// Build the model once they're close enough to be seen (and again when their look changes).
 	// Up close they move with the floor and the water under them; far off they just carry on.
-	float range = std::max(m_info.fog_end, 50.0f) + 50;
+	float range = FarPlane() + 50;
 	bool near = render::Length(view.Feet() - m_camera_position) < range;
 	view.actor.Step(m_zone, ms, near, now_ms);
 	if ((near && !view.resolved) || (view.resolved && spawn.look_serial != view.look_serial)) {
