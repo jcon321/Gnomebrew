@@ -32,12 +32,56 @@ namespace render
 	{
 		m_nodes = map.nodes;
 		m_types.assign(map.region_count, {});
+		m_flags.assign(map.region_count, 0);
+		auto flag = [](const std::string &type) -> uint32_t {
+			return type.compare(0, 2, "WT") == 0 ? WaterFlag : type.compare(0, 2, "SL") == 0 ? SlimeFlag
+			     : type.compare(0, 2, "LA") == 0 ? LavaFlag : 0;
+		};
 		for (const auto &group : map.groups) {
 			const std::string &type = group.name.size() < 20 && !group.user_data.empty() ? group.user_data : group.name;
+			// The user data's prefix, unless the name has one of its own.
+			uint32_t flags = flag(group.name) ? flag(group.name) : flag(group.user_data);
 			for (uint32_t region : group.regions)
-				if (region < m_types.size())
+				if (region < m_types.size()) {
 					m_types[region].push_back(type);
+					m_flags[region] |= flags;
+				}
 		}
+	}
+
+	uint32_t ZoneRegions::Flags(int region) const
+	{
+		return region >= 0 && region < static_cast<int>(m_flags.size()) ? m_flags[region] : 0;
+	}
+
+	bool ZoneRegions::SegmentEnters(const Vec3 &from, const Vec3 &to, uint32_t mask, float &fraction, uint32_t &flags) const
+	{
+		// Down both sides of a split the segment crosses, the side `from` is on first, so the
+		// first region found with the flags is the nearest.
+		auto walk = [&](auto &self, int32_t index, float t0, float t1) -> bool {
+			if (index < 1 || index > static_cast<int32_t>(m_nodes.size()))
+				return false;
+			const WldRegionMap::Node &node = m_nodes[index - 1];
+			if (node.region != 0) {
+				uint32_t found = Flags(node.region - 1) & mask;
+				if (!found)
+					return false;
+				fraction = t0;
+				flags = found;
+				return true;
+			}
+			Vec3 a = from + (to - from) * t0, b = from + (to - from) * t1;
+			float da = a.x * node.normal.x + a.y * node.normal.y + a.z * node.normal.z + node.distance;
+			float db = b.x * node.normal.x + b.y * node.normal.y + b.z * node.normal.z + node.distance;
+			if (da >= 0 && db >= 0)
+				return self(self, node.front, t0, t1);
+			if (da < 0 && db < 0)
+				return self(self, node.back, t0, t1);
+			float t = t0 + (t1 - t0) * (da / (da - db));
+			int32_t near_side = da >= 0 ? node.front : node.back, far_side = da >= 0 ? node.back : node.front;
+			return self(self, near_side, t0, t) || self(self, far_side, t, t1);
+		};
+		return walk(walk, m_nodes.empty() ? 0 : 1, 0, 1);
 	}
 
 	int ZoneRegions::RegionAt(const Vec3 &point) const

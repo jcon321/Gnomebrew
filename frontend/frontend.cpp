@@ -49,6 +49,7 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 		m_sound = std::make_unique<audio::EqSound>(*m_ui.mixer, m_ui.eq_dir, m_ui.sound);
 		m_debug.SetSound(m_sound.get());
 	}
+	m_debug.SetWeather(&m_weather);
 	EnterStart();
 }
 
@@ -72,6 +73,8 @@ void FrontEnd::EnterStart()
 	m_world.Close();
 	m_zone.Close();
 	m_zone_view.reset();
+	m_weather.Kill(m_sound.get()); // StopWorldDisplay; then eqgame is gone, and its weather
+	m_weather = Weather();
 	m_entering_world = false;
 	m_logging_in = false;
 	// Out of eqgame: its music and the zone's sounds go with it (eqmain has none).
@@ -623,6 +626,10 @@ void FrontEnd::Update(uint64_t now_ms)
 		m_last_list_request_ms = now_ms;
 		m_session.RequestServerList();
 	}
+	// RealRender_World's weather, in the world whether there's sound or not.
+	if (m_screen == Screen::Zone && m_zone_view && m_zone_view->Loaded() && m_zone_view->Error().empty() &&
+		m_zone_view->Placed())
+		WeatherFrame(now_ms);
 	SoundFrame(now_ms);
 }
 
@@ -654,6 +661,7 @@ void FrontEnd::SoundFrame(uint64_t now_ms)
 			m_sound->SetEnvironment(ceiling <= 20 ? Environment::LowCeiling
 			                        : ceiling <= 500 && hearing.covered ? Environment::HighCeiling
 			                                                            : Environment::Outside);
+			m_sound->SetCovered(hearing.covered); // setSoundEmitterUnderwater: no rain or wind under cover
 		}
 	}
 	// GiveTime runs at character select and in the world (not while a zone loads).
@@ -1254,6 +1262,7 @@ void FrontEnd::EnterZoneScreen(bool zoning)
 		m_zone_log.clear();
 	m_time_of_day.clear();
 	m_zone_view.reset();
+	m_weather.Kill(m_sound.get()); // StopWorldDisplay
 	m_zone_error_logged = false;
 	m_debug.Reset();
 	m_mouse_turn = m_mouse_pan = m_mouse_grabbed = false;
@@ -1356,6 +1365,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			// MoveToZone_2: "LOADING, PLEASE WAIT...", then the zone lets us go (Departed).
 			m_zoning = true;
 			m_zone_view.reset();
+			m_weather.Kill(m_sound.get()); // StopWorldDisplay
 			AddZoneLog(EqString(12387, "LOADING, PLEASE WAIT..."), ZoneGrey);
 			break;
 		case Type::ZoneDenied: {
@@ -1393,6 +1403,9 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 		case Type::TimeOfDay:
 			m_time_of_day = event.text;
 			break;
+		case Type::Weather:
+			m_weather.Receive(event.id, event.value);
+			break;
 		case Type::LoggedOut:
 			ShowMessage("You have camped.", [this](bool) { EnterStart(); });
 			break;
@@ -1403,6 +1416,25 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			break;
 		}
 	}
+}
+
+// RealRender_World's part of the weather: OP_Weather taken up, and the cloud's fade or the thunder
+// in an outdoor zone (time type 1, 2 or 5); then what the view draws of it.
+void FrontEnd::WeatherFrame(uint64_t now_ms)
+{
+	uint8_t time_type = m_zone.Info().time_type;
+	Weather::Place place;
+	place.outdoors = time_type == 1 || time_type == 2 || time_type == 5;
+	place.zone_id = m_zone.Profile().zone_id;
+	m_zone_view->ZoneFog(place.fog_start, place.fog_end);
+	place.clip_plane = ZoneView::ClipPlane;
+	int message = m_weather.Frame(m_sound.get(), now_ms, place);
+	m_zone_view->SetWeather(m_weather.GetEffects());
+	if (message)
+		AddZoneLog(EqString(static_cast<uint32_t>(message), message == 542 ? "It begins to snow."
+		                                                     : message == 540 ? "It begins to rain blood."
+		                                                                      : "It begins to rain."),
+			ZoneGrey);
 }
 
 std::string FrontEnd::EqString(uint32_t id, const std::string &fallback) const

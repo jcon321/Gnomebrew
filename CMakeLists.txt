@@ -82,6 +82,7 @@ add_library(eqrender STATIC
     render/character_model.cpp
     render/actor_tags.cpp
     render/sky.cpp
+    render/particles.cpp
 )
 target_include_directories(eqrender PUBLIC render)
 target_link_libraries(eqrender PUBLIC eqcore Threads::Threads)
@@ -102,6 +103,7 @@ add_library(eqfrontend STATIC
     frontend/spawn_actor.cpp
     frontend/zone_doors.cpp
     frontend/actor_sound.cpp
+    frontend/weather.cpp
     frontend/debug_menu.cpp
 )
 target_include_directories(eqfrontend PUBLIC frontend)
@@ -127,7 +129,7 @@ else()
 
     # Linux-only developer tool: plays the client's sound headlessly and writes a WAV.
     add_executable(sound_preview tools/sound_preview.cpp)
-    target_link_libraries(sound_preview PRIVATE eqaudio)
+    target_link_libraries(sound_preview PRIVATE eqfrontend) # eqaudio, and the weather
     target_compile_options(sound_preview PRIVATE ${MYCLIENT_WARNINGS})
 
     # Linux-only developer tool: renders the 3D view to PNG.

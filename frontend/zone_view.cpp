@@ -144,6 +144,12 @@ ZoneView::DayLight ZoneView::Lighting() const
 	int p = static_cast<int>(period);
 	float f = period - p;
 	light.sky = SkyLight[p % 60] + (SkyLight[(p + 1) % 60] - SkyLight[p % 60]) * f;
+	// A thunder clap's frame: the ambient light at 0.99, infravision off.
+	if (WeatherShown() && m_weather.flash) {
+		light.ambient = {0.99f, 0.99f, 0.99f};
+		light.special = {};
+		light.glow = {};
+	}
 	return light;
 }
 
@@ -169,7 +175,7 @@ void ZoneView::Load()
 	lighting.ambient = 0;
 	lighting.point_lights = false; // already baked into the vertex colors
 	float fog_start, fog_end;
-	FogRange(fog_start, fog_end); // CDisplay::SetFog: no sky when the fog ends within 101
+	ZoneFog(fog_start, fog_end); // CDisplay::SetFog: no sky when the fog ends within 101
 	if (!m_zone.Load(m_eq_dir, m_info.short_name, error, lighting))
 		m_error = error;
 	else if (!m_models.Open(m_eq_dir, error, true))
@@ -178,6 +184,12 @@ void ZoneView::Load()
 		fprintf(stderr, "[zone view] %s\n", error.c_str()); // the zone still draws, over the fog color
 	if (m_error.empty())
 		m_models.AddZone(m_eq_dir, m_info.short_name);
+	// The weather's sprites, I_RAINRINGSPRITE and I_SNOWFLAKESPRITE (user method 0x17).
+	if (m_equipment.Open(m_eq_dir + "/gequip.s3d", true)) {
+		m_effect_textures.AddArchive(&m_equipment);
+		m_rain_ring = m_effect_textures.Get("rainring.bmp", true);
+		m_snowflake = m_effect_textures.Get("snowflake.bmp", true);
+	}
 	m_loaded = true;
 }
 
@@ -605,6 +617,14 @@ render::Camera ZoneView::MakeCamera(float &distance) const
 	DayLight light = Lighting();
 	float level = std::clamp((light.ambient.x + light.ambient.y + light.ambient.z) / 3 / 0.9f, 0.12f, 1.0f);
 	camera.fog_color = ScaleColor(m_info.fog_color, {level, level, level});
+	if (WeatherShown() && m_weather.flash) {
+		// SetAmbientLight's flash: no channel of the fog darker than our floor's exposure.
+		uint32_t least = static_cast<uint32_t>(std::clamp(ExposureAt(m_feet + render::Vec3{0, 0, m_height / 5 * 3.125f}), 0.0f, 1.0f) * 255);
+		uint32_t flashed = 0;
+		for (int shift : {16, 8, 0})
+			flashed |= std::max((camera.fog_color >> shift) & 0xff, least) << shift;
+		camera.fog_color = flashed;
+	}
 	distance = 0;
 	if (m_view == CameraView::FirstPerson) {
 		camera.position = m_feet + render::Vec3{0, 0, eye};
@@ -703,10 +723,12 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 	}
 	m_camera_position = camera.position;
 	DrawSpawns();
+	DrawWeather(now_ms);
 	m_times.models = since(start);
 	start = Clock::now();
-	// The sky dims with the day period, toward a deep blue at night.
-	bool sky = m_sky.Loaded();
+	// The sky dims with the day period, toward a deep blue at night. RealRender_World draws none
+	// while there's weather: the fog's color is all past it.
+	bool sky = m_sky.Loaded() && !(WeatherShown() && m_weather.active);
 	render::Vec3 sky_tint{light.sky + 0.03f * (1 - light.sky), light.sky + 0.04f * (1 - light.sky), light.sky + 0.10f * (1 - light.sky)};
 	if (sky) {
 		m_renderer->BeginBackground();
@@ -721,6 +743,16 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 }
 
 void ZoneView::FogRange(float &start, float &end) const
+{
+	if (WeatherShown() && m_weather.active) {
+		start = m_weather.fog_start;
+		end = m_weather.fog_end;
+		return;
+	}
+	ZoneFog(start, end);
+}
+
+void ZoneView::ZoneFog(float &start, float &end) const
 {
 	start = m_info.fog_start;
 	end = m_info.fog_end;
@@ -744,6 +776,123 @@ float ZoneView::FarPlane() const
 	FogRange(fog_start, fog_end);
 	float far_plane = std::max(fog_end, 50.0f);
 	return m_debug_draw.no_fog ? std::max(far_plane, m_info.max_clip) : far_plane;
+}
+
+namespace
+{
+	// do_rain's RAINS_CLOUD, RAINW_CLOUD and RAIN_CLOUD, and do_snow's SNOWS_CLOUD, SNOWW_CLOUD and
+	// SNOW_CLOUD, at CDisplay::SetPCloudDensity's highest (1).
+	constexpr float WeatherDensity = 1;
+
+	void MakeWeatherDefs(bool rain, const render::Texture *ring, const render::Texture *flake, render::ParticleCloudDef &ground,
+		render::ParticleCloudDef &water, render::ParticleCloudDef &falling)
+	{
+		using Def = render::ParticleCloudDef;
+		Def box;
+		float reach = rain ? 225.0f : 300.0f;
+		box.low = {-reach, -reach, 250};
+		box.high = {reach, reach, 250};
+		box.max_particles = 1000;
+		box.speed = 100;
+		// Where they hit the ground, a dot fading out: rain's for a fifth of a second, snow's half.
+		ground = box;
+		ground.kind = Def::Kind::Points;
+		ground.flags = Def::Fade;
+		ground.lifespan_ms = rain ? 200 : 500;
+		// The water: rain's rings spread to 3 either side over half a second; snow's a dot.
+		water = box;
+		water.kind = rain ? Def::Kind::Rings : Def::Kind::Points;
+		water.flags = Def::Fade;
+		water.lifespan_ms = rain ? 500 : 200;
+		water.size = 3;
+		water.sprite = rain ? ring : nullptr;
+		// Falling from 250 over us, over a box 450 (rain) or 600 (snow) across: rain a streak at 200
+		// a second, one every 3 ms, for up to 2 seconds; snow a flake at 50 a second, wobbling, one
+		// every 5 ms, for up to 15 seconds.
+		falling = box;
+		falling.kind = rain ? Def::Kind::Lines : Def::Kind::Sprites;
+		falling.flags = Def::Collide | Def::FollowX | Def::FollowY | Def::FollowZ | (rain ? 0u : uint32_t{Def::Wobble});
+		falling.max_particles = rain ? 1000 : 1500;
+		falling.normal = {0, 0, rain ? -2.0f : -1.0f};
+		falling.speed = rain ? 100.0f : 50.0f;
+		falling.lifespan_ms = rain ? 2000 : 15000;
+		falling.interval_ms = rain ? 3 : 5;
+		falling.size = rain ? 1.0f : 0.25f;
+		falling.sprite = rain ? nullptr : flake;
+	}
+}
+
+void ZoneView::DrawWeather(uint64_t now_ms)
+{
+	// The clouds come with the rain or snow once it's in (t3dCreateParticleCloud) and are stopped
+	// when it's gone (t3dStopPCloudAndAutoDestroy), their last particles still falling.
+	if (!WeatherShown())
+		m_weather_clouds.clear();
+	Weather::Kind want = WeatherShown() ? m_weather.clouds : Weather::Kind::None;
+	if (want != m_cloud_kind) {
+		if (!m_weather_clouds.empty())
+			m_weather_clouds.back().falling->Stop(now_ms);
+		if (want != Weather::Kind::None) {
+			render::ParticleCloudDef ground, water, falling;
+			MakeWeatherDefs(want == Weather::Kind::Rain, m_rain_ring, m_snowflake, ground, water, falling);
+			WeatherClouds clouds;
+			clouds.ground = std::make_unique<render::ParticleCloud>(ground, WeatherDensity, nullptr, nullptr);
+			clouds.water = std::make_unique<render::ParticleCloud>(water, WeatherDensity, nullptr, nullptr);
+			clouds.falling =
+				std::make_unique<render::ParticleCloud>(falling, WeatherDensity, clouds.ground.get(), clouds.water.get());
+			m_weather_clouds.push_back(std::move(clouds));
+		}
+		m_cloud_kind = want;
+	}
+	if (m_weather_clouds.empty())
+		return;
+
+	// s3dCollideRaySegmentWithWorld: the nearer of a solid surface and a water, lava or slime region.
+	const render::ParticleCloud::Collide collide = [this](const render::Vec3 &from, const render::Vec3 &to, float &fraction,
+		uint32_t &flags) {
+		float solid = 1, region = 1;
+		uint32_t found = 0;
+		bool hit_solid = m_zone.SegmentHit(from, to, solid);
+		bool hit_region = m_zone.Regions().SegmentEnters(from, to,
+			render::ZoneRegions::WaterFlag | render::ZoneRegions::LavaFlag | render::ZoneRegions::SlimeFlag, region, found);
+		if (hit_region && (!hit_solid || region <= solid)) {
+			fraction = region;
+			flags = found;
+			return true;
+		}
+		fraction = solid;
+		flags = 0;
+		return hit_solid;
+	};
+	render::Vec3 eye = m_renderer->CurrentCamera().position;
+	uint32_t rain_color = m_weather.blood ? 0xb40101 : 0x606060; // t3dSetRainColor
+	for (size_t i = 0; i < m_weather_clouds.size();) {
+		WeatherClouds &clouds = m_weather_clouds[i];
+		clouds.falling->Update(now_ms, eye, collide);
+		clouds.ground->Update(now_ms, eye, collide);
+		clouds.water->Update(now_ms, eye, collide);
+		if (clouds.falling->Done(now_ms)) { // destroyed: the others are stopped, to go once they're empty
+			clouds.ground->Stop(now_ms);
+			clouds.water->Stop(now_ms);
+		}
+		for (render::ParticleCloud *cloud : {clouds.falling.get(), clouds.ground.get(), clouds.water.get()})
+			cloud->Draw(*m_renderer, now_ms, rain_color, m_daylight.ambient);
+		if (clouds.falling->Done(now_ms) && clouds.ground->Done(now_ms) && clouds.water->Done(now_ms))
+			m_weather_clouds.erase(m_weather_clouds.begin() + static_cast<long>(i));
+		else
+			++i;
+	}
+}
+
+ZoneView::WeatherCounts ZoneView::WeatherParticles() const
+{
+	WeatherCounts counts;
+	for (const WeatherClouds &clouds : m_weather_clouds) {
+		counts.falling += clouds.falling->Count();
+		counts.ground += clouds.ground->Count();
+		counts.water += clouds.water->Count();
+	}
+	return counts;
 }
 
 void ZoneView::DrawDebugOverlays(Canvas &canvas) const

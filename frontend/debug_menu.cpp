@@ -164,7 +164,8 @@ bool *DebugMenu::Toggle(int index)
 	case 3: return &m_draw.floor;
 	case 4: return &m_draw.no_culling;
 	case 5: return &m_draw.no_clip;
-	case 6: return m_set_vsync ? &m_vsync : nullptr;
+	case 6: return &m_draw.no_weather;
+	case 7: return m_set_vsync ? &m_vsync : nullptr;
 	default: return nullptr;
 	}
 }
@@ -196,7 +197,8 @@ bool DebugMenu::OnMouse(const InputEvent &event)
 			if (m_sound) {
 				audio::EqSound::Switches switches = m_sound->GetSwitches();
 				bool *flag = hit.value == 0 ? &switches.sound : hit.value == 1 ? &switches.music
-				           : hit.value == 2 ? &switches.ambience : &switches.game;
+				           : hit.value == 2 ? &switches.ambience : hit.value == 3 ? &switches.game
+				                                                                  : &switches.weather;
 				*flag = !*flag;
 				m_sound->SetSwitches(switches);
 			}
@@ -385,12 +387,31 @@ void DebugMenu::DrawCard(Canvas &canvas, TextRenderer &text, const ZoneSession &
 			environments[sound.environment >= 0 && sound.environment <= 3 ? sound.environment : 0]));
 		for (const auto &playing : sound.ambient)
 			row(Format("  %s  %.0f away", playing.name.c_str(), playing.distance));
+		if (m_weather) {
+			// What's coming, here or going (and what the zone last said), then what it sounds.
+			Weather::Stats weather = m_weather->GetStats();
+			const char *kind = weather.kind == Weather::Kind::Snow ? "snow" : "rain";
+			std::string state = !weather.active && !weather.changing ? std::string("none")
+			                    : weather.changing ? Format("%s %s %d%%", kind, weather.arriving ? "coming in" : "going",
+			                                             weather.cloud * 100 / 256)
+			                    : weather.kind == Weather::Kind::Rain ? Format("rain   thunder in %ds", (weather.next_strike_ms + 999) / 1000)
+			                                                          : std::string(kind);
+			std::string received = weather.received ? Format("OP_Weather %s %d", weather.type == 1 ? "snow" : "rain", weather.intensity)
+			                                        : std::string("no OP_Weather yet");
+			row("Weather " + state + "   (" + received + ")");
+			std::string sounding;
+			for (const auto &name : sound.weather)
+				sounding += (sounding.empty() ? "" : ", ") + name;
+			row("  " + (sounding.empty() ? std::string("silent") : sounding) +
+				(sound.covered && (sound.raining || sound.wind) ? "   (covered: no rain or wind)" : ""));
+		}
 		if (!sound.missing.empty())
 			row("Missing " + sound.missing.back() + (sound.missing.size() > 1 ? Format(" +%zu", sound.missing.size() - 1) : ""));
 		const audio::EqSound::Switches &switches = m_sound->GetSwitches();
 		const std::pair<const char *, bool> toggles[] = {{"Sound", switches.sound}, {"Music", switches.music},
-			{"Zone ambience", switches.ambience}, {"Game sounds (doors, steps, creatures)", switches.game}};
-		for (int i = 0; i < 4; ++i) {
+			{"Zone ambience", switches.ambience}, {"Game sounds (doors, steps, creatures)", switches.game},
+			{"Weather (rain, wind, thunder)", switches.weather}};
+		for (int i = 0; i < 5; ++i) {
 			bool on = toggles[i].second && (i == 0 || switches.sound);
 			Line &line = *row(std::string(toggles[i].second ? "[x] " : "[  ] ") + toggles[i].first, on ? White : Grey);
 			line.action = Line::Action::Sound;
@@ -400,13 +421,22 @@ void DebugMenu::DrawCard(Canvas &canvas, TextRenderer &text, const ZoneSession &
 
 	if (section(Render, "RENDER")) {
 		static const char *const names[] = {"Wireframe", "No fog", "Collision walls", "Floor marker", "No occlusion culling",
-			"No clip plane", "VSync"};
-		for (int i = 0; i < 7; ++i) {
+			"No clip plane", "No weather effects", "VSync"};
+		for (int i = 0; i < 8; ++i) {
 			if (!Toggle(i))
 				continue;
 			Line &line = *row(std::string(*Toggle(i) ? "[x] " : "[  ] ") + names[i], *Toggle(i) ? White : Grey);
 			line.action = Line::Action::Toggle;
 			line.value = i;
+		}
+		if (view && m_weather) {
+			// What the weather draws: its fog (with no sky behind it) and its particles.
+			Weather::Effects effects = m_weather->GetEffects();
+			ZoneView::WeatherCounts counts = view->WeatherParticles();
+			std::string drawn = effects.active ? Format("fog %.0f..%.0f, no sky", effects.fog_start, effects.fog_end) : "zone's fog";
+			const char *falling = effects.clouds == Weather::Kind::Snow ? "flakes" : "drops";
+			row(Format("Weather %s   %zu %s, %zu on the ground, %zu on water%s", drawn.c_str(), counts.falling, falling,
+				counts.ground, counts.water, effects.blood ? "   (blood)" : ""));
 		}
 		// What we see in at night: ours (our race's; spells and items to come) or one to try.
 		static const char *const visions[] = {"None", "Infravision", "Ultravision"};

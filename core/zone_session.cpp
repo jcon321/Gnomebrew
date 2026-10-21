@@ -777,6 +777,15 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		events.push_back(e);
 		break;
 	}
+	case ZoneOp::Weather: {
+		// Weather_Struct: u32 type, u32 intensity. HandleWorldMessage keeps them for RealRender_World.
+		Event e;
+		e.type = Event::Type::Weather;
+		e.id = static_cast<uint16_t>(Read<uint32_t>(data, 0));
+		e.value = Read<int32_t>(data, 4);
+		events.push_back(e);
+		break;
+	}
 	case ZoneOp::ChannelMessage: {
 		Event e;
 		e.type = Event::Type::Chat;

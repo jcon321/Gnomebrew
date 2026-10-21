@@ -27,6 +27,9 @@
 // --door NAME TYPE X Y Z HEADING INCLINE SIZE PARAM (repeatable) puts a door or switch there as OP_SpawnDoor
 // would (its id the count so far), --door-open MS opens them all (OP_MoveDoor 2) and runs that long first,
 // printing where they are, and --click X Y clicks the window there after drawing (what EQSwitch::UseSwitch says).
+// --weather rain|snow MS has it start raining or snowing (OP_Weather at intensity 3) and runs that
+// long in 16 ms frames first, printing the weather's state and particles each second, and
+// --debug-draw noweather draws none of it.
 // --frames renders N times and prints the average frame time. --size picks the
 // image size (default 640x480).
 
@@ -78,6 +81,13 @@ namespace
 		}
 	};
 	SoundCapture g_sound;
+
+	struct WeatherOption
+	{
+		int type = -1; // OP_Weather's: 0 rain, 1 snow
+		int ms = 0;
+	};
+	WeatherOption g_weather;
 
 	void WriteWav(const std::string &path, const std::vector<float> &stereo)
 	{
@@ -250,6 +260,29 @@ namespace
 			}
 			printf("%.3f ms per UpdateSpawns (%zu spawns)\n", spawn_total / spawn_steps, spawns.size());
 		}
+		if (g_weather.type >= 0) {
+			// --weather: as FrontEnd::WeatherFrame runs it, a frame each 16 ms.
+			Weather weather;
+			weather.Receive(static_cast<uint32_t>(g_weather.type), 3);
+			for (int ms = 0; ms <= g_weather.ms; ms += 16) {
+				spawn_clock += 16;
+				Weather::Place place;
+				place.outdoors = info.time_type == 1 || info.time_type == 2 || info.time_type == 5;
+				view.ZoneFog(place.fog_start, place.fog_end);
+				place.clip_plane = ZoneView::ClipPlane;
+				if (int message = weather.Frame(nullptr, spawn_clock, place))
+					printf("  %5d ms: eqstr %d\n", ms, message);
+				view.SetWeather(weather.GetEffects());
+				view.Render(canvas, spawn_clock);
+				if (ms % 1000 >= 16 && ms + 16 <= g_weather.ms)
+					continue;
+				Weather::Effects effects = weather.GetEffects();
+				ZoneView::WeatherCounts counts = view.WeatherParticles();
+				printf("  %5d ms: weather %s, fog %.0f..%.0f%s, %zu falling, %zu on the ground, %zu on water\n", ms,
+					effects.active ? "on" : "off", effects.fog_start, effects.fog_end, effects.flash ? ", flash" : "", counts.falling,
+					counts.ground, counts.water);
+			}
+		}
 		double total = 0;
 		for (int f = 0; f < frames; ++f) {
 			view.UpdateSpawns(spawns, 0, spawn_clock + f);
@@ -364,6 +397,11 @@ int main(int argc, char **argv)
 			debug_draw.floor = list.find("floor") != std::string::npos;
 			debug_draw.no_culling = list.find("noculling") != std::string::npos;
 			debug_draw.no_clip = list.find("noclip") != std::string::npos;
+			debug_draw.no_weather = list.find("noweather") != std::string::npos;
+		}
+		else if (arg == "--weather" && i + 2 < argc) {
+			g_weather.type = std::string(argv[++i]) == "snow" ? 1 : 0;
+			g_weather.ms = atoi(argv[++i]);
 		}
 		else if (arg == "--time" && i + 2 < argc) {
 			game_hour = atoi(argv[++i]);

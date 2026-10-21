@@ -224,7 +224,7 @@ namespace render
 			attr[i][3] = in[i]->r;
 			attr[i][4] = in[i]->g;
 			attr[i][5] = in[i]->b;
-			attr[i][6] = m_fog_scale > 0 && !m_background ? std::clamp((in[i]->z - m_camera.fog_start) * m_fog_scale, 0.0f, 1.0f) : 0;
+			attr[i][6] = m_fog_scale > 0 && !m_background && material.fog ? std::clamp((in[i]->z - m_camera.fog_start) * m_fog_scale, 0.0f, 1.0f) : 0;
 			far_depth = std::max(far_depth, in[i]->z);
 		}
 

@@ -110,6 +110,7 @@ namespace audio
 		}
 		LoadGlobalMusic();
 		LoadGlobalWaves();
+		LoadGlobalEmitters();
 	}
 
 	EqSound::~EqSound()
@@ -543,7 +544,10 @@ namespace audio
 		if (emitter.last_ms == 0)
 			ResetDelay(emitter, now_ms);
 		bool wanted = false;
-		bool on = emitter.music_id ? true : emitter.channel == ActorChannel ? GameOn() : AmbienceOn();
+		bool on = emitter.music_id ? true
+		          : emitter.weather ? WeatherOn()
+		          : emitter.channel == ActorChannel ? GameOn()
+		                                            : AmbienceOn();
 		if (emitter.enabled && on) {
 			float dx = m_listener.x - emitter.position.x, dy = m_listener.y - emitter.position.y,
 			      dz = m_listener.z - emitter.position.z;
@@ -605,6 +609,50 @@ namespace audio
 			           (emitter.when != 0 && emitter.when != m_time_of_day);
 			emitter.enabled = !off;
 		}
+		// The weather's, while it rains or snows and the floor over us isn't covered. They take it
+		// up now rather than at the next GiveTime, which doesn't come once we're out of the world.
+		m_rain.enabled = m_raining && !m_covered;
+		m_wind.enabled = m_windy && !m_covered;
+		EmitterGiveTime(m_rain, m_now_ms);
+		EmitterGiveTime(m_wind, m_now_ms);
+	}
+
+	// EqSoundManager::LoadGlobalEmitters: the rain (wave 0x9f) and the wind (0x9e), off until the
+	// weather turns them on. Heard everywhere at half volume, not placed, looping.
+	void EqSound::LoadGlobalEmitters()
+	{
+		auto make = [this](Emitter &emitter, int slot) {
+			emitter.asset = Wave(slot);
+			emitter.weather = true;
+			emitter.channel = 0;
+			emitter.volume = 0.5f;
+			emitter.fade_in = 2000;
+			emitter.fade_out = 3000;
+			emitter.loop_type = 0;
+			emitter.enabled = false;
+		};
+		make(m_rain, 0x9f);
+		make(m_wind, 0x9e);
+	}
+
+	void EqSound::SetRaining(bool on)
+	{
+		m_raining = on;
+		UpdateEnables();
+	}
+
+	void EqSound::SetWind(bool on)
+	{
+		m_windy = on;
+		UpdateEnables();
+	}
+
+	void EqSound::SetCovered(bool covered)
+	{
+		if (covered == m_covered)
+			return;
+		m_covered = covered;
+		UpdateEnables();
 	}
 
 	void EqSound::SetNight(bool night)
@@ -639,6 +687,8 @@ namespace audio
 			EmitterGiveTime(emitter, now_ms);
 		for (auto &entry : m_actor_loops)
 			EmitterGiveTime(entry.second, now_ms);
+		EmitterGiveTime(m_rain, now_ms);
+		EmitterGiveTime(m_wind, now_ms);
 		MusicGiveTime();
 		ReleaseFinished();
 	}
@@ -678,6 +728,18 @@ namespace audio
 		}
 		stats.environment = m_environment;
 		stats.time_of_day = m_time_of_day;
+		stats.raining = m_raining;
+		stats.wind = m_windy;
+		stats.covered = m_covered;
+		for (const Emitter *emitter : {&m_rain, &m_wind}) {
+			if (emitter->asset && !emitter->asset->playing.empty())
+				stats.weather.push_back(emitter->asset->name + (emitter->playing ? "" : " (fading out)"));
+		}
+		for (int slot : {0x8f, 0x90}) { // LightningStrike's
+			const auto &asset = m_waves[slot].asset;
+			if (asset && !asset->playing.empty())
+				stats.weather.push_back(asset->name);
+		}
 		stats.missing = m_missing;
 		return stats;
 	}
@@ -727,7 +789,7 @@ namespace audio
 	// EqSoundManager::WavePlay with a control: its volume times the sound level.
 	void EqSound::WavePlay(int slot, Control control)
 	{
-		if (!GameOn())
+		if (control.weather ? !WeatherOn() : !GameOn())
 			return;
 		auto asset = Wave(slot);
 		if (!asset) {
@@ -754,6 +816,17 @@ namespace audio
 		control.position = m_listener;
 		control.min_distance = 1000;
 		control.max_distance = 10000;
+		WavePlay(slot, control);
+	}
+
+	void EqSound::PlayWeatherWave(int slot)
+	{
+		Control control;
+		control.positional = true;
+		control.position = m_listener;
+		control.min_distance = 1000;
+		control.max_distance = 10000;
+		control.weather = true;
 		WavePlay(slot, control);
 	}
 

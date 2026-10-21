@@ -52,9 +52,17 @@ namespace render
 		Feet FeetAt(const Vec3 &point) const;
 		// A region's group types, for the debug menu.
 		const std::vector<std::string> &Types(int region) const;
+		// t3dTranslateZonesToRegionEnvironmentFlags: a region's flags from its groups' user data
+		// or name, WaterFlag for WT, LavaFlag for LA, SlimeFlag for SL.
+		static constexpr uint32_t WaterFlag = 0x80000000, LavaFlag = 0x40000000, SlimeFlag = 0x20000000;
+		uint32_t Flags(int region) const;
+		// s3dCollideRayWithWorld's walk down the tree: the first region along the segment with any
+		// of `mask`'s flags, as a fraction of the segment, and its flags.
+		bool SegmentEnters(const Vec3 &from, const Vec3 &to, uint32_t mask, float &fraction, uint32_t &flags) const;
 
 	private:
 		std::vector<WldRegionMap::Node> m_nodes;
 		std::vector<std::vector<std::string>> m_types; // per region
+		std::vector<uint32_t> m_flags;                  // per region
 	};
 }

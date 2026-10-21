@@ -4,6 +4,7 @@
 //   sound_preview EQDIR OUT.wav [--zone NAME] [--at X Y Z] [--heading H] [--walk X Y Z] [--seconds S]
 //                 [--music opening|charselect|combat|death|ID]... [--night] [--environment 1|2|3]
 //                 [--soundfont FILE] [--music-volume V] [--sound-volume V]
+//                 [--rain N | --snow N] [--weather-off S] [--covered]
 //   sound_preview EQDIR --emitters ZONE
 //   sound_preview EQDIR --xmi FILE INDEX OUT.mid
 //
@@ -13,11 +14,14 @@
 // music plays through a SoundFont (default synthus2.sf2 from EQDIR, else synthusr.sf2), as
 // eqclient_gui's Music=sf2 does. Each second it prints the music track and the voices playing, and
 // at the end the loudness of each second. --night and --environment set the emitters' time of day
-// and ceiling (default day, outside). The second form lists a zone's .emt emitters; the third
+// and ceiling (default day, outside). --rain and --snow are an OP_Weather at the start (intensity N,
+// in an outdoor zone), --weather-off another with intensity 0 at S seconds, and --covered puts a
+// roof over us. The second form lists a zone's .emt emitters; the third
 // writes one of an .xmi's sequences out as a standard MIDI file.
 
 #include "eq_sound.h"
 #include "mixer.h"
+#include "weather.h"
 #include "xmi.h"
 
 #include <cmath>
@@ -103,6 +107,7 @@ int main(int argc, char **argv)
 		fprintf(stderr, "usage: %s EQDIR OUT.wav [--zone NAME] [--at X Y Z] [--heading H] [--walk X Y Z] [--seconds S]\n"
 		                "       [--music opening|charselect|combat|death|ID]... [--night] [--environment 1|2|3]\n"
 		                "       [--soundfont FILE] [--music-volume V] [--sound-volume V]\n"
+		                "       [--rain N | --snow N] [--weather-off S] [--covered]\n"
 		                "       %s EQDIR --emitters ZONE\n       %s EQDIR --xmi FILE INDEX OUT.mid\n",
 			argv[0], argv[0], argv[0]);
 		return 2;
@@ -112,6 +117,9 @@ int main(int argc, char **argv)
 	bool walk = false, night = false;
 	float walk_x = 0, walk_y = 0, walk_z = 0;
 	int environment = 1;
+	int weather_type = -1, weather_intensity = 0; // --rain / --snow
+	float weather_off = -1;
+	bool covered = false;
 	std::vector<int> music;
 	audio::EqSound::Settings settings;
 	for (int i = 3; i < argc; ++i) {
@@ -151,6 +159,14 @@ int main(int argc, char **argv)
 			settings.music_volume = static_cast<float>(atof(argv[++i]));
 		else if (arg == "--sound-volume" && i + 1 < argc)
 			settings.sound_volume = static_cast<float>(atof(argv[++i]));
+		else if ((arg == "--rain" || arg == "--snow") && i + 1 < argc) {
+			weather_type = arg == "--snow" ? 1 : 0;
+			weather_intensity = atoi(argv[++i]);
+		}
+		else if (arg == "--weather-off" && i + 1 < argc)
+			weather_off = static_cast<float>(atof(argv[++i]));
+		else if (arg == "--covered")
+			covered = true;
 		else {
 			fprintf(stderr, "unknown option %s\n", arg.c_str());
 			return 2;
@@ -176,6 +192,10 @@ int main(int argc, char **argv)
 		sound.SetCurrentZone(zone);
 	for (int id : music)
 		sound.SetMusicSelection(id, true);
+	Weather weather;
+	if (weather_type >= 0)
+		weather.Receive(static_cast<uint32_t>(weather_type), weather_intensity);
+	sound.SetCovered(covered);
 
 	const int fps = 30, frames_per_tick = audio::Mixer::Rate / fps;
 	int ticks = static_cast<int>(seconds * fps);
@@ -189,6 +209,12 @@ int main(int argc, char **argv)
 		sound.SetListener({sy, sx, sz}, {std::cos(yaw), std::sin(yaw), 0});
 		sound.SetNight(night);
 		sound.SetEnvironment(static_cast<audio::EqSound::Environment>(environment));
+		if (weather_off >= 0 && tick == static_cast<int>(weather_off * fps))
+			weather.Receive(static_cast<uint32_t>(weather_type < 0 ? 0 : weather_type), 0);
+		Weather::Place place;
+		place.outdoors = true;
+		if (int message = weather.Frame(&sound, now, place))
+			printf("%5.1fs: eqstr %d\n", tick / static_cast<float>(fps), message);
 		sound.GiveTime(now);
 		mixer.Render(&mix[static_cast<size_t>(tick) * frames_per_tick * 2], frames_per_tick);
 		now += 1000 / fps;
@@ -197,6 +223,15 @@ int main(int argc, char **argv)
 			printf("%5.1fs at %.0f %.0f %.0f: music %s, %zu voices (%zu ambient), %zu of %zu emitters in range\n",
 				tick / static_cast<float>(fps), sx, sy, sz, stats.music.empty() ? "-" : stats.music.c_str(), stats.voices,
 				stats.ambient_voices, stats.emitters_in_range, stats.emitters);
+			if (weather_type >= 0) {
+				Weather::Stats w = weather.GetStats();
+				std::string sounding;
+				for (const auto &name : stats.weather)
+					sounding += " " + name;
+				printf("       weather kind %d active %d changing %d arriving %d cloud %d, next strike %d ms:%s\n",
+					static_cast<int>(w.kind), w.active, w.changing, w.arriving, w.cloud, w.next_strike_ms,
+					sounding.empty() ? " silent" : sounding.c_str());
+			}
 		}
 	}
 	for (const auto &name : sound.GetStats().missing)

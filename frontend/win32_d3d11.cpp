@@ -46,7 +46,7 @@ cbuffer Batch : register(b1)
 {
 	float4 light_scale; // rgb, and the material's opacity in a
 	float4 light_add;   // rgb
-	float4 dynamic_lights; // x: the sun on, y: the carried lights' mask
+	float4 dynamic_lights; // x: the sun on, y: the carried lights' mask, z: not fogged
 	float4 light_base;     // rgb: added to every vertex
 };
 
@@ -91,7 +91,7 @@ PixelIn SceneVS(VertexIn input)
 		}
 	}
 	output.color = float4(min(shade, 1), light_scale.a);
-	output.depth = z;
+	output.depth = dynamic_lights.z > 0 ? -1e6 : z; // clear of the fog's start
 	return output;
 }
 
@@ -340,7 +340,7 @@ namespace
 
 	private:
 		// The Batch constants: the vertex light's scale and the opacity, its add, the dynamic
-		// lights (the sun on, the carried lights' mask), and its base.
+		// lights (the sun on, the carried lights' mask) and whether it's fogged, and its base.
 		using Light = std::array<float, 16>;
 		// One Draw: a run of the frame's indices.
 		struct Batch
@@ -484,7 +484,7 @@ namespace
 			return;
 		Light light = {m_light_scale.x, m_light_scale.y, m_light_scale.z, material.opacity / 255.0f,
 			m_light_add.x / 255.0f, m_light_add.y / 255.0f, m_light_add.z / 255.0f, 0, m_dynamic_sun ? 1.0f : 0.0f,
-			static_cast<float>(m_point_mask), 0, 0, m_light_base.x / 255.0f, m_light_base.y / 255.0f,
+			static_cast<float>(m_point_mask), material.fog ? 0.0f : 1.0f, 0, m_light_base.x / 255.0f, m_light_base.y / 255.0f,
 			m_light_base.z / 255.0f, 0};
 		m_batches.push_back(
 			{first, count, m.TextureView(material.texture), material.blend, material.two_sided, m_background, light, pool, buffer});

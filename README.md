@@ -178,7 +178,7 @@ build/scene_preview EQDIR OUT.png --player RACE GENDER --zone NAME --at X Y Z [-
                     [--orbit H] [--pitch P] [--first-person] [--zoom N] [--walk MS [--turn -1|1]] [--npc ...]
                     [--time HOUR MINUTE] [--time-type T] [--fog START END RRGGBB] [--sky N] [--frames N] [--size WxH]
                     [--debug-draw wireframe,nofog,walls,floor] [--door NAME TYPE X Y Z HEADING INCLINE SIZE PARAM]
-                    [--door-open MS] [--click X Y] [--jump MS] [--sound OUT.wav]
+                    [--door-open MS] [--click X Y] [--jump MS] [--sound OUT.wav] [--weather rain|snow MS]
 ```
 
 `scene_preview` renders the 3D view to a PNG: the character select scene for any race, gender,
@@ -192,12 +192,15 @@ debug menu's render toggles. `--door` puts a door there as `OP_SpawnDoor` would 
 server's `doors` table), `--door-open MS` opens them all and runs that long before any `--walk`, and
 `--click X Y` reports what a left click there would do. `--jump MS` jumps that far into the walk, and
 `--sound OUT.wav` mixes what the doors, we and the spawns sound like as it runs (no zone music or
-ambience), printing each wave played. `--frames N` times N renders.
+ambience), printing each wave played. `--weather rain|snow MS` starts it raining or snowing and runs
+that long first, printing the weather's fog and particles each second (`--debug-draw noweather` draws
+none of it). `--frames N` times N renders.
 
 ```
 build/sound_preview EQDIR OUT.wav [--zone NAME] [--at X Y Z] [--heading H] [--walk X Y Z] [--seconds S]
                     [--music opening|charselect|combat|death|ID]... [--night] [--environment 1|2|3]
                     [--soundfont FILE] [--music-volume V] [--sound-volume V]
+                    [--rain N | --snow N] [--weather-off S] [--covered]
 build/sound_preview EQDIR --emitters ZONE
 build/sound_preview EQDIR --xmi FILE INDEX OUT.mid
 ```
@@ -206,7 +209,10 @@ build/sound_preview EQDIR --xmi FILE INDEX OUT.mid
 standing at a server position in a zone (or walking from there to `--walk`'s over the time), with the
 music selections given turned on, the XMI music through a SoundFont (default `synthus2.sf2`). Each second
 it prints the music track and the voices playing, and at the end each second's loudness. `--night` and
-`--environment` (1 outside, 2 a high ceiling, 3 a low one) set what the emitters see. `--emitters` prints
+`--environment` (1 outside, 2 a high ceiling, 3 a low one) set what the emitters see. `--rain N` or
+`--snow N` is an `OP_Weather` at the start (an outdoor zone), `--weather-off S` stops it at S seconds, and
+`--covered` puts a roof over us (no rain or wind loop); each second then prints the weather's state and
+what it sounds. `--emitters` prints
 a zone's `.emt`, and `--xmi` writes one of an `.xmi`'s sequences out as a standard MIDI file.
 
 ## How the front end was recovered
@@ -586,15 +592,41 @@ objects, `MusicManager`, the emitters), on our own mix (`audio/mixer.cpp`) inste
   or lava (`WaterOut`), or going into water at 1 a tick up or down or faster (`WaterIn`); our head going
   under plays `WatUndLp` (`Torch_Lp` in lava) once where we are, and coming up stops it. Our own sounds
   have the client's two voices, so a splash out right after a long splash in can find none.
+- **Weather** (`CDisplay`'s `StartWeather`, `StopWeather`, `ProcessCloud`, `LightningStrike`): `OP_Weather` (type 1 snow, else rain; intensity 0 stops it) is taken up the next frame in
+  the world. In an outdoor zone (time type 1, 2 or 5) the cloud comes in a step a frame (2/256; it goes at
+  3/256), and once in, rain turns on the global `rainloop.wav` emitter ("It begins to rain.") and snow
+  `wind_lp1.wav` ("It begins to snow."): half volume everywhere, 2 s in and 3 s out, silent while the floor
+  over us is covered (`setSoundEmitterUnderwater`'s exposure under 0.48). While it rains, thunder
+  (`thunder1`/`thunder2.wav`) comes as it arrives and every 10 to 20 s, three times in ten answered by the
+  other within a second. Leaving the zone kills it at once.
+
+  What it draws: from the start until it's gone there's no sky, and the fog is the weather's
+  (`SetTimedFog`): each step coming in pulls the fog's start in by its start / 128 and its end by what's
+  past 550 / 128, both times the Clip Plane (so at our 4, in a quarter of the way), to a start of 30 and an
+  end of 550; going, it opens out by as much a step until the zone's own fog comes back. Once it's in,
+  eqgfx's particle clouds (`render/particles.h`, from `gequip.s3d`'s sprites): rain is up to 1000 streaks
+  (`RAIN_CLOUD`, one every 3 ms over a 450 square 250 above the camera, falling 200 a second, each a
+  one-pixel additive line a fortieth of a second long in the rain's grey, red in the Plane of Fear),
+  each tried against the world as it's made: one that meets a solid surface (or lava, slime) leaves a
+  dot there for a fifth of a second (`RAINS_CLOUD`), one that meets water a ring (`RAINRING.BMP`)
+  spreading to 3 over half a second (`RAINW_CLOUD`). Snow is up to 1500 flakes (`SNOWFLAKE.BMP`, half a
+  unit across, wobbling) falling 50 a second over a 600 square, leaving dots where they land. When it
+  stops, those falling finish. A thunder clap flashes for its frame (the ambient light at 0.99, the fog no
+  darker than our floor's exposure). The debug menu's RENDER section has **No weather effects**, which
+  draws none of it (the sound stays on its own switch), and a row with the weather's fog and its
+  particles. Not done: the particle density option (at its highest), and the distance level of detail
+  eqgfx gives a cloud made a second time.
 - **The debug menu's SOUND section** shows the track playing and its number (1 the opening, 4 character
   select, 17 on the zones' music), the voices, the ambient ones by name and distance (of four), the
   creatures' loops, the emitters switched on and in range, the time of day and ceiling the emitters see,
   and the files the zone wanted that aren't there; and switches for all sound, the music (MusicManager's
-  own, `/music`: what's playing fades out), the zone's ambience and the game's sounds (doors, steps, jumps,
-  splashes, creatures). The switches last until the client exits.
+  own, `/music`: what's playing fades out), the zone's ambience, the game's sounds (doors, steps, jumps,
+  splashes, creatures) and the weather (rain, wind, thunder). Its weather row shows what's coming, here or
+  going (with the cloud's fade and when thunder comes next), the last `OP_Weather`, and the weather's sounds
+  playing by name. The switches last until the client exits.
 
 Not yet: everything triggered by game events the client doesn't have yet (combat and death music,
-spell, item and hit sounds, the merchant/bank music, rain and wind, thunder), and EAX reverb (the
+spell, item and hit sounds, the merchant/bank music), and EAX reverb (the
 per-zone room types `SetCurrentZone` sets, and underwater's).
 
 ## Protocol

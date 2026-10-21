@@ -41,6 +41,7 @@ namespace render
 		Blend blend = Blend::Opaque;
 		uint8_t opacity = 255;
 		bool two_sided = false;
+		bool fog = true; // false: drawn clear of the fog (eqgfx's particle points and lines)
 	};
 
 	struct Vertex

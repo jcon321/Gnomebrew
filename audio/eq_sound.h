@@ -24,6 +24,12 @@
 // Emitters can be for the day or the night only, and for outside, under a high ceiling or a low
 // one only (CDisplay::SetupEmitterEnvironment, SetGenericEnvironment).
 //
+// The weather's are two global emitters (LoadGlobalEmitters), rainloop.wav and wind_lp1.wav, at half
+// volume everywhere, fading in over 2 seconds and out over 3: rain on while it rains, wind while
+// it snows (EmitterSetRaining and EmitterSetWind, from CDisplay's weather), and neither while the
+// floor under us is covered (SetupEmitterEnvironment's exposure under 0.48). The thunder is a
+// numbered wave, thunder1 or thunder2.wav, that CDisplay::LightningStrike plays.
+//
 // Game sounds are EqSoundManager's numbered waves (4000 slots, WaveLoad and WavePlay): the global
 // ones (LoadGlobalWaves: jumps, footsteps, the wood door...), the doors' (EQSwitch::
 // LoadDoorSoundEffects, by door type, as doors spawn), and the creatures' (EQPlayer::SetSounds'
@@ -84,6 +90,11 @@ namespace audio
 		// SetSoundEnvironmentMode: night is an hour (1..24, 1 midnight) under 5 or over 18.
 		void SetNight(bool night);
 		void SetEnvironment(Environment environment);
+		// EmitterSetRaining and EmitterSetWind: the weather's loops on or off. SetCovered is
+		// setSoundEmitterUnderwater (as it's named): the floor under us covered, which silences them.
+		void SetRaining(bool on);
+		void SetWind(bool on);
+		void SetCovered(bool covered);
 
 		// EqSoundManager::GiveTime, once a frame: the emitters, the music, and the voices that finished.
 		void GiveTime(uint64_t now_ms);
@@ -92,13 +103,14 @@ namespace audio
 
 		// What plays (the debug menu's switches; all on). Music off is MusicManager's own switch
 		// (/music): what's playing fades out as if another track took over. Ambience is the zone's
-		// wave emitters (its music emitters are music), and game sounds the numbered waves (doors,
-		// steps, jumps, splashes, creatures) and the creatures' loops. Off, they fade out as when
-		// we leave their range, and don't start.
+		// wave emitters (its music emitters are music), game sounds the numbered waves (doors,
+		// steps, jumps, splashes, creatures) and the creatures' loops, and weather the rain and
+		// wind loops and the thunder. Off, they fade out as when we leave their range, and don't
+		// start.
 		struct Switches
 		{
 			bool sound = true; // all of it
-			bool music = true, ambience = true, game = true;
+			bool music = true, ambience = true, game = true, weather = true;
 		};
 		void SetSwitches(const Switches &switches);
 		const Switches &GetSwitches() const { return m_switches; }
@@ -118,6 +130,8 @@ namespace audio
 		bool WavePlaying(int slot);
 		// WavePlay with no control: right where we are (full volume within 1000), once.
 		void PlayWave(int slot);
+		// The same for the weather's thunder (CDisplay::LightningStrike): on the weather's switch.
+		void PlayWeatherWave(int slot);
 		// WaveStop: the wave's voices end at once.
 		void StopWave(int slot);
 		// EqMobileEmitter: actor `key`'s looping sound (an ActorSounds loop number, 0 none),
@@ -141,6 +155,8 @@ namespace audio
 			};
 			std::vector<Playing> ambient; // what they are, and how far
 			int environment = 0, time_of_day = 0;
+			bool raining = false, wind = false, covered = false;
+			std::vector<std::string> weather; // the weather's sounds playing: its loops, and thunder
 			std::vector<std::string> missing; // assets that weren't found
 		};
 		Stats GetStats() const;
@@ -168,6 +184,7 @@ namespace audio
 			Vec3 position;
 			float min_distance = 0, max_distance = 0;
 			int channel = 0;
+			bool weather = false; // on the weather's switch rather than the game sounds'
 		};
 		struct Instance
 		{
@@ -199,6 +216,7 @@ namespace audio
 			int min_delay = 0, max_delay = 0;
 			int environment = 0, when = 0;
 			int channel = 2; // the zone's; an actor's is 0
+			bool weather = false; // the rain's or the wind's
 			bool enabled = true;
 			uint64_t last_ms = 0;
 			int delay_ms = 0;
@@ -222,6 +240,7 @@ namespace audio
 
 		void LoadEmitters(const std::string &path);
 		void LoadGlobalWaves();
+		void LoadGlobalEmitters();
 		// WaveLoad: `name` into `slot`, unless it's there already (what was there stops).
 		void WaveLoad(int slot, const std::string &name);
 		std::shared_ptr<Asset> Wave(int slot); // loading a creature's on first use
@@ -263,12 +282,15 @@ namespace audio
 		std::map<uint32_t, Emitter> m_actor_loops;
 		int m_emitter_counter = 16; // music emitters' track ids count up from here
 		int m_environment = 0, m_time_of_day = 0;
+		Emitter m_rain, m_wind; // LoadGlobalEmitters'
+		bool m_raining = false, m_windy = false, m_covered = false;
 		Vec3 m_listener, m_forward{1, 0, 0};
 		std::function<void(const std::string &)> m_wave_log;
 		Switches m_switches;
 		bool MusicOn() const { return m_switches.sound && m_switches.music; }
 		bool AmbienceOn() const { return m_switches.sound && m_switches.ambience; }
 		bool GameOn() const { return m_switches.sound && m_switches.game; }
+		bool WeatherOn() const { return m_switches.sound && m_switches.weather; }
 		uint64_t m_now_ms = 0;
 	};
 }

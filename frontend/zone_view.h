@@ -4,7 +4,8 @@
 // with the objects from <zone>_obj.s3d and the lights.wld point lights, the
 // fog and far plane from OP_NewZone (CDisplay::SetFog: the yon is the fog's
 // end), the sky when the zone has one, and our own character dressed from
-// OP_ZoneEntry, standing where the server put them.
+// OP_ZoneEntry, standing where the server put them. The weather (weather.h) draws over it: its
+// particle clouds, and its fog in place of the zone's and the sky.
 //
 // The zone loads on a background thread; Render draws nothing until it's ready.
 // Positions are the server's (x, y, z; heading 0..512 counterclockwise from north).
@@ -12,10 +13,12 @@
 #include "actor_sound.h"
 #include "canvas.h"
 #include "character_model.h"
+#include "particles.h"
 #include "player_movement.h"
 #include "rasterizer.h"
 #include "sky.h"
 #include "spawn_actor.h"
+#include "weather.h"
 #include "zone_doors.h"
 #include "zone_scene.h"
 #include "zone_session.h"
@@ -177,13 +180,14 @@ public:
 	// The spawn drawn under a window pixel, nearest first (after Render); 0 for none.
 	uint16_t PickSpawn(int x, int y) const;
 	// Debug drawing: triangle outlines instead of the scene, no fog (out to the zone's max clip),
-	// no clip plane (no far plane or fog at all), collision walls near us outlined, and a marker
-	// on the floor under our feet.
+	// no clip plane (no far plane or fog at all), collision walls near us outlined, a marker on
+	// the floor under our feet, and none of the weather (its sound goes on).
 	struct DebugDraw
 	{
 		bool wireframe = false, no_fog = false, walls = false, floor = false;
 		bool no_culling = false; // draw what the zone hides too (no Umbra)
 		bool no_clip = false;
+		bool no_weather = false; // no rain or snow, and the zone's own fog, sky and light
 		int vision = -1; // a Vision, or -1: our own (our race's; spells and items to come)
 	};
 	// What we see in: the debug menu's choice, or our own (our race's; spells and items to come).
@@ -192,11 +196,24 @@ public:
 	void SetDebugDraw(const DebugDraw &draw) { m_debug_draw = draw; }
 	const render::Vec3 &Feet() const { return m_feet; }
 
-private:
-	static constexpr float MinDistance = 3, MaxDistance = 200;
 	// The options' Clip Plane slider (0.1 to 4 in steps of 0.2; 1, eqgame's default, is the zone's
 	// own fog), at its maximum: the view reaches the zone's max clip.
 	static constexpr float ClipPlane = 4;
+	// CDisplay::SetFog: the zone's fog moved out by the Clip Plane slider (it keeps its depth),
+	// without the weather's.
+	void ZoneFog(float &start, float &end) const;
+	// The weather's effects (Weather::GetEffects), each frame before Render.
+	void SetWeather(const Weather::Effects &effects) { m_weather = effects; }
+	// For the debug menu: the weather's particles falling, and those carried on into its clouds
+	// on the ground and on the water.
+	struct WeatherCounts
+	{
+		size_t falling = 0, ground = 0, water = 0;
+	};
+	WeatherCounts WeatherParticles() const;
+
+private:
+	static constexpr float MinDistance = 3, MaxDistance = 200;
 	static constexpr float NoClipFarPlane = 1e7f; // the debug menu's no clip plane
 
 	void Load();
@@ -215,8 +232,11 @@ private:
 	render::ModelLighting ModelLightingAt(const render::Vec3 &center, bool warm = true);
 	// The floor's exposure under `center` (s3dGetActorScaledAmbient), 1 where there's none.
 	float ExposureAt(const render::Vec3 &center) const;
-	// CDisplay::SetFog: the zone's fog moved out by the Clip Plane slider (it keeps its depth).
+	// The fog drawn: the weather's while it's on, else the zone's.
 	void FogRange(float &start, float &end) const;
+	bool WeatherShown() const { return !m_debug_draw.no_weather; }
+	// The weather's particle clouds (CDisplay's do_rain and do_snow), moved on and drawn.
+	void DrawWeather(uint64_t now_ms);
 	float FarPlane() const; // the fog's end, at least the zone's max clip with no fog, unbounded with no clip
 	void DrawDebugOverlays(Canvas &canvas) const;
 	void ChooseAnimation(float ms);
@@ -306,4 +326,17 @@ private:
 	float m_distance = 0;   // chase camera distance; 0 = from the character's height
 	size_t m_triangles_drawn = 0;
 	RenderTimes m_times;
+
+	Weather::Effects m_weather;
+	// A rain's or snow's clouds: those falling carry on into the others where they hit. The
+	// newest is last; any before it are stopped, their last particles still falling.
+	struct WeatherClouds
+	{
+		std::unique_ptr<render::ParticleCloud> ground, water, falling;
+	};
+	std::vector<WeatherClouds> m_weather_clouds;
+	Weather::Kind m_cloud_kind = Weather::Kind::None;
+	PfsArchive m_equipment; // gequip.s3d: the rain's ring and the snowflake
+	render::TextureCache m_effect_textures;
+	const render::Texture *m_rain_ring = nullptr, *m_snowflake = nullptr;
 };

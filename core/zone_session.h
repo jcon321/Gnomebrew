@@ -166,6 +166,7 @@ public:
 			Chat,         // chat
 			Message,      // text: system/special message
 			TimeOfDay,    // text: "hour:minute"
+			Weather,      // OP_Weather: id the type (0 rain, 1 snow), value the intensity (0 stops it)
 			DoorsSpawned, // Doors() is set
 			DoorMoved,    // id: the door, value: its new state (OP_MoveDoor)
 			LoggedOut,    // camp finished; the zone closes the connection

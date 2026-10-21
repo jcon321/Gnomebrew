@@ -21,6 +21,7 @@
 #include "eq_sound.h"
 #include "rdp_session.h"
 #include "text.h"
+#include "weather.h"
 #include "widgets.h"
 #include "zone_session.h"
 #include "zone_view.h"
@@ -57,6 +58,7 @@ public:
 
 	void SelectTarget(uint16_t id) { m_target = id; } // 0: back to the nearest
 	void SetSound(audio::EqSound *sound) { m_sound = sound; }
+	void SetWeather(const Weather *weather) { m_weather = weather; }
 	const ZoneView::DebugDraw &Drawing() const { return m_draw; }
 	// The host's vsync and how to change it; no toggle when `set` is unset (the software renderer).
 	void SetVSync(bool on, std::function<void(bool)> set)
@@ -117,6 +119,7 @@ private:
 	std::function<void(bool)> m_set_vsync;
 	uint16_t m_target = 0;
 	audio::EqSound *m_sound = nullptr;
+	const Weather *m_weather = nullptr;
 	Rect m_card{0, 0, 0, 0}; // where the card was drawn
 	std::vector<Hit> m_hits;
 };

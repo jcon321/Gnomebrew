@@ -18,6 +18,7 @@
 #include "eqtext.h"
 #include "login_client.h"
 #include "sidl.h"
+#include "weather.h"
 #include "world_client.h"
 #include "zone_session.h"
 #include "zone_view.h"
@@ -161,6 +162,7 @@ private:
 	// EqSoundManager::GiveTime's callers (character select and the world display): the listener and
 	// the emitters' surroundings from the zone, then the sound's frame.
 	void SoundFrame(uint64_t now_ms);
+	void WeatherFrame(uint64_t now_ms);
 
 	void RenderStart(Canvas &canvas);
 	void RenderLogin(Canvas &canvas, uint64_t now_ms);
@@ -259,6 +261,7 @@ private:
 	bool m_opening_played = false;   // CDisplay::InitDDraw's opening music, once a run of eqgame
 	bool m_main_loop_started = false; // the zone's first frame (DoMainLoop ends the opening music)
 	uint64_t m_sound_surroundings_ms = 0;
+	Weather m_weather; // CDisplay's (its sound, so far)
 
 	LoginSession m_session;
 	WorldSession m_world;
