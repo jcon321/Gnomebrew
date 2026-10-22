@@ -36,6 +36,7 @@ struct FrontEndConfig
 	std::string username; // pre-filled on the login screen
 	int last_character = 0; // character select slot to start on (LastCharSel)
 	uint16_t world_port = 9000;
+	std::string record_dir; // each zone session's packets go to a packet log (.eqr) here; empty: none
 };
 
 class EqStr;
@@ -81,6 +82,9 @@ public:
 	int ScreenWidth() const { return m_game_width; }
 	int ScreenHeight() const { return m_game_height; }
 	Rect ScreenArea() const; // where the current screen is laid out, in window pixels
+
+	// Straight into the zone from a packet log (ZoneSession::BeginReplay), with no server.
+	bool StartReplay(const std::string &path, std::string &error);
 
 	void SetCursorVisible(bool visible) { m_cursor_visible = visible; }
 	// How long the host took to show the last frame, ms (the debug menu's Present).

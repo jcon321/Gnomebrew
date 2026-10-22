@@ -2,6 +2,7 @@
 #include "eqstr.h"
 #include "inflate.h"
 #include "opcodes.h"
+#include "packet_log.h"
 #include "rdp_session.h"
 
 #include <algorithm>
@@ -247,6 +248,12 @@ bool ZoneSession::Send(uint16_t opcode, const void *body, size_t size, const std
 {
 	if (!what.empty())
 		Log("[zone] -> " + what);
+	if (m_recorder)
+		m_recorder->Write(true, opcode, body, size);
+	if (m_replay) {
+		RecordPacket(true, opcode, size);
+		return true;
+	}
 	if (!m_session)
 		return false;
 	RecordPacket(true, opcode, size);
@@ -290,7 +297,7 @@ void ZoneSession::RecordSent(const uint8_t *update)
 	++m_last_sent.count;
 }
 
-bool ZoneSession::Begin(const std::string &host, uint16_t port, const std::string &character)
+void ZoneSession::Reset(const std::string &character)
 {
 	Close();
 	m_character = character;
@@ -309,7 +316,34 @@ bool ZoneSession::Begin(const std::string &host, uint16_t port, const std::strin
 	m_doors.clear();
 	m_zone_target = 0;
 	m_camp_started_ms = 0;
+}
 
+const std::string &ZoneSession::RecordingPath() const
+{
+	static const std::string none;
+	return m_recorder ? m_recorder->Path() : none;
+}
+
+bool ZoneSession::BeginReplay(const std::string &path, std::string &error)
+{
+	auto replay = std::make_unique<PacketLog>();
+	if (!replay->Load(path, error))
+		return false;
+	Reset(replay->character);
+	m_replay = std::move(replay);
+	m_replay_next = 0;
+	m_replay_finished = false;
+	m_state = State::Entering;
+	m_started_ms = NowMs();
+	Log("[zone] replaying " + path + ": " + m_character + " at " + m_replay->peer + ", " +
+		std::to_string(m_replay->packets.size()) + " packets over " +
+		std::to_string(m_replay->packets.empty() ? 0 : m_replay->packets.back().ms / 1000) + " s");
+	return true;
+}
+
+bool ZoneSession::Begin(const std::string &host, uint16_t port, const std::string &character)
+{
+	Reset(character);
 	m_session = std::make_unique<RdpSession>();
 	if (!m_session->Connect(host, port)) {
 		m_state = State::Failed;
@@ -317,6 +351,16 @@ bool ZoneSession::Begin(const std::string &host, uint16_t port, const std::strin
 	}
 	m_state = State::Entering;
 	m_started_ms = NowMs();
+	if (!m_record_dir.empty()) {
+		std::string error;
+		m_recorder = std::make_unique<PacketLogWriter>();
+		if (m_recorder->Open(m_record_dir, character, host + ":" + std::to_string(port), error))
+			Log("[zone] recording to " + m_recorder->Path());
+		else {
+			Log("[zone] not recording: " + error);
+			m_recorder.reset();
+		}
+	}
 
 	// ZoneAuthenticate: the data rate from DataRate.txt (default 5.0, clamped to 2..15).
 	float data_rate = 5.0f;
@@ -530,6 +574,8 @@ void ZoneSession::Close()
 	if (m_session)
 		m_session->Close();
 	m_session.reset();
+	m_recorder.reset();
+	m_replay.reset();
 	if (m_state != State::LoggedOut && m_state != State::Failed)
 		m_state = State::Idle;
 }
@@ -932,14 +978,41 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 	}
 }
 
+bool ZoneSession::NextReplayed(uint16_t &opcode, std::vector<uint8_t> &data)
+{
+	uint64_t elapsed = NowMs() - m_started_ms;
+	const auto &packets = m_replay->packets;
+	while (m_replay_next < packets.size()) {
+		const LoggedPacket &p = packets[m_replay_next];
+		if (p.ms > elapsed)
+			return false;
+		++m_replay_next;
+		// What we sent then, and the zone letting that session go (it camped or zoned), are skipped.
+		if (p.outgoing || p.opcode == ZoneOp::LogoutReply)
+			continue;
+		opcode = p.opcode;
+		data = p.data;
+		return true;
+	}
+	if (!m_replay_finished) {
+		m_replay_finished = true;
+		Log("[zone] replay finished; staying in the zone");
+	}
+	return false;
+}
+
 void ZoneSession::Pump(int timeout_ms, std::vector<Event> &events)
 {
-	if (!m_session || m_state == State::Idle || m_state == State::Failed || m_state == State::LoggedOut)
+	if ((!m_session && !m_replay) || m_state == State::Idle || m_state == State::Failed || m_state == State::LoggedOut)
 		return;
 
 	for (;;) {
 		AppPacket packet;
-		auto status = m_session->Receive(packet, timeout_ms);
+		RdpSession::Status status;
+		if (m_replay)
+			status = NextReplayed(packet.opcode, packet.data) ? RdpSession::Status::Packet : RdpSession::Status::Timeout;
+		else
+			status = m_session->Receive(packet, timeout_ms);
 		timeout_ms = 0;
 		if (status == RdpSession::Status::Timeout)
 			break;
@@ -972,6 +1045,8 @@ void ZoneSession::Pump(int timeout_ms, std::vector<Event> &events)
 		}
 		if (m_verbose)
 			HexDump(packet.data);
+		if (m_recorder)
+			m_recorder->Write(false, packet.opcode, packet.data.data(), packet.data.size());
 		RecordPacket(false, packet.opcode, packet.data.size());
 		HandlePacket(packet.opcode, packet.data, events);
 		if (m_state == State::Failed || m_state == State::LoggedOut)
@@ -986,6 +1061,13 @@ void ZoneSession::Pump(int timeout_ms, std::vector<Event> &events)
 
 	if ((m_state == State::InZone || m_state == State::Camping) && m_have_movement)
 		SendMovement(NowMs());
+	if (m_replay && m_state == State::ZoneRequested) {
+		// No zone to ask: "not ready".
+		m_state = State::InZone;
+		Event e(Event::Type::ZoneDenied);
+		e.value = -1;
+		events.push_back(e);
+	}
 	if (m_state == State::Entering && NowMs() - m_started_ms > HandshakeTimeoutMs)
 		Fail(events, "timed out entering the zone");
 	// The zone gives up on world after a while and answers "not ready"; this is in case it never answers.
@@ -1005,5 +1087,9 @@ void ZoneSession::Pump(int timeout_ms, std::vector<Event> &events)
 	if (m_state == State::Camping && CampRemainingMs() == 0 && m_camp_started_ms != 0) {
 		m_camp_started_ms = 0; // send once
 		Send(ZoneOp::Logout, nullptr, 0, "OP_Logout");
+		if (m_replay) { // no zone to answer
+			m_state = State::LoggedOut;
+			events.push_back({Event::Type::LoggedOut});
+		}
 	}
 }

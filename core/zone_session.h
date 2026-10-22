@@ -23,7 +23,9 @@
 #include <vector>
 
 class EqStr;
+class PacketLogWriter;
 class RdpSession;
+struct PacketLog;
 struct RdpStats;
 
 struct ZoneProfile
@@ -194,6 +196,14 @@ public:
 	void SetStringTable(const EqStr *strings) { m_eqstr = strings; }
 
 	bool Begin(const std::string &host, uint16_t port, const std::string &character);
+	// Every zone session from Begin on is written to a packet log (.eqr) in `dir`; empty: none.
+	void SetRecordDir(const std::string &dir) { m_record_dir = dir; }
+	const std::string &RecordingPath() const; // the current session's log, or empty
+	// Plays a packet log back instead of connecting: its incoming packets arrive when they did,
+	// and what we send goes nowhere. When it runs out we stay in the zone. A camp logs out when
+	// its timer runs; a zone line is turned down ("not ready").
+	bool BeginReplay(const std::string &path, std::string &error);
+	bool Replaying() const { return m_replay != nullptr; }
 	void Pump(int timeout_ms, std::vector<Event> &events);
 
 	bool Say(const std::string &text);
@@ -256,16 +266,23 @@ public:
 	static uint64_t Now(); // the clock behind PacketRecord::ms, SentPosition::ms and ZoneSpawn::updated_ms
 
 private:
+	void Reset(const std::string &character);
 	void Log(const std::string &line);
 	void Fail(std::vector<Event> &events, const std::string &text);
 	bool Send(uint16_t opcode, const void *body, size_t size, const std::string &what, bool reliable = true);
 	void SendPosition();
+	bool NextReplayed(uint16_t &opcode, std::vector<uint8_t> &data); // the next recorded packet that's due
 	void SendMovement(uint64_t now_ms);
 	void HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std::vector<Event> &events);
 	void RecordPacket(bool outgoing, uint16_t opcode, size_t size);
 	void RecordSent(const uint8_t *update); // a 15-byte SpawnPositionUpdate_Struct
 
 	std::unique_ptr<RdpSession> m_session;
+	std::string m_record_dir;
+	std::unique_ptr<PacketLogWriter> m_recorder;
+	std::unique_ptr<PacketLog> m_replay;
+	size_t m_replay_next = 0;
+	bool m_replay_finished = false;
 	State m_state = State::Idle;
 	std::string m_character;
 	ZoneProfile m_profile;

@@ -22,7 +22,10 @@
 //                                      sf2, through SoundFont below, in our own mix)
 //              SoundFont=synthus2.sf2 (in the EQ folder, or a full path; synthusr.sf2 if it's missing)
 //   [Defaults] LastCharSel=0          (remembered character select slot, like eqclient.ini's)
+//   [Debug]    RecordPackets=0        (1: each zone session's packets go to replays\<char>-<time>.eqr
+//                                      next to the exe, for --replay)
 //   eqclient_gui.exe --eqdir C:\TAKP --login 192.168.0.18:6000 --size 1920x1080
+//   eqclient_gui.exe --replay replays\Name-20261022-124815.eqr   (straight into the recorded zone, no server)
 
 #include "eqstr.h"
 #include "frontend.h"
@@ -375,6 +378,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	IniDefault(ini, L"Sound", L"Music", L"midi");
 	IniDefault(ini, L"Sound", L"SoundFont", L"synthus2.sf2");
 	IniDefault(ini, L"Defaults", L"LastCharSel", L"0");
+	IniDefault(ini, L"Debug", L"RecordPackets", L"0");
 	std::wstring eq_dir = IniString(ini, L"Paths", L"EQDir");
 	std::wstring login = IniString(ini, L"Login", L"Server");
 	std::wstring user = IniString(ini, L"Login", L"User");
@@ -383,6 +387,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	std::wstring renderer = IniString(ini, L"Display", L"Renderer");
 	bool vsync = GetPrivateProfileIntW(L"Display", L"VSync", 1, ini.c_str()) != 0;
 	int last_character = GetPrivateProfileIntW(L"Defaults", L"LastCharSel", 0, ini.c_str());
+	bool record_packets = GetPrivateProfileIntW(L"Debug", L"RecordPackets", 0, ini.c_str()) != 0;
+	std::wstring replay;
 	bool sound_on = GetPrivateProfileIntW(L"Sound", L"Sound", 1, ini.c_str()) != 0;
 	int music_volume = std::clamp(static_cast<int>(GetPrivateProfileIntW(L"Sound", L"MusicVolume", 10, ini.c_str())), 0, 20);
 	int sound_volume = std::clamp(static_cast<int>(GetPrivateProfileIntW(L"Sound", L"SoundVolume", 10, ini.c_str())), 0, 20);
@@ -401,6 +407,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 			swscanf(argv[++i], L"%dx%d", &width, &height);
 		else if (arg == L"--renderer")
 			renderer = argv[++i];
+		else if (arg == L"--replay")
+			replay = argv[++i];
 	}
 	if (argv)
 		LocalFree(argv);
@@ -416,6 +424,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	FrontEndConfig config;
 	config.username = Narrow(user);
 	config.last_character = last_character;
+	if (record_packets)
+		config.record_dir = Narrow(exe_dir) + "\\replays";
 	if (!login.empty()) {
 		std::string value = Narrow(login);
 		size_t colon = value.rfind(':');
@@ -557,6 +567,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	frontend.log = Log;
 	frontend.SetGameResolution(width, height);
 	g_app.frontend = &frontend;
+	if (!replay.empty()) {
+		std::string replay_error;
+		if (!frontend.StartReplay(Narrow(replay), replay_error)) {
+			Fatal(Widen(replay_error));
+			return 1;
+		}
+	}
 	ShowWindow(g_app.window, show);
 
 	Canvas canvas(g_app.surface.pixels, g_app.surface.width, g_app.surface.height, g_app.surface.width);

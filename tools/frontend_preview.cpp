@@ -3,11 +3,13 @@
 // outline boxes of an estimated Arial size, since GDI isn't available.
 //
 //   frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect]]
+//   frontend_preview EQDIR OUTDIR --replay FILE [SECONDS]
 //
 // Without a login server it snapshots the start screen, a dialog and the login
 // screen. With one it also logs in and snapshots server select and the play result.
 // "charselect" stops at character select (two snapshots of the 3D scene, as the
-// camera turns) instead of entering the world.
+// camera turns) instead of entering the world. --replay plays a packet log back (no server)
+// and snapshots the zone once it's in, then every few seconds for SECONDS (default 10).
 
 #include "eqstr.h"
 #include "frontend.h"
@@ -146,8 +148,12 @@ namespace
 
 int main(int argc, char **argv)
 {
-	if (argc != 3 && argc != 6 && argc != 7) {
-		fprintf(stderr, "usage: %s EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create]]\n", argv[0]);
+	bool replay = argc >= 5 && std::string(argv[3]) == "--replay";
+	if (!replay && argc != 3 && argc != 6 && argc != 7) {
+		fprintf(stderr,
+			"usage: %s EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create]]\n"
+			"       %s EQDIR OUTDIR --replay FILE [SECONDS]\n",
+			argv[0], argv[0]);
 		return 2;
 	}
 	std::string eq_dir = argv[1];
@@ -167,7 +173,7 @@ int main(int argc, char **argv)
 	FrontEndConfig config;
 	bool stop_at_charselect = argc == 7 && std::string(argv[6]) == "charselect";
 	bool create = argc == 7 && std::string(argv[6]) == "create";
-	if (argc >= 6) {
+	if (argc >= 6 && !replay) {
 		std::string login = argv[3];
 		size_t colon = login.rfind(':');
 		config.login_host = login.substr(0, colon);
@@ -198,6 +204,27 @@ int main(int argc, char **argv)
 	frontend.SetGameResolution(1280, 720); // character select is drawn at this size
 	Harness h{frontend, argv[2], {}};
 	using Screen = FrontEnd::Screen;
+
+	if (replay) {
+		int seconds = argc >= 6 ? atoi(argv[5]) : 10;
+		std::string replay_error;
+		if (!frontend.StartReplay(argv[4], replay_error)) {
+			fprintf(stderr, "[preview] %s\n", replay_error.c_str());
+			return 1;
+		}
+		if (!h.RunUntil([&] { return frontend.Zone().GetState() == ZoneSession::State::InZone; })) {
+			fprintf(stderr, "[preview] the replay never got in the zone\n");
+			return 1;
+		}
+		h.RunUntil([&] { return frontend.ZoneScene() && frontend.ZoneScene()->Loaded(); }, 30000);
+		h.RunUntil([] { return false; }, 500);
+		h.Snapshot("r0-zone");
+		for (int t = 3; t <= seconds; t += 3) {
+			h.RunUntil([] { return false; }, 3000);
+			h.Snapshot("r" + std::to_string(t) + "s");
+		}
+		return 0;
+	}
 
 	h.Snapshot("1-start");
 	h.Click(400 + 114, 0xff + 17); // ACCOUNT -> "not implemented" dialog

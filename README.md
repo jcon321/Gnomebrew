@@ -25,7 +25,7 @@ A from-scratch EQMac (TAKP-era) client. Two programs share one core:
 ## Layout
 
 ```
-core/       portable: RDP session, login/world protocol, DES, inflate, PFS (.pak/.s3d), BMP, DDS, TGA, XML, WLD, eqtext.txt,
+core/       portable: RDP session, login/world protocol, packet logs (record/replay), DES, inflate, PFS (.pak/.s3d), BMP, DDS, TGA, XML, WLD, eqtext.txt,
             character creation rules
 console/    eqclient
 audio/      portable sound: the mix (WAV, MP3, positional voices), XMI music and its synths, the client's sound manager
@@ -101,6 +101,9 @@ SoundFont=synthus2.sf2
 
 [Defaults]
 LastCharSel=0
+
+[Debug]
+RecordPackets=0
 ```
 
 - `EQDir` is the EverQuest folder. It needs `eqfeart*.pak` (the front-end art), `eqtext.txt`
@@ -132,7 +135,13 @@ LastCharSel=0
 - `LastCharSel` is the character select slot to start on. Like the real client's `[Defaults]
   LastCharSel`, it's saved as you select characters (written when the GUI exits).
 
-Command-line flags override the ini: `--eqdir`, `--login`, `--size WxH`. The GUI saves the last
+- `RecordPackets=1` writes each zone session's packets to `replays\<char>-<time>.eqr` next to the exe.
+  `--replay FILE` plays one back: the GUI goes straight into that zone with no server, the recorded
+  packets arriving when they did (spawns, chat, doors, weather...). You can run around; what you send
+  goes nowhere. When the log runs out you stay in the zone. Camping logs out when its timer runs, and
+  zone lines are turned down. The console client and `frontend_preview` play the same files.
+
+Command-line flags override the ini: `--eqdir`, `--login`, `--size WxH`, `--replay FILE`. The GUI saves the last
 username as `[Login] User=` and the selected character as `[Defaults] LastCharSel=`, and writes a log to `my-client.log` next to the exe.
 
 Like the real client on an EQMacEmu server with `auto_create_accounts`, the first login of a new
@@ -154,6 +163,9 @@ build/eqclient -u USER -p PASS [options]
   --zone-to ID          with --zone: once in, zone to zone ID (OP_ZoneChange; the zone checks it against
                         its zone points), through world to the next zone, then stay and camp there
   --idle SECONDS        without --char, stay at character select this long (default 0)
+  --record DIR          with --zone: write each zone session's packets to DIR/<char>-<time>.eqr
+  --replay FILE         play a recorded zone session back (no server): stay --zone seconds (default
+                        10), print what's around, then camp out
   --no-retry            don't retry once after "Invalid username or password"
   -v                    hex dump every packet
 ```
@@ -162,6 +174,7 @@ build/eqclient -u USER -p PASS [options]
 
 ```
 build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD]
+build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS]
 ```
 
 This drives the real front-end code with scripted input and writes PNG snapshots. Text is
@@ -169,7 +182,8 @@ drawn as outline boxes, since there's no GDI. With a login server it logs in, sn
 select and character select, and presses Enter World (add `charselect` after the password to stop
 at character select instead). `create` instead makes an Erudite wizard from the first empty slot,
 snapshots every creation screen and the face picker, submits it, and deletes it again. It's for
-checking layout and flow without Windows.
+checking layout and flow without Windows. `--replay` plays a packet log back instead (no server)
+and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10).
 
 ```
 build/scene_preview EQDIR OUT.png --char RACE GENDER CLASS [--face F] [--equip M,M,...] [--camera H] [--frames N] [--size WxH]

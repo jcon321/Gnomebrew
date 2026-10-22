@@ -28,6 +28,7 @@ add_library(eqcore STATIC
     core/login_client.cpp
     core/world_client.cpp
     core/zone_session.cpp
+    core/packet_log.cpp
     core/des.cpp
     core/inflate.cpp
     core/pfs.cpp

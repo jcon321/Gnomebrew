@@ -31,6 +31,9 @@ namespace
 			"  --click-door ID       with --zone, use door ID once in the zone and print the doors that move\n"
 			"  --zone-to ID          with --zone, once in, ask to zone to zone ID (the zone checks it against its\n"
 			"                        zone points), go there through world, then stay and camp there\n"
+			"  --record DIR          with --zone, write each zone session's packets to DIR/<char>-<time>.eqr\n"
+			"  --replay FILE         play a recorded zone session back (no server): stay --zone seconds\n"
+			"                        (default 10), print what's around, then camp out\n"
 			"  --no-retry            don't retry once after 'Invalid username or password'\n"
 			"                        (the first login of a new account creates it and is rejected)\n"
 			"  -v                    hex dump every packet\n",
@@ -101,13 +104,24 @@ namespace
 		}
 	}
 
+	std::string g_record_dir;
+	std::string g_replay_path;
+
 	bool RunZone(const ZoneHandoff &handoff, int seconds, const std::string &say, bool verbose, uint32_t zone_to = 0,
 		const LoginResult *login = nullptr, const WorldOptions *world = nullptr, int click_door = -1)
 	{
 		ZoneSession zone;
 		zone.SetLogger([](const std::string &line) { printf("%s\n", line.c_str()); });
 		zone.SetVerbose(verbose);
-		if (!zone.Begin(handoff.address, handoff.port, handoff.character))
+		zone.SetRecordDir(g_record_dir);
+		if (!g_replay_path.empty()) {
+			std::string error;
+			if (!zone.BeginReplay(g_replay_path, error)) {
+				fprintf(stderr, "[zone] %s\n", error.c_str());
+				return false;
+			}
+		}
+		else if (!zone.Begin(handoff.address, handoff.port, handoff.character))
 			return false;
 
 		uint64_t leave_at = 0;
@@ -151,6 +165,8 @@ namespace
 					printf("[zone] door %u -> state %d\n", event.id, event.value);
 					break;
 				case ZoneSession::Event::Type::LoggedOut:
+					if (zone.Replaying())
+						PrintNearby(zone);
 					printf("[done] %s camped out of %s\n", handoff.character.c_str(), zone.Info().long_name.c_str());
 					return true;
 				case ZoneSession::Event::Type::Error:
@@ -215,6 +231,10 @@ int main(int argc, char **argv)
 			click_door = atoi(next().c_str());
 		else if (arg == "--zone-to")
 			zone_to = static_cast<uint32_t>(atoi(next().c_str()));
+		else if (arg == "--record")
+			g_record_dir = next();
+		else if (arg == "--replay")
+			g_replay_path = next();
 		else if (arg == "--no-retry")
 			retry = false;
 		else if (arg == "-v")
@@ -225,6 +245,8 @@ int main(int argc, char **argv)
 		}
 	}
 
+	if (!g_replay_path.empty())
+		return RunZone({}, zone_seconds < 0 ? 10 : zone_seconds, "", login.verbose) ? 0 : 1;
 	if (login.user.empty() || login.password.empty()) {
 		Usage(argv[0]);
 		return 2;
