@@ -753,8 +753,10 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 		DrawAnimation(canvas, textures, def.slot_background, control.rect, now_ms);
 	}
 	else if (def.type == "SpellGem") {
-		// CSpellGemWnd::Draw (@005a6050) with no spell in the gem: just its background.
-		DrawAnimation(canvas, textures, def.gem_background, control.rect, now_ms);
+		// CSpellGemWnd::Draw (@005a6050): a gem with a spell is the Holder tinted the spell's color,
+		// the icon, then the Background ring over them; an empty one is only the Highlight piece
+		// (0x0 in the default skin, so the window shows through).
+		DrawAnimation(canvas, textures, def.gem_highlight, control.rect, now_ms);
 	}
 	else if (def.type == "Label" || def.type == "StaticText") {
 		std::string shown = control.text;

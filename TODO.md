@@ -20,7 +20,7 @@ no rules of its own.
      decals, from the spell file) and names (label EQTypes 45..59).
    - Inventory and bags, filled from the item packets (the slots show their empty pictures;
      no item icons yet, here or in the hot button window's weapon slots)
-   - Spell gems and the spellbook (pictures only; the gems show empty)
+   - Spell gems and the spellbook (pictures only; the gems are all empty)
    - Hotbuttons (shown empty; the hot buttons themselves aren't loaded)
    - Compass
    - Selector bar
