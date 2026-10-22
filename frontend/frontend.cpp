@@ -828,7 +828,9 @@ void FrontEnd::Render(Canvas &canvas, uint64_t now_ms)
 		RenderDialog(dialog);
 	}
 
-	if (m_cursor_visible && !m_mouse_grabbed)
+	// In the zone, the windows' own cursors while moving or sizing one (or over a border that sizes).
+	if (m_cursor_visible && !m_mouse_grabbed &&
+	    !(m_screen == Screen::Zone && !m_dialog.open && m_windows.DrawCursor(screen, m_mouse_x - area.x, m_mouse_y - area.y, now_ms)))
 		canvas.Blit(m_art.Get("cursor.bmp"), m_mouse_x, m_mouse_y, true);
 }
 

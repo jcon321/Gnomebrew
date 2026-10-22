@@ -11,7 +11,8 @@
 // camera turns) instead of entering the world. --replay plays a packet log back (no server)
 // and snapshots the zone once it's in, then every few seconds for SECONDS (default 10), then
 // tries the windows: drags the selector by its title bar, opens the inventory from it, minimizes
-// and restores it, and closes it with Escape (the layout goes to OUTDIR/UI_*.ini); then types into
+// and restores it, sizes the target and chat windows from their borders, and closes the inventory
+// with Escape (the layout goes to OUTDIR/UI_*.ini); then types into
 // the chat window, targets a spawn and prints the chat.
 
 #include "eqstr.h"
@@ -282,6 +283,18 @@ int main(int argc, char **argv)
 			Rect b = target->Bounds();
 			drag(b.Right() - 1, b.Bottom() - 1, b.Right() + 59, b.Bottom() + 39);
 			where("TargetWindow");
+		}
+		// The chat window sized from its border: the right side alone, then the bottom right corner
+		// both ways, with the resize cursor over the corner.
+		if (const SidlWindow *chat = where("ChatWindow")) {
+			Rect b = chat->Bounds();
+			drag(b.Right() - 2, b.y + b.h / 2, b.Right() + 38, b.y + b.h / 2);
+			where("ChatWindow");
+			b = chat->Bounds();
+			frontend.OnEvent({InputEvent::Type::MouseMove, b.Right() - 2, b.Bottom() - 2});
+			h.Snapshot("w4-resize-cursor");
+			drag(b.Right() - 2, b.Bottom() - 2, b.Right() - 42, b.Bottom() - 32);
+			where("ChatWindow");
 		}
 		h.RunUntil([] { return false; }, 300);
 		h.Snapshot("w3-closed");

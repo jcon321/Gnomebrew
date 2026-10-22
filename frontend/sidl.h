@@ -251,6 +251,8 @@ public:
 	void SetTitleBoxes(TitleBox hover, TitleBox pressed) { m_box_hover = hover; m_box_pressed = pressed; }
 	// The border's thickness on each side (Style_Border), not counting the title bar.
 	void BorderInsets(int &left, int &top, int &right, int &bottom) const;
+	// The window's border piece (SidlBorderPiece) under (x, y), as drawn; -1 for none.
+	int BorderPieceAt(int x, int y) const;
 	// Minimized (CXWnd::IsMinimized): just the title bar and border, no client area or pieces.
 	void SetMinimized(bool minimized) { m_minimized = minimized; }
 	bool Minimized() const { return m_minimized; }
@@ -267,6 +269,7 @@ private:
 	void DrawControl(int index, Canvas &canvas, TextRenderer &text, SidlTextures &textures, uint64_t now_ms,
 		const Rect &parent_clip) const;
 	void DrawFrame(const Control &control, Canvas &canvas, SidlTextures &textures, uint64_t now_ms) const;
+	void LayoutBorder(const Control &control, uint64_t now_ms, Rect (&pieces)[BorderPieceCount]) const;
 	void DrawAnimation(Canvas &canvas, SidlTextures &textures, const std::string &name, const Rect &dest, uint64_t now_ms) const;
 	void DrawTitleBox(Canvas &canvas, SidlTextures &textures, TitleBox box, const SidlButtonTemplate &look, uint64_t now_ms) const;
 	Rect AnimationSize(const std::string &name) const; // the first frame's size, at 0, 0

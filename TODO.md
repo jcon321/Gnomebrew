@@ -7,8 +7,9 @@ no rules of its own.
 
 1. ~~**In-game SIDL windows.**~~ Done: `frontend/window_manager.*` (drag, resize, close, minimize,
    focus order, fading, `UI_<char>_<server>.ini`). Still to do: BGTint isn't drawn, no
-   right-click context menu (lock, alpha), no resize cursors, and only the chat window's edit box
-   takes typing.
+   right-click context menu (lock, alpha), and only the chat window's edit box takes typing. The
+   resize and drag cursors are the SIDL ones; the usual cursor is still eqmain's `cursor.bmp`
+   rather than `A_DefaultCursor`.
 2. **Display-only windows**, showing what the server already sends:
    - ~~Player window~~ and ~~target window~~: done (`frontend/game_values.*`, gauges in `sidl.cpp`).
      Still to do: max mana leaves out spell effects (buffs) and `AntiTwinkAdj` for items with a

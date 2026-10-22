@@ -621,6 +621,47 @@ void SidlWindow::DrawAnimation(Canvas &canvas, SidlTextures &textures, const std
 		canvas.Stretch(*image, frame->source, dest);
 }
 
+void SidlWindow::LayoutBorder(const Control &control, uint64_t now_ms, Rect (&pieces)[BorderPieceCount]) const
+{
+	auto frame_of = [&](int piece) -> const SidlFrame * {
+		const SidlAnimation *a = m_defs->Animation(control.frame->border[piece]);
+		return a ? a->FrameAt(now_ms) : nullptr;
+	};
+	auto w = [&](int piece) { const SidlFrame *f = frame_of(piece); return f ? f->source.w : 0; };
+	auto h = [&](int piece) { const SidlFrame *f = frame_of(piece); return f ? f->source.h : 0; };
+	// Corners at natural size; edges stretched between them.
+	const Rect &r = control.rect;
+	pieces[TopLeft] = {r.x, r.y, w(TopLeft), h(TopLeft)};
+	pieces[TopRight] = {r.Right() - w(TopRight), r.y, w(TopRight), h(TopRight)};
+	pieces[Top] = {r.x + w(TopLeft), r.y, r.w - w(TopLeft) - w(TopRight), h(Top)};
+	pieces[BottomLeft] = {r.x, r.Bottom() - h(BottomLeft), w(BottomLeft), h(BottomLeft)};
+	pieces[BottomRight] = {r.Right() - w(BottomRight), r.Bottom() - h(BottomRight), w(BottomRight), h(BottomRight)};
+	pieces[Bottom] = {r.x + w(BottomLeft), r.Bottom() - h(Bottom), r.w - w(BottomLeft) - w(BottomRight), h(Bottom)};
+	int left_top = r.y + h(TopLeft), left_bottom = r.Bottom() - h(BottomLeft);
+	pieces[LeftTop] = {r.x, left_top, w(LeftTop), h(LeftTop)};
+	pieces[LeftBottom] = {r.x, left_bottom - h(LeftBottom), w(LeftBottom), h(LeftBottom)};
+	pieces[Left] = {r.x, left_top + h(LeftTop), w(Left), left_bottom - h(LeftBottom) - left_top - h(LeftTop)};
+	int right_top = r.y + h(TopRight), right_bottom = r.Bottom() - h(BottomRight);
+	pieces[RightTop] = {r.Right() - w(RightTop), right_top, w(RightTop), h(RightTop)};
+	pieces[RightBottom] = {r.Right() - w(RightBottom), right_bottom - h(RightBottom), w(RightBottom), h(RightBottom)};
+	pieces[Right] = {r.Right() - w(Right), right_top + h(RightTop), w(Right), right_bottom - h(RightBottom) - right_top - h(RightTop)};
+}
+
+int SidlWindow::BorderPieceAt(int x, int y) const
+{
+	if (m_controls.empty())
+		return -1;
+	const Control &root = m_controls.front();
+	if (!root.frame || !root.def->style_border)
+		return -1;
+	Rect pieces[BorderPieceCount];
+	LayoutBorder(root, 0, pieces);
+	for (int i = 0; i < BorderPieceCount; ++i)
+		if (pieces[i].w > 0 && pieces[i].h > 0 && pieces[i].Contains(x, y))
+			return i;
+	return -1;
+}
+
 void SidlWindow::DrawFrame(const Control &control, Canvas &canvas, SidlTextures &textures, uint64_t now_ms) const
 {
 	const SidlWindowTemplate *frame = control.frame;
@@ -632,33 +673,11 @@ void SidlWindow::DrawFrame(const Control &control, Canvas &canvas, SidlTextures 
 			canvas.TileRegion(*background, {0, 0, background->width, background->height}, control.client);
 	if (!control.def->style_border)
 		return;
-
-	auto frame_of = [&](int piece) -> const SidlFrame * {
-		const SidlAnimation *a = m_defs->Animation(frame->border[piece]);
-		return a ? a->FrameAt(now_ms) : nullptr;
-	};
-	auto w = [&](int piece) { const SidlFrame *f = frame_of(piece); return f ? f->source.w : 0; };
-	auto h = [&](int piece) { const SidlFrame *f = frame_of(piece); return f ? f->source.h : 0; };
-	const Rect &r = control.rect;
-	auto draw = [&](int piece, Rect dest) {
-		if (dest.w > 0 && dest.h > 0)
-			DrawAnimation(canvas, textures, frame->border[piece], dest, now_ms);
-	};
-	// Corners at natural size; edges stretched between them.
-	draw(TopLeft, {r.x, r.y, w(TopLeft), h(TopLeft)});
-	draw(TopRight, {r.Right() - w(TopRight), r.y, w(TopRight), h(TopRight)});
-	draw(Top, {r.x + w(TopLeft), r.y, r.w - w(TopLeft) - w(TopRight), h(Top)});
-	draw(BottomLeft, {r.x, r.Bottom() - h(BottomLeft), w(BottomLeft), h(BottomLeft)});
-	draw(BottomRight, {r.Right() - w(BottomRight), r.Bottom() - h(BottomRight), w(BottomRight), h(BottomRight)});
-	draw(Bottom, {r.x + w(BottomLeft), r.Bottom() - h(Bottom), r.w - w(BottomLeft) - w(BottomRight), h(Bottom)});
-	int left_top = r.y + h(TopLeft), left_bottom = r.Bottom() - h(BottomLeft);
-	draw(LeftTop, {r.x, left_top, w(LeftTop), h(LeftTop)});
-	draw(LeftBottom, {r.x, left_bottom - h(LeftBottom), w(LeftBottom), h(LeftBottom)});
-	draw(Left, {r.x, left_top + h(LeftTop), w(Left), left_bottom - h(LeftBottom) - left_top - h(LeftTop)});
-	int right_top = r.y + h(TopRight), right_bottom = r.Bottom() - h(BottomRight);
-	draw(RightTop, {r.Right() - w(RightTop), right_top, w(RightTop), h(RightTop)});
-	draw(RightBottom, {r.Right() - w(RightBottom), right_bottom - h(RightBottom), w(RightBottom), h(RightBottom)});
-	draw(Right, {r.Right() - w(Right), right_top + h(RightTop), w(Right), right_bottom - h(RightBottom) - right_top - h(RightTop)});
+	Rect pieces[BorderPieceCount];
+	LayoutBorder(control, now_ms, pieces);
+	for (int i = 0; i < BorderPieceCount; ++i)
+		if (pieces[i].w > 0 && pieces[i].h > 0)
+			DrawAnimation(canvas, textures, frame->border[i], pieces[i], now_ms);
 }
 
 void SidlWindow::DrawTitleBox(Canvas &canvas, SidlTextures &textures, TitleBox box, const SidlButtonTemplate &look,

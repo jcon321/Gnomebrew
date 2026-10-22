@@ -321,20 +321,9 @@ bool WindowManager::OnMouse(const InputEvent &event, uint64_t now_ms)
 		}
 		if (w.settings.locked)
 			return true;
-		const Rect &b = w.wnd.Bounds();
-		int left, topb, right, bottom;
-		w.wnd.BorderInsets(left, topb, right, bottom);
 		bool sizable = w.wnd.Def().sizable && !w.wnd.Minimized();
-		m_edge_left = m_edge_top = m_edge_right = m_edge_bottom = false;
-		if (sizable) {
-			// The border's pieces resize (at least a few pixels of it, for a thin border).
-			m_edge_left = event.x < b.x + std::max(left, 4);
-			m_edge_right = event.x >= b.Right() - std::max(right, 4);
-			m_edge_top = event.y < b.y + std::max(topb, 4);
-			m_edge_bottom = event.y >= b.Bottom() - std::max(bottom, 4);
-		}
 		Drag drag = Drag::None;
-		if (m_edge_left || m_edge_right || m_edge_top || m_edge_bottom)
+		if (sizable && ResizeEdges(w, event.x, event.y, m_edge_left, m_edge_top, m_edge_right, m_edge_bottom))
 			drag = Drag::Resize;
 		else if (!sizable || w.wnd.Root().title.Contains(event.x, event.y))
 			drag = Drag::Move;
@@ -392,6 +381,66 @@ bool WindowManager::OnMouse(const InputEvent &event, uint64_t now_ms)
 	default:
 		return false;
 	}
+}
+
+bool WindowManager::ResizeEdges(const Window &w, int x, int y, bool &left, bool &top, bool &right, bool &bottom) const
+{
+	// CXWnd::HitTestUIElement: on a Style_Sizable window, each of the border's pieces, as drawn,
+	// sizes the sides it's on; the corner pieces (and the side pieces next to them) two at once.
+	left = top = right = bottom = false;
+	switch (w.wnd.BorderPieceAt(x, y)) {
+	case TopLeft: case LeftTop: left = top = true; break;
+	case Top: top = true; break;
+	case TopRight: case RightTop: right = top = true; break;
+	case Right: right = true; break;
+	case RightBottom: case BottomRight: right = bottom = true; break;
+	case Bottom: bottom = true; break;
+	case BottomLeft: case LeftBottom: left = bottom = true; break;
+	case Left: left = true; break;
+	default: return false;
+	}
+	return true;
+}
+
+const char *WindowManager::Cursor(int x, int y) const
+{
+	// CXWndManager's cursors: a window being moved, or being sized or ready to be (the mouse on
+	// a sizable, unlocked window's border).
+	bool left, top, right, bottom;
+	if (m_drag == Drag::Move)
+		return "A_CursorDrag";
+	if (m_drag == Drag::Resize) {
+		left = m_edge_left;
+		top = m_edge_top;
+		right = m_edge_right;
+		bottom = m_edge_bottom;
+	}
+	else {
+		int i = m_press >= 0 ? -1 : TopAt(x, y);
+		if (i < 0)
+			return nullptr;
+		const Window &w = *m_windows[i];
+		if (!w.wnd.Def().sizable || w.wnd.Minimized() || w.settings.locked || w.wnd.TitleBoxAt(x, y) != SidlWindow::TitleBox::None ||
+		    !ResizeEdges(w, x, y, left, top, right, bottom))
+			return nullptr;
+	}
+	if ((left && top) || (right && bottom))
+		return "A_CursorResizeNWSE";
+	if ((right && top) || (left && bottom))
+		return "A_CursorResizeNESW";
+	return left || right ? "A_CursorResizeEW" : "A_CursorResizeNS";
+}
+
+bool WindowManager::DrawCursor(Canvas &canvas, int x, int y, uint64_t now_ms) const
+{
+	const char *name = m_defs && m_textures ? Cursor(x, y) : nullptr;
+	const SidlAnimation *animation = name ? m_defs->Animation(name) : nullptr;
+	const SidlFrame *frame = animation ? animation->FrameAt(now_ms) : nullptr;
+	const Image *image = frame ? m_textures->Get(frame->texture) : nullptr;
+	if (!image)
+		return false;
+	canvas.Stretch(*image, frame->source, {x - frame->hotspot_x, y - frame->hotspot_y, frame->source.w, frame->source.h});
+	return true;
 }
 
 std::vector<WindowManager::Click> WindowManager::TakeClicks()

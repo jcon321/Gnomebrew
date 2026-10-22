@@ -3,8 +3,9 @@
 // The in-game SIDL windows, managed the way eqgame's CXWndManager does it (@0059dcf0 on):
 //   - a click brings a window to the top (BringWndToTop) before anything else;
 //   - HandleLeftMouseDown: the title bar drags; so does anywhere else on a window that isn't
-//     Style_Sizable, while a sizable one resizes from its border edges instead; locked windows
-//     don't move; the title bar's close and minimize boxes act when let go over them;
+//     Style_Sizable, while a sizable one resizes from its border's pieces instead (corners both
+//     ways), with the resize cursors over them; locked windows don't move; the title bar's close
+//     and minimize boxes act when let go over them;
 //   - CXWnd::OnProcessFrame: a window that Fades starts fading to FadeToAlpha once the mouse
 //     has been off it for Delay ms, and back to Alpha when it comes back, over Duration ms
 //     (StartFade / ProcessTransition), everything in it drawn at that alpha (DoAllDrawing);
@@ -75,6 +76,9 @@ public:
 
 	void Update(uint64_t now_ms, int mouse_x, int mouse_y); // the fades
 	void Draw(Canvas &canvas, TextRenderer &text, uint64_t now_ms);
+	// The cursor for the mouse at (x, y), if the windows want their own (moving or sizing one,
+	// or over a sizable one's border): its SIDL animation, drawn at its hotspot. False otherwise.
+	bool DrawCursor(Canvas &canvas, int x, int y, uint64_t now_ms) const;
 
 	int Count() const { return static_cast<int>(m_windows.size()); }
 
@@ -96,6 +100,9 @@ private:
 	enum class Drag { None, Move, Resize };
 
 	int TopAt(int x, int y) const; // index of the topmost shown window under (x, y), or -1
+	// The sides a press at (x, y) on the window's border would size; false off the border.
+	bool ResizeEdges(const Window &w, int x, int y, bool &left, bool &top, bool &right, bool &bottom) const;
+	const char *Cursor(int x, int y) const; // the SIDL cursor animation, or null for the usual one
 	void BringToTop(int &index);
 	void Place(Window &w, const Rect &rect);
 	void SetMinimized(Window &w, bool minimized);

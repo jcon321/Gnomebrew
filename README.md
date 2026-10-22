@@ -155,7 +155,8 @@ RecordPackets=0
 In the zone, the game's own SIDL windows come up as eqgame's do on a first login (player, target,
 group, buffs, spell gems, hotbuttons, chat and the selector, whose buttons open and close the
 others). You drag them (by the title bar, or anywhere on one that isn't sizable), resize sizable
-ones from their borders, and close and minimize them from their title bars. They fade when the
+ones (`Style_Sizable`, such as chat and target) from their border's pieces as eqgame does, the
+corners both ways, with eqgame's resize cursors over them, and close and minimize them from their title bars. They fade when the
 mouse has been off them a while. Their layout is kept in eqgame's own format, in
 `UI_<character>_<server>.ini` next to the exe (the server part is the login server's address cut
 to 7 characters, as eqgame names it).
