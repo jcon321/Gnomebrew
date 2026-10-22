@@ -50,12 +50,18 @@ namespace render
 
 	bool Renderer::Project(const Vec3 &point, float &x, float &y) const
 	{
+		float depth;
+		return Project(point, x, y, depth);
+	}
+
+	bool Renderer::Project(const Vec3 &point, float &x, float &y, float &depth) const
+	{
 		Vec3 d = point - m_camera.position;
-		float z = Dot(d, m_forward);
-		if (z < m_camera.near_plane)
+		depth = Dot(d, m_forward);
+		if (depth < m_camera.near_plane)
 			return false;
-		x = m_width * 0.5f + Dot(d, m_right) / z * m_focal;
-		y = m_height * 0.5f - Dot(d, m_up) / z * m_focal;
+		x = m_width * 0.5f + Dot(d, m_right) / depth * m_focal;
+		y = m_height * 0.5f - Dot(d, m_up) / depth * m_focal;
 		return true;
 	}
 

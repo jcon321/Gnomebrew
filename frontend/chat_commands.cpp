@@ -6,6 +6,7 @@
 
 #include <cctype>
 #include <cmath>
+#include <cstdlib>
 
 namespace
 {
@@ -13,7 +14,7 @@ namespace
 	enum class Command
 	{
 		None, Say, Tell, Group, Shout, Auction, Ooc, Guild, Reply, Emote, Hail, Location, Target, Camp,
-		ClearChat,
+		ClearChat, ShowNames,
 	};
 
 	struct CommandEntry
@@ -31,7 +32,7 @@ namespace
 		{"/assist", 0, Command::None}, {"/duel", 0, Command::None}, {"/decline", 0, Command::None},
 		{"/split", 0, Command::None}, {"/autosplit", 0, Command::None}, {"/quit", 0, Command::None},
 		{"/stopsong", 0, Command::None}, {"/friends", 0, Command::None}, {"/shield", 0, Command::None},
-		{"/shownames", 0, Command::None}, {"/shownpcnames", 10, Command::None}, {"/emote", 0, Command::Emote},
+		{"/shownames", 0, Command::ShowNames}, {"/shownpcnames", 10, Command::None}, {"/emote", 0, Command::Emote},
 		{":", 0, Command::Emote}, {"/say", 0, Command::Say}, {"'", 0, Command::Say}, {"/tell", 0, Command::Tell},
 		{"/msg", 0, Command::Tell}, {"/send", 0, Command::Tell}, {"/ttell", 0, Command::None}, {"/gsay", 0, Command::Group},
 		{"/shout", 0, Command::Shout}, {"/auction", 0, Command::Auction}, {"/ooc", 0, Command::Ooc},
@@ -306,6 +307,30 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 	case Command::ClearChat:
 		m_chat.Clear();
 		break;
+	case Command::ShowNames: {
+		// /shownames (@004ff84f): off, or 1 (first names) .. 4 (everything); anything else is 4.
+		// With Zeal's 5 .. 7 too, and its messages for them.
+		std::string rest;
+		std::string level = FirstWord(args, rest);
+		if (level.empty()) {
+			ChatOut("Format: /shownames <off/1/2/3/4/5/6/7>", ChatType::Default);
+			break;
+		}
+		std::string off = Lower(format(12946, "off", {}));
+		if (Lower(level).compare(0, 3, off.substr(0, 3)) == 0) {
+			m_config.show_names = 0;
+			ChatOut(format(13293, "Player names are *off*.", {}), ChatType::Default);
+			break;
+		}
+		int value = std::atoi(level.c_str());
+		m_config.show_names = value >= 1 && value <= NameSprite::ShowNamesMax ? value : 4;
+		static const char *const said[] = {"Showing only first names.", "Showing first and last names.",
+			"Showing first, last and guild names.", "Showing everything.", "Showing title and first names.",
+			"Showing title, first, and last names.", "Showing first and guild names."};
+		int shown = m_config.show_names;
+		ChatOut(shown <= 4 ? format(13293 + shown, said[shown - 1], {}) : said[shown - 1], ChatType::Default);
+		break;
+	}
 	case Command::None:
 		break;
 	}

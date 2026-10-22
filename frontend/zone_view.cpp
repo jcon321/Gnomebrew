@@ -1136,31 +1136,33 @@ void ZoneView::DrawSpawns()
 	}
 }
 
-std::vector<ZoneView::NameTag> ZoneView::NameTags(float range) const
+std::vector<ZoneView::NameTag> ZoneView::NameTags(float yon) const
 {
 	std::vector<NameTag> tags;
 	int x, y;
-	if (NamePosition(x, y))
-		tags.push_back({0, x, y, 0});
+	float depth;
+	float focal = m_renderer->Focal();
+	if (NamePosition(x, y, depth) && depth <= yon)
+		tags.push_back({0, x, y, depth, focal});
 	for (const auto &[id, actor] : m_actors) {
-		if (!actor.drawn || actor.distance > range)
+		if (!actor.drawn)
 			continue;
 		float sx, sy;
 		render::Vec3 top = actor.Feet() + render::Vec3{0, 0, actor.model->MaxZ() - actor.model->MinZ() + 0.6f};
-		if (m_renderer->Project(top, sx, sy) && !m_renderer->Occluded(top))
-			tags.push_back({id, static_cast<int>(sx), static_cast<int>(sy), actor.distance});
+		if (m_renderer->Project(top, sx, sy, depth) && depth <= yon && !m_renderer->Occluded(top))
+			tags.push_back({id, static_cast<int>(sx), static_cast<int>(sy), depth, focal});
 	}
-	std::sort(tags.begin(), tags.end(), [](const NameTag &a, const NameTag &b) { return a.distance < b.distance; });
+	std::sort(tags.begin(), tags.end(), [](const NameTag &a, const NameTag &b) { return a.depth < b.depth; });
 	return tags;
 }
 
-bool ZoneView::NamePosition(int &x, int &y) const
+bool ZoneView::NamePosition(int &x, int &y, float &depth) const
 {
 	if (!m_model_shown || !m_loaded || !m_error.empty())
 		return false;
 	float sx, sy;
 	render::Vec3 top = m_feet + render::Vec3{0, 0, m_model->MaxZ() - m_model->MinZ() + 0.6f};
-	if (!m_renderer->Project(top, sx, sy))
+	if (!m_renderer->Project(top, sx, sy, depth))
 		return false;
 	x = static_cast<int>(sx);
 	y = static_cast<int>(sy);

@@ -101,6 +101,8 @@ SoundFont=synthus2.sf2
 
 [Defaults]
 LastCharSel=0
+ShowNamesLevel=4
+EnableExtendedNameplateDistance=1
 
 [Debug]
 RecordPackets=0
@@ -134,6 +136,12 @@ RecordPackets=0
   falls back to the SoundFont. The MP3 music and the sounds always play through our mix (waveOut).
 - `LastCharSel` is the character select slot to start on. Like the real client's `[Defaults]
   LastCharSel`, it's saved as you select characters (written when the GUI exits).
+- `ShowNamesLevel` is `/shownames`: 0 (off: no names over players or corpses), 1 first names,
+  2 with surnames, 3 with guilds, 4 everything (AA titles too), and Zeal's 5 (title and first
+  name), 6 (title, first and last) and 7 (first name and guild). `/shownames` changes it, and it's
+  kept when the GUI exits.
+- `EnableExtendedNameplateDistance=1` shows names as far out as the zone is drawn, as TAKP's
+  eqgame.dll and Zeal do; `0` keeps eqgame's own 70 units.
 
 - `RecordPackets=1` writes each zone session's packets to `replays\<char>-<time>.eqr` next to the exe.
   `--replay FILE` plays one back: the GUI goes straight into that zone with no server, the recorded
@@ -165,6 +173,15 @@ to 7 characters, as eqgame names it).
   /emote (`:`, /me), /hail, /target, /location, /camp, /clearchat. The rest say they aren't
   supported yet.
 - The Actions window's Camp, Run and Walk buttons work.
+- Names over heads are eqgame's name sprites (`CDisplay::SetNameSpriteState`): a player's first
+  name and surname, LFG, AFK and LD, and `<guild>` on a second line (the world's guild list, asked
+  for as you enter the world); an NPC's or corpse's name alone. Their colors are eqgame's: blue
+  players, teal NPCs and corpses, green GMs, red PvP, purple roleplayers. They're a world unit tall
+  (smaller further off, the size they'd be at 20 units when closer; a 20 pixel bold Arial stretched, as
+  eqgfx draws them), shown as far out as the zone is drawn (eqgame's own cutoff is 70 units; see
+  `EnableExtendedNameplateDistance`), and
+  hidden behind walls. Your target's name flashes from white back to its color, as eqgame shows
+  the target (no ring: the client of this era had none).
 - The other windows are still mostly empty frames.
 
 Command-line flags override the ini: `--eqdir`, `--login`, `--size WxH`, `--replay FILE`. The GUI saves the last
@@ -211,7 +228,9 @@ snapshots every creation screen and the face picker, submits it, and deletes it 
 checking layout and flow without Windows. `--replay` plays a packet log back instead (no server)
 and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,
 opens, minimizes, resizes and closes windows (the layout goes to OUTDIR), types into the chat window
-(a say, commands, /target) and prints what the chat window holds.
+(a say, commands, /target) and prints what the chat window holds, then stands near the target to
+snapshot the names over heads (from two distances and in first person) and prints what a player's
+name says at each `/shownames` level.
 
 ```
 build/scene_preview EQDIR OUT.png --char RACE GENDER CLASS [--face F] [--equip M,M,...] [--camera H] [--frames N] [--size WxH]

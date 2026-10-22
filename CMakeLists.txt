@@ -112,6 +112,7 @@ add_library(eqfrontend STATIC
     frontend/chat_commands.cpp
     frontend/chat_text.cpp
     frontend/game_values.cpp
+    frontend/name_sprites.cpp
 )
 target_include_directories(eqfrontend PUBLIC frontend)
 target_link_libraries(eqfrontend PUBLIC eqcore eqrender eqaudio)

@@ -30,6 +30,8 @@ public:
 
 	TextSize Measure(const std::string &utf8, int height, int weight = 0) override;
 	void Draw(Canvas &canvas, int x, int y, const std::string &utf8, int height, uint32_t rgb, int weight = 0) override;
+	void DrawScaled(Canvas &canvas, int x, int y, const std::string &utf8, int height, float scale, uint32_t rgb,
+		int weight = 0) override;
 	void DrawWrapped(Canvas &canvas, const Rect &area, const std::string &utf8, int height, uint32_t rgb,
 		int weight = 0) override;
 
@@ -49,7 +51,8 @@ private:
 		int width = 0, height = 0;
 	};
 
-	HFONT Font(int height, int weight);
+	// antialiased: ANTIALIASED_QUALITY, as eqgfx makes the fonts it stretches; else DEFAULT_QUALITY.
+	HFONT Font(int height, int weight, bool antialiased = false);
 	const Surface *Target(Canvas &canvas, int &x, int &y); // the canvas's DIB, and its origin added to x, y
 	// Text's coverage, white on black, for a string drawn over the view.
 	struct Mask
@@ -57,6 +60,8 @@ private:
 		int width = 0, height = 0;
 		std::vector<uint32_t> coverage;
 	};
+	// The string's mask, made once and kept; it starts a pixel left of where the text does.
+	const Mask *TextMask(const std::string &utf8, int height, int weight, bool antialiased);
 
 	// Runs draw(dc, dx, dy) for text inside `box` (surface pixels), where dx, dy move surface
 	// coordinates into the DC's: straight into the surface, or through the scratch DIB where
@@ -72,7 +77,8 @@ private:
 	Scratch m_scratch;
 	std::unordered_map<std::string, TextSize> m_sizes; // Measure, by TextKey
 	std::unordered_map<std::string, Mask> m_masks;     // Draw over the view, by TextKey
-	std::map<std::pair<int, int>, HFONT> m_fonts;
+	std::vector<uint32_t> m_stretched;                 // DrawScaled's mask, stretched
+	std::map<std::pair<int, int>, HFONT> m_fonts;      // by height and weight (+ 0x10000 antialiased)
 };
 
 std::wstring Widen(const std::string &utf8);

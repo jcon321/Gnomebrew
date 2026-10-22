@@ -94,6 +94,8 @@ namespace ZoneOp
 	constexpr uint16_t MoveItem = 0x412c;        // MoveItem_Struct {i32 from, to, qty}: to -1 deletes it
 	constexpr uint16_t TargetMouse = 0x4162;   // ClientTarget_Struct {u16 id}: we clicked a spawn (0 clears it)
 	constexpr uint16_t TargetCommand = 0x41fe; // ClientTarget_Struct: /target asks; the zone answers with the target it set
+	constexpr uint16_t GuildsList = 0x4192;    // GuildsList_Struct, as the world sends it: the guilds changed
+	constexpr uint16_t LFGCommand = 0x41f0;    // LFG_Appearance_Struct {i16 spawn, i16, i32 on}: someone's LFG flag
 }
 
 struct OpcodeEntry
@@ -188,5 +190,7 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::MoveItem, "OP_MoveItem"},
 	{ZoneOp::TargetMouse, "OP_TargetMouse"},
 	{ZoneOp::TargetCommand, "OP_TargetCommand"},
+	{ZoneOp::GuildsList, "OP_GuildsList"},
+	{ZoneOp::LFGCommand, "OP_LFGCommand"},
 	{0, nullptr},
 };

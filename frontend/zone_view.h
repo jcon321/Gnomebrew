@@ -81,13 +81,15 @@ public:
 	void UpdateSpawns(const std::map<uint16_t, ZoneSpawn> &spawns, uint16_t my_id, uint64_t now_ms);
 	struct NameTag
 	{
-		uint16_t id; // 0: us
-		int x, y;    // over the head, after Render
-		float distance;
+		uint16_t id;  // 0: us
+		int x, y;     // over the head, after Render
+		float depth;  // in front of the camera
+		float focal;  // pixels a unit covers at depth 1
 	};
-	// Names to draw over heads (CDisplay's name sprites): us in the chase view, and spawns in view
-	// within `range`, nearest first.
-	std::vector<NameTag> NameTags(float range) const;
+	// Where names go over heads (CDisplay's name sprites): us in the chase view, and the spawns
+	// drawn that are no more than `yon` in front of the camera and not behind something, nearest
+	// first.
+	std::vector<NameTag> NameTags(float yon) const;
 
 	// F9 toggles first person and the chase camera. Orbit circles the chase camera around the
 	// character (in 512ths), Turn turns the character (and the camera with them), FaceCamera
@@ -130,7 +132,7 @@ public:
 
 	void Render(Canvas &canvas, uint64_t now_ms);
 	// Where to draw the name over our character's head, after Render (chase view only).
-	bool NamePosition(int &x, int &y) const;
+	bool NamePosition(int &x, int &y, float &depth) const;
 
 	// For the preview tool.
 	const render::CharacterModel *Model() const { return m_model.get(); }

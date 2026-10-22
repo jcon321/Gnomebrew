@@ -88,8 +88,14 @@ struct ZoneSpawn
 	float x = 0, y = 0, z = 0;
 	float heading = 0;       // 0..512, counterclockwise from north (spawn packets send 256ths)
 	uint8_t gm = 0;
-	uint8_t anon = 0;
+	uint8_t anon = 0;        // 1 anonymous, 2 roleplaying
 	uint8_t afk = 0;
+	uint8_t linkdead = 0;
+	uint8_t lfg = 0;         // OP_LFGCommand only; the spawn packets don't carry it
+	uint8_t pvp = 0;
+	uint8_t invis = 0;
+	int16_t guild_id = -1;   // -1: none
+	uint8_t aa_title = 0;    // the AA title rank, 1..3 (CEverQuest_GetTitleDesc)
 	float size = 0;          // model height; 0 = the race's default
 	uint8_t face = 0;
 	uint16_t equipment[9] = {}; // material per slot: head, chest, arms, wrists, hands, legs, feet, primary, secondary
@@ -116,6 +122,12 @@ struct ZoneSpawn
 
 	std::string DisplayName() const; // "a rat", like the client's CleanName
 };
+
+// The guilds' names by id: OP_GuildsList (GuildsList_Struct: 4 bytes, then 96-byte entries
+// {u32 id, char name[64], ..., u16 exists @72}), from the world as we enter it and from the zone
+// when they change.
+using GuildNames = std::map<int16_t, std::string>;
+GuildNames ParseGuildList(const std::vector<uint8_t> &data);
 
 // A door or other switch from OP_SpawnDoor (Door_Struct, 44 bytes), as
 // EQSwitch_DoorLoadingCode reads it.
@@ -269,6 +281,9 @@ public:
 	int32_t MaxHp() const { return m_max_hp; }
 	// The items we have (OP_CharInventory, then each OP_ItemPacket), by slot.
 	const std::map<int16_t, ZoneItem> &Items() const { return m_items; }
+	// The guild names, from the world (SetGuilds, before Begin) and then the zone.
+	void SetGuilds(const GuildNames &guilds) { m_guilds = guilds; }
+	const GuildNames &Guilds() const { return m_guilds; }
 	uint64_t CampRemainingMs() const;
 	// Norrath's time: OP_TimeOfDay's hour (1..24) and minute, carried on at 20 game seconds a
 	// second as EQWorldData::AdvanceTime does. False until the zone has sent it.
@@ -326,6 +341,7 @@ private:
 	uint16_t m_my_id = 0;
 	int32_t m_hp = 0, m_max_hp = 0;
 	std::map<int16_t, ZoneItem> m_items;
+	GuildNames m_guilds;
 	bool m_have_profile = false;
 	bool m_have_zone_entry = false;
 	bool m_sent_req_new_zone = false;

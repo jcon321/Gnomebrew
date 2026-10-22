@@ -36,8 +36,13 @@ no rules of its own.
 
 ## Rendering / presentation
 
-9. **Nameplates** over heads: name, surname, guild, optional HP bar.
-10. **Target indicator.** A ring or highlight on the target, and hover highlighting.
+9. ~~**Nameplates**~~: done (`frontend/name_sprites.*`, eqgame's name sprites). Still to do:
+   their lighting (eqgfx dims them with the scene's light, +0.4), the trader tag in the Bazaar,
+   the names eqgame hides in some animations (skeletons, gargoyles and mimics lying or feigning:
+   animations 0x10, 0x21, 0x26), `/shownpcnames`, Zeal's raid shownames, and the guild list in packet logs (replays show "Unknown Guild"). An HP
+   bar over heads isn't eqgame's; leave it to an option if ever.
+10. ~~**Target indicator**~~: done, as eqgame does it: the target's name flashes from white back
+   to its color. The client of this era had no target ring and no hover highlighting.
 11. **Ground spawns and dropped objects.** Handle `OP_GroundSpawn` so dropped items and forges
     appear.
 12. **Spell visuals.** Casting particles and effects from `spells.eff` and the spell-effect `.s3d`
@@ -65,4 +70,4 @@ no rules of its own.
 1. Packet replay (16), so the rest can be built offline.
 2. The window manager (1).
 3. ~~The Player, Target and Chat windows (2, 3), which prove out the whole SIDL pipeline.~~
-4. Nameplates and the target ring (9, 10).
+4. ~~Nameplates and the target indicator (9, 10).~~

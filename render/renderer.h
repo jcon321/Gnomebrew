@@ -140,6 +140,10 @@ namespace render
 		int Height() const { return m_height; }
 		// Screen position of a world point under the camera given to the last Begin.
 		bool Project(const Vec3 &point, float &x, float &y) const;
+		// The same, with how far in front of the camera the point is.
+		bool Project(const Vec3 &point, float &x, float &y, float &depth) const;
+		// Pixels a unit at depth 1 covers on the screen.
+		float Focal() const { return m_focal; }
 		// The unit direction from the camera through a screen position (Project's inverse).
 		Vec3 ViewRay(float x, float y) const
 		{

@@ -22,6 +22,9 @@
 //                                      sf2, through SoundFont below, in our own mix)
 //              SoundFont=synthus2.sf2 (in the EQ folder, or a full path; synthusr.sf2 if it's missing)
 //   [Defaults] LastCharSel=0          (remembered character select slot, like eqclient.ini's)
+//              ShowNamesLevel=4       (/shownames: 0 off, 1 first names .. 4 everything, Zeal's 5..7; kept on exit)
+//              EnableExtendedNameplateDistance=1 (names as far out as the zone is drawn, as TAKP's
+//                                      eqgame.dll does; 0: eqgame's own 70 units)
 //   [Debug]    RecordPackets=0        (1: each zone session's packets go to replays\<char>-<time>.eqr
 //                                      next to the exe, for --replay)
 //   [TextColors] User_<n>_Red=0 ...   (optional, not written: the chat's text color n, 1..72, as
@@ -381,6 +384,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	IniDefault(ini, L"Sound", L"Music", L"midi");
 	IniDefault(ini, L"Sound", L"SoundFont", L"synthus2.sf2");
 	IniDefault(ini, L"Defaults", L"LastCharSel", L"0");
+	IniDefault(ini, L"Defaults", L"ShowNamesLevel", L"4");
+	IniDefault(ini, L"Defaults", L"EnableExtendedNameplateDistance", L"1");
 	IniDefault(ini, L"Debug", L"RecordPackets", L"0");
 	std::wstring eq_dir = IniString(ini, L"Paths", L"EQDir");
 	std::wstring login = IniString(ini, L"Login", L"Server");
@@ -390,6 +395,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	std::wstring renderer = IniString(ini, L"Display", L"Renderer");
 	bool vsync = GetPrivateProfileIntW(L"Display", L"VSync", 1, ini.c_str()) != 0;
 	int last_character = GetPrivateProfileIntW(L"Defaults", L"LastCharSel", 0, ini.c_str());
+	// CEverQuest::CEverQuest: anything but 0..4 is 4 (0..7 with Zeal's levels).
+	int show_names = GetPrivateProfileIntW(L"Defaults", L"ShowNamesLevel", 4, ini.c_str());
+	if (show_names < 0 || show_names > 7)
+		show_names = 4;
+	bool extended_nameplates = GetPrivateProfileIntW(L"Defaults", L"EnableExtendedNameplateDistance", 1, ini.c_str()) != 0;
 	bool record_packets = GetPrivateProfileIntW(L"Debug", L"RecordPackets", 0, ini.c_str()) != 0;
 	std::wstring replay;
 	bool sound_on = GetPrivateProfileIntW(L"Sound", L"Sound", 1, ini.c_str()) != 0;
@@ -427,6 +437,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	FrontEndConfig config;
 	config.username = Narrow(user);
 	config.last_character = last_character;
+	config.show_names = show_names;
+	config.extended_nameplates = extended_nameplates;
 	if (record_packets)
 		config.record_dir = Narrow(exe_dir) + "\\replays";
 	config.ui_dir = Narrow(exe_dir); // UI_<character>_<server>.ini, as eqgame keeps them in its folder
@@ -637,6 +649,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 		Log("missing UI texture: " + name);
 	WritePrivateProfileStringW(L"Login", L"User", Widen(frontend.Username()).c_str(), ini.c_str());
 	WritePrivateProfileStringW(L"Defaults", L"LastCharSel", std::to_wstring(frontend.LastCharacter()).c_str(), ini.c_str());
+	WritePrivateProfileStringW(L"Defaults", L"ShowNamesLevel", std::to_wstring(frontend.ShowNames()).c_str(), ini.c_str());
 	if (gpu)
 		WritePrivateProfileStringW(L"Display", L"VSync", gpu->VSync() ? L"1" : L"0", ini.c_str()); // the debug menu's toggle
 

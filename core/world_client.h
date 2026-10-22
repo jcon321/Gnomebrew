@@ -1,6 +1,7 @@
 #pragma once
 
 #include "login_client.h"
+#include "zone_session.h"
 
 #include <cstdint>
 #include <functional>
@@ -94,6 +95,8 @@ public:
 	bool StrictNames() const { return m_strict_names; }   // OP_LogServer: no four consonants in a row
 	const std::string &WorldShortName() const { return m_world_short_name; }
 	const std::string &Motd() const { return m_motd; }
+	// OP_GuildsList, asked for as we enter the world: for the zone (ZoneSession::SetGuilds).
+	const GuildNames &Guilds() const { return m_guilds; }
 	const std::string &ZoneAddress() const { return m_zone_address; }
 	uint16_t ZonePort() const { return m_zone_port; }
 	const std::string &EnteringCharacter() const { return m_entering; }
@@ -102,6 +105,7 @@ private:
 	void Log(const std::string &line);
 	void Fail(std::vector<Event> &events, const std::string &text);
 	bool Send(uint16_t opcode, const void *body, size_t size, const std::string &what);
+	void RequestGuilds();
 
 	std::unique_ptr<RdpSession> m_session;
 	State m_state = State::Idle;
@@ -113,6 +117,7 @@ private:
 	bool m_strict_names = false;
 	std::string m_world_short_name;
 	std::string m_motd;
+	GuildNames m_guilds;
 	std::string m_entering;
 	NewCharacter m_new_character;
 	std::string m_zone_address;

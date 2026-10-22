@@ -19,6 +19,7 @@
 #include "eq_sound.h"
 #include "eqtext.h"
 #include "game_values.h"
+#include "name_sprites.h"
 #include "login_client.h"
 #include "sidl.h"
 #include "weather.h"
@@ -43,6 +44,8 @@ struct FrontEndConfig
 	std::string record_dir; // each zone session's packets go to a packet log (.eqr) here; empty: none
 	std::string ui_dir;     // where the UI_<character>_<server>.ini window layouts go; empty: not kept
 	std::string settings_ini; // my-client.ini, for its [TextColors] (the chat's colors); empty: the built-in ones
+	int show_names = 4;       // /shownames: 0 (off) .. 7 (ShowNamesLevel)
+	bool extended_nameplates = true; // names as far out as the zone is drawn, not eqgame's 70 units
 };
 
 class EqStr;
@@ -107,12 +110,14 @@ public:
 	const std::vector<CharacterSlot> &Characters() const { return m_world.Characters(); }
 	int SelectedCharacter() const { return m_selected_slot; }
 	int LastCharacter() const { return m_config.last_character; } // the slot to remember (LastCharSel)
+	int ShowNames() const { return m_config.show_names; }         // /shownames, to remember (ShowNamesLevel)
 	const ZoneSession &Zone() const { return m_zone; }
 	const ChatWindow &Chat() const { return m_chat; }
 	uint16_t Target() const { return m_game_values.target; } // spawn id, 0 none
 	const CharacterSelectView *CharacterScene() const { return m_charselect_view.get(); }
 	const audio::EqSound *Sound() const { return m_sound.get(); }
 	const ZoneView *ZoneScene() const { return m_zone_view.get(); }
+	ZoneView *ZoneScene() { return m_zone_view.get(); }
 	WindowManager &Windows() { return m_windows; }
 	const std::string &UiLayoutPath() const { return m_ui_layout_path; }
 	CharacterCreation *Creation() { return m_creation.get(); }
@@ -177,6 +182,7 @@ private:
 	void HandleWindowClicks();
 	void AddZoneLog(const std::string &text, uint32_t color); // a line of chat in this color
 	void ChatOut(const std::string &text, int type);          // in a chat color type (ChatType)
+	void DrawNameSprites(Canvas &canvas, uint64_t now_ms);
 	void StartCamp();
 	// CEverquest_InterpretCmd (chat_commands.cpp): a line typed into the chat window.
 	void InterpretCommand(const std::string &line);

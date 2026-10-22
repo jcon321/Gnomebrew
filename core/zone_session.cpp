@@ -19,6 +19,9 @@ namespace
 	constexpr uint16_t AppearanceSpawnId = 0x10; // SpawnAppearance type that tells the client its spawn id
 	constexpr uint16_t AppearanceAnimation = 14; // SpawnAppearance: standing, sitting, lying...
 	constexpr uint16_t AppearanceLight = 5;      // SpawnAppearance: the light it carries (LightType)
+	// SpawnAppearance types for what the name over a head shows (AppearanceType in eq_constants.h)
+	constexpr uint16_t AppearanceInvis = 3, AppearancePvp = 4, AppearanceLinkdead = 18, AppearanceGm = 20,
+	                   AppearanceAnonymous = 21, AppearanceGuild = 22, AppearanceAfk = 24;
 	constexpr size_t SpawnSize = 224;            // Mac::structs::Spawn_Struct
 	constexpr size_t ProfileSize = 8460;         // Mac::structs::PlayerProfile_Struct
 	constexpr size_t ZoneEntrySize = 356;        // ServerZoneEntry_Struct
@@ -102,8 +105,13 @@ namespace
 		s.level = d[o + 89];
 		s.stance = d[o + 93];
 		s.light = d[o + 94];
+		s.aa_title = d[o + 27];
+		s.guild_id = Read<int16_t>(d, o + 82);
+		s.invis = d[o + 90];
+		s.pvp = d[o + 92];
 		s.anon = d[o + 95];
 		s.afk = d[o + 96];
+		s.linkdead = d[o + 98];
 		s.gm = d[o + 99];
 		s.fly_mode = d[o + 100];
 		s.body_texture = d[o + 101];
@@ -163,9 +171,14 @@ namespace
 		s.size = Read<float>(d, 244);
 		s.walk_speed = Read<float>(d, 260);
 		s.run_speed = Read<float>(d, 264);
+		s.guild_id = Read<int16_t>(d, 164);
+		s.invis = d[178];
+		s.pvp = d[180];
+		s.linkdead = d[268];
 		s.gm = d[269];
 		s.anon = d[280];
 		s.afk = d[283];
+		s.aa_title = d[285];
 		s.surname = CString(d, 304, 32);
 		s.hp = 100;
 		return s;
@@ -174,15 +187,29 @@ namespace
 
 std::string ZoneSpawn::DisplayName() const
 {
-	// The client's CleanName: underscores become spaces and the digits go (NPC names end in
-	// them, before "'s_corpse" for their corpses).
+	// The client's CleanName (CEverQuest::trimName): underscores become spaces, and the digits
+	// (NPC names end in them, before "'s_corpse" for their corpses) and '#' go.
 	std::string out;
 	for (char c : name) {
-		if (std::isdigit(static_cast<unsigned char>(c)))
+		if (std::isdigit(static_cast<unsigned char>(c)) || c == '#')
 			continue;
 		out.push_back(c == '_' ? ' ' : c);
 	}
 	return out;
+}
+
+GuildNames ParseGuildList(const std::vector<uint8_t> &data)
+{
+	// HandleWorldMessage 0x4192 keeps up to 512 entries of 0x60 bytes after the 4-byte head.
+	constexpr size_t Head = 4, EntrySize = 96, MaxGuilds = 512;
+	GuildNames guilds;
+	for (size_t i = 0; i < MaxGuilds && Head + (i + 1) * EntrySize <= data.size(); ++i) {
+		size_t o = Head + i * EntrySize;
+		if (Read<uint16_t>(data, o + 72) == 0)
+			continue;
+		guilds[static_cast<int16_t>(Read<uint32_t>(data, o))] = CString(data, o + 4, 64);
+	}
+	return guilds;
 }
 
 // ---------------------------------------------------------------- crypto
@@ -868,6 +895,17 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		events.push_back(e);
 		break;
 	}
+	case ZoneOp::LFGCommand: {
+		uint16_t id = Read<uint16_t>(data, 0);
+		auto it = m_spawns.find(id);
+		ZoneSpawn *spawn = it != m_spawns.end() ? &it->second : id != 0 && id == m_my_id ? &m_self : nullptr;
+		if (spawn)
+			spawn->lfg = Read<int32_t>(data, 4) != 0;
+		break;
+	}
+	case ZoneOp::GuildsList:
+		m_guilds = ParseGuildList(data);
+		break;
 	case ZoneOp::TargetCommand: {
 		Event e;
 		e.type = Event::Type::TargetChanged;
@@ -880,6 +918,25 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		if (type == AppearanceSpawnId) {
 			m_my_id = static_cast<uint16_t>(Read<uint32_t>(data, 4));
 			Log("[zone]    my spawn id " + std::to_string(m_my_id));
+		}
+		else if (type == AppearanceInvis || type == AppearancePvp || type == AppearanceLinkdead || type == AppearanceGm ||
+		         type == AppearanceAnonymous || type == AppearanceGuild || type == AppearanceAfk) {
+			// What the name over their head shows; drawn from the spawn each frame.
+			uint16_t id = Read<uint16_t>(data, 0);
+			auto it = m_spawns.find(id);
+			ZoneSpawn *spawn = it != m_spawns.end() ? &it->second : id != 0 && id == m_my_id ? &m_self : nullptr;
+			uint32_t value = Read<uint32_t>(data, 4);
+			if (spawn) {
+				switch (type) {
+				case AppearanceInvis: spawn->invis = static_cast<uint8_t>(value); break;
+				case AppearancePvp: spawn->pvp = static_cast<uint8_t>(value); break;
+				case AppearanceLinkdead: spawn->linkdead = static_cast<uint8_t>(value); break;
+				case AppearanceGm: spawn->gm = static_cast<uint8_t>(value); break;
+				case AppearanceAnonymous: spawn->anon = static_cast<uint8_t>(value); break;
+				case AppearanceGuild: spawn->guild_id = value == 0 ? -1 : static_cast<int16_t>(value); break;
+				default: spawn->afk = static_cast<uint8_t>(value); break;
+				}
+			}
 		}
 		else if (type == AppearanceAnimation || type == AppearanceLight) {
 			auto it = m_spawns.find(Read<uint16_t>(data, 0));

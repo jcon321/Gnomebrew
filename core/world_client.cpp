@@ -179,8 +179,17 @@ bool WorldSession::EnterWorld(const std::string &character)
 	m_entering = character;
 	m_state = State::EnteringWorld;
 	m_wait_started_ms = NowMs();
+	RequestGuilds();
 	// DoCharacterSelection: send_message(0x8001, name, strlen(name) + 1)
 	return Send(WorldOp::EnterWorld, character.c_str(), character.size() + 1, "OP_EnterWorld " + character);
+}
+
+void WorldSession::RequestGuilds()
+{
+	// CEverQuest::ProcessGameLoop, starting the game: send_message(0x4192, &checksum, 4) with the
+	// checksum of the guilds file it keeps, 0 without one. We keep none, so the world sends the list.
+	uint32_t checksum = 0;
+	Send(WorldOp::GuildsList, &checksum, sizeof(checksum), "OP_GuildsList");
 }
 
 bool WorldSession::DeleteCharacter(const std::string &character)
@@ -311,6 +320,7 @@ void WorldSession::Pump(int timeout_ms, std::vector<Event> &events)
 						m_entering = live;
 					m_state = State::EnteringWorld;
 					m_wait_started_ms = NowMs();
+					RequestGuilds();
 					Send(WorldOp::EnterWorld, m_entering.c_str(), m_entering.size() + 1, "OP_EnterWorld " + m_entering);
 				}
 			}
@@ -344,6 +354,10 @@ void WorldSession::Pump(int timeout_ms, std::vector<Event> &events)
 			}
 			break;
 		}
+		case WorldOp::GuildsList:
+			m_guilds = ParseGuildList(packet.data);
+			Log("[world]    " + std::to_string(m_guilds.size()) + " guilds");
+			break;
 		case WorldOp::MOTD:
 			m_motd = CString(packet.data);
 			Log("[world]    MOTD: " + m_motd);

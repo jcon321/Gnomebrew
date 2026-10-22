@@ -1,6 +1,7 @@
 #include "win32_text.h"
 
 #include <algorithm>
+#include <cmath>
 
 std::wstring Widen(const std::string &utf8)
 {
@@ -34,15 +35,15 @@ GdiTextRenderer::~GdiTextRenderer()
 		DeleteObject(m_scratch.dib);
 }
 
-HFONT GdiTextRenderer::Font(int height, int weight)
+HFONT GdiTextRenderer::Font(int height, int weight, bool antialiased)
 {
-	auto key = std::make_pair(height, weight);
+	auto key = std::make_pair(height, weight + (antialiased ? 0x10000 : 0));
 	auto it = m_fonts.find(key);
 	if (it != m_fonts.end())
 		return it->second;
 
 	HFONT font = CreateFontW(height, 0, 0, 0, weight, FALSE, FALSE, FALSE, ANSI_CHARSET, OUT_DEFAULT_PRECIS,
-		CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH, L"Arial");
+		CLIP_DEFAULT_PRECIS, antialiased ? ANTIALIASED_QUALITY : DEFAULT_QUALITY, DEFAULT_PITCH, L"Arial");
 	m_fonts.emplace(key, font);
 	return font;
 }
@@ -213,33 +214,72 @@ void GdiTextRenderer::Draw(Canvas &canvas, int x, int y, const std::string &utf8
 
 	// Over the view: the text's coverage, kept per string (name tags and chat lines come back
 	// every frame), blended in.
-	std::string key = TextKey(utf8, height, weight);
+	if (const Mask *mask = TextMask(utf8, height, weight, false))
+		BlendMask(*surface, mask->coverage.data(), mask->width, mask->width, mask->height, box.left, box.top, rgb);
+}
+
+const GdiTextRenderer::Mask *GdiTextRenderer::TextMask(const std::string &utf8, int height, int weight, bool antialiased)
+{
+	std::string key = (antialiased ? "aa," : "") + TextKey(utf8, height, weight);
 	auto it = m_masks.find(key);
-	if (it == m_masks.end()) {
-		Mask mask;
-		mask.width = box.right - box.left;
-		mask.height = box.bottom - box.top;
-		if (mask.width <= 0 || mask.height <= 0 || !ReserveScratch(mask.width, mask.height))
-			return;
-		for (int row = 0; row < mask.height; ++row)
-			std::fill_n(m_scratch.pixels + static_cast<size_t>(row) * m_scratch.width, mask.width, 0u);
-		std::wstring text = Widen(utf8);
-		SelectObject(m_scratch.dc, Font(height, weight));
-		SetTextColor(m_scratch.dc, RGB(255, 255, 255));
-		SetBkMode(m_scratch.dc, TRANSPARENT);
-		SetTextAlign(m_scratch.dc, TA_LEFT | TA_TOP);
-		TextOutW(m_scratch.dc, x - box.left, 0, text.c_str(), static_cast<int>(text.size()));
-		GdiFlush();
-		mask.coverage.resize(static_cast<size_t>(mask.width) * mask.height);
-		for (int row = 0; row < mask.height; ++row)
-			std::copy_n(m_scratch.pixels + static_cast<size_t>(row) * m_scratch.width, mask.width,
-				mask.coverage.begin() + static_cast<size_t>(row) * mask.width);
-		if (m_masks.size() >= 1024)
-			m_masks.clear();
-		it = m_masks.emplace(key, std::move(mask)).first;
+	if (it != m_masks.end())
+		return &it->second;
+	TextSize size = Measure(utf8, height, weight);
+	Mask mask;
+	mask.width = size.w + 3; // a little slack for overhangs, a pixel of it on the left
+	mask.height = size.h;
+	if (mask.width <= 0 || mask.height <= 0 || !ReserveScratch(mask.width, mask.height))
+		return nullptr;
+	for (int row = 0; row < mask.height; ++row)
+		std::fill_n(m_scratch.pixels + static_cast<size_t>(row) * m_scratch.width, mask.width, 0u);
+	std::wstring text = Widen(utf8);
+	SelectObject(m_scratch.dc, Font(height, weight, antialiased));
+	SetTextColor(m_scratch.dc, RGB(255, 255, 255));
+	SetBkMode(m_scratch.dc, TRANSPARENT);
+	SetTextAlign(m_scratch.dc, TA_LEFT | TA_TOP);
+	TextOutW(m_scratch.dc, 1, 0, text.c_str(), static_cast<int>(text.size()));
+	GdiFlush();
+	mask.coverage.resize(static_cast<size_t>(mask.width) * mask.height);
+	for (int row = 0; row < mask.height; ++row)
+		std::copy_n(m_scratch.pixels + static_cast<size_t>(row) * m_scratch.width, mask.width,
+			mask.coverage.begin() + static_cast<size_t>(row) * mask.width);
+	if (m_masks.size() >= 1024)
+		m_masks.clear();
+	return &m_masks.emplace(key, std::move(mask)).first->second;
+}
+
+void GdiTextRenderer::DrawScaled(Canvas &canvas, int x, int y, const std::string &utf8, int height, float scale,
+	uint32_t rgb, int weight)
+{
+	const Surface *surface = Target(canvas, x, y);
+	const Mask *mask = surface && scale > 0 ? TextMask(utf8, height, weight, true) : nullptr;
+	if (!mask)
+		return;
+	// Stretch the coverage (grey: antialiased, not ClearType) bilinearly, as the glyphs' texture is.
+	int width = std::max(1, static_cast<int>(mask->width * scale + 0.5f));
+	int rows = std::max(1, static_cast<int>(mask->height * scale + 0.5f));
+	m_stretched.assign(static_cast<size_t>(width) * rows, 0);
+	auto at = [mask](int sx, int sy) -> int {
+		if (sx < 0 || sy < 0 || sx >= mask->width || sy >= mask->height)
+			return 0;
+		return (mask->coverage[static_cast<size_t>(sy) * mask->width + sx] >> 8) & 0xff;
+	};
+	for (int dy = 0; dy < rows; ++dy) {
+		float fy = (dy + 0.5f) / scale - 0.5f;
+		int y0 = static_cast<int>(std::floor(fy));
+		float ty = fy - y0;
+		for (int dx = 0; dx < width; ++dx) {
+			float fx = (dx + 0.5f) / scale - 0.5f;
+			int x0 = static_cast<int>(std::floor(fx));
+			float tx = fx - x0;
+			float top = at(x0, y0) * (1 - tx) + at(x0 + 1, y0) * tx;
+			float bottom = at(x0, y0 + 1) * (1 - tx) + at(x0 + 1, y0 + 1) * tx;
+			uint32_t c = static_cast<uint32_t>(top * (1 - ty) + bottom * ty + 0.5f);
+			m_stretched[static_cast<size_t>(dy) * width + dx] = c << 16 | c << 8 | c;
+		}
 	}
-	const Mask &mask = it->second;
-	BlendMask(*surface, mask.coverage.data(), mask.width, mask.width, mask.height, box.left, box.top, rgb);
+	int left = x - static_cast<int>(scale + 0.5f); // the mask's slack pixel, stretched
+	BlendMask(*surface, m_stretched.data(), width, width, rows, left, y, rgb);
 }
 
 void GdiTextRenderer::DrawWrapped(Canvas &canvas, const Rect &area, const std::string &utf8, int height, uint32_t rgb, int weight)

@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cctype>
+#include <limits>
 
 namespace
 {
@@ -866,6 +867,7 @@ void FrontEnd::HandleWorldEvents(const std::vector<WorldSession::Event> &events)
 			break;
 		case Type::ZoneServer:
 			m_entering_world = false;
+			m_zone.SetGuilds(m_world.Guilds());
 			if (!m_zone.Begin(m_world.ZoneAddress(), m_world.ZonePort(), m_world.EnteringCharacter())) {
 				ShowMessage(m_strings.Get("SISATEXT_CONNECT_FAILED"), [this](bool) { EnterStart(); });
 				break;
@@ -1237,14 +1239,58 @@ namespace
 	constexpr uint32_t ZoneWhite = 0xffffff;
 	constexpr uint32_t ZoneGrey = 0xa0a0a0;
 	constexpr uint32_t ZoneYellow = 0xf0e070;
+}
 
-	uint32_t NameColor(const ZoneSpawn &spawn)
-	{
-		if (spawn.npc == 2 || spawn.npc == 3)
-			return 0xa0a0a0; // corpses
-		if (spawn.npc == 0)
-			return 0x90c8ff; // players
-		return spawn.pet_owner ? 0xc8a0ff : 0xf0f0f0;
+void FrontEnd::DrawNameSprites(Canvas &canvas, uint64_t now_ms)
+{
+	// TurnCharacterNameSpritesOn / TurnNPCNameSpritesOn: names over heads, ours in the chase view.
+	// The target's pulses a step a frame in eqgame, a cycle about every 300 ms; by the clock here,
+	// whatever our frame rate.
+	int pulse = static_cast<int>(now_ms % NameSprite::PulseMs * NameSprite::PulseSteps / NameSprite::PulseMs);
+	uint16_t target = m_game_values.target;
+	ZoneSpawn self = m_zone.Self();
+	self.name = m_zone.Profile().name;
+	const auto &spawns = m_zone.Spawns();
+	// Extended nameplate distance: as far as the zone is drawn (its actors are culled there).
+	float yon = m_config.extended_nameplates ? std::numeric_limits<float>::max() : NameSprite::YonClip;
+	for (const ZoneView::NameTag &tag : m_zone_view->NameTags(yon)) {
+		const ZoneSpawn *spawn = &self;
+		bool targeted = target != 0 && (tag.id == 0 ? target == m_zone.MySpawnId() : tag.id == target);
+		if (tag.id != 0) {
+			auto it = spawns.find(tag.id);
+			if (it == spawns.end())
+				continue;
+			spawn = &it->second;
+		}
+		std::string text = NameSpriteText(*spawn, m_config.show_names, m_zone.Guilds(), m_ui.eqstr, targeted);
+		if (text.empty())
+			continue;
+		uint32_t color = NameSpriteColor(*spawn, m_world.ServerType());
+		if (targeted)
+			color = NameSpritePulse(color, pulse);
+		// A line is 20 texels of 0.05 units; the guild's 0.85 of that, under it, the lot sitting
+		// on the head.
+		// The 20 pixel bold font stretched to that, as eqgfx stretches its glyphs.
+		float scale = NameSprite::UnitsPerTexel * tag.focal / std::max(tag.depth, NameSprite::NearestDepth);
+		size_t newline = text.find('\n');
+		std::string lines[2] = {text.substr(0, newline), newline == std::string::npos ? "" : text.substr(newline + 1)};
+		float scales[2] = {scale, scale * NameSprite::LineScale};
+		int widths[2] = {}, heights[2] = {};
+		for (int i = 0; i < 2; ++i) {
+			if (lines[i].empty())
+				continue;
+			TextSize size = m_text.Measure(lines[i], NameSprite::FontHeight, NameSprite::FontWeight);
+			widths[i] = static_cast<int>(size.w * scales[i] + 0.5f);
+			heights[i] = static_cast<int>(size.h * scales[i] + 0.5f);
+		}
+		int y = tag.y - heights[0] - heights[1];
+		for (int i = 0; i < 2; ++i) {
+			if (lines[i].empty())
+				continue;
+			m_text.DrawScaled(canvas, tag.x - widths[i] / 2, y, lines[i], NameSprite::FontHeight, scales[i], color,
+				NameSprite::FontWeight);
+			y += heights[i];
+		}
 	}
 }
 
@@ -1804,7 +1850,6 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 
 void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 {
-	const ZoneProfile &me = m_zone.Profile();
 	int width = canvas.Width(), height = canvas.Height();
 
 	// The world, or the loading screen until the zone is in.
@@ -1825,27 +1870,7 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 		times.models = render_times.models;
 		times.submit = render_times.submit;
 		Clock::time_point tags_start = Clock::now();
-		// TurnCharacterNameSpritesOn / TurnNPCNameSpritesOn: names over heads, ours in the chase
-		// view, the nearest few dozen within 120 units.
-		auto tags = m_zone_view->NameTags(120);
-		const auto &spawns = m_zone.Spawns();
-		for (size_t i = 0; i < tags.size() && i < 30; ++i) {
-			std::string name = me.name;
-			uint32_t color = ZoneWhite;
-			if (tags[i].id != 0) {
-				auto it = spawns.find(tags[i].id);
-				if (it == spawns.end())
-					continue;
-				name = it->second.DisplayName();
-				color = NameColor(it->second);
-			}
-			if (name.empty())
-				continue;
-			int text_height = tags[i].distance < 60 ? 14 : 12;
-			TextSize size = m_text.Measure(name, text_height);
-			m_text.Draw(canvas, tags[i].x - size.w / 2 + 1, tags[i].y - size.h + 1, name, text_height, 0x000000);
-			m_text.Draw(canvas, tags[i].x - size.w / 2, tags[i].y - size.h, name, text_height, color);
-		}
+		DrawNameSprites(canvas, now_ms);
 		times.tags = since(tags_start);
 	}
 	else {

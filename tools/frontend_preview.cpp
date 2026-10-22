@@ -23,6 +23,7 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <limits>
 #include <thread>
 #include <vector>
 
@@ -301,6 +302,54 @@ int main(int argc, char **argv)
 		send("/target a");
 		h.RunUntil([] { return false; }, 300);
 		printf("[preview] target after /target: %u\n", frontend.Target());
+		// The names over heads: stand 25 units south of the target, facing it, then from 60 out
+		// (the names smaller), and in the chase view (ours too).
+		auto target = frontend.Zone().Spawns().find(frontend.Target());
+		if (target != frontend.Zone().Spawns().end() && frontend.ZoneScene()) {
+			const ZoneSpawn &t = target->second;
+			const char *names[] = {"n1-names-25", "n2-names-60"};
+			float backs[] = {25, 60};
+			for (int i = 0; i < 2; ++i) {
+				frontend.ZoneScene()->SetPlayerPosition(t.x, t.y - backs[i], t.z, 0);
+				h.RunUntil([] { return false; }, 400);
+				h.Snapshot(names[i]);
+			}
+			frontend.ZoneScene()->SetPlayerPosition(t.x, t.y - 25, t.z, 0);
+			frontend.ZoneScene()->CycleCamera();
+			h.RunUntil([] { return false; }, 400);
+			h.Snapshot("n3-names-chase");
+			frontend.ZoneScene()->CycleCamera();
+			for (const auto &tag : frontend.ZoneScene()->NameTags(std::numeric_limits<float>::max())) {
+				auto it = frontend.Zone().Spawns().find(tag.id);
+				const ZoneSpawn &s = tag.id == 0 || it == frontend.Zone().Spawns().end() ? frontend.Zone().Self() : it->second;
+				printf("[preview] name tag %u at %d,%d depth %.1f: '%s' %06x\n", tag.id, tag.x, tag.y, tag.depth,
+					NameSpriteText(s, 4, frontend.Zone().Guilds(), &eqstr).c_str(), NameSpriteColor(s, 0));
+			}
+		}
+		// What a player's name says with everything on.
+		ZoneSpawn player;
+		player.name = "Soandso";
+		player.surname = "Smith";
+		player.class_id = 3;
+		player.aa_title = 2;
+		player.gender = 1;
+		player.guild_id = 7;
+		player.lfg = 1;
+		player.afk = 1;
+		player.linkdead = 1;
+		GuildNames guilds{{7, "Knights of Thunder"}};
+		for (int level = 0; level <= NameSprite::ShowNamesMax; ++level)
+			printf("[preview] shownames %d: '%s'\n", level, NameSpriteText(player, level, guilds, &eqstr).c_str());
+		player.anon = 1;
+		printf("[preview] anonymous: '%s' %06x\n", NameSpriteText(player, 4, guilds, &eqstr).c_str(), NameSpriteColor(player, 0));
+		player.anon = 2;
+		printf("[preview] roleplaying: '%s' %06x\n", NameSpriteText(player, 4, guilds, &eqstr).c_str(), NameSpriteColor(player, 0));
+		player.anon = 0;
+		player.pvp = 1;
+		printf("[preview] pvp: '%s' %06x\n", NameSpriteText(player, 4, {}, &eqstr).c_str(), NameSpriteColor(player, 0));
+		for (int step = 0; step < NameSprite::PulseSteps; step += 5)
+			printf("[preview] target pulse %d: %06x\n", step, NameSpritePulse(0x17b8ad, step));
+		frontend.OnEvent({InputEvent::Type::Char, 0, 0, 0, 0});
 		// A spawn clicked: the first name tag in view, a little under the name.
 		if (const ZoneView *view = frontend.ZoneScene()) {
 			for (const auto &tag : view->NameTags(120))
