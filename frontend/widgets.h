@@ -83,6 +83,7 @@ public:
 	size_t max_chars = 19;
 	bool password = false;
 	bool focused = false;
+	bool centered = false; // createInputField's flag 1: the text centered in the field
 	int text_height = FontSize::Large;
 	uint32_t color = Colors::Entry;
 

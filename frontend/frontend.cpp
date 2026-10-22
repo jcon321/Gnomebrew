@@ -124,12 +124,15 @@ void FrontEnd::EnterLogin()
 	for (Button *b : {&m_connect, &m_cancel, &m_help})
 		b->text_height = FontSize::Large;
 
-	// createInputField(x=0x127, y, w=0x127, h=0x1a, maxlen incl. terminator 0x14 / 0x11)
+	// createInputField(x=0x127, y, w=0x127, h=0x1a, maxlen incl. terminator 0x14 / 0x11, large
+	// font, flag 1: centered)
 	m_user.rect = {0x127, 0x104, 0x127, 0x1a};
 	m_user.max_chars = 0x13;
+	m_user.centered = true;
 	m_password.rect = {0x127, 0x16d, 0x127, 0x1a};
 	m_password.max_chars = 0x10;
 	m_password.password = true;
+	m_password.centered = true;
 	m_password.text.clear();
 	m_user.focused = m_user.text.empty();
 	m_password.focused = !m_user.focused;

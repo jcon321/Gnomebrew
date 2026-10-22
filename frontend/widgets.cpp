@@ -54,21 +54,22 @@ void InputField::Draw(Canvas &canvas, TextRenderer &text_renderer, uint64_t now_
 {
 	std::string shown = password ? std::string(text.size(), '*') : text;
 
-	// Keep the end of the text (and the caret) visible when it's wider than the field.
+	// renderUIElement (@10007020): keep the end of the text (and the caret) visible when it's
+	// wider than the field, less 10 pixels.
 	size_t start = 0;
-	while (start < shown.size() && text_renderer.Measure(shown.substr(start), text_height).w > rect.w - 6)
+	while (start < shown.size() && text_renderer.Measure(shown.substr(start), text_height).w > rect.w - 10)
 		++start;
 	shown = shown.substr(start);
 
 	TextSize size = text_renderer.Measure(shown.empty() ? "X" : shown, text_height);
+	int width = shown.empty() ? 0 : text_renderer.Measure(shown, text_height).w;
+	int x = centered ? rect.x + rect.w / 2 - width / 2 : rect.x + 2;
 	int y = rect.y + (rect.h - size.h) / 2;
 	if (!shown.empty())
-		text_renderer.Draw(canvas, rect.x + 2, y, shown, text_height, color);
+		text_renderer.Draw(canvas, x, y, shown, text_height, color);
 
-	if (focused && (now_ms / 500) % 2 == 0) {
-		int caret_x = rect.x + 2 + (shown.empty() ? 0 : text_renderer.Measure(shown, text_height).w) + 1;
-		canvas.Fill({caret_x, rect.y + 3, 2, rect.h - 6}, color);
-	}
+	if (focused && (now_ms / 500) % 2 == 0)
+		canvas.Fill({x + width, rect.y + 3, 2, rect.h - 6}, color); // the caret, just after the text
 }
 
 void InputField::OnChar(uint32_t ch)
