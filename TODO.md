@@ -5,9 +5,10 @@ no rules of its own.
 
 ## UI
 
-1. **In-game SIDL windows.** Load the full `EQUI.xml` set and add a window manager: drag, resize,
-   close, minimize, focus order, see-through backgrounds, and window positions saved per character
-   (the client's `UI_<char>_<server>.ini`).
+1. ~~**In-game SIDL windows.**~~ Done: `frontend/window_manager.*` (drag, resize, close, minimize,
+   focus order, fading, Escape, `UI_<char>_<server>.ini`). Still to do: BGTint isn't drawn, no
+   right-click context menu (lock, alpha), no resize cursors, no keyboard focus for edit boxes
+   in windows.
 2. **Display-only windows**, showing what the server already sends:
    - Player window: HP, mana, stamina, XP bar
    - Target window

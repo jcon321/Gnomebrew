@@ -9,7 +9,9 @@
 // screen. With one it also logs in and snapshots server select and the play result.
 // "charselect" stops at character select (two snapshots of the 3D scene, as the
 // camera turns) instead of entering the world. --replay plays a packet log back (no server)
-// and snapshots the zone once it's in, then every few seconds for SECONDS (default 10).
+// and snapshots the zone once it's in, then every few seconds for SECONDS (default 10), then
+// tries the windows: drags the selector by its title bar, opens the inventory from it, minimizes
+// and restores it, and closes it with Escape (the layout goes to OUTDIR/UI_*.ini).
 
 #include "eqstr.h"
 #include "frontend.h"
@@ -171,6 +173,7 @@ int main(int argc, char **argv)
 	}
 
 	FrontEndConfig config;
+	config.ui_dir = argv[2];
 	bool stop_at_charselect = argc == 7 && std::string(argv[6]) == "charselect";
 	bool create = argc == 7 && std::string(argv[6]) == "create";
 	if (argc >= 6 && !replay) {
@@ -223,6 +226,63 @@ int main(int argc, char **argv)
 			h.RunUntil([] { return false; }, 3000);
 			h.Snapshot("r" + std::to_string(t) + "s");
 		}
+
+		WindowManager &windows = frontend.Windows();
+		auto drag = [&](int x0, int y0, int x1, int y1) {
+			frontend.OnEvent({InputEvent::Type::MouseMove, x0, y0});
+			frontend.OnEvent({InputEvent::Type::MouseDown, x0, y0});
+			for (int i = 1; i <= 4; ++i)
+				frontend.OnEvent({InputEvent::Type::MouseMove, x0 + (x1 - x0) * i / 4, y0 + (y1 - y0) * i / 4});
+			frontend.OnEvent({InputEvent::Type::MouseUp, x1, y1});
+			frontend.Update(NowMs());
+		};
+		auto click = [&](int x, int y) { drag(x, y, x, y); };
+		auto where = [&](const char *screen) {
+			const SidlWindow *w = windows.Find(screen);
+			if (w)
+				printf("[preview] %s %s at %d,%d %dx%d%s\n", screen, windows.Shown(screen) ? "shown" : "hidden",
+					w->Bounds().x, w->Bounds().y, w->Bounds().w, w->Bounds().h, w->Minimized() ? " (minimized)" : "");
+			return w;
+		};
+		printf("[preview] %d windows, layout %s\n", windows.Count(), frontend.UiLayoutPath().c_str());
+		h.Key(InputEvent::Key::F11); // the debug menu out of the way
+		if (const SidlWindow *selector = where("SelectorWindow")) {
+			const Rect &title = selector->Root().title;
+			drag(title.x + 20, title.y + title.h / 2, title.x + 220, title.y + title.h / 2 + 120);
+			where("SelectorWindow");
+			int x, y;
+			if (const SidlWindow::Control *button = selector->Find("SELW_InventoryToggleButton")) {
+				x = button->rect.x + button->rect.w / 2;
+				y = button->rect.y + button->rect.h / 2;
+				click(x, y);
+			}
+		}
+		h.RunUntil([] { return false; }, 300);
+		h.Snapshot("w1-inventory");
+		if (where("InventoryWindow")) {
+			h.Key(InputEvent::Key::Escape); // closes the topmost window with a close box
+			where("InventoryWindow");
+		}
+		// The actions window has a minimize box: down to its title bar and back.
+		if (const SidlWindow::Control *button = windows.Find("SelectorWindow")->Find("SELW_ActionsToggleButton"))
+			click(button->rect.x + button->rect.w / 2, button->rect.y + button->rect.h / 2);
+		if (const SidlWindow *actions = where("ActionsWindow")) {
+			Rect box = actions->TitleBoxRect(SidlWindow::TitleBox::Minimize);
+			click(box.x + box.w / 2, box.y + box.h / 2);
+			where("ActionsWindow");
+			h.RunUntil([] { return false; }, 300);
+			h.Snapshot("w2-minimized");
+			click(box.x + box.w / 2, box.y + box.h / 2);
+			where("ActionsWindow");
+		}
+		// The target window is sizable: its bottom right corner, 60 right and 40 down.
+		if (const SidlWindow *target = where("TargetWindow")) {
+			Rect b = target->Bounds();
+			drag(b.Right() - 1, b.Bottom() - 1, b.Right() + 59, b.Bottom() + 39);
+			where("TargetWindow");
+		}
+		h.RunUntil([] { return false; }, 300);
+		h.Snapshot("w3-closed");
 		return 0;
 	}
 

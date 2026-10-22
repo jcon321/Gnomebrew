@@ -132,6 +132,44 @@ void Canvas::TileRegion(const Image &image, const Rect &source, const Rect &dest
 	}
 }
 
+void Canvas::Keep(const Rect &area, std::vector<uint32_t> &kept) const
+{
+	int x0 = std::max(area.x, 0), y0 = std::max(area.y, 0);
+	int x1 = std::min(area.Right(), m_width), y1 = std::min(area.Bottom(), m_height);
+	kept.clear();
+	if (x1 <= x0 || y1 <= y0)
+		return;
+	kept.reserve(static_cast<size_t>(x1 - x0) * (y1 - y0));
+	for (int y = y0; y < y1; ++y) {
+		const uint32_t *row = m_pixels + static_cast<size_t>(y) * m_stride;
+		kept.insert(kept.end(), row + x0, row + x1);
+	}
+}
+
+void Canvas::BlendKept(const Rect &area, const std::vector<uint32_t> &kept, int alpha)
+{
+	int x0 = std::max(area.x, 0), y0 = std::max(area.y, 0);
+	int x1 = std::min(area.Right(), m_width), y1 = std::min(area.Bottom(), m_height);
+	if (x1 <= x0 || y1 <= y0 || kept.size() != static_cast<size_t>(x1 - x0) * (y1 - y0) || alpha >= 255)
+		return;
+	// Weights out of 256, so two channels blend at once in their 16-bit lanes (r and b, t and g).
+	uint32_t a = static_cast<uint32_t>(std::max(alpha, 0));
+	a += a >> 7;
+	uint32_t b = 256 - a;
+	const uint32_t *old = kept.data();
+	for (int y = y0; y < y1; ++y) {
+		uint32_t *row = Row(y);
+		for (int x = x0; x < x1; ++x, ++old) {
+			uint32_t now = row[x], was = *old;
+			if (now == was)
+				continue;
+			uint32_t rb = (((now & 0x00ff00ff) * a + (was & 0x00ff00ff) * b) >> 8) & 0x00ff00ff;
+			uint32_t tg = ((((now >> 8) & 0x00ff00ff) * a + ((was >> 8) & 0x00ff00ff) * b) >> 8) & 0x00ff00ff;
+			row[x] = rb | (tg << 8);
+		}
+	}
+}
+
 void Canvas::Darken(const Rect &area)
 {
 	int x0 = std::max(area.x, 0), y0 = std::max(area.y, 0);

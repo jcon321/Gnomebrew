@@ -141,6 +141,14 @@ RecordPackets=0
   goes nowhere. When the log runs out you stay in the zone. Camping logs out when its timer runs, and
   zone lines are turned down. The console client and `frontend_preview` play the same files.
 
+In the zone, the game's own SIDL windows come up as eqgame's do on a first login (player, target,
+group, buffs, spell gems, hotbuttons and the selector, whose buttons open and close the others). You
+drag them (by the title bar, or anywhere on one that isn't sizable), resize sizable ones from their
+borders, close and minimize them from their title bars, and Escape closes the topmost one. They
+fade when the mouse has been off them a while. Their layout is kept in eqgame's own format, in
+`UI_<character>_<server>.ini` next to the exe (the server part is the login server's address cut
+to 7 characters, as eqgame names it). What's inside the windows mostly isn't filled in yet.
+
 Command-line flags override the ini: `--eqdir`, `--login`, `--size WxH`, `--replay FILE`. The GUI saves the last
 username as `[Login] User=` and the selected character as `[Defaults] LastCharSel=`, and writes a log to `my-client.log` next to the exe.
 
@@ -183,7 +191,8 @@ select and character select, and presses Enter World (add `charselect` after the
 at character select instead). `create` instead makes an Erudite wizard from the first empty slot,
 snapshots every creation screen and the face picker, submits it, and deletes it again. It's for
 checking layout and flow without Windows. `--replay` plays a packet log back instead (no server)
-and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10).
+and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,
+opens, minimizes, resizes and closes windows (the layout goes to OUTDIR).
 
 ```
 build/scene_preview EQDIR OUT.png --char RACE GENDER CLASS [--face F] [--equip M,M,...] [--camera H] [--frames N] [--size WxH]

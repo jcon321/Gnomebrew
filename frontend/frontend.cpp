@@ -1,6 +1,7 @@
 #include "frontend.h"
 
 #include "eqstr.h"
+#include "ini_file.h"
 
 #include <algorithm>
 #include <chrono>
@@ -621,6 +622,13 @@ void FrontEnd::Update(uint64_t now_ms)
 		std::string zone_line = m_zone_view->TakeZoneLine();
 		if (!zone_line.empty())
 			HandleZoneLine(zone_line);
+	}
+	if (m_screen == Screen::Zone) {
+		Rect area = ScreenArea();
+		m_windows.Update(now_ms, m_mouse_x - area.x, m_mouse_y - area.y);
+		HandleWindowClicks();
+		if (m_windows.TakeChanged())
+			SaveUiLayout();
 	}
 
 	if (m_screen == Screen::ServerSelect && !m_submitting && now_ms - m_last_list_request_ms > ServerListRefreshMs) {
@@ -1270,8 +1278,11 @@ void FrontEnd::EnterZoneScreen(bool zoning)
 	m_keys = HeldKeys{};
 	m_jump_requested = m_crouch_sent = false;
 	m_main_loop_started = false;
-	if (!zoning)
+	if (!zoning) {
 		AddZoneLog("Entering the zone...", ZoneGrey);
+		m_windows.Reset(nullptr, nullptr, m_game_width, m_game_height);
+		m_windows_built = false;
+	}
 	if (m_sound) // DoCharacterSelection, entering the world
 		m_sound->SetMusicSelection(audio::EqSound::CharacterSelect, false);
 
@@ -1296,6 +1307,86 @@ bool FrontEnd::StartReplay(const std::string &path, std::string &error)
 	EnterZoneScreen();
 	AddZoneLog("Replaying " + path + " (no server).", ZoneGrey);
 	return true;
+}
+
+namespace
+{
+	// The windows eqgame has up on a first login, and the rest of what we build so far.
+	struct ZoneWindow
+	{
+		const char *screen;
+		bool shown;
+	};
+	constexpr ZoneWindow ZoneWindows[] = {
+		{"PlayerWindow", true}, {"TargetWindow", true}, {"GroupWindow", true}, {"BuffWindow", true},
+		{"CastSpellWnd", true}, {"HotButtonWnd", true}, {"SelectorWindow", true}, {"ActionsWindow", false},
+		{"InventoryWindow", false}, {"OptionsWindow", false}, {"FriendsWindow", false}, {"PetInfoWindow", false},
+		{"HelpWindow", false}, {"CompassWindow", false},
+	};
+
+	// The selector's buttons (EQUI_SelectorWnd.xml) and the windows they open and close.
+	struct SelectorToggle
+	{
+		const char *button, *screen;
+	};
+	constexpr SelectorToggle SelectorToggles[] = {
+		{"SELW_ActionsToggleButton", "ActionsWindow"}, {"SELW_InventoryToggleButton", "InventoryWindow"},
+		{"SELW_OptionsToggleButton", "OptionsWindow"}, {"SELW_FriendsToggleButton", "FriendsWindow"},
+		{"SELW_HotboxToggleButton", "HotButtonWnd"}, {"SELW_CastSpellToggleButton", "CastSpellWnd"},
+		{"SELW_PetInfoToggleButton", "PetInfoWindow"}, {"SELW_BuffToggleButton", "BuffWindow"},
+		{"SELW_HelpToggleButton", "HelpWindow"},
+	};
+}
+
+void FrontEnd::BuildZoneWindows()
+{
+	m_windows_built = true;
+	if (!m_ui.definitions || !m_ui.textures)
+		return;
+	m_windows.Reset(m_ui.definitions, m_ui.textures, m_game_width, m_game_height);
+	for (const auto &window : ZoneWindows) {
+		std::string error;
+		if (!m_windows.Add(window.screen, window.shown, &error))
+			Log("UI: " + error);
+	}
+	// eqgame names the file after the character and the first 7 characters of the login
+	// server's address (UI_Name_loginse.ini for loginserver.takproject.net).
+	m_ui_layout_path.clear();
+	const std::string &name = m_zone.Profile().name;
+	if (!m_config.ui_dir.empty() && !name.empty()) {
+		m_ui_layout_path = m_config.ui_dir + "/UI_" + name + "_" + m_config.login_host.substr(0, 7) + ".ini";
+		IniFile ini;
+		if (ini.Load(m_ui_layout_path))
+			m_windows.Load(ini);
+		Log("UI: " + std::to_string(m_windows.Count()) + " windows, layout " + m_ui_layout_path);
+	}
+	m_windows.TakeChanged();
+}
+
+void FrontEnd::SaveUiLayout()
+{
+	if (m_ui_layout_path.empty())
+		return;
+	IniFile ini;
+	ini.Load(m_ui_layout_path); // keep what we don't manage
+	m_windows.Store(ini);
+	if (!ini.Save(m_ui_layout_path))
+		Log("UI: couldn't write " + m_ui_layout_path);
+}
+
+void FrontEnd::HandleWindowClicks()
+{
+	for (const auto &click : m_windows.TakeClicks()) {
+		if (click.window == "SelectorWindow")
+			for (const auto &toggle : SelectorToggles)
+				if (click.control == toggle.button)
+					m_windows.Toggle(toggle.screen);
+	}
+	// The selector's buttons stay down while their window is open.
+	if (SidlWindow *selector = m_windows.Find("SelectorWindow"))
+		for (const auto &toggle : SelectorToggles)
+			if (SidlWindow::Control *button = selector->Find(toggle.button))
+				button->checked = m_windows.Shown(toggle.screen);
 }
 
 void FrontEnd::AddZoneLog(const std::string &text, uint32_t color)
@@ -1328,6 +1419,8 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 		switch (event.type) {
 		case Type::ZoneInfo: {
 			AddZoneLog("You have entered " + m_zone.Info().long_name + ".", ZoneYellow);
+			if (!m_windows_built)
+				BuildZoneWindows();
 			// CEverQuest_EnterZone -> CDisplay::StartWorldDisplay: load the zone, and put our
 			// character (OP_ZoneEntry came first) in it.
 			if (m_ui.eq_dir.empty())
@@ -1547,6 +1640,9 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 	// The debug menu's stat card takes clicks on it, unless a drag is holding the mouse.
 	if (event.IsMouse() && !m_mouse_turn && !m_mouse_pan && m_debug.OnMouse(event))
 		return;
+	// Then the windows, unless the world has the mouse.
+	if (event.IsMouse() && !m_mouse_turn && !m_mouse_pan && m_windows.OnMouse(event, m_now_ms))
+		return;
 	switch (event.type) {
 	case InputEvent::Type::Wheel:
 		// Out of first person into the chase camera and back, as well as closer and farther.
@@ -1701,6 +1797,9 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 				m_chat_input.text.clear();
 				m_chat_input.focused = false;
 			}
+			else if (m_windows.CloseTop()) {
+				// Escape closes windows first, the topmost one with a close box.
+			}
 			else if (m_zone.GetState() == ZoneSession::State::InZone)
 				ShowQuestion("Camp out?\n\nIt takes about 30 seconds.", [this](bool yes) {
 					if (yes)
@@ -1780,9 +1879,6 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 	for (int i = first, ry = log.y + 1; i < static_cast<int>(m_zone_log.size()); ++i, ry += row_height)
 		m_text.Draw(canvas, log.x + 4, ry, m_zone_log[i].text, FontSize::Small, m_zone_log[i].color);
 
-	// Top left and right: the debug menu's stat card and radar, above the chat.
-	m_debug.Draw(canvas, m_text, m_zone, m_zone_view.get(), log.y - 10);
-
 	m_text.Draw(canvas, 10, bottom + 450, "Say:", FontSize::Normal, ZoneGrey);
 	canvas.Frame({m_chat_input.rect.x - 2, m_chat_input.rect.y - 1, m_chat_input.rect.w + 4, m_chat_input.rect.h + 2}, 0x404850);
 	m_chat_input.Draw(canvas, m_text, now_ms);
@@ -1796,6 +1892,10 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 		TextSize size = m_text.Measure(help, FontSize::Small);
 		m_text.Draw(canvas, width - size.w - 10, height - size.h - 8, help, FontSize::Small, ZoneGrey);
 	}
+
+	m_windows.Draw(canvas, m_text, now_ms);
+	// Top left and right: the debug menu's stat card and radar, above the chat and the windows.
+	m_debug.Draw(canvas, m_text, m_zone, m_zone_view.get(), log.y - 10);
 	times.ui = since(ui_start);
 	m_debug.Frame(times);
 }

@@ -1,0 +1,459 @@
+#include "window_manager.h"
+#include "ini_file.h"
+
+#include <algorithm>
+
+namespace
+{
+	// SIDL screens are laid out for 640x480 (CSidlScreenWnd::InitializeScreen's starting resolution).
+	constexpr int BaseWidth = 640, BaseHeight = 480;
+
+	// CSidlScreenWnd_ConvertToRes (@005702a0): a window's position along one axis at another
+	// resolution. Windows on the far half keep their distance from that edge, ones across the
+	// middle stay centered, and everything stays on screen.
+	int ConvertToRes(int pos, int size, int from, int to)
+	{
+		if (from != to) {
+			if (pos > 0) {
+				int end = pos + size;
+				if (end < from) {
+					int half = from / 2;
+					if (half < pos)
+						pos = pos - from + to;
+					else if (half < end)
+						pos = to / 2 - half + pos;
+				}
+				else
+					pos = to - size;
+			}
+			else
+				pos = 0;
+		}
+		if (pos < 0)
+			pos = 0;
+		if (to < pos + size)
+			pos = to - size;
+		return pos;
+	}
+
+	std::string ResolutionKey(const char *name, int width, int height)
+	{
+		return std::string(name) + std::to_string(width) + "x" + std::to_string(height);
+	}
+}
+
+void WindowManager::Reset(const SidlDefinitions *defs, SidlTextures *textures, int screen_width, int screen_height)
+{
+	m_defs = defs;
+	m_textures = textures;
+	m_width = screen_width;
+	m_height = screen_height;
+	m_windows.clear();
+	m_clicks.clear();
+	m_changed = false;
+	m_drag = Drag::None;
+	m_drag_window = m_press = -1;
+	m_box_down = SidlWindow::TitleBox::None;
+}
+
+SidlWindow *WindowManager::Add(const std::string &screen, bool shown, std::string *error)
+{
+	if (!m_defs)
+		return nullptr;
+	auto w = std::make_unique<Window>();
+	std::string build_error;
+	if (!w->wnd.Build(*m_defs, screen, build_error)) {
+		if (error)
+			*error = build_error;
+		return nullptr;
+	}
+	w->screen = screen;
+	w->shown = shown;
+	Rect r = w->wnd.Def().rect;
+	r.w = std::min(r.w, m_width);
+	r.h = std::min(r.h, m_height);
+	r.x = ConvertToRes(r.x, r.w, BaseWidth, m_width);
+	r.y = ConvertToRes(r.y, r.h, BaseHeight, m_height);
+	Place(*w, r);
+	m_windows.push_back(std::move(w));
+	return &m_windows.back()->wnd;
+}
+
+SidlWindow *WindowManager::Find(const std::string &screen)
+{
+	for (auto &w : m_windows)
+		if (w->screen == screen)
+			return &w->wnd;
+	return nullptr;
+}
+
+void WindowManager::Place(Window &w, const Rect &rect)
+{
+	w.rect = rect;
+	w.wnd.Move(rect);
+	if (w.wnd.Minimized()) {
+		// Just the title bar inside the border.
+		int left, top, right, bottom;
+		w.wnd.BorderInsets(left, top, right, bottom);
+		w.wnd.Move({rect.x, rect.y, rect.w, top + w.wnd.Root().title.h + bottom});
+	}
+}
+
+void WindowManager::SetMinimized(Window &w, bool minimized)
+{
+	w.wnd.SetMinimized(minimized);
+	Place(w, w.rect);
+}
+
+Rect WindowManager::Clamped(const Rect &rect) const
+{
+	Rect r = rect;
+	r.x = std::max(0, std::min(r.x, m_width - r.w));
+	r.y = std::max(0, std::min(r.y, m_height - r.h));
+	return r;
+}
+
+void WindowManager::Load(const IniFile &ini)
+{
+	for (auto &wp : m_windows) {
+		Window &w = *wp;
+		const std::string &section = w.screen;
+		Settings &s = w.settings;
+		s.fades = ini.GetBool(section, "Fades", s.fades);
+		s.delay = ini.GetInt(section, "Delay", s.delay);
+		s.duration = ini.GetInt(section, "Duration", s.duration);
+		s.alpha = std::clamp(ini.GetInt(section, "Alpha", s.alpha), 0, 255);
+		s.fade_to = std::clamp(ini.GetInt(section, "FadeToAlpha", s.fade_to), 0, 255);
+		s.locked = ini.GetBool(section, "Locked", s.locked);
+		s.tint = static_cast<uint32_t>(std::clamp(ini.GetInt(section, "BGTint.red", 255), 0, 255)) << 16 |
+		         static_cast<uint32_t>(std::clamp(ini.GetInt(section, "BGTint.green", 255), 0, 255)) << 8 |
+		         static_cast<uint32_t>(std::clamp(ini.GetInt(section, "BGTint.blue", 255), 0, 255));
+		w.alpha = w.fade_target = s.alpha;
+
+		// LoadIniInfo: this resolution's position if there is one, kept at least 4 pixels on
+		// screen; the size for sizable windows, no bigger than the screen.
+		Rect r = w.rect;
+		r.x = ini.GetInt(section, ResolutionKey("XPos", m_width, m_height), r.x);
+		r.y = ini.GetInt(section, ResolutionKey("YPos", m_width, m_height), r.y);
+		if (m_width - r.x < 4)
+			r.x = m_width - 4;
+		if (m_height - r.y < 4)
+			r.y = m_height - 4;
+		if (w.wnd.Def().sizable) {
+			r.w = std::min(ini.GetInt(section, "Width", r.w), m_width);
+			r.h = std::min(ini.GetInt(section, "Height", r.h), m_height);
+		}
+		Place(w, r);
+		if (ini.Has(section, "Show"))
+			w.shown = ini.GetInt(section, "Show", 0) != 0;
+	}
+}
+
+void WindowManager::Store(IniFile &ini) const
+{
+	for (const auto &wp : m_windows) {
+		const Window &w = *wp;
+		const std::string &section = w.screen;
+		const Settings &s = w.settings;
+		ini.SetInt(section, ResolutionKey("XPos", m_width, m_height), w.rect.x);
+		ini.SetInt(section, ResolutionKey("YPos", m_width, m_height), w.rect.y);
+		if (w.wnd.Def().sizable) {
+			ini.SetInt(section, "Width", w.rect.w);
+			ini.SetInt(section, "Height", w.rect.h);
+		}
+		ini.SetInt(section, "BGTint.red", static_cast<int>((s.tint >> 16) & 0xff));
+		ini.SetInt(section, "BGTint.green", static_cast<int>((s.tint >> 8) & 0xff));
+		ini.SetInt(section, "BGTint.blue", static_cast<int>(s.tint & 0xff));
+		ini.SetBool(section, "Fades", s.fades);
+		ini.SetInt(section, "Delay", s.delay);
+		ini.SetInt(section, "Duration", s.duration);
+		ini.SetInt(section, "Alpha", s.alpha);
+		ini.SetInt(section, "FadeToAlpha", s.fade_to);
+		ini.SetBool(section, "Locked", s.locked);
+		ini.SetInt(section, "Show", w.shown ? 1 : 0);
+	}
+}
+
+bool WindowManager::TakeChanged()
+{
+	bool changed = m_changed;
+	m_changed = false;
+	return changed;
+}
+
+void WindowManager::Show(const std::string &screen, bool shown)
+{
+	for (int i = 0; i < static_cast<int>(m_windows.size()); ++i) {
+		Window &w = *m_windows[i];
+		if (w.screen != screen || w.shown == shown)
+			continue;
+		w.shown = shown;
+		m_changed = true;
+		if (shown) {
+			// OnWindowShown: on top, unfaded.
+			w.unfaded = true;
+			w.hover_ms = 0;
+			w.alpha = w.fade_target = w.settings.alpha;
+			w.fade_ms = 0;
+			BringToTop(i);
+		}
+		else if (m_drag_window == i || m_press == i) {
+			m_drag = Drag::None;
+			m_drag_window = m_press = -1;
+			m_box_down = SidlWindow::TitleBox::None;
+		}
+		return;
+	}
+}
+
+bool WindowManager::Shown(const std::string &screen) const
+{
+	for (const auto &w : m_windows)
+		if (w->screen == screen)
+			return w->shown;
+	return false;
+}
+
+bool WindowManager::CloseTop()
+{
+	for (int i = static_cast<int>(m_windows.size()) - 1; i >= 0; --i) {
+		Window &w = *m_windows[i];
+		if (w.shown && w.wnd.Def().closebox) {
+			Show(w.screen, false);
+			return true;
+		}
+	}
+	return false;
+}
+
+int WindowManager::TopAt(int x, int y) const
+{
+	for (int i = static_cast<int>(m_windows.size()) - 1; i >= 0; --i)
+		if (m_windows[i]->shown && m_windows[i]->wnd.Bounds().Contains(x, y))
+			return i;
+	return -1;
+}
+
+bool WindowManager::Over(int x, int y) const
+{
+	return TopAt(x, y) >= 0;
+}
+
+void WindowManager::BringToTop(int &index)
+{
+	if (index < 0 || index == static_cast<int>(m_windows.size()) - 1)
+		return;
+	int last = static_cast<int>(m_windows.size()) - 1;
+	auto moved = [&](int i) { return i == index ? last : i > index ? i - 1 : i; };
+	if (m_press >= 0)
+		m_press = moved(m_press);
+	if (m_drag_window >= 0)
+		m_drag_window = moved(m_drag_window);
+	auto window = std::move(m_windows[index]);
+	m_windows.erase(m_windows.begin() + index);
+	m_windows.push_back(std::move(window));
+	index = last;
+}
+
+bool WindowManager::OnMouse(const InputEvent &event, uint64_t now_ms)
+{
+	using Type = InputEvent::Type;
+	using Box = SidlWindow::TitleBox;
+	InputEvent away = event; // for the windows the mouse isn't over: nothing's hovered
+	away.x = away.y = -100000;
+
+	switch (event.type) {
+	case Type::MouseMove: {
+		if (m_drag != Drag::None && m_drag_window >= 0) {
+			Window &w = *m_windows[m_drag_window];
+			int dx = event.x - m_grab_x, dy = event.y - m_grab_y;
+			Rect r = m_grab_rect;
+			if (m_drag == Drag::Move) {
+				r.x += dx;
+				r.y += dy;
+				r = Clamped(r);
+			}
+			else {
+				// GetMinSize: room for the border, the title bar and its boxes.
+				int left, top, right, bottom;
+				w.wnd.BorderInsets(left, top, right, bottom);
+				int min_w = left + right + 40, min_h = top + bottom + w.wnd.Root().title.h + 16;
+				int x0 = r.x, y0 = r.y, x1 = r.Right(), y1 = r.Bottom();
+				if (m_edge_left)
+					x0 = std::clamp(x0 + dx, 0, x1 - min_w);
+				if (m_edge_right)
+					x1 = std::clamp(x1 + dx, x0 + min_w, m_width);
+				if (m_edge_top)
+					y0 = std::clamp(y0 + dy, 0, y1 - min_h);
+				if (m_edge_bottom)
+					y1 = std::clamp(y1 + dy, y0 + min_h, m_height);
+				r = {x0, y0, x1 - x0, y1 - y0};
+			}
+			Place(w, r);
+			w.hover_ms = now_ms;
+			return true;
+		}
+		int top = m_press >= 0 ? m_press : TopAt(event.x, event.y);
+		for (int i = 0; i < static_cast<int>(m_windows.size()); ++i) {
+			Window &w = *m_windows[i];
+			if (!w.shown)
+				continue;
+			w.wnd.OnMouse(i == top ? event : away);
+			Box hover = i == top ? w.wnd.TitleBoxAt(event.x, event.y) : Box::None;
+			w.wnd.SetTitleBoxes(hover, i == m_press ? m_box_down : Box::None);
+		}
+		return top >= 0;
+	}
+	case Type::MouseDown:
+	case Type::DoubleClick: {
+		int top = TopAt(event.x, event.y);
+		if (top < 0)
+			return false;
+		BringToTop(top);
+		Window &w = *m_windows[top];
+		Box box = w.wnd.TitleBoxAt(event.x, event.y);
+		if (box != Box::None) {
+			m_press = top;
+			m_box_down = box;
+			w.wnd.SetTitleBoxes(box, box);
+			return true;
+		}
+		if (w.wnd.InteractiveAt(event.x, event.y)) {
+			m_press = top;
+			w.wnd.OnMouse(event);
+			return true;
+		}
+		if (w.settings.locked)
+			return true;
+		const Rect &b = w.wnd.Bounds();
+		int left, topb, right, bottom;
+		w.wnd.BorderInsets(left, topb, right, bottom);
+		bool sizable = w.wnd.Def().sizable && !w.wnd.Minimized();
+		m_edge_left = m_edge_top = m_edge_right = m_edge_bottom = false;
+		if (sizable) {
+			// The border's pieces resize (at least a few pixels of it, for a thin border).
+			m_edge_left = event.x < b.x + std::max(left, 4);
+			m_edge_right = event.x >= b.Right() - std::max(right, 4);
+			m_edge_top = event.y < b.y + std::max(topb, 4);
+			m_edge_bottom = event.y >= b.Bottom() - std::max(bottom, 4);
+		}
+		Drag drag = Drag::None;
+		if (m_edge_left || m_edge_right || m_edge_top || m_edge_bottom)
+			drag = Drag::Resize;
+		else if (!sizable || w.wnd.Root().title.Contains(event.x, event.y))
+			drag = Drag::Move;
+		if (drag != Drag::None) {
+			m_drag = drag;
+			m_drag_window = top;
+			m_grab_x = event.x;
+			m_grab_y = event.y;
+			m_grab_rect = w.rect;
+		}
+		return true;
+	}
+	case Type::MouseUp: {
+		if (m_drag != Drag::None) {
+			m_drag = Drag::None;
+			m_drag_window = -1;
+			m_changed = true;
+			return true;
+		}
+		if (m_press >= 0) {
+			Window &w = *m_windows[m_press];
+			if (m_box_down != Box::None) {
+				if (w.wnd.TitleBoxAt(event.x, event.y) == m_box_down) {
+					if (m_box_down == Box::Close)
+						Show(w.screen, false);
+					else {
+						SetMinimized(w, !w.wnd.Minimized());
+						m_changed = true;
+					}
+				}
+			}
+			else {
+				std::string clicked = w.wnd.OnMouse(event);
+				if (!clicked.empty())
+					m_clicks.push_back({w.screen, clicked});
+			}
+			w.wnd.SetTitleBoxes(w.wnd.TitleBoxAt(event.x, event.y), Box::None);
+			m_press = -1;
+			m_box_down = Box::None;
+			return true;
+		}
+		return false; // the press wasn't ours: whoever had it gets the release
+	}
+	case Type::RightDown:
+	case Type::RightUp:
+	case Type::Wheel:
+		// No context menus or scrolling yet, but the world doesn't get them either.
+		return Over(event.x, event.y);
+	default:
+		return false;
+	}
+}
+
+std::vector<WindowManager::Click> WindowManager::TakeClicks()
+{
+	std::vector<Click> clicks;
+	clicks.swap(m_clicks);
+	return clicks;
+}
+
+void WindowManager::Update(uint64_t now_ms, int mouse_x, int mouse_y)
+{
+	for (int i = 0; i < static_cast<int>(m_windows.size()); ++i) {
+		Window &w = *m_windows[i];
+		if (!w.shown || !w.settings.fades)
+			continue;
+		// CXWnd::OnProcessFrame: the mouse over it keeps it unfaded; Delay ms away fades it.
+		bool held = (m_drag != Drag::None && m_drag_window == i) || m_press == i;
+		if (held || w.hover_ms == 0 || w.wnd.Bounds().Contains(mouse_x, mouse_y)) // 0: just shown
+			w.hover_ms = now_ms;
+		bool unfaded = now_ms - w.hover_ms <= static_cast<uint64_t>(std::max(w.settings.delay, 0));
+		if (unfaded != w.unfaded) {
+			// StartFade, from wherever it is now.
+			w.unfaded = unfaded;
+			w.fade_from = w.alpha;
+			w.fade_target = unfaded ? w.settings.alpha : w.settings.fade_to;
+			w.fade_start_ms = now_ms;
+			w.fade_ms = std::max(w.settings.duration, 0);
+		}
+		// ProcessTransition 4: linear over the duration.
+		if (w.alpha != w.fade_target) {
+			uint64_t t = now_ms - w.fade_start_ms;
+			if (w.fade_ms <= 0 || t > static_cast<uint64_t>(w.fade_ms))
+				w.alpha = w.fade_target;
+			else
+				w.alpha = w.fade_from + static_cast<int>((w.fade_target - w.fade_from) * static_cast<int64_t>(t) / w.fade_ms);
+		}
+	}
+}
+
+int WindowManager::EffectiveAlpha(const Window &w) const
+{
+	// DoAllDrawing: the window's Alpha, scaled by where its fade is.
+	int alpha = w.settings.alpha;
+	if (w.settings.fades)
+		alpha = w.alpha * alpha / 255;
+	return alpha;
+}
+
+void WindowManager::Draw(Canvas &canvas, TextRenderer &text, uint64_t now_ms)
+{
+	if (!m_textures)
+		return;
+	for (const auto &wp : m_windows) {
+		const Window &w = *wp;
+		if (!w.shown)
+			continue;
+		int alpha = EffectiveAlpha(w);
+		if (alpha <= 0)
+			continue;
+		const Rect &bounds = w.wnd.Bounds();
+		if (alpha < 255)
+			canvas.Keep(bounds, m_kept);
+		w.wnd.Draw(canvas, text, *m_textures, now_ms);
+		if (alpha < 255)
+			canvas.BlendKept(bounds, m_kept, alpha);
+	}
+}

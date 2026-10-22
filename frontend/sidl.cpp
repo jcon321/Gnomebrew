@@ -215,6 +215,10 @@ void SidlDefinitions::ReadElement(const XmlNode &node)
 			t.title_middle = title->ChildText("Middle");
 			t.title_right = title->ChildText("Right");
 		}
+		if (const XmlNode *box = node.Child("CloseBox"))
+			t.close_box = ReadButtonTemplate(*box);
+		if (const XmlNode *box = node.Child("MinimizeBox"))
+			t.minimize_box = ReadButtonTemplate(*box);
 		m_window_templates[item] = std::move(t);
 		return;
 	}
@@ -248,6 +252,9 @@ void SidlDefinitions::ReadElement(const XmlNode &node)
 	p.bottom_offset = node.ChildInt("BottomAnchorOffset", 0);
 	p.transparent = node.ChildBool("Style_Transparent", false);
 	p.titlebar = node.ChildBool("Style_Titlebar", false);
+	p.closebox = node.ChildBool("Style_Closebox", false);
+	p.minimizebox = node.ChildBool("Style_Minimizebox", false);
+	p.sizable = node.ChildBool("Style_Sizable", false);
 	p.align_center = node.ChildBool("AlignCenter", false);
 	p.align_right = node.ChildBool("AlignRight", false);
 	p.checkbox = node.ChildBool("Style_Checkbox", false);
@@ -322,6 +329,8 @@ bool SidlWindow::Build(const SidlDefinitions &defs, const std::string &screen_it
 	m_defs = &defs;
 	m_controls.clear();
 	m_focus = -1;
+	m_minimized = false;
+	m_box_hover = m_box_pressed = TitleBox::None;
 	const SidlPiece *screen = defs.Piece(screen_item);
 	if (!screen || screen->type != "Screen") {
 		error = "SIDL screen '" + screen_item + "' not found";
@@ -447,6 +456,72 @@ bool SidlWindow::Shown(const Control &control) const
 	return true;
 }
 
+Rect SidlWindow::AnimationSize(const std::string &name) const
+{
+	const SidlAnimation *a = m_defs ? m_defs->Animation(name) : nullptr;
+	const SidlFrame *f = a ? a->FrameAt(0) : nullptr;
+	return f ? Rect{0, 0, f->source.w, f->source.h} : Rect{};
+}
+
+void SidlWindow::BorderInsets(int &left, int &top, int &right, int &bottom) const
+{
+	left = top = right = bottom = 0;
+	if (m_controls.empty())
+		return;
+	const Control &root = m_controls.front();
+	if (!root.frame || !root.def->style_border)
+		return;
+	left = AnimationSize(root.frame->border[Left]).w;
+	right = AnimationSize(root.frame->border[Right]).w;
+	top = AnimationSize(root.frame->border[Top]).h;
+	bottom = AnimationSize(root.frame->border[Bottom]).h;
+}
+
+Rect SidlWindow::TitleBoxRect(TitleBox box) const
+{
+	if (m_controls.empty() || box == TitleBox::None)
+		return {};
+	const Control &root = m_controls.front();
+	if (!root.frame || root.title.h <= 0)
+		return {};
+	// Right-aligned in the title bar, the close box last; each its Normal frame's size.
+	const Rect &t = root.title;
+	int right = t.Right() - 2;
+	Rect close, minimize;
+	if (root.def->closebox) {
+		Rect size = AnimationSize(root.frame->close_box.normal);
+		close = {right - size.w, t.y + (t.h - size.h) / 2, size.w, size.h};
+		right = close.x - 1;
+	}
+	if (root.def->minimizebox) {
+		Rect size = AnimationSize(root.frame->minimize_box.normal);
+		minimize = {right - size.w, t.y + (t.h - size.h) / 2, size.w, size.h};
+	}
+	return box == TitleBox::Close ? close : minimize;
+}
+
+SidlWindow::TitleBox SidlWindow::TitleBoxAt(int x, int y) const
+{
+	for (TitleBox box : {TitleBox::Close, TitleBox::Minimize}) {
+		Rect r = TitleBoxRect(box);
+		if (r.w > 0 && r.Contains(x, y))
+			return box;
+	}
+	return TitleBox::None;
+}
+
+bool SidlWindow::InteractiveAt(int x, int y) const
+{
+	if (m_minimized)
+		return false;
+	for (const auto &control : m_controls) {
+		const std::string &type = control.def->type;
+		if ((type == "Button" || type == "Editbox") && control.enabled && control.rect.Contains(x, y) && Shown(control))
+			return true;
+	}
+	return false;
+}
+
 void SidlWindow::Check(const std::string &screen_id)
 {
 	Control *target = Find(screen_id);
@@ -509,6 +584,21 @@ void SidlWindow::DrawFrame(const Control &control, Canvas &canvas, SidlTextures 
 	draw(Right, {r.Right() - w(Right), right_top + h(RightTop), w(Right), right_bottom - h(RightBottom) - right_top - h(RightTop)});
 }
 
+void SidlWindow::DrawTitleBox(Canvas &canvas, SidlTextures &textures, TitleBox box, const SidlButtonTemplate &look,
+	uint64_t now_ms) const
+{
+	Rect r = TitleBoxRect(box);
+	if (r.w <= 0)
+		return;
+	// CXWnd::DrawCloseButton: PressedFlyby (or Pressed) while held over it, Flyby under the mouse.
+	bool hover = m_box_hover == box, pressed = m_box_pressed == box;
+	std::string name = pressed && hover && !look.pressed_flyby.empty() ? look.pressed_flyby
+	                   : pressed                                       ? look.pressed
+	                   : hover                                         ? look.flyby
+	                                                                   : look.normal;
+	DrawAnimation(canvas, textures, name.empty() ? look.normal : name, r, now_ms);
+}
+
 void SidlWindow::Draw(Canvas &canvas, TextRenderer &text, SidlTextures &textures, uint64_t now_ms) const
 {
 	if (!m_controls.empty())
@@ -522,6 +612,7 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 		return;
 	const SidlPiece &def = *control.def;
 	int height = SidlFontHeight(def.font);
+	bool minimized = index == 0 && m_minimized;
 	DrawFrame(control, canvas, textures, now_ms);
 	if (control.title.h > 0) {
 		const Rect &t = control.title;
@@ -538,7 +629,13 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 			TextSize size = text.Measure(control.text, 12);
 			text.Draw(canvas, t.x + (t.w - size.w) / 2, t.y + (t.h - size.h) / 2, control.text, 12, control.text_color);
 		}
+		if (index == 0) {
+			DrawTitleBox(canvas, textures, TitleBox::Minimize, control.frame->minimize_box, now_ms);
+			DrawTitleBox(canvas, textures, TitleBox::Close, control.frame->close_box, now_ms);
+		}
 	}
+	if (minimized)
+		return;
 
 	if (def.type == "StaticAnimation") {
 		DrawAnimation(canvas, textures, def.animation, control.rect, now_ms);

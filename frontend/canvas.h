@@ -14,6 +14,7 @@
 #include "bitmap.h"
 
 #include <cstdint>
+#include <vector>
 
 struct Rect
 {
@@ -53,6 +54,12 @@ public:
 	void Frame(const Rect &area, uint32_t color);
 	void Darken(const Rect &area); // halves every channel, like darkenSurfaceRegion
 	void DarkenAll() { Darken({0, 0, m_width, m_height}); }
+
+	// Drawing something at partial opacity (a faded SIDL window): keep what's under it, draw it
+	// as usual, then blend the kept pixels back in at 255 - alpha. Every byte blends, so the 3D
+	// view behind shows through as much as it should. The area is clipped to the canvas.
+	void Keep(const Rect &area, std::vector<uint32_t> &kept) const;
+	void BlendKept(const Rect &area, const std::vector<uint32_t> &kept, int alpha);
 
 	// SIDL drawing: source rect of an image stretched (bilinear) into dest, alpha-blended
 	// when the image has alpha. This is how eqgame draws Ui2DAnimation frames into controls.

@@ -29,6 +29,7 @@ add_library(eqcore STATIC
     core/world_client.cpp
     core/zone_session.cpp
     core/packet_log.cpp
+    core/ini_file.cpp
     core/des.cpp
     core/inflate.cpp
     core/pfs.cpp
@@ -106,6 +107,7 @@ add_library(eqfrontend STATIC
     frontend/actor_sound.cpp
     frontend/weather.cpp
     frontend/debug_menu.cpp
+    frontend/window_manager.cpp
 )
 target_include_directories(eqfrontend PUBLIC frontend)
 target_link_libraries(eqfrontend PUBLIC eqcore eqrender eqaudio)

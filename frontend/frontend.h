@@ -19,6 +19,7 @@
 #include "login_client.h"
 #include "sidl.h"
 #include "weather.h"
+#include "window_manager.h"
 #include "world_client.h"
 #include "zone_session.h"
 #include "zone_view.h"
@@ -37,6 +38,7 @@ struct FrontEndConfig
 	int last_character = 0; // character select slot to start on (LastCharSel)
 	uint16_t world_port = 9000;
 	std::string record_dir; // each zone session's packets go to a packet log (.eqr) here; empty: none
+	std::string ui_dir;     // where the UI_<character>_<server>.ini window layouts go; empty: not kept
 };
 
 class EqStr;
@@ -105,6 +107,8 @@ public:
 	const CharacterSelectView *CharacterScene() const { return m_charselect_view.get(); }
 	const audio::EqSound *Sound() const { return m_sound.get(); }
 	const ZoneView *ZoneScene() const { return m_zone_view.get(); }
+	WindowManager &Windows() { return m_windows; }
+	const std::string &UiLayoutPath() const { return m_ui_layout_path; }
 	CharacterCreation *Creation() { return m_creation.get(); }
 	// For tools: the window-pixel center of a visible SIDL control on character select or creation.
 	bool ControlCenter(const std::string &screen_id, int &x, int &y) const;
@@ -160,6 +164,11 @@ private:
 	void HandleZoneLine(const std::string &type);
 	std::string EqString(uint32_t id, const std::string &fallback) const; // eqstr_en.txt
 	void HandleZoneEvents(const std::vector<ZoneSession::Event> &events);
+	// The in-game SIDL windows, built once we're first in a zone (zoning keeps them), with the
+	// character's layout from UI_<character>_<server>.ini; saved whenever it changes.
+	void BuildZoneWindows();
+	void SaveUiLayout();
+	void HandleWindowClicks();
 	void AddZoneLog(const std::string &text, uint32_t color);
 	void StartCamp();
 
@@ -243,6 +252,9 @@ private:
 	bool m_zone_error_logged = false;
 	bool m_zoning = false; // through a zone line: from the zone's approval until the next zone is in
 	DebugMenu m_debug;
+	WindowManager m_windows;
+	bool m_windows_built = false;
+	std::string m_ui_layout_path;
 	struct HeldKeys
 	{
 		bool up = false, down = false, left = false, right = false, w = false, a = false, s = false, d = false;
