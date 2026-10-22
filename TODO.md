@@ -13,11 +13,15 @@ no rules of its own.
    - ~~Player window~~ and ~~target window~~: done (`frontend/game_values.*`, gauges in `sidl.cpp`).
      Still to do: max mana leaves out spell effects (buffs) and `AntiTwinkAdj` for items with a
      recommended level; the XP gauge (EQType 4) needs the experience table.
-   - Group window
-   - Buff window
-   - Inventory and bags, filled from the item packets
-   - Spell gems and the spellbook (pictures only)
-   - Hotbuttons
+   - Group window: laid out as `CGroupWnd::UpdateButtons` does (`frontend/game_windows.*`), but
+     there's no group state yet (invites, members, leader).
+   - Buff window: the buttons are arranged as `CBuffWindow` does and empty slots draw nothing;
+     still to do: our buffs from the player profile and `OP_Buff`, their icons (`BuffIcons`
+     decals, from the spell file) and names (label EQTypes 45..59).
+   - Inventory and bags, filled from the item packets (the slots show their empty pictures;
+     no item icons yet, here or in the hot button window's weapon slots)
+   - Spell gems and the spellbook (pictures only; the gems show empty)
+   - Hotbuttons (shown empty; the hot buttons themselves aren't loaded)
    - Compass
    - Selector bar
 3. ~~**A real chat window**~~: done (`frontend/chat_window.*`, `chat_text.*`, `chat_commands.cpp`).

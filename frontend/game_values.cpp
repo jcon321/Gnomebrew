@@ -57,12 +57,30 @@ int GameValues::MaxMana(const ZoneProfile &p, const std::map<int16_t, ZoneItem> 
 	return std::max(static_cast<int16_t>(mana), static_cast<int16_t>(0));
 }
 
+const ZoneSpawn *GameValues::Target() const
+{
+	if (!zone || !target)
+		return nullptr;
+	auto it = zone->Spawns().find(target);
+	return it != zone->Spawns().end() ? &it->second : nullptr;
+}
+
+const ZoneSpawn *GameValues::Pet() const
+{
+	uint16_t mine = zone ? zone->MySpawnId() : 0;
+	if (mine == 0)
+		return nullptr;
+	for (const auto &[id, spawn] : zone->Spawns())
+		if (spawn.pet_owner == mine && spawn.npc < 2)
+			return &spawn;
+	return nullptr;
+}
+
 int GameValues::Gauge(int eq_type, std::string &text)
 {
 	if (!zone)
 		return -2;
 	const ZoneProfile &me = zone->Profile();
-	const auto &spawns = zone->Spawns();
 	switch (eq_type) {
 	case 1: { // HP, "Name Surname" on it
 		text = me.last_name.empty() ? me.name : me.name + " " + me.last_name;
@@ -82,20 +100,18 @@ int GameValues::Gauge(int eq_type, std::string &text)
 	case 3: // stamina: fatigue 0..100 counts down from full
 		return me.fatigue <= 0 ? 1000 : 1000 - std::min<int>(me.fatigue, 100) * 10;
 	case 6: { // the target's HP and name; a corpse has an empty bar
-		auto it = target ? spawns.find(target) : spawns.end();
-		if (it == spawns.end())
+		const ZoneSpawn *spawn = Target();
+		if (!spawn)
 			return -1;
-		text = it->second.DisplayName();
-		return it->second.npc < 2 ? Permille(it->second.hp, 100) : -3;
+		text = spawn->DisplayName();
+		return spawn->npc < 2 ? Permille(spawn->hp, 100) : -3;
 	}
 	case 16: { // our pet's HP and name
-		uint16_t mine = zone->MySpawnId();
-		for (const auto &[id, spawn] : spawns)
-			if (mine != 0 && spawn.pet_owner == mine && spawn.npc < 2) {
-				text = spawn.DisplayName();
-				return Permille(spawn.hp, 100);
-			}
-		return -3;
+		const ZoneSpawn *pet = Pet();
+		if (!pet)
+			return -3;
+		text = pet->DisplayName();
+		return Permille(pet->hp, 100);
 	}
 	case 11: case 12: case 13: case 14: case 15: // group members (no group yet)
 		return -1;
@@ -108,8 +124,7 @@ bool GameValues::Label(int eq_type, std::string &text)
 {
 	if (!zone)
 		return false;
-	const auto &spawns = zone->Spawns();
-	auto it = target ? spawns.find(target) : spawns.end();
+	const ZoneSpawn *spawn = Target();
 	switch (eq_type) {
 	case 1:
 		text = zone->Profile().name;
@@ -118,12 +133,16 @@ bool GameValues::Label(int eq_type, std::string &text)
 		text = std::to_string(zone->Profile().level);
 		return true;
 	case 28:
-		text = it != spawns.end() ? it->second.DisplayName() : "";
+		text = spawn ? spawn->DisplayName() : "";
 		return true;
-	case 29: // the target's HP percent; nothing without a living target
-		text = it != spawns.end() && it->second.npc < 2 ? std::to_string(std::clamp<int>(it->second.hp, 0, 100)) : "";
+	case 29: // the target's HP percent; 0 without a living target, as eqgame prints it
+		text = std::to_string(spawn && spawn->npc < 2 ? std::clamp<int>(spawn->hp, 0, 100) : 0);
 		return true;
 	default:
+		if (eq_type >= 45 && eq_type <= 59) { // the buff in that slot's spell name: no buffs yet
+			text.clear();
+			return true;
+		}
 		return false;
 	}
 }

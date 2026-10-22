@@ -5,8 +5,8 @@
 // pieces character select, creation and the in-game windows use so far:
 // Ui2DAnimation, ButtonDrawTemplate, WindowDrawTemplate (with its vertical
 // scrollbar), Screen (nested too), Button, Label, StaticAnimation, Editbox,
-// STMLbox and Gauge, with AutoStretch anchors. Schema defaults come from
-// uifiles/default/SIDL.xml.
+// STMLbox, Gauge, and the empty look of SpellGem and InvSlot, with AutoStretch
+// anchors. Schema defaults come from uifiles/default/SIDL.xml.
 
 #include "canvas.h"
 #include "text.h"
@@ -101,6 +101,10 @@ struct SidlPiece
 	// StaticAnimation
 	std::string animation;
 
+	// InvSlot: the empty slot's picture (Background). SpellGem: SpellGemDrawTemplate.
+	std::string slot_background;
+	std::string gem_holder, gem_background, gem_highlight;
+
 	// Gauge: the text (TextOffset) and the bar (GaugeOffset) from the client area's corner.
 	int text_offset_x = 0, text_offset_y = 0, gauge_offset_x = 0, gauge_offset_y = 0;
 	uint32_t fill_tint = 0xffffff, lines_fill_tint = 0xffffff;
@@ -170,7 +174,8 @@ private:
 	std::vector<std::string> m_warnings;
 };
 
-// SIDL font numbers index the fonts CDisplay::InitDDraw creates: Arial 10, 12, 14, 15, 16, 20 (1-based; 3 = default).
+// SIDL font numbers index the seven fonts CDisplay::InitNewUI makes (0..6): Arial 10, 12, 14, 15, 16, 20
+// and 24, the heights Zeal's CreateFontIndirectA hook sees for each (3, 15 pixels, is the default).
 int SidlFontHeight(int font);
 
 // A live window built from a <Screen>: a tree of controls (nested screens and
@@ -194,6 +199,9 @@ public:
 		bool checked = false;
 		bool hover = false;
 		bool pressed = false;
+		// A button drawing none of its ButtonDrawTemplate, just its text (an empty buff slot:
+		// CBuffWindow::SetBuffIcon clears the template it draws).
+		bool blank = false;
 		size_t max_chars = 64; // Editbox
 		// Style_VScroll: the content's scroll position in rows, how far it goes, and a page of it.
 		// Whoever fills the control sets max and page; the scrollbar, the wheel and the owner move pos.
@@ -249,11 +257,15 @@ public:
 	// A control under (x, y) that takes clicks (a shown button, edit box or scrollbar): clicks
 	// there don't drag.
 	bool InteractiveAt(int x, int y) const;
+	// (x, y) is on the control where it's drawn: inside it and its parents' client areas (the
+	// part of a control outside its parent is cut off, so it can't be clicked either).
+	bool HitTest(const Control &control, int x, int y) const;
 
 private:
 	int Add(const SidlPiece &piece, int parent);
 	void Place(int index, const Rect &rect);
-	void DrawControl(int index, Canvas &canvas, TextRenderer &text, SidlTextures &textures, uint64_t now_ms) const;
+	void DrawControl(int index, Canvas &canvas, TextRenderer &text, SidlTextures &textures, uint64_t now_ms,
+		const Rect &parent_clip) const;
 	void DrawFrame(const Control &control, Canvas &canvas, SidlTextures &textures, uint64_t now_ms) const;
 	void DrawAnimation(Canvas &canvas, SidlTextures &textures, const std::string &name, const Rect &dest, uint64_t now_ms) const;
 	void DrawTitleBox(Canvas &canvas, SidlTextures &textures, TitleBox box, const SidlButtonTemplate &look, uint64_t now_ms) const;

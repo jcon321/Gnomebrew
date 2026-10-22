@@ -53,7 +53,8 @@ private:
 
 	// antialiased: ANTIALIASED_QUALITY, as eqgfx makes the fonts it stretches; else DEFAULT_QUALITY.
 	HFONT Font(int height, int weight, bool antialiased = false);
-	const Surface *Target(Canvas &canvas, int &x, int &y); // the canvas's DIB, and its origin added to x, y
+	// The canvas's DIB, with the canvas's origin added to x, y and its clip rect in the DIB's pixels.
+	const Surface *Target(Canvas &canvas, int &x, int &y, RECT &clip);
 	// Text's coverage, white on black, for a string drawn over the view.
 	struct Mask
 	{
@@ -65,11 +66,12 @@ private:
 
 	// Runs draw(dc, dx, dy) for text inside `box` (surface pixels), where dx, dy move surface
 	// coordinates into the DC's: straight into the surface, or through the scratch DIB where
-	// the box shows a 3D view.
-	void Output(const Surface &surface, RECT box, uint32_t rgb, HFONT font, const std::function<void(HDC, int, int)> &draw);
+	// the box shows a 3D view. Nothing lands outside `clip`.
+	void Output(const Surface &surface, RECT box, const RECT &clip, uint32_t rgb, HFONT font,
+		const std::function<void(HDC, int, int)> &draw);
 	bool ShowsView(const Surface &surface, const RECT &box) const; // any of the 3D view in the box
 	void BlendMask(const Surface &surface, const uint32_t *mask, int mask_stride, int width, int height, int x, int y,
-		uint32_t rgb);
+		uint32_t rgb, const RECT &clip);
 	bool ReserveScratch(int width, int height);
 	static std::string TextKey(const std::string &utf8, int height, int weight);
 

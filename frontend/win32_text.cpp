@@ -53,14 +53,17 @@ void GdiTextRenderer::AddSurface(HDC dc, uint32_t *pixels, int stride, int heigh
 	m_surfaces.push_back({dc, pixels, stride, height});
 }
 
-const GdiTextRenderer::Surface *GdiTextRenderer::Target(Canvas &canvas, int &x, int &y)
+const GdiTextRenderer::Surface *GdiTextRenderer::Target(Canvas &canvas, int &x, int &y, RECT &clip)
 {
 	const uint32_t *origin = canvas.Row(0);
 	for (const auto &surface : m_surfaces) {
 		if (origin >= surface.pixels && origin < surface.pixels + static_cast<size_t>(surface.stride) * surface.height) {
 			ptrdiff_t offset = origin - surface.pixels;
-			x += static_cast<int>(offset % surface.stride);
-			y += static_cast<int>(offset / surface.stride);
+			int ox = static_cast<int>(offset % surface.stride), oy = static_cast<int>(offset / surface.stride);
+			x += ox;
+			y += oy;
+			const Rect &c = canvas.Clip();
+			clip = {c.x + ox, c.y + oy, c.Right() + ox, c.Bottom() + oy};
 			return &surface;
 		}
 	}
@@ -117,13 +120,13 @@ bool GdiTextRenderer::ShowsView(const Surface &surface, const RECT &box) const
 }
 
 void GdiTextRenderer::BlendMask(const Surface &surface, const uint32_t *mask, int mask_stride, int width, int height,
-	int x, int y, uint32_t rgb)
+	int x, int y, uint32_t rgb, const RECT &clip)
 {
 	// The mask is white text on black: each pixel's coverage (per channel with ClearType). Blend
 	// the color in by it, and hide that much of the view.
 	const uint32_t text[3] = {(rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff};
-	int x0 = std::max(0, -x), y0 = std::max(0, -y);
-	int x1 = std::min(width, surface.stride - x), y1 = std::min(height, surface.height - y);
+	int x0 = std::max<int>({0, -x, clip.left - x}), y0 = std::max<int>({0, -y, clip.top - y});
+	int x1 = std::min<int>({width, surface.stride - x, clip.right - x}), y1 = std::min<int>({height, surface.height - y, clip.bottom - y});
 	for (int my = y0; my < y1; ++my) {
 		const uint32_t *source = mask + static_cast<size_t>(my) * mask_stride;
 		uint32_t *row = surface.pixels + static_cast<size_t>(y + my) * surface.stride + x;
@@ -143,21 +146,24 @@ void GdiTextRenderer::BlendMask(const Surface &surface, const uint32_t *mask, in
 	}
 }
 
-void GdiTextRenderer::Output(const Surface &surface, RECT box, uint32_t rgb, HFONT font,
+void GdiTextRenderer::Output(const Surface &surface, RECT box, const RECT &clip, uint32_t rgb, HFONT font,
 	const std::function<void(HDC, int, int)> &draw)
 {
-	box.left = std::max<LONG>(box.left, 0);
-	box.top = std::max<LONG>(box.top, 0);
-	box.right = std::min<LONG>(box.right, surface.stride);
-	box.bottom = std::min<LONG>(box.bottom, surface.height);
+	box.left = std::max<LONG>({box.left, clip.left, 0});
+	box.top = std::max<LONG>({box.top, clip.top, 0});
+	box.right = std::min<LONG>({box.right, clip.right, surface.stride});
+	box.bottom = std::min<LONG>({box.bottom, clip.bottom, surface.height});
 	int width = box.right - box.left, height = box.bottom - box.top;
 	if (width <= 0 || height <= 0)
 		return;
 	if (!ShowsView(surface, box) || !ReserveScratch(width, height)) {
+		int saved = SaveDC(surface.dc);
+		IntersectClipRect(surface.dc, box.left, box.top, box.right, box.bottom);
 		SelectObject(surface.dc, font);
 		SetTextColor(surface.dc, RGB((rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff));
 		SetBkMode(surface.dc, TRANSPARENT);
 		draw(surface.dc, 0, 0);
+		RestoreDC(surface.dc, saved);
 		GdiFlush(); // the canvas is the DIB's memory; finish before the next CPU blit
 		return;
 	}
@@ -168,7 +174,7 @@ void GdiTextRenderer::Output(const Surface &surface, RECT box, uint32_t rgb, HFO
 	SetBkMode(m_scratch.dc, TRANSPARENT);
 	draw(m_scratch.dc, -box.left, -box.top);
 	GdiFlush();
-	BlendMask(surface, m_scratch.pixels, m_scratch.width, width, height, box.left, box.top, rgb);
+	BlendMask(surface, m_scratch.pixels, m_scratch.width, width, height, box.left, box.top, rgb, box);
 }
 
 TextSize GdiTextRenderer::Measure(const std::string &utf8, int height, int weight)
@@ -196,18 +202,23 @@ std::string GdiTextRenderer::TextKey(const std::string &utf8, int height, int we
 
 void GdiTextRenderer::Draw(Canvas &canvas, int x, int y, const std::string &utf8, int height, uint32_t rgb, int weight)
 {
-	const Surface *surface = Target(canvas, x, y);
+	RECT clip;
+	const Surface *surface = Target(canvas, x, y, clip);
 	if (!surface)
 		return;
 	TextSize size = Measure(utf8, height, weight);
 	RECT box{x - 1, y, x + size.w + 2, y + size.h}; // a little slack for overhangs
-	if (!ShowsView(*surface, box)) {
+	RECT shown{std::max(box.left, clip.left), std::max(box.top, clip.top), std::min(box.right, clip.right),
+		std::min(box.bottom, clip.bottom)};
+	if (shown.right <= shown.left || shown.bottom <= shown.top)
+		return;
+	if (!ShowsView(*surface, shown)) {
 		std::wstring text = Widen(utf8);
 		SelectObject(surface->dc, Font(height, weight));
 		SetTextColor(surface->dc, RGB((rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff));
 		SetBkMode(surface->dc, TRANSPARENT);
 		SetTextAlign(surface->dc, TA_LEFT | TA_TOP);
-		TextOutW(surface->dc, x, y, text.c_str(), static_cast<int>(text.size()));
+		ExtTextOutW(surface->dc, x, y, ETO_CLIPPED, &clip, text.c_str(), static_cast<UINT>(text.size()), nullptr);
 		GdiFlush(); // the canvas is the DIB's memory; finish before the next CPU blit
 		return;
 	}
@@ -215,7 +226,7 @@ void GdiTextRenderer::Draw(Canvas &canvas, int x, int y, const std::string &utf8
 	// Over the view: the text's coverage, kept per string (name tags and chat lines come back
 	// every frame), blended in.
 	if (const Mask *mask = TextMask(utf8, height, weight, false))
-		BlendMask(*surface, mask->coverage.data(), mask->width, mask->width, mask->height, box.left, box.top, rgb);
+		BlendMask(*surface, mask->coverage.data(), mask->width, mask->width, mask->height, box.left, box.top, rgb, clip);
 }
 
 const GdiTextRenderer::Mask *GdiTextRenderer::TextMask(const std::string &utf8, int height, int weight, bool antialiased)
@@ -251,7 +262,8 @@ const GdiTextRenderer::Mask *GdiTextRenderer::TextMask(const std::string &utf8, 
 void GdiTextRenderer::DrawScaled(Canvas &canvas, int x, int y, const std::string &utf8, int height, float scale,
 	uint32_t rgb, int weight)
 {
-	const Surface *surface = Target(canvas, x, y);
+	RECT clip;
+	const Surface *surface = Target(canvas, x, y, clip);
 	const Mask *mask = surface && scale > 0 ? TextMask(utf8, height, weight, true) : nullptr;
 	if (!mask)
 		return;
@@ -279,18 +291,19 @@ void GdiTextRenderer::DrawScaled(Canvas &canvas, int x, int y, const std::string
 		}
 	}
 	int left = x - static_cast<int>(scale + 0.5f); // the mask's slack pixel, stretched
-	BlendMask(*surface, m_stretched.data(), width, width, rows, left, y, rgb);
+	BlendMask(*surface, m_stretched.data(), width, width, rows, left, y, rgb, clip);
 }
 
 void GdiTextRenderer::DrawWrapped(Canvas &canvas, const Rect &area, const std::string &utf8, int height, uint32_t rgb, int weight)
 {
 	int x = area.x, y = area.y;
-	const Surface *surface = Target(canvas, x, y);
+	RECT clip;
+	const Surface *surface = Target(canvas, x, y, clip);
 	if (!surface)
 		return;
 	std::wstring text = Widen(utf8);
 	RECT box{x + 2, y, x + area.w, y + area.h};
-	Output(*surface, box, rgb, Font(height, weight), [&](HDC dc, int dx, int dy) {
+	Output(*surface, box, clip, rgb, Font(height, weight), [&](HDC dc, int dx, int dy) {
 		RECT rect{box.left + dx, box.top + dy, box.right + dx, box.bottom + dy};
 		DrawTextW(dc, text.c_str(), static_cast<int>(text.size()), &rect, DT_LEFT | DT_TOP | DT_WORDBREAK | DT_NOPREFIX);
 	});

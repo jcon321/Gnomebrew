@@ -38,7 +38,7 @@ class Canvas
 public:
 	Canvas() = default;
 	Canvas(uint32_t *pixels, int width, int height, int stride_pixels)
-		: m_pixels(pixels), m_width(width), m_height(height), m_stride(stride_pixels)
+		: m_pixels(pixels), m_width(width), m_height(height), m_stride(stride_pixels), m_clip{0, 0, width, height}
 	{
 	}
 
@@ -46,6 +46,12 @@ public:
 	int Height() const { return m_height; }
 	int Stride() const { return m_stride; } // in pixels
 	uint32_t *Row(int y) { return m_pixels + static_cast<size_t>(y) * m_stride; }
+
+	// Where drawing lands (CXWnd's clip rects): Blit, Tile, Fill, Frame, Darken, Stretch and the
+	// text renderers all stop at it. The whole canvas unless set; SetClip keeps it on the canvas.
+	void SetClip(const Rect &clip);
+	void ResetClip() { m_clip = {0, 0, m_width, m_height}; }
+	const Rect &Clip() const { return m_clip; }
 
 	void Blit(const Image &image, int x, int y, bool color_key = false);
 	void BlitPart(const Image &image, const Rect &source, int x, int y, bool color_key = false);
@@ -75,4 +81,5 @@ private:
 	int m_width = 0;
 	int m_height = 0;
 	int m_stride = 0;
+	Rect m_clip;
 };

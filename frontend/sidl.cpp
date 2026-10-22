@@ -55,6 +55,13 @@ namespace
 		return t;
 	}
 
+	Rect Intersect(const Rect &a, const Rect &b)
+	{
+		int x0 = std::max(a.x, b.x), y0 = std::max(a.y, b.y);
+		int x1 = std::min(a.Right(), b.Right()), y1 = std::min(a.Bottom(), b.Bottom());
+		return {x0, y0, std::max(x1 - x0, 0), std::max(y1 - y0, 0)};
+	}
+
 	std::string ToLowerCopy(std::string s)
 	{
 		for (auto &c : s)
@@ -86,8 +93,8 @@ const SidlFrame *SidlAnimation::FrameAt(uint64_t now_ms) const
 
 int SidlFontHeight(int font)
 {
-	static const int heights[] = {10, 10, 12, 14, 15, 16, 20};
-	return font >= 0 && font < 7 ? heights[font] : 14;
+	static const int heights[] = {10, 12, 14, 15, 16, 20, 24};
+	return font >= 0 && font < 7 ? heights[font] : 15;
 }
 
 // ---------------------------------------------------------------- textures
@@ -239,7 +246,8 @@ void SidlDefinitions::ReadElement(const XmlNode &node)
 	}
 
 	static const char *const PieceTypes[] = {"Screen", "Button", "Label", "StaticAnimation", "StaticText", "StaticFrame",
-		"Editbox", "Listbox", "Gauge", "Slider", "Combobox", "Page", "TabBox", "LayoutBox", "StaticHeader", "STMLbox"};
+		"Editbox", "Listbox", "Gauge", "Slider", "Combobox", "Page", "TabBox", "LayoutBox", "StaticHeader", "STMLbox",
+		"SpellGem", "InvSlot"};
 	if (std::find(std::begin(PieceTypes), std::end(PieceTypes), node.name) == std::end(PieceTypes))
 		return;
 
@@ -278,6 +286,13 @@ void SidlDefinitions::ReadElement(const XmlNode &node)
 	if (const XmlNode *t = node.Child("ButtonDrawTemplate"))
 		p.button = ReadButtonTemplate(*t);
 	p.animation = node.ChildText("Animation");
+	if (p.type == "InvSlot")
+		p.slot_background = node.ChildText("Background");
+	if (const XmlNode *t = node.Child("SpellGemDrawTemplate")) {
+		p.gem_holder = t->ChildText("Holder");
+		p.gem_background = t->ChildText("Background");
+		p.gem_highlight = t->ChildText("Highlight");
+	}
 	p.text_offset_x = node.ChildInt("TextOffsetX", 0);
 	p.text_offset_y = node.ChildInt("TextOffsetY", 0);
 	p.gauge_offset_x = node.ChildInt("GaugeOffsetX", 0);
@@ -560,15 +575,25 @@ SidlWindow::TitleBox SidlWindow::TitleBoxAt(int x, int y) const
 	return TitleBox::None;
 }
 
+bool SidlWindow::HitTest(const Control &control, int x, int y) const
+{
+	if (!control.rect.Contains(x, y) || !Shown(control))
+		return false;
+	for (int p = control.parent; p >= 0; p = m_controls[p].parent)
+		if (!m_controls[p].client.Contains(x, y))
+			return false;
+	return true;
+}
+
 bool SidlWindow::InteractiveAt(int x, int y) const
 {
 	if (m_minimized)
 		return false;
 	for (const auto &control : m_controls) {
 		const std::string &type = control.def->type;
-		if ((type == "Button" || type == "Editbox") && control.enabled && control.rect.Contains(x, y) && Shown(control))
+		if ((type == "Button" || type == "Editbox") && control.enabled && HitTest(control, x, y))
 			return true;
-		if (HasScrollbar(control) && LayoutScrollbar(control).bar.Contains(x, y) && Shown(control))
+		if (HasScrollbar(control) && LayoutScrollbar(control).bar.Contains(x, y) && HitTest(control, x, y))
 			return true;
 	}
 	return false;
@@ -653,11 +678,15 @@ void SidlWindow::DrawTitleBox(Canvas &canvas, SidlTextures &textures, TitleBox b
 
 void SidlWindow::Draw(Canvas &canvas, TextRenderer &text, SidlTextures &textures, uint64_t now_ms) const
 {
-	if (!m_controls.empty())
-		DrawControl(0, canvas, text, textures, now_ms);
+	if (m_controls.empty())
+		return;
+	Rect clip = canvas.Clip();
+	DrawControl(0, canvas, text, textures, now_ms, clip);
+	canvas.SetClip(clip);
 }
 
-void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, SidlTextures &textures, uint64_t now_ms) const
+void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, SidlTextures &textures, uint64_t now_ms,
+	const Rect &parent_clip) const
 {
 	const Control &control = m_controls[index];
 	if (!control.visible)
@@ -665,6 +694,11 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 	const SidlPiece &def = *control.def;
 	int height = SidlFontHeight(def.font);
 	bool minimized = index == 0 && m_minimized;
+	// CXWnd::DoAllDrawing: the frame and title bar inside the control's rect, the rest inside its
+	// client area, both cut to the parent's client area (GetScreenClipRect, GetClientClipRect).
+	// Its children are cut to the same client area, so nothing spills out of its parent.
+	Rect client_clip = Intersect(control.client, parent_clip);
+	canvas.SetClip(Intersect(control.rect, parent_clip));
 	DrawFrame(control, canvas, textures, now_ms);
 	if (control.title.h > 0) {
 		const Rect &t = control.title;
@@ -689,6 +723,7 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 	if (minimized)
 		return;
 
+	canvas.SetClip(client_clip);
 	if (def.type == "StaticAnimation") {
 		DrawAnimation(canvas, textures, def.animation, control.rect, now_ms);
 	}
@@ -701,13 +736,25 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 		                                     : t.normal;
 		if (name.empty())
 			name = t.normal;
-		DrawAnimation(canvas, textures, name, control.rect, now_ms);
+		if (!control.blank)
+			DrawAnimation(canvas, textures, name, control.rect, now_ms);
 		if (!control.text.empty()) {
+			// CButtonWnd::Draw: grey when disabled, yellow when checked or under the mouse.
 			TextSize size = text.Measure(control.text, height);
-			uint32_t color = control.enabled ? control.text_color : 0x808080;
+			uint32_t color = !control.enabled                  ? 0x808080
+			                 : control.checked || control.hover ? 0xffff00
+			                                                    : control.text_color;
 			text.Draw(canvas, control.rect.x + (control.rect.w - size.w) / 2, control.rect.y + (control.rect.h - size.h) / 2,
 				control.text, height, color);
 		}
+	}
+	else if (def.type == "InvSlot") {
+		// CInvSlotWnd with nothing in it: the slot's own picture.
+		DrawAnimation(canvas, textures, def.slot_background, control.rect, now_ms);
+	}
+	else if (def.type == "SpellGem") {
+		// CSpellGemWnd::Draw (@005a6050) with no spell in the gem: just its background.
+		DrawAnimation(canvas, textures, def.gem_background, control.rect, now_ms);
 	}
 	else if (def.type == "Label" || def.type == "StaticText") {
 		std::string shown = control.text;
@@ -763,7 +810,7 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 	for (int pass = 0; pass < 2; ++pass)
 		for (int child : control.children)
 			if ((m_controls[child].def->type == "StaticAnimation") == (pass == 0))
-				DrawControl(child, canvas, text, textures, now_ms);
+				DrawControl(child, canvas, text, textures, now_ms, client_clip);
 }
 
 std::string SidlWindow::OnMouse(const InputEvent &event)
@@ -819,7 +866,7 @@ std::string SidlWindow::OnMouse(const InputEvent &event)
 		const std::string &type = control.def->type;
 		if ((type != "Button" && type != "Editbox") || !Shown(control))
 			continue;
-		bool inside = control.rect.Contains(event.x, event.y);
+		bool inside = HitTest(control, event.x, event.y);
 		if (type == "Editbox") {
 			if (inside && event.type == InputEvent::Type::MouseDown && control.enabled)
 				m_focus = i;
@@ -948,12 +995,12 @@ void SidlWindow::DrawGauge(const Control &control, Canvas &canvas, TextRenderer 
 	if (value == -2 || value < -9 || value > 0)
 		DrawAnimation(canvas, textures, t.lines, bar, now_ms);
 
-	// The text from TextOffset, inside the gauge (the client clip rect hides the rest).
+	// The text from TextOffset (the client clip rect hides what's outside the gauge).
 	if (label.empty())
 		label = control.text;
-	int ty = c.y + def.text_offset_y;
-	if (!label.empty() && ty >= c.y && ty < c.Bottom())
-		text.Draw(canvas, c.x + def.text_offset_x, ty, label, SidlFontHeight(def.font), def.has_text_color ? control.text_color : 0xf0f0f0);
+	if (!label.empty())
+		text.Draw(canvas, c.x + def.text_offset_x, c.y + def.text_offset_y, label, SidlFontHeight(def.font),
+			def.has_text_color ? control.text_color : 0xf0f0f0);
 }
 
 // ---------------------------------------------------------------- scrollbars

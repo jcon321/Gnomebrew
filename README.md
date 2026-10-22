@@ -161,8 +161,11 @@ mouse has been off them a while. Their layout is kept in eqgame's own format, in
 to 7 characters, as eqgame names it).
 
 - The player window's gauges show HP (with your name), mana (not for classes without any) and
-  stamina; the pet gauge under them, your pet's. The target window shows the target's name, HP bar
-  and percent. Click someone to target them, or `/target name`; Escape clears the target (and, as in
+  stamina; the pet gauge along the bottom of the HP bar, only while you have a pet. The target
+  window shows the target's name, HP bar and percent. What the windows do for themselves each frame
+  in eqgame is in `frontend/game_windows.cpp`: the group window's Invite and Disband buttons, the
+  buff window's buttons in columns from the top right (empty slots draw nothing), and empty hot
+  buttons. Click someone to target them, or `/target name`; Escape clears the target (and, as in
   eqgame, closes the help, options or inventory window if one's open). Gauges are drawn the way
   `CGaugeWnd::Draw` does it, bars sliding to a new value at a full bar a second.
 - The chat window keeps the last 400 lines in eqgame's colors (from `[TextColors]` in
@@ -316,8 +319,12 @@ loads the same files:
   stack in the order they're listed.
 - Title bars (`Style_Titlebar`) use the template's `Titlebar` pieces, between the side borders.
 - STML is drawn as plain text: `<BR>` breaks the line and other tags are dropped.
-- SIDL `Font` numbers index the fonts `CDisplay::InitDDraw` creates: Arial 10, 12, 14, 15, 16
-  and 20, numbered from 1, with 3 (14px) as the schema default.
+- SIDL `Font` numbers index the seven fonts `CDisplay::InitNewUI` makes, 0 to 6: Arial 10, 12, 14,
+  15, 16, 20 and 24 (the heights Zeal's font hook sees for each), with 3 (15px) as the schema
+  default.
+- Every piece is clipped to its parent's client area, as `CXWnd::GetClientClipRect` does, and can't
+  be clicked outside it: the frame and title bar to the piece's own rect, everything else to its
+  client area.
 
 Character select uses `CharacterSelectWindow`. Its buttons do what
 `CEverQuest::DoCharacterSelection` (@0053b9cf) does: Enter World sends `0x8001` with the name,

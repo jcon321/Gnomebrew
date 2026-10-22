@@ -2,6 +2,13 @@
 
 #include <algorithm>
 
+void Canvas::SetClip(const Rect &clip)
+{
+	int x0 = std::max(clip.x, 0), y0 = std::max(clip.y, 0);
+	int x1 = std::min(clip.Right(), m_width), y1 = std::min(clip.Bottom(), m_height);
+	m_clip = {x0, y0, std::max(x1 - x0, 0), std::max(y1 - y0, 0)};
+}
+
 void Canvas::Blit(const Image &image, int x, int y, bool color_key)
 {
 	BlitPart(image, {0, 0, image.width, image.height}, x, y, color_key);
@@ -10,10 +17,10 @@ void Canvas::Blit(const Image &image, int x, int y, bool color_key)
 void Canvas::BlitPart(const Image &image, const Rect &source, int x, int y, bool color_key)
 {
 	int sx = source.x, sy = source.y, w = source.w, h = source.h;
-	if (x < 0) { sx -= x; w += x; x = 0; }
-	if (y < 0) { sy -= y; h += y; y = 0; }
-	w = std::min({w, m_width - x, image.width - sx});
-	h = std::min({h, m_height - y, image.height - sy});
+	if (x < m_clip.x) { sx += m_clip.x - x; w -= m_clip.x - x; x = m_clip.x; }
+	if (y < m_clip.y) { sy += m_clip.y - y; h -= m_clip.y - y; y = m_clip.y; }
+	w = std::min({w, m_clip.Right() - x, image.width - sx});
+	h = std::min({h, m_clip.Bottom() - y, image.height - sy});
 	if (w <= 0 || h <= 0)
 		return;
 
@@ -43,8 +50,8 @@ void Canvas::Tile(const Image &image, const Rect &area, bool color_key)
 
 void Canvas::Fill(const Rect &area, uint32_t color)
 {
-	int x0 = std::max(area.x, 0), y0 = std::max(area.y, 0);
-	int x1 = std::min(area.Right(), m_width), y1 = std::min(area.Bottom(), m_height);
+	int x0 = std::max(area.x, m_clip.x), y0 = std::max(area.y, m_clip.y);
+	int x1 = std::min(area.Right(), m_clip.Right()), y1 = std::min(area.Bottom(), m_clip.Bottom());
 	if (x0 >= x1)
 		return; // wholly left or right of the canvas
 	for (int y = y0; y < y1; ++y)
@@ -106,8 +113,8 @@ void Canvas::Stretch(const Image &image, const Rect &source, const Rect &dest, u
 	uint32_t tr = ((tint >> 16) & 0xff) + ((tint >> 23) & 1), tg = ((tint >> 8) & 0xff) + ((tint >> 15) & 1),
 	         tb = (tint & 0xff) + ((tint >> 7) & 1);
 
-	int x0 = std::max({dest.x, clip.x, 0}), y0 = std::max({dest.y, clip.y, 0});
-	int x1 = std::min({dest.Right(), clip.Right(), m_width}), y1 = std::min({dest.Bottom(), clip.Bottom(), m_height});
+	int x0 = std::max({dest.x, clip.x, m_clip.x}), y0 = std::max({dest.y, clip.y, m_clip.y});
+	int x1 = std::min({dest.Right(), clip.Right(), m_clip.Right()}), y1 = std::min({dest.Bottom(), clip.Bottom(), m_clip.Bottom()});
 	int max_x = std::min(source.Right(), image.width) - 1;
 	int max_y = std::min(source.Bottom(), image.height) - 1;
 	for (int y = y0; y < y1; ++y) {
@@ -185,8 +192,8 @@ void Canvas::BlendKept(const Rect &area, const std::vector<uint32_t> &kept, int 
 
 void Canvas::Darken(const Rect &area)
 {
-	int x0 = std::max(area.x, 0), y0 = std::max(area.y, 0);
-	int x1 = std::min(area.Right(), m_width), y1 = std::min(area.Bottom(), m_height);
+	int x0 = std::max(area.x, m_clip.x), y0 = std::max(area.y, m_clip.y);
+	int x1 = std::min(area.Right(), m_clip.Right()), y1 = std::min(area.Bottom(), m_clip.Bottom());
 	for (int y = y0; y < y1; ++y) {
 		uint32_t *row = Row(y);
 		for (int x = x0; x < x1; ++x)

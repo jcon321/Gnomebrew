@@ -1,6 +1,7 @@
 #include "frontend.h"
 
 #include "eqstr.h"
+#include "game_windows.h"
 #include "ini_file.h"
 
 #include <algorithm>
@@ -631,6 +632,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		Rect area = ScreenArea();
 		m_windows.Update(now_ms, m_mouse_x - area.x, m_mouse_y - area.y);
 		HandleWindowClicks();
+		UpdateGameWindows(m_windows, m_game_values);
 		if (m_windows.TakeChanged())
 			SaveUiLayout();
 	}
