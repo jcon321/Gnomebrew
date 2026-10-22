@@ -52,6 +52,8 @@ public:
 	// moved for this resolution as LoadIniInfo's ConvertToRes does). Null if there's no such screen.
 	SidlWindow *Add(const std::string &screen, bool shown, std::string *error = nullptr);
 	SidlWindow *Find(const std::string &screen);
+	// What gauges and labels with an EQType show, for every window (kept across Reset).
+	void SetValues(SidlValues *values);
 
 	// A layout from a UI_*.ini, for every window added so far; Store writes them back.
 	void Load(const IniFile &ini);
@@ -62,8 +64,6 @@ public:
 	void Show(const std::string &screen, bool shown);
 	void Toggle(const std::string &screen) { Show(screen, !Shown(screen)); }
 	bool Shown(const std::string &screen) const;
-	// Escape: closes the topmost window with a close box. False if there was none.
-	bool CloseTop();
 
 	// Mouse events, in screen pixels. True when the windows took it (it's over one, or one is
 	// being dragged); the world shouldn't see it then.
@@ -104,6 +104,7 @@ private:
 
 	const SidlDefinitions *m_defs = nullptr;
 	SidlTextures *m_textures = nullptr;
+	SidlValues *m_values = nullptr;
 	int m_width = 640, m_height = 480;
 	std::vector<std::unique_ptr<Window>> m_windows; // back to front
 	std::vector<Click> m_clicks;

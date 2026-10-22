@@ -6,12 +6,13 @@ no rules of its own.
 ## UI
 
 1. ~~**In-game SIDL windows.**~~ Done: `frontend/window_manager.*` (drag, resize, close, minimize,
-   focus order, fading, Escape, `UI_<char>_<server>.ini`). Still to do: BGTint isn't drawn, no
-   right-click context menu (lock, alpha), no resize cursors, no keyboard focus for edit boxes
-   in windows.
+   focus order, fading, `UI_<char>_<server>.ini`). Still to do: BGTint isn't drawn, no
+   right-click context menu (lock, alpha), no resize cursors, and only the chat window's edit box
+   takes typing.
 2. **Display-only windows**, showing what the server already sends:
-   - Player window: HP, mana, stamina, XP bar
-   - Target window
+   - ~~Player window~~ and ~~target window~~: done (`frontend/game_values.*`, gauges in `sidl.cpp`).
+     Still to do: max mana leaves out spell effects (buffs) and `AntiTwinkAdj` for items with a
+     recommended level; the XP gauge (EQType 4) needs the experience table.
    - Group window
    - Buff window
    - Inventory and bags, filled from the item packets
@@ -19,9 +20,12 @@ no rules of its own.
    - Hotbuttons
    - Compass
    - Selector bar
-3. **A real chat window** to replace the current custom one: multiple windows with tabs, channel
-   colors and filters, scrollback, input history, and a `/command` parser that works out what to
-   send to the server.
+3. ~~**A real chat window**~~: done (`frontend/chat_window.*`, `chat_text.*`, `chat_commands.cpp`).
+   Still to do: more windows and the channel map (eqgame's `CChatManager`: which window each
+   channel goes to, set from the right-click menu; there were no tabs in this era), the chat font
+   size, STML links, hold-to-repeat on the scrollbar's arrows, languages scrambled by skill
+   (`HearBabel`), and the commands that still say they aren't supported (/who, /consider, /sit,
+   socials, /time...).
 4. **Cursor and dragging.** EQ's own cursors, item icons that follow the cursor when dragged, and
    hover tooltips.
 5. **Options / Escape menu.** Graphics, sound and display settings, mouse sensitivity, the keymap.
@@ -60,5 +64,5 @@ no rules of its own.
 
 1. Packet replay (16), so the rest can be built offline.
 2. The window manager (1).
-3. The Player, Target and Chat windows (2, 3), which prove out the whole SIDL pipeline.
+3. ~~The Player, Target and Chat windows (2, 3), which prove out the whole SIDL pipeline.~~
 4. Nameplates and the target ring (9, 10).

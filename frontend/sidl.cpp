@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <functional>
 #include <filesystem>
 #include <fstream>
@@ -215,6 +216,20 @@ void SidlDefinitions::ReadElement(const XmlNode &node)
 			t.title_middle = title->ChildText("Middle");
 			t.title_right = title->ChildText("Right");
 		}
+		if (const XmlNode *vsb = node.Child("VSBTemplate")) {
+			if (const XmlNode *up = vsb->Child("UpButton"))
+				t.vscroll.up = ReadButtonTemplate(*up);
+			if (const XmlNode *down = vsb->Child("DownButton"))
+				t.vscroll.down = ReadButtonTemplate(*down);
+			if (const XmlNode *thumb = vsb->Child("Thumb")) {
+				t.vscroll.thumb_top = thumb->ChildText("Top");
+				t.vscroll.thumb_middle = thumb->ChildText("Middle");
+				t.vscroll.thumb_bottom = thumb->ChildText("Bottom");
+			}
+			t.vscroll.gutter = vsb->ChildText("MiddleTextureInfo");
+			if (const XmlNode *tint = vsb->Child("MiddleTint"))
+				t.vscroll.gutter_tint = ReadColor(*tint);
+		}
 		if (const XmlNode *box = node.Child("CloseBox"))
 			t.close_box = ReadButtonTemplate(*box);
 		if (const XmlNode *box = node.Child("MinimizeBox"))
@@ -232,6 +247,7 @@ void SidlDefinitions::ReadElement(const XmlNode &node)
 	p.type = node.name;
 	p.item = item;
 	p.screen_id = node.ChildText("ScreenID", item);
+	p.eq_type = node.ChildInt("EQType", 0);
 	p.font = node.ChildInt("Font", 3);
 	p.relative = node.ChildBool("RelativePosition", true);
 	p.rect = ReadRect(node);
@@ -262,6 +278,24 @@ void SidlDefinitions::ReadElement(const XmlNode &node)
 	if (const XmlNode *t = node.Child("ButtonDrawTemplate"))
 		p.button = ReadButtonTemplate(*t);
 	p.animation = node.ChildText("Animation");
+	p.text_offset_x = node.ChildInt("TextOffsetX", 0);
+	p.text_offset_y = node.ChildInt("TextOffsetY", 0);
+	p.gauge_offset_x = node.ChildInt("GaugeOffsetX", 0);
+	p.gauge_offset_y = node.ChildInt("GaugeOffsetY", 16);
+	if (const XmlNode *tint = node.Child("FillTint"))
+		p.fill_tint = ReadColor(*tint);
+	if (const XmlNode *tint = node.Child("LinesFillTint"))
+		p.lines_fill_tint = ReadColor(*tint);
+	p.draw_lines_fill = node.ChildBool("DrawLinesFill", false);
+	if (const XmlNode *t = node.Child("GaugeDrawTemplate")) {
+		p.gauge.background = t->ChildText("Background");
+		p.gauge.fill = t->ChildText("Fill");
+		p.gauge.lines = t->ChildText("Lines");
+		p.gauge.lines_fill = t->ChildText("LinesFill");
+		p.gauge.cap_left = t->ChildText("EndCapLeft");
+		p.gauge.cap_right = t->ChildText("EndCapRight");
+	}
+	p.vscroll = node.ChildBool("Style_VScroll", false);
 	p.draw_template = node.ChildText("DrawTemplate");
 	p.style_border = node.ChildBool("Style_Border", false);
 	for (const XmlNode *piece : node.Children("Pieces"))
@@ -329,6 +363,8 @@ bool SidlWindow::Build(const SidlDefinitions &defs, const std::string &screen_it
 	m_defs = &defs;
 	m_controls.clear();
 	m_focus = -1;
+	m_scroll_control = m_scroll_hover = -1;
+	m_scroll_part = m_scroll_hover_part = ScrollPart::None;
 	m_minimized = false;
 	m_box_hover = m_box_pressed = TitleBox::None;
 	const SidlPiece *screen = defs.Piece(screen_item);
@@ -448,6 +484,20 @@ void SidlWindow::Focus(const std::string &screen_id)
 	m_focus = control ? static_cast<int>(control - m_controls.data()) : -1;
 }
 
+bool SidlWindow::Focused(const std::string &screen_id) const
+{
+	const Control *control = Find(screen_id);
+	return control && m_focus == static_cast<int>(control - m_controls.data());
+}
+
+Rect SidlWindow::ContentRect(const Control &control) const
+{
+	Rect r = control.client;
+	if (HasScrollbar(control))
+		r.w -= LayoutScrollbar(control).bar.w;
+	return r;
+}
+
 bool SidlWindow::Shown(const Control &control) const
 {
 	for (const Control *c = &control; c; c = c->parent >= 0 ? &m_controls[c->parent] : nullptr)
@@ -517,6 +567,8 @@ bool SidlWindow::InteractiveAt(int x, int y) const
 	for (const auto &control : m_controls) {
 		const std::string &type = control.def->type;
 		if ((type == "Button" || type == "Editbox") && control.enabled && control.rect.Contains(x, y) && Shown(control))
+			return true;
+		if (HasScrollbar(control) && LayoutScrollbar(control).bar.Contains(x, y) && Shown(control))
 			return true;
 	}
 	return false;
@@ -658,26 +710,41 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 		}
 	}
 	else if (def.type == "Label" || def.type == "StaticText") {
-		if (!control.text.empty()) {
-			TextSize size = text.Measure(control.text, height);
+		std::string shown = control.text;
+		if (def.eq_type != 0 && m_values)
+			m_values->Label(def.eq_type, shown);
+		if (!shown.empty()) {
+			TextSize size = text.Measure(shown, height);
 			int x = control.rect.x;
 			if (def.align_center)
 				x += (control.rect.w - size.w) / 2;
 			else if (def.align_right)
 				x += control.rect.w - size.w;
-			text.Draw(canvas, x, control.rect.y, control.text, height, control.text_color);
+			text.Draw(canvas, x, control.rect.y, shown, height, control.text_color);
 		}
 	}
+	else if (def.type == "Gauge") {
+		DrawGauge(control, canvas, text, textures, now_ms);
+	}
 	else if (def.type == "Editbox") {
+		// The end of the text, as much as fits, with the caret after it.
 		const Rect &c = control.client;
-		TextSize size = text.Measure(control.text.empty() ? "W" : control.text, height);
+		std::string shown = control.text;
+		TextSize size = text.Measure(shown.empty() ? "W" : shown, height);
+		while (!shown.empty() && size.w > c.w - 6) {
+			shown.erase(0, std::max<size_t>(1, shown.size() / 8));
+			size = text.Measure(shown.empty() ? "W" : shown, height);
+		}
 		int y = c.y + (c.h - size.h) / 2;
-		if (!control.text.empty())
-			text.Draw(canvas, c.x + 2, y, control.text, height, control.text_color);
+		if (!shown.empty())
+			text.Draw(canvas, c.x + 2, y, shown, height, control.text_color);
 		if (index == m_focus && (now_ms / 500) % 2 == 0) {
-			int x = c.x + 2 + (control.text.empty() ? 0 : size.w);
+			int x = c.x + 2 + (shown.empty() ? 0 : size.w);
 			canvas.Fill({x, y, 1, size.h}, control.text_color);
 		}
+	}
+	else if (def.type == "STMLbox" && control.draw_content) {
+		control.draw_content(canvas, text, ContentRect(control));
 	}
 	else if (def.type == "STMLbox") {
 		if (!control.text.empty()) {
@@ -686,6 +753,9 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 				def.has_text_color ? control.text_color : 0xffffff);
 		}
 	}
+
+	if (HasScrollbar(control))
+		DrawScrollbar(control, canvas, textures, now_ms);
 
 	// Static animations go under the other pieces (the creation screen lists its city buttons
 	// before the maps they sit on; the spellbook its page art before the spells); otherwise
@@ -698,6 +768,51 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 
 std::string SidlWindow::OnMouse(const InputEvent &event)
 {
+	// Scrollbars: the arrows step a row, the gutter a page, the thumb drags.
+	m_scroll_hover = -1;
+	m_scroll_hover_part = ScrollPart::None;
+	for (int i = 0; i < static_cast<int>(m_controls.size()); ++i) {
+		Control &control = m_controls[i];
+		if (!HasScrollbar(control) || !Shown(control))
+			continue;
+		ScrollPart part = ScrollPartAt(control, event.x, event.y);
+		if (part != ScrollPart::None) {
+			m_scroll_hover = i;
+			m_scroll_hover_part = part;
+		}
+		if ((event.type == InputEvent::Type::MouseDown || event.type == InputEvent::Type::DoubleClick) && part != ScrollPart::None) {
+			m_scroll_control = i;
+			m_scroll_part = part;
+			int page = std::max(control.scroll_page, 1);
+			switch (part) {
+			case ScrollPart::Up: ScrollBy(control, -1); break;
+			case ScrollPart::Down: ScrollBy(control, 1); break;
+			case ScrollPart::PageUp: ScrollBy(control, -page); break;
+			case ScrollPart::PageDown: ScrollBy(control, page); break;
+			default:
+				m_scroll_grab_y = event.y;
+				m_scroll_grab_pos = control.scroll_pos;
+				break;
+			}
+			return "";
+		}
+	}
+	if (m_scroll_control >= 0) {
+		Control &control = m_controls[m_scroll_control];
+		if (event.type == InputEvent::Type::MouseMove && m_scroll_part == ScrollPart::Thumb) {
+			ScrollLayout layout = LayoutScrollbar(control);
+			int travel = layout.track.h - layout.thumb.h;
+			if (travel > 0)
+				control.scroll_pos = std::clamp(m_scroll_grab_pos + (event.y - m_scroll_grab_y) * control.scroll_max / travel, 0,
+					control.scroll_max);
+		}
+		if (event.type == InputEvent::Type::MouseUp) {
+			m_scroll_control = -1;
+			m_scroll_part = ScrollPart::None;
+		}
+		return "";
+	}
+
 	std::string clicked;
 	for (int i = 0; i < static_cast<int>(m_controls.size()); ++i) {
 		Control &control = m_controls[i];
@@ -754,4 +869,173 @@ bool SidlWindow::OnKey(const InputEvent &event)
 		return true;
 	}
 	return false;
+}
+
+bool SidlWindow::OnWheel(int x, int y, int notches)
+{
+	for (int i = static_cast<int>(m_controls.size()) - 1; i >= 0; --i) {
+		Control &control = m_controls[i];
+		if (control.def->vscroll && control.rect.Contains(x, y) && Shown(control)) {
+			ScrollBy(control, -3 * notches);
+			return true;
+		}
+	}
+	return false;
+}
+
+void SidlWindow::ScrollBy(Control &control, int rows)
+{
+	control.scroll_pos = std::clamp(control.scroll_pos + rows, 0, std::max(control.scroll_max, 0));
+}
+
+// ---------------------------------------------------------------- gauges
+
+void SidlWindow::DrawGauge(const Control &control, Canvas &canvas, TextRenderer &text, SidlTextures &textures,
+	uint64_t now_ms) const
+{
+	const SidlPiece &def = *control.def;
+	std::string label;
+	int value = m_values ? m_values->Gauge(def.eq_type, label) : 0;
+
+	// CGaugeWnd::Draw: while the text stays the same, the bar moves toward a new value at one
+	// thousandth a millisecond; the casting, breath, memorizing and scribing bars (7..10) jump.
+	float shown = static_cast<float>(value);
+	bool slides = def.eq_type < 7 || def.eq_type > 10;
+	if (slides && control.gauge_ms != 0 && label == control.gauge_text) {
+		float elapsed = static_cast<float>(now_ms - control.gauge_ms);
+		float diff = shown - control.gauge_shown;
+		if (elapsed < std::fabs(diff))
+			shown = control.gauge_shown + (diff > 0 ? elapsed : -elapsed);
+	}
+	control.gauge_shown = shown;
+	control.gauge_text = label;
+	control.gauge_ms = now_ms;
+	if (value == -1)
+		return;
+
+	// The left cap, the background at its size with the right cap after it, all from GaugeOffset.
+	const SidlGaugeTemplate &t = def.gauge;
+	const Rect &c = control.client;
+	int x = c.x + def.gauge_offset_x, y = c.y + def.gauge_offset_y;
+	Rect cap_left = AnimationSize(t.cap_left);
+	if (cap_left.w > 0) {
+		DrawAnimation(canvas, textures, t.cap_left, {x, y, cap_left.w, cap_left.h}, now_ms);
+		x += cap_left.w;
+	}
+	Rect bar = AnimationSize(t.background);
+	bar.x = x;
+	bar.y = y;
+	DrawAnimation(canvas, textures, t.background, bar, now_ms);
+	Rect cap_right = AnimationSize(t.cap_right);
+	if (cap_right.w > 0)
+		DrawAnimation(canvas, textures, t.cap_right, {bar.Right(), y, cap_right.w, cap_right.h}, now_ms);
+
+	// The fill, cut off at the value (not squeezed), then the lines over the whole bar.
+	auto fill = [&](const std::string &name, float amount, uint32_t tint) {
+		const SidlAnimation *a = m_defs->Animation(name);
+		const SidlFrame *f = a ? a->FrameAt(now_ms) : nullptr;
+		const Image *image = f ? textures.Get(f->texture) : nullptr;
+		int width = static_cast<int>(static_cast<float>(bar.w) * std::min(amount, 1000.0f) / 1000.0f);
+		if (image && width > 0)
+			canvas.Stretch(*image, f->source, bar, tint, {bar.x, bar.y, width, bar.h});
+	};
+	if (value == -2)
+		fill(t.fill, 1000, 0x800000);
+	else if (value < -9)
+		fill(t.fill, -shown, 0x800080);
+	else if (value > 0)
+		fill(t.fill, shown, def.fill_tint);
+	if (value == -2 || value < -9 || value > 0)
+		DrawAnimation(canvas, textures, t.lines, bar, now_ms);
+
+	// The text from TextOffset, inside the gauge (the client clip rect hides the rest).
+	if (label.empty())
+		label = control.text;
+	int ty = c.y + def.text_offset_y;
+	if (!label.empty() && ty >= c.y && ty < c.Bottom())
+		text.Draw(canvas, c.x + def.text_offset_x, ty, label, SidlFontHeight(def.font), def.has_text_color ? control.text_color : 0xf0f0f0);
+}
+
+// ---------------------------------------------------------------- scrollbars
+
+bool SidlWindow::HasScrollbar(const Control &control) const
+{
+	return control.def->vscroll && control.frame && !control.frame->vscroll.up.normal.empty();
+}
+
+SidlWindow::ScrollLayout SidlWindow::LayoutScrollbar(const Control &control) const
+{
+	// Down the right of the client area: the arrows at its ends, the thumb in the track between,
+	// as long as a page is of the whole (no shorter than its end pieces), filling it when there's
+	// nothing to scroll.
+	const SidlScrollbarTemplate &t = control.frame->vscroll;
+	Rect up = AnimationSize(t.up.normal), down = AnimationSize(t.down.normal);
+	const Rect &c = control.client;
+	ScrollLayout l;
+	l.bar = {c.Right() - up.w, c.y, up.w, c.h};
+	l.up = {l.bar.x, c.y, up.w, up.h};
+	l.down = {l.bar.x, c.Bottom() - down.h, down.w, down.h};
+	l.track = {l.bar.x, l.up.Bottom(), l.bar.w, std::max(l.down.y - l.up.Bottom(), 0)};
+	l.thumb = l.track;
+	if (control.scroll_max > 0) {
+		int ends = AnimationSize(t.thumb_top).h + AnimationSize(t.thumb_bottom).h;
+		int page = std::max(control.scroll_page, 1);
+		int h = std::max(static_cast<int>(static_cast<int64_t>(l.track.h) * page / (control.scroll_max + page)), ends + 2);
+		h = std::min(h, l.track.h);
+		l.thumb.h = h;
+		l.thumb.y = l.track.y + static_cast<int>(static_cast<int64_t>(l.track.h - h) * control.scroll_pos / control.scroll_max);
+	}
+	return l;
+}
+
+SidlWindow::ScrollPart SidlWindow::ScrollPartAt(const Control &control, int x, int y) const
+{
+	ScrollLayout l = LayoutScrollbar(control);
+	if (!l.bar.Contains(x, y))
+		return ScrollPart::None;
+	if (l.up.Contains(x, y))
+		return ScrollPart::Up;
+	if (l.down.Contains(x, y))
+		return ScrollPart::Down;
+	if (control.scroll_max <= 0)
+		return ScrollPart::Thumb;
+	if (y < l.thumb.y)
+		return ScrollPart::PageUp;
+	if (y >= l.thumb.Bottom())
+		return ScrollPart::PageDown;
+	return ScrollPart::Thumb;
+}
+
+void SidlWindow::DrawScrollbar(const Control &control, Canvas &canvas, SidlTextures &textures, uint64_t now_ms) const
+{
+	const SidlScrollbarTemplate &t = control.frame->vscroll;
+	ScrollLayout l = LayoutScrollbar(control);
+	int index = static_cast<int>(&control - m_controls.data());
+
+	// The gutter: its texture repeated down the track, tinted.
+	if (const Image *gutter = textures.Get(t.gutter)) {
+		Rect source{0, 0, gutter->width, gutter->height};
+		for (int y = l.track.y; y < l.track.Bottom(); y += source.h) {
+			Rect part{l.track.x, y, l.track.w, std::min(source.h, l.track.Bottom() - y)};
+			canvas.Stretch(*gutter, {0, 0, source.w, part.h}, part, t.gutter_tint, part);
+		}
+	}
+	auto button = [&](const SidlButtonTemplate &look, ScrollPart part, const Rect &r) {
+		bool hover = m_scroll_hover == index && m_scroll_hover_part == part;
+		bool pressed = m_scroll_control == index && m_scroll_part == part;
+		std::string name = control.scroll_max <= 0 ? look.disabled
+		                   : pressed && hover      ? (look.pressed_flyby.empty() ? look.pressed : look.pressed_flyby)
+		                   : pressed               ? look.pressed
+		                   : hover                 ? look.flyby
+		                                           : look.normal;
+		DrawAnimation(canvas, textures, name.empty() ? look.normal : name, r, now_ms);
+	};
+	button(t.up, ScrollPart::Up, l.up);
+	button(t.down, ScrollPart::Down, l.down);
+	if (control.scroll_max <= 0 || l.thumb.h <= 0)
+		return;
+	Rect top = AnimationSize(t.thumb_top), bottom = AnimationSize(t.thumb_bottom);
+	DrawAnimation(canvas, textures, t.thumb_top, {l.thumb.x, l.thumb.y, l.thumb.w, top.h}, now_ms);
+	DrawAnimation(canvas, textures, t.thumb_middle, {l.thumb.x, l.thumb.y + top.h, l.thumb.w, l.thumb.h - top.h - bottom.h}, now_ms);
+	DrawAnimation(canvas, textures, t.thumb_bottom, {l.thumb.x, l.thumb.Bottom() - bottom.h, l.thumb.w, bottom.h}, now_ms);
 }

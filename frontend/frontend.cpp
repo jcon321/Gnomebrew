@@ -52,6 +52,9 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 		m_debug.SetSound(m_sound.get());
 	}
 	m_debug.SetWeather(&m_weather);
+	if (!m_config.settings_ini.empty())
+		m_chat_colors.Load(m_config.settings_ini);
+	m_game_values.zone = &m_zone;
 	EnterStart();
 }
 
@@ -1233,10 +1236,7 @@ namespace
 {
 	constexpr uint32_t ZoneWhite = 0xffffff;
 	constexpr uint32_t ZoneGrey = 0xa0a0a0;
-	constexpr uint32_t ZoneDim = 0x606060;
 	constexpr uint32_t ZoneYellow = 0xf0e070;
-	constexpr int ChatWidth = 620;
-	constexpr size_t MaxLogLines = 200;
 
 	uint32_t NameColor(const ZoneSpawn &spawn)
 	{
@@ -1246,29 +1246,16 @@ namespace
 			return 0x90c8ff; // players
 		return spawn.pet_owner ? 0xc8a0ff : 0xf0f0f0;
 	}
-
-	std::string ChatLine(const ZoneChat &chat, const std::string &me, uint32_t &color)
-	{
-		bool mine = chat.sender == me;
-		std::string who = mine ? "You" : chat.sender;
-		switch (chat.channel) {
-		case 0: color = 0x60ff60; return who + (mine ? " say" : " tells") + " the guild, '" + chat.text + "'";
-		case 2: color = 0x60e0ff; return who + (mine ? " tell" : " tells") + " the group, '" + chat.text + "'";
-		case 3: color = 0xff6060; return who + (mine ? " shout" : " shouts") + ", '" + chat.text + "'";
-		case 4: color = 0x60ff60; return who + (mine ? " auction" : " auctions") + ", '" + chat.text + "'";
-		case 5: color = 0x60ff60; return who + (mine ? " say" : " says") + " out of character, '" + chat.text + "'";
-		case 7: color = 0xff80ff; return mine ? "You told " + chat.target + ", '" + chat.text + "'" : who + " tells you, '" + chat.text + "'";
-		case 8: color = ZoneWhite; return who + (mine ? " say" : " says") + ", '" + chat.text + "'";
-		default: color = ZoneGrey; return who + ": " + chat.text;
-		}
-	}
 }
 
 void FrontEnd::EnterZoneScreen(bool zoning)
 {
 	m_screen = Screen::Zone;
-	if (!zoning)
-		m_zone_log.clear();
+	if (!zoning) {
+		m_chat.Attach(nullptr);
+		m_chat.Clear();
+		m_game_values.target = 0;
+	}
 	m_time_of_day.clear();
 	m_zone_view.reset();
 	m_weather.Kill(m_sound.get()); // StopWorldDisplay
@@ -1285,19 +1272,6 @@ void FrontEnd::EnterZoneScreen(bool zoning)
 	}
 	if (m_sound) // DoCharacterSelection, entering the world
 		m_sound->SetMusicSelection(audio::EqSound::CharacterSelect, false);
-
-	// The chat sits along the bottom left of the window, over the 3D view.
-	int bottom = m_game_height - Height;
-	m_chat_input = InputField{};
-	m_chat_input.rect = {50, bottom + 448, 460, 20};
-	m_chat_input.max_chars = 200;
-	m_chat_input.text_height = FontSize::Normal;
-	m_chat_input.color = ZoneWhite;
-	m_chat_input.focused = false; // Enter opens it
-
-	m_camp.Place(522, bottom + 440, Art(1));
-	m_camp.label = "CAMP";
-	m_camp.text_height = FitTextHeight(m_text, {m_camp.label}, 100, 0x22);
 }
 
 bool FrontEnd::StartReplay(const std::string &path, std::string &error)
@@ -1321,7 +1295,7 @@ namespace
 		{"PlayerWindow", true}, {"TargetWindow", true}, {"GroupWindow", true}, {"BuffWindow", true},
 		{"CastSpellWnd", true}, {"HotButtonWnd", true}, {"SelectorWindow", true}, {"ActionsWindow", false},
 		{"InventoryWindow", false}, {"OptionsWindow", false}, {"FriendsWindow", false}, {"PetInfoWindow", false},
-		{"HelpWindow", false}, {"CompassWindow", false},
+		{"HelpWindow", false}, {"CompassWindow", false}, {"ChatWindow", true},
 	};
 
 	// The selector's buttons (EQUI_SelectorWnd.xml) and the windows they open and close.
@@ -1344,6 +1318,7 @@ void FrontEnd::BuildZoneWindows()
 	if (!m_ui.definitions || !m_ui.textures)
 		return;
 	m_windows.Reset(m_ui.definitions, m_ui.textures, m_game_width, m_game_height);
+	m_windows.SetValues(&m_game_values);
 	for (const auto &window : ZoneWindows) {
 		std::string error;
 		if (!m_windows.Add(window.screen, window.shown, &error))
@@ -1361,6 +1336,7 @@ void FrontEnd::BuildZoneWindows()
 		Log("UI: " + std::to_string(m_windows.Count()) + " windows, layout " + m_ui_layout_path);
 	}
 	m_windows.TakeChanged();
+	m_chat.Attach(m_windows.Find("ChatWindow"));
 }
 
 void FrontEnd::SaveUiLayout()
@@ -1381,6 +1357,15 @@ void FrontEnd::HandleWindowClicks()
 			for (const auto &toggle : SelectorToggles)
 				if (click.control == toggle.button)
 					m_windows.Toggle(toggle.screen);
+		// The Actions window's main page: what the slash commands do.
+		if (click.window == "ActionsWindow") {
+			if (click.control == "AMP_CampButton")
+				InterpretCommand("/camp");
+			else if (click.control == "AMP_RunButton" || click.control == "AMP_WalkButton") {
+				m_run = click.control == "AMP_RunButton";
+				AddZoneLog(m_run ? "You are now running." : "You are now walking.", ZoneGrey);
+			}
+		}
 	}
 	// The selector's buttons stay down while their window is open.
 	if (SidlWindow *selector = m_windows.Find("SelectorWindow"))
@@ -1391,17 +1376,20 @@ void FrontEnd::HandleWindowClicks()
 
 void FrontEnd::AddZoneLog(const std::string &text, uint32_t color)
 {
-	// Split on newlines so each line wraps on its own.
-	size_t start = 0;
-	while (start <= text.size()) {
-		size_t end = text.find('\n', start);
-		m_zone_log.push_back({text.substr(start, end == std::string::npos ? std::string::npos : end - start), color});
-		if (end == std::string::npos)
-			break;
-		start = end + 1;
-	}
-	if (m_zone_log.size() > MaxLogLines)
-		m_zone_log.erase(m_zone_log.begin(), m_zone_log.begin() + static_cast<long>(m_zone_log.size() - MaxLogLines));
+	m_chat.Add(text, color);
+}
+
+void FrontEnd::ChatOut(const std::string &text, int type)
+{
+	m_chat.Add(text, m_chat_colors.Get(type));
+}
+
+void FrontEnd::SetTarget(uint16_t id, bool command)
+{
+	if (!command)
+		m_game_values.target = id;
+	m_debug.SelectTarget(id);
+	m_zone.SetTarget(id, command);
 }
 
 void FrontEnd::StartCamp()
@@ -1495,13 +1483,28 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			break;
 		}
 		case Type::Chat: {
-			uint32_t color = ZoneWhite;
-			std::string line = ChatLine(event.chat, m_zone.Profile().name, color);
-			AddZoneLog(line, color);
+			std::string line;
+			int type = ChatType::Default;
+			if (ChannelLine(event.chat, m_zone.Profile().name, m_zone.Profile().languages, m_ui.eqstr, line, type))
+				ChatOut(line, type);
+			if (event.chat.channel == 7 && event.chat.sender != m_zone.Profile().name)
+				m_last_tell = event.chat.sender; // AddNameToTellList
 			break;
 		}
 		case Type::Message:
-			AddZoneLog(event.text, ZoneYellow);
+			ChatOut(event.text, event.value);
+			break;
+		case Type::Emote:
+			ChatOut(event.text, ChatType::Emote);
+			break;
+		case Type::TargetChanged:
+			// The zone's answer to /target (or its refusal of a click).
+			m_game_values.target = event.id;
+			m_debug.SelectTarget(event.id);
+			break;
+		case Type::SpawnRemoved:
+			if (event.id == m_game_values.target)
+				m_game_values.target = 0;
 			break;
 		case Type::TimeOfDay:
 			m_time_of_day = event.text;
@@ -1661,21 +1664,18 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 		return;
 	case InputEvent::Type::MouseDown:
 	case InputEvent::Type::DoubleClick:
-		// Panning the chase camera (or running, with the right button too), from anywhere but
-		// the buttons.
-		if (!m_camp.rect.Contains(event.x, event.y)) {
-			if (!m_mouse_turn) {
-				m_look_x = event.x;
-				m_look_y = event.y;
-			}
-			m_mouse_pan = true;
-			m_world_click = true;
-			m_click_travel = 0;
+		// Panning the chase camera (or running, with the right button too).
+		if (!m_mouse_turn) {
+			m_look_x = event.x;
+			m_look_y = event.y;
 		}
+		m_mouse_pan = true;
+		m_world_click = true;
+		m_click_travel = 0;
 		break;
 	case InputEvent::Type::MouseUp:
 		// A click that didn't drag uses the door or switch under the cursor (CEverQuest_ClickedSwitch),
-		// or else picks the debug menu's target: a spawn under the cursor, or nobody (back to the nearest).
+		// or else targets the spawn under the cursor (nobody: the target stays).
 		if (m_world_click && m_click_travel <= 3 && m_zone_view) {
 			uint8_t door = 0;
 			int16_t skill = 0;
@@ -1688,7 +1688,8 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 				AddZoneLog(EqString(1462, "You can't reach that, get closer."), ZoneYellow);
 				break;
 			case ZoneDoors::Use::Nothing:
-				m_debug.SelectTarget(m_zone_view->PickSpawn(event.x, event.y));
+				if (uint16_t id = m_zone_view->PickSpawn(event.x, event.y))
+					SetTarget(id);
 				break;
 			}
 		}
@@ -1727,92 +1728,78 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 	default:
 		break;
 	}
-	// The chat line works like eqgame's: Enter (or /) opens it, Enter sends, Escape closes it.
-	// While it's open, letters go into it; the arrows still move.
+	// The chat window's input line: Enter (or a /) opens it, Enter sends it, Escape closes it.
+	// While it's open, letters go into it and Up and Down go back through what was sent; the other
+	// arrows still move.
 	if (event.type == InputEvent::Type::Char) {
-		if (m_chat_input.focused)
-			m_chat_input.OnChar(event.ch);
-		else if (event.ch == '/') {
-			m_chat_input.focused = true;
-			m_chat_input.OnChar(event.ch);
+		if (m_chat.Typing())
+			m_chat.OnChar(event.ch);
+		else if (event.ch == '/' && m_chat.Attached()) {
+			m_windows.Show("ChatWindow", true);
+			m_chat.Open("/");
 		}
 		return;
 	}
-	if (event.type == InputEvent::Type::Key) {
-		bool typing = m_chat_input.focused;
-		if (SetZoneKey(event.key, true, typing))
+	if (event.type != InputEvent::Type::Key)
+		return;
+	bool typing = m_chat.Typing();
+	if (typing) {
+		std::string line;
+		if (m_chat.OnKey(event, line)) {
+			if (event.key == InputEvent::Key::Enter && !line.empty())
+				InterpretCommand(line);
 			return;
-		switch (event.key) {
-		case InputEvent::Key::Backspace:
-			if (typing)
-				m_chat_input.OnBackspace();
-			break;
-		case InputEvent::Key::Enter: {
-			if (!typing) {
-				m_chat_input.focused = true;
+		}
+	}
+	if (SetZoneKey(event.key, true, typing))
+		return;
+	switch (event.key) {
+	case InputEvent::Key::Enter:
+		if (m_chat.Attached()) {
+			m_windows.Show("ChatWindow", true);
+			m_chat.Open();
+		}
+		break;
+	case InputEvent::Key::Space:
+		if (!typing)
+			m_jump_requested = true;
+		break;
+	case InputEvent::Key::R:
+		// Ctrl+R toggles running and walking.
+		if (event.ctrl) {
+			m_run = !m_run;
+			AddZoneLog(m_run ? "You are now running." : "You are now walking.", ZoneGrey);
+		}
+		break;
+	// The camera: F9 switches first person and the chase camera (CDisplay's camera views),
+	// Page Up / Page Down tilt it.
+	case InputEvent::Key::F9:
+		if (m_zone_view)
+			m_zone_view->CycleCamera();
+		break;
+	case InputEvent::Key::F11:
+		m_debug.open = !m_debug.open;
+		break;
+	case InputEvent::Key::PageUp:
+	case InputEvent::Key::PageDown:
+		if (m_zone_view)
+			m_zone_view->Pitch(event.key == InputEvent::Key::PageUp ? 5.0f : -5.0f);
+		break;
+	case InputEvent::Key::Escape: {
+		// ExecuteCmd's escape: no target, then CDisplay_NewUIProcessEscape closes the first of its
+		// windows that's open (of the ones we have: help, options, inventory).
+		SetTarget(0);
+		ChatOut(EqString(12375, "You no longer have a target."), ChatType::Default);
+		for (const char *screen : {"HelpWindow", "OptionsWindow", "InventoryWindow"})
+			if (m_windows.Shown(screen)) {
+				m_windows.Show(screen, false);
 				break;
 			}
-			std::string text = m_chat_input.text;
-			m_chat_input.text.clear();
-			m_chat_input.focused = false;
-			if (text == "/camp")
-				StartCamp();
-			else if (text == "/walk" || text == "/run") {
-				m_run = text == "/run";
-				AddZoneLog(m_run ? "You are now running." : "You are now walking.", ZoneGrey);
-			}
-			else if (!text.empty() && text[0] != '/')
-				m_zone.Say(text); // the server echoes it back
-			else if (!text.empty())
-				AddZoneLog("That command isn't supported yet.", ZoneGrey);
-			break;
-		}
-		case InputEvent::Key::Space:
-			if (!typing)
-				m_jump_requested = true;
-			break;
-		case InputEvent::Key::R:
-			// Ctrl+R toggles running and walking.
-			if (event.ctrl) {
-				m_run = !m_run;
-				AddZoneLog(m_run ? "You are now running." : "You are now walking.", ZoneGrey);
-			}
-			break;
-		// The camera: F9 switches first person and the chase camera (CDisplay's camera views),
-		// Page Up / Page Down tilt it.
-		case InputEvent::Key::F9:
-			if (m_zone_view)
-				m_zone_view->CycleCamera();
-			break;
-		case InputEvent::Key::F11:
-			m_debug.open = !m_debug.open;
-			break;
-		case InputEvent::Key::PageUp:
-		case InputEvent::Key::PageDown:
-			if (m_zone_view)
-				m_zone_view->Pitch(event.key == InputEvent::Key::PageUp ? 5.0f : -5.0f);
-			break;
-		case InputEvent::Key::Escape:
-			if (typing) {
-				m_chat_input.text.clear();
-				m_chat_input.focused = false;
-			}
-			else if (m_windows.CloseTop()) {
-				// Escape closes windows first, the topmost one with a close box.
-			}
-			else if (m_zone.GetState() == ZoneSession::State::InZone)
-				ShowQuestion("Camp out?\n\nIt takes about 30 seconds.", [this](bool yes) {
-					if (yes)
-						StartCamp();
-				});
-			break;
-		default:
-			break;
-		}
-		return;
+		break;
 	}
-	if (m_camp.OnMouse(event))
-		StartCamp();
+	default:
+		break;
+	}
 }
 
 void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
@@ -1869,23 +1856,6 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 	}
 
 	Clock::time_point ui_start = Clock::now();
-	// Bottom left: the chat log, the last lines that fit, newest at the bottom.
-	int bottom = height - Height;
-	Rect log{10, bottom + 350, ChatWidth, 92};
-	canvas.Darken({0, log.y - 4, ChatWidth + 20, height - log.y + 4});
-	int row_height = 13;
-	int rows = log.h / row_height;
-	int first = std::max(0, static_cast<int>(m_zone_log.size()) - rows);
-	for (int i = first, ry = log.y + 1; i < static_cast<int>(m_zone_log.size()); ++i, ry += row_height)
-		m_text.Draw(canvas, log.x + 4, ry, m_zone_log[i].text, FontSize::Small, m_zone_log[i].color);
-
-	m_text.Draw(canvas, 10, bottom + 450, "Say:", FontSize::Normal, ZoneGrey);
-	canvas.Frame({m_chat_input.rect.x - 2, m_chat_input.rect.y - 1, m_chat_input.rect.w + 4, m_chat_input.rect.h + 2}, 0x404850);
-	m_chat_input.Draw(canvas, m_text, now_ms);
-	if (!m_chat_input.focused && m_chat_input.text.empty())
-		m_text.Draw(canvas, m_chat_input.rect.x + 4, m_chat_input.rect.y + 3, "Press Enter to chat", FontSize::Small, ZoneDim);
-	m_camp.Draw(canvas, m_text);
-
 	if (world) {
 		std::string help = std::string("Arrows/WASD move   Space jump   Ctrl+R ") + (m_run ? "walk" : "run") +
 		                   "   Right drag look   Wheel zoom   F9 camera   F11 debug   Enter chat";
@@ -1893,9 +1863,10 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 		m_text.Draw(canvas, width - size.w - 10, height - size.h - 8, help, FontSize::Small, ZoneGrey);
 	}
 
+	m_chat.Layout(m_text);
 	m_windows.Draw(canvas, m_text, now_ms);
-	// Top left and right: the debug menu's stat card and radar, above the chat and the windows.
-	m_debug.Draw(canvas, m_text, m_zone, m_zone_view.get(), log.y - 10);
+	// Top left and right: the debug menu's stat card and radar, above the windows.
+	m_debug.Draw(canvas, m_text, m_zone, m_zone_view.get(), height - 10);
 	times.ui = since(ui_start);
 	m_debug.Frame(times);
 }

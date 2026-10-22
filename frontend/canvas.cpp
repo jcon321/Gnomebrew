@@ -89,15 +89,25 @@ namespace
 
 void Canvas::Stretch(const Image &image, const Rect &source, const Rect &dest)
 {
+	Stretch(image, source, dest, 0xffffff, dest);
+}
+
+void Canvas::Stretch(const Image &image, const Rect &source, const Rect &dest, uint32_t tint, const Rect &clip)
+{
 	if (source.w <= 0 || source.h <= 0 || dest.w <= 0 || dest.h <= 0 || image.width <= 0)
 		return;
-	if (source.w == dest.w && source.h == dest.h && !image.has_alpha) {
+	tint &= 0xffffff;
+	bool whole = clip.x <= dest.x && clip.y <= dest.y && clip.Right() >= dest.Right() && clip.Bottom() >= dest.Bottom();
+	if (source.w == dest.w && source.h == dest.h && !image.has_alpha && tint == 0xffffff && whole) {
 		BlitPart(image, source, dest.x, dest.y);
 		return;
 	}
+	// Per channel out of 256, so a 255 leaves it as it is.
+	uint32_t tr = ((tint >> 16) & 0xff) + ((tint >> 23) & 1), tg = ((tint >> 8) & 0xff) + ((tint >> 15) & 1),
+	         tb = (tint & 0xff) + ((tint >> 7) & 1);
 
-	int x0 = std::max(dest.x, 0), y0 = std::max(dest.y, 0);
-	int x1 = std::min(dest.Right(), m_width), y1 = std::min(dest.Bottom(), m_height);
+	int x0 = std::max({dest.x, clip.x, 0}), y0 = std::max({dest.y, clip.y, 0});
+	int x1 = std::min({dest.Right(), clip.Right(), m_width}), y1 = std::min({dest.Bottom(), clip.Bottom(), m_height});
 	int max_x = std::min(source.Right(), image.width) - 1;
 	int max_y = std::min(source.Bottom(), image.height) - 1;
 	for (int y = y0; y < y1; ++y) {
@@ -115,6 +125,9 @@ void Canvas::Stretch(const Image &image, const Rect &source, const Rect &dest)
 			uint32_t top = Lerp(image.At(col0, row0), image.At(col1, row0), fx);
 			uint32_t bottom = Lerp(image.At(col0, row1), image.At(col1, row1), fx);
 			uint32_t src = Lerp(top, bottom, fy);
+			if (tint != 0xffffff)
+				src = (src & 0xff000000) | ((((src >> 16) & 0xff) * tr >> 8) << 16) | ((((src >> 8) & 0xff) * tg >> 8) << 8) |
+				      ((src & 0xff) * tb >> 8);
 			dst[x] = image.has_alpha ? Blend(dst[x], src) : src & 0xffffff;
 		}
 	}

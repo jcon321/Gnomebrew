@@ -69,6 +69,7 @@ SidlWindow *WindowManager::Add(const std::string &screen, bool shown, std::strin
 	}
 	w->screen = screen;
 	w->shown = shown;
+	w->wnd.SetValues(m_values);
 	Rect r = w->wnd.Def().rect;
 	r.w = std::min(r.w, m_width);
 	r.h = std::min(r.h, m_height);
@@ -77,6 +78,13 @@ SidlWindow *WindowManager::Add(const std::string &screen, bool shown, std::strin
 	Place(*w, r);
 	m_windows.push_back(std::move(w));
 	return &m_windows.back()->wnd;
+}
+
+void WindowManager::SetValues(SidlValues *values)
+{
+	m_values = values;
+	for (auto &w : m_windows)
+		w->wnd.SetValues(values);
 }
 
 SidlWindow *WindowManager::Find(const std::string &screen)
@@ -211,18 +219,6 @@ bool WindowManager::Shown(const std::string &screen) const
 	for (const auto &w : m_windows)
 		if (w->screen == screen)
 			return w->shown;
-	return false;
-}
-
-bool WindowManager::CloseTop()
-{
-	for (int i = static_cast<int>(m_windows.size()) - 1; i >= 0; --i) {
-		Window &w = *m_windows[i];
-		if (w.shown && w.wnd.Def().closebox) {
-			Show(w.screen, false);
-			return true;
-		}
-	}
 	return false;
 }
 
@@ -382,10 +378,16 @@ bool WindowManager::OnMouse(const InputEvent &event, uint64_t now_ms)
 		}
 		return false; // the press wasn't ours: whoever had it gets the release
 	}
+	case Type::Wheel: {
+		int top = TopAt(event.x, event.y);
+		if (top < 0)
+			return false;
+		m_windows[top]->wnd.OnWheel(event.x, event.y, event.wheel);
+		return true;
+	}
 	case Type::RightDown:
 	case Type::RightUp:
-	case Type::Wheel:
-		// No context menus or scrolling yet, but the world doesn't get them either.
+		// No context menus yet, but the world doesn't get them either.
 		return Over(event.x, event.y);
 	default:
 		return false;

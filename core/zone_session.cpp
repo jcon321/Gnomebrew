@@ -22,6 +22,7 @@ namespace
 	constexpr size_t SpawnSize = 224;            // Mac::structs::Spawn_Struct
 	constexpr size_t ProfileSize = 8460;         // Mac::structs::PlayerProfile_Struct
 	constexpr size_t ZoneEntrySize = 356;        // ServerZoneEntry_Struct
+	constexpr size_t ItemSize = 360;             // Mac::structs::Item_Struct
 
 	uint64_t NowMs()
 	{
@@ -113,6 +114,30 @@ namespace
 		s.name = CString(d, o + 127, 64);
 		s.surname = CString(d, o + 191, 32);
 		return s;
+	}
+
+	// Mac::structs::Item_Struct at `o`: the fields ZoneItem keeps.
+	ZoneItem ParseItem(const std::vector<uint8_t> &d, size_t o)
+	{
+		ZoneItem item;
+		item.name = CString(d, o, 64);
+		item.item_class = static_cast<uint8_t>(Read<int16_t>(d, o + 178));
+		item.icon = Read<uint16_t>(d, o + 182);
+		item.slot = Read<int16_t>(d, o + 184);
+		if (item.item_class == 0) {
+			item.str = Read<int8_t>(d, o + 228);
+			item.sta = Read<int8_t>(d, o + 229);
+			item.cha = Read<int8_t>(d, o + 230);
+			item.dex = Read<int8_t>(d, o + 231);
+			item.int_ = Read<int8_t>(d, o + 232);
+			item.agi = Read<int8_t>(d, o + 233);
+			item.wis = Read<int8_t>(d, o + 234);
+			item.hp = Read<int16_t>(d, o + 240);
+			item.mana = Read<int16_t>(d, o + 242);
+		}
+		item.rec_level = Read<uint8_t>(d, o + 324);
+		item.rec_skill = Read<uint8_t>(d, o + 325);
+		return item;
 	}
 
 	// ServerZoneEntry_Struct (eq_packet_structs.h), 356 bytes: our own spawn, sent as is.
@@ -306,6 +331,8 @@ void ZoneSession::Reset(const std::string &character)
 	m_spawns.clear();
 	m_self = ZoneSpawn{};
 	m_my_id = 0;
+	m_hp = m_max_hp = 0;
+	m_items.clear();
 	m_have_profile = m_have_zone_entry = m_sent_req_new_zone = m_sent_exp_zonein = false;
 	m_movement = ZoneMovement{};
 	m_have_movement = m_movement_dirty = false;
@@ -407,7 +434,7 @@ bool ZoneSession::RequestZoneChange(uint32_t zone_id)
 	return Send(ZoneOp::ZoneChange, body, sizeof(body), "OP_ZoneChange " + std::to_string(zone_id));
 }
 
-bool ZoneSession::Say(const std::string &text)
+bool ZoneSession::SendChannel(uint16_t channel, const std::string &target, const std::string &text)
 {
 	if (m_state != State::InZone || text.empty())
 		return false;
@@ -415,13 +442,34 @@ bool ZoneSession::Say(const std::string &text)
 	// skill u16 @134, message @136. The client sends strlen + 141 bytes (Handle_OP_ChannelMessage notes the extra 4).
 	std::string message = text.substr(0, 2000);
 	std::vector<uint8_t> body(141 + message.size(), 0);
+	memcpy(&body[0], target.c_str(), std::min<size_t>(target.size(), 63));
 	memcpy(&body[64], m_profile.name.c_str(), std::min<size_t>(m_profile.name.size(), 63));
-	uint16_t channel = 8; // say
-	uint16_t skill = 100;
+	uint16_t skill = 100; // common tongue, which everyone speaks fully
 	memcpy(&body[130], &channel, 2);
 	memcpy(&body[134], &skill, 2);
 	memcpy(&body[136], message.c_str(), message.size());
-	return Send(ZoneOp::ChannelMessage, body.data(), body.size(), "OP_ChannelMessage say: " + message);
+	return Send(ZoneOp::ChannelMessage, body.data(), body.size(),
+		"OP_ChannelMessage " + std::to_string(channel) + (target.empty() ? "" : " to " + target) + ": " + message);
+}
+
+bool ZoneSession::Emote(const std::string &text)
+{
+	if (m_state != State::InZone || text.empty())
+		return false;
+	// Emote_Struct: u16 unknown, message[1024], sent whole.
+	std::vector<uint8_t> body(1026, 0);
+	memcpy(&body[2], text.c_str(), std::min<size_t>(text.size(), 511));
+	return Send(ZoneOp::Emote, body.data(), body.size(), "OP_Emote" + text);
+}
+
+void ZoneSession::SetTarget(uint16_t id, bool command)
+{
+	if (m_state != State::InZone)
+		return;
+	Send(command ? ZoneOp::TargetCommand : ZoneOp::TargetMouse, &id, sizeof(id),
+		std::string(command ? "OP_TargetCommand " : "OP_TargetMouse ") + std::to_string(id));
+	if (m_replay && command && m_spawns.count(id))
+		m_replay_target = id; // no zone to answer: as if it took it
 }
 
 bool ZoneSession::ClickDoor(uint8_t door, uint16_t item, int16_t skill)
@@ -598,6 +646,16 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		p.exp = Read<uint32_t>(data, 152);
 		p.mana = Read<int16_t>(data, 158);
 		p.cur_hp = Read<int16_t>(data, 160);
+		p.str = Read<int16_t>(data, 164);
+		p.sta = Read<int16_t>(data, 166);
+		p.cha = Read<int16_t>(data, 168);
+		p.dex = Read<int16_t>(data, 170);
+		p.int_ = Read<int16_t>(data, 172);
+		p.agi = Read<int16_t>(data, 174);
+		p.wis = Read<int16_t>(data, 176);
+		p.fatigue = Read<int8_t>(data, 4962);
+		for (int i = 0; i < 32; ++i)
+			p.languages[i] = Read<uint8_t>(data, 284 + i);
 		p.y = Read<float>(data, 2904);
 		p.x = Read<float>(data, 2908);
 		p.z = Read<float>(data, 2912);
@@ -728,11 +786,93 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		break;
 	}
 	case ZoneOp::HPUpdate: {
-		auto it = m_spawns.find(Read<uint16_t>(data, 0));
-		if (it != m_spawns.end()) {
-			int32_t cur = Read<int32_t>(data, 4), max = Read<int32_t>(data, 8);
-			it->second.hp = static_cast<int16_t>(max > 0 && max != 100 ? cur * 100 / max : cur);
+		// SpawnHPUpdate_Struct: a percentage (of 100) for everyone but us; ours is our hit points
+		// less what worn items add, and the total maximum.
+		uint16_t id = Read<uint16_t>(data, 0);
+		int32_t cur = Read<int32_t>(data, 4), max = Read<int32_t>(data, 8);
+		if (id != 0 && id == m_my_id) {
+			m_hp = cur;
+			m_max_hp = max;
 		}
+		auto it = m_spawns.find(id);
+		if (it != m_spawns.end())
+			it->second.hp = static_cast<int16_t>(max > 0 && max != 100 ? cur * 100 / max : cur);
+		break;
+	}
+	case ZoneOp::ManaChange:
+		// ManaChange_Struct: {u16 new mana, u16 the spell that used it}.
+		if (data.size() >= 2)
+			m_profile.mana = Read<int16_t>(data, 0);
+		break;
+	case ZoneOp::Stamina:
+		// Stamina_Struct: {i16 food, i16 water, i8 fatigue}.
+		if (data.size() >= 5)
+			m_profile.fatigue = Read<int8_t>(data, 4);
+		break;
+	case ZoneOp::ExpUpdate:
+		m_profile.exp = Read<uint32_t>(data, 0);
+		break;
+	case ZoneOp::LevelUpdate:
+		// LevelUpdate_Struct: {u32 level, u32 old level, u32 exp}.
+		if (data.size() >= 12) {
+			m_profile.level = static_cast<uint8_t>(Read<uint32_t>(data, 0));
+			m_profile.exp = Read<uint32_t>(data, 8);
+		}
+		break;
+	case ZoneOp::CharInventory: {
+		// A count byte, a byte unused, then deflated {u16 opcode, Item_Struct} records.
+		std::vector<uint8_t> items;
+		if (data.size() > 2 && Inflate::Zlib(data.data() + 2, data.size() - 2, items)) {
+			m_items.clear();
+			for (size_t o = 0; o + 2 + ItemSize <= items.size(); o += 2 + ItemSize) {
+				ZoneItem item = ParseItem(items, o + 2);
+				m_items[item.slot] = item;
+			}
+			Log("[zone]    inventory: " + std::to_string(m_items.size()) + " items");
+		}
+		break;
+	}
+	case ZoneOp::ItemPacket:
+	case ZoneOp::ContainerPacket:
+	case ZoneOp::BookPacket:
+	case ZoneOp::SummonedItem:
+		if (data.size() >= ItemSize) {
+			ZoneItem item = ParseItem(data, 0);
+			m_items[item.slot] = item;
+		}
+		break;
+	case ZoneOp::MoveItem: {
+		// The zone moving one of our items (or deleting it: to -1); one already there swaps.
+		int16_t from = static_cast<int16_t>(Read<int32_t>(data, 0)), to = static_cast<int16_t>(Read<int32_t>(data, 4));
+		auto it = m_items.find(from);
+		if (it == m_items.end())
+			break;
+		ZoneItem moved = it->second;
+		m_items.erase(it);
+		if (to < 0)
+			break;
+		auto there = m_items.find(to);
+		if (there != m_items.end()) {
+			there->second.slot = from;
+			m_items[from] = there->second;
+		}
+		moved.slot = to;
+		m_items[to] = moved;
+		break;
+	}
+	case ZoneOp::Emote: {
+		// Emote_Struct: u16 unknown, then the text with the sender's name in front.
+		Event e;
+		e.type = Event::Type::Emote;
+		e.text = CString(data, 2, 1024);
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::TargetCommand: {
+		Event e;
+		e.type = Event::Type::TargetChanged;
+		e.id = Read<uint16_t>(data, 0);
+		events.push_back(e);
 		break;
 	}
 	case ZoneOp::SpawnAppearance: {
@@ -837,6 +977,7 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		e.type = Event::Type::Chat;
 		e.chat.target = CString(data, 0, 64);
 		e.chat.sender = CString(data, 64, 64);
+		e.chat.language = Read<uint16_t>(data, 128);
 		e.chat.channel = Read<uint16_t>(data, 130);
 		e.chat.text = CString(data, 136, 2048);
 		Log("[zone]    chat " + std::to_string(e.chat.channel) + " " + e.chat.sender + ": " + e.chat.text);
@@ -847,6 +988,7 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		// Mac::structs::SpecialMesg_Struct: u32 msg_type, then the text.
 		Event e;
 		e.type = Event::Type::Message;
+		e.value = Read<int32_t>(data, 0);
 		e.text = CString(data, 4, 2048);
 		Log("[zone]    message: " + e.text);
 		events.push_back(e);
@@ -864,6 +1006,7 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		}
 		Event e;
 		e.type = Event::Type::Message;
+		e.value = Read<uint16_t>(data, 4);
 		if (m_eqstr) {
 			e.text = m_eqstr->Format(id, args);
 		}
@@ -1061,6 +1204,12 @@ void ZoneSession::Pump(int timeout_ms, std::vector<Event> &events)
 
 	if ((m_state == State::InZone || m_state == State::Camping) && m_have_movement)
 		SendMovement(NowMs());
+	if (m_replay && m_replay_target) {
+		Event e(Event::Type::TargetChanged);
+		e.id = m_replay_target;
+		m_replay_target = 0;
+		events.push_back(e);
+	}
 	if (m_replay && m_state == State::ZoneRequested) {
 		// No zone to ask: "not ready".
 		m_state = State::InZone;

@@ -2,15 +2,17 @@
 
 // SIDL ("Sony Interface Definition Language"): eqgame's XML-defined UI, loaded
 // from uifiles/<skin>/EQUI.xml and the files it <Include>s. This covers the
-// pieces character select and creation use: Ui2DAnimation, ButtonDrawTemplate,
-// WindowDrawTemplate, Screen (nested too), Button, Label, StaticAnimation,
-// Editbox and STMLbox, with AutoStretch anchors. Schema defaults come from
+// pieces character select, creation and the in-game windows use so far:
+// Ui2DAnimation, ButtonDrawTemplate, WindowDrawTemplate (with its vertical
+// scrollbar), Screen (nested too), Button, Label, StaticAnimation, Editbox,
+// STMLbox and Gauge, with AutoStretch anchors. Schema defaults come from
 // uifiles/default/SIDL.xml.
 
 #include "canvas.h"
 #include "text.h"
 #include "widgets.h"
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -46,12 +48,28 @@ enum SidlBorderPiece
 	BorderPieceCount
 };
 
+// ScrollbarDrawTemplate: the arrow buttons, the thumb's three pieces and the gutter between.
+struct SidlScrollbarTemplate
+{
+	SidlButtonTemplate up, down;
+	std::string thumb_top, thumb_middle, thumb_bottom;
+	std::string gutter;            // MiddleTextureInfo, a texture
+	uint32_t gutter_tint = 0xffffff;
+};
+
 struct SidlWindowTemplate
 {
 	std::string background; // texture, tiled over the client area
+	SidlScrollbarTemplate vscroll; // VSBTemplate
 	std::string border[BorderPieceCount];
 	std::string title_left, title_middle, title_right; // Titlebar, under the top border
 	SidlButtonTemplate close_box, minimize_box;        // the title bar's buttons
+};
+
+// GaugeDrawTemplate: animations, each drawn at its own size.
+struct SidlGaugeTemplate
+{
+	std::string background, fill, lines, lines_fill, cap_left, cap_right;
 };
 
 struct SidlPiece
@@ -59,6 +77,7 @@ struct SidlPiece
 	std::string type; // element name: Screen, Button, Label, StaticAnimation, ...
 	std::string item;
 	std::string screen_id;
+	int eq_type = 0;  // EQType: which of the game's values a gauge or label shows (0 none)
 	int font = 3;
 	bool relative = true;
 	Rect rect;
@@ -82,6 +101,12 @@ struct SidlPiece
 	// StaticAnimation
 	std::string animation;
 
+	// Gauge: the text (TextOffset) and the bar (GaugeOffset) from the client area's corner.
+	int text_offset_x = 0, text_offset_y = 0, gauge_offset_x = 0, gauge_offset_y = 0;
+	uint32_t fill_tint = 0xffffff, lines_fill_tint = 0xffffff;
+	bool draw_lines_fill = false;
+	SidlGaugeTemplate gauge;
+
 	// Screen (and the Editbox and STMLbox frames)
 	std::string draw_template;
 	bool style_border = false;
@@ -90,7 +115,21 @@ struct SidlPiece
 	bool closebox = false;    // Style_Closebox, Style_Minimizebox: buttons in the title bar
 	bool minimizebox = false;
 	bool sizable = false;     // Style_Sizable: the border edges resize it
+	bool vscroll = false;     // Style_VScroll: the template's vertical scrollbar down the right
 	std::vector<std::string> pieces;
+};
+
+// The game's values behind gauges and labels with an EQType (eqgame's fn_GetGaugeLabelFromEQ and
+// fn_GetLabelFromEQ), supplied by whoever puts the windows up.
+class SidlValues
+{
+public:
+	virtual ~SidlValues() = default;
+	// 0..1000 full, with the text to show on it (empty: the gauge's own). -1 hides the gauge, -3
+	// draws it empty, -2 is a full dark red bar (no character); below -9, a purple bar of -value.
+	virtual int Gauge(int eq_type, std::string &text) = 0;
+	// The label's text; false keeps its own.
+	virtual bool Label(int eq_type, std::string &text) = 0;
 };
 
 class SidlTextures
@@ -156,14 +195,27 @@ public:
 		bool hover = false;
 		bool pressed = false;
 		size_t max_chars = 64; // Editbox
+		// Style_VScroll: the content's scroll position in rows, how far it goes, and a page of it.
+		// Whoever fills the control sets max and page; the scrollbar, the wheel and the owner move pos.
+		int scroll_pos = 0, scroll_max = 0, scroll_page = 1;
+		// Draws the content of a control the window doesn't fill itself (a chat window's text),
+		// inside ContentRect, after the frame and under the children.
+		std::function<void(Canvas &, TextRenderer &, const Rect &)> draw_content;
+		// A gauge's bar slides to a new value at 1000 a second (CGaugeWnd::Draw), while its text stays.
+		mutable float gauge_shown = 0;
+		mutable std::string gauge_text;
+		mutable uint64_t gauge_ms = 0;
 	};
 
 	bool Build(const SidlDefinitions &defs, const std::string &screen_item, std::string &error);
+	void SetValues(SidlValues *values) { m_values = values; }
 	void Draw(Canvas &canvas, TextRenderer &text, SidlTextures &textures, uint64_t now_ms) const;
 	// Returns the ScreenID of a button clicked by this event, or "". A click on an edit box focuses it.
 	std::string OnMouse(const InputEvent &event);
 	// Typing into the focused edit box; false if there's none (or it's hidden).
 	bool OnKey(const InputEvent &event);
+	// The wheel over a scrolling control: three rows a notch. False if there's none under (x, y).
+	bool OnWheel(int x, int y, int notches);
 
 	Control *Find(const std::string &screen_id);
 	const Control *Find(const std::string &screen_id) const;
@@ -172,7 +224,10 @@ public:
 	// CXWnd::MoveAndInvalidate: a control's new rect, with its children laid out again.
 	void Move(const std::string &screen_id, const Rect &rect);
 	void Move(const Rect &rect) { Place(0, rect); } // the window itself
-	void Focus(const std::string &screen_id);
+	void Focus(const std::string &screen_id); // "" (or a missing one): nothing
+	bool Focused(const std::string &screen_id) const;
+	// Where a control's content goes: its client area, less the scrollbar.
+	Rect ContentRect(const Control &control) const;
 	bool Shown(const Control &control) const; // it and every parent visible
 	const Rect &Bounds() const { return m_controls.front().rect; }
 	const SidlPiece &Def() const { return *m_controls.front().def; }
@@ -191,7 +246,8 @@ public:
 	// Minimized (CXWnd::IsMinimized): just the title bar and border, no client area or pieces.
 	void SetMinimized(bool minimized) { m_minimized = minimized; }
 	bool Minimized() const { return m_minimized; }
-	// A control under (x, y) that takes clicks (a shown button or edit box): clicks there don't drag.
+	// A control under (x, y) that takes clicks (a shown button, edit box or scrollbar): clicks
+	// there don't drag.
 	bool InteractiveAt(int x, int y) const;
 
 private:
@@ -202,10 +258,30 @@ private:
 	void DrawAnimation(Canvas &canvas, SidlTextures &textures, const std::string &name, const Rect &dest, uint64_t now_ms) const;
 	void DrawTitleBox(Canvas &canvas, SidlTextures &textures, TitleBox box, const SidlButtonTemplate &look, uint64_t now_ms) const;
 	Rect AnimationSize(const std::string &name) const; // the first frame's size, at 0, 0
+	void DrawGauge(const Control &control, Canvas &canvas, TextRenderer &text, SidlTextures &textures, uint64_t now_ms) const;
+
+	// The vertical scrollbar's parts, for a control that has one.
+	enum class ScrollPart { None, Up, Down, PageUp, PageDown, Thumb };
+	struct ScrollLayout
+	{
+		Rect bar, up, down, track, thumb;
+	};
+	bool HasScrollbar(const Control &control) const;
+	ScrollLayout LayoutScrollbar(const Control &control) const;
+	ScrollPart ScrollPartAt(const Control &control, int x, int y) const;
+	void DrawScrollbar(const Control &control, Canvas &canvas, SidlTextures &textures, uint64_t now_ms) const;
+	void ScrollBy(Control &control, int rows);
 
 	const SidlDefinitions *m_defs = nullptr;
+	SidlValues *m_values = nullptr;
 	std::vector<Control> m_controls;
 	int m_focus = -1;
+	// A scrollbar part held down: which control, which part; for the thumb, where it was grabbed.
+	int m_scroll_control = -1;
+	ScrollPart m_scroll_part = ScrollPart::None;
+	int m_scroll_grab_y = 0, m_scroll_grab_pos = 0;
+	int m_scroll_hover = -1;
+	ScrollPart m_scroll_hover_part = ScrollPart::None;
 	bool m_minimized = false;
 	TitleBox m_box_hover = TitleBox::None, m_box_pressed = TitleBox::None;
 };

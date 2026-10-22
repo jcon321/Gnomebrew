@@ -12,10 +12,13 @@
 #include "art.h"
 #include "charcreate.h"
 #include "charselect_view.h"
+#include "chat_text.h"
+#include "chat_window.h"
 #include "creation_rules.h"
 #include "debug_menu.h"
 #include "eq_sound.h"
 #include "eqtext.h"
+#include "game_values.h"
 #include "login_client.h"
 #include "sidl.h"
 #include "weather.h"
@@ -39,6 +42,7 @@ struct FrontEndConfig
 	uint16_t world_port = 9000;
 	std::string record_dir; // each zone session's packets go to a packet log (.eqr) here; empty: none
 	std::string ui_dir;     // where the UI_<character>_<server>.ini window layouts go; empty: not kept
+	std::string settings_ini; // my-client.ini, for its [TextColors] (the chat's colors); empty: the built-in ones
 };
 
 class EqStr;
@@ -104,6 +108,8 @@ public:
 	int SelectedCharacter() const { return m_selected_slot; }
 	int LastCharacter() const { return m_config.last_character; } // the slot to remember (LastCharSel)
 	const ZoneSession &Zone() const { return m_zone; }
+	const ChatWindow &Chat() const { return m_chat; }
+	uint16_t Target() const { return m_game_values.target; } // spawn id, 0 none
 	const CharacterSelectView *CharacterScene() const { return m_charselect_view.get(); }
 	const audio::EqSound *Sound() const { return m_sound.get(); }
 	const ZoneView *ZoneScene() const { return m_zone_view.get(); }
@@ -169,8 +175,13 @@ private:
 	void BuildZoneWindows();
 	void SaveUiLayout();
 	void HandleWindowClicks();
-	void AddZoneLog(const std::string &text, uint32_t color);
+	void AddZoneLog(const std::string &text, uint32_t color); // a line of chat in this color
+	void ChatOut(const std::string &text, int type);          // in a chat color type (ChatType)
 	void StartCamp();
+	// CEverquest_InterpretCmd (chat_commands.cpp): a line typed into the chat window.
+	void InterpretCommand(const std::string &line);
+	// Our target, and the zone told (OP_TargetMouse, or OP_TargetCommand for /target).
+	void SetTarget(uint16_t id, bool command = false);
 
 	// EqSoundManager::GiveTime's callers (character select and the world display): the listener and
 	// the emitters' surroundings from the zone, then the sound's frame.
@@ -238,15 +249,11 @@ private:
 	std::unique_ptr<CharacterCreation> m_creation;
 	bool m_creating = false; // waiting for the world server's answer
 
-	// zone: the 3D view with the chat and the debug menu over it
-	struct LogLine
-	{
-		std::string text;
-		uint32_t color;
-	};
-	std::vector<LogLine> m_zone_log;
-	InputField m_chat_input;
-	Button m_camp;
+	// zone: the 3D view with the SIDL windows and the debug menu over it
+	ChatWindow m_chat;
+	ChatColors m_chat_colors;
+	GameValues m_game_values;
+	std::string m_last_tell; // who to /reply to (AddNameToTellList)
 	std::string m_time_of_day;
 	std::unique_ptr<ZoneView> m_zone_view;
 	bool m_zone_error_logged = false;

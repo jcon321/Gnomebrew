@@ -24,6 +24,8 @@
 //   [Defaults] LastCharSel=0          (remembered character select slot, like eqclient.ini's)
 //   [Debug]    RecordPackets=0        (1: each zone session's packets go to replays\<char>-<time>.eqr
 //                                      next to the exe, for --replay)
+//   [TextColors] User_<n>_Red=0 ...   (optional, not written: the chat's text color n, 1..72, as
+//                                      eqgame's; all three of Red, Green and Blue, or the built-in one)
 // The in-game windows' layouts go to UI_<character>_<server>.ini next to the exe, as eqgame's do.
 //   eqclient_gui.exe --eqdir C:\TAKP --login 192.168.0.18:6000 --size 1920x1080
 //   eqclient_gui.exe --replay replays\Name-20261022-124815.eqr   (straight into the recorded zone, no server)
@@ -428,6 +430,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	if (record_packets)
 		config.record_dir = Narrow(exe_dir) + "\\replays";
 	config.ui_dir = Narrow(exe_dir); // UI_<character>_<server>.ini, as eqgame keeps them in its folder
+	config.settings_ini = Narrow(ini);
 	if (!login.empty()) {
 		std::string value = Narrow(login);
 		size_t colon = value.rfind(':');

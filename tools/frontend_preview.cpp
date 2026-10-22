@@ -11,7 +11,8 @@
 // camera turns) instead of entering the world. --replay plays a packet log back (no server)
 // and snapshots the zone once it's in, then every few seconds for SECONDS (default 10), then
 // tries the windows: drags the selector by its title bar, opens the inventory from it, minimizes
-// and restores it, and closes it with Escape (the layout goes to OUTDIR/UI_*.ini).
+// and restores it, and closes it with Escape (the layout goes to OUTDIR/UI_*.ini); then types into
+// the chat window, targets a spawn and prints the chat.
 
 #include "eqstr.h"
 #include "frontend.h"
@@ -260,7 +261,7 @@ int main(int argc, char **argv)
 		h.RunUntil([] { return false; }, 300);
 		h.Snapshot("w1-inventory");
 		if (where("InventoryWindow")) {
-			h.Key(InputEvent::Key::Escape); // closes the topmost window with a close box
+			h.Key(InputEvent::Key::Escape); // eqgame's escape closes the inventory
 			where("InventoryWindow");
 		}
 		// The actions window has a minimize box: down to its title bar and back.
@@ -283,6 +284,53 @@ int main(int argc, char **argv)
 		}
 		h.RunUntil([] { return false; }, 300);
 		h.Snapshot("w3-closed");
+
+		// Chat: a say, a command that isn't one, an abbreviation, /loc, /target, and a line too
+		// long for the input box.
+		auto send = [&](const std::string &line) {
+			h.Key(InputEvent::Key::Enter);
+			h.Type(line);
+			h.Key(InputEvent::Key::Enter);
+			frontend.Update(NowMs());
+		};
+		send("hello there");
+		send("/nosuchcommand");
+		send("/s");
+		send("/loc");
+		send("/g hi group");
+		send("/target a");
+		h.RunUntil([] { return false; }, 300);
+		printf("[preview] target after /target: %u\n", frontend.Target());
+		// A spawn clicked: the first name tag in view, a little under the name.
+		if (const ZoneView *view = frontend.ZoneScene()) {
+			for (const auto &tag : view->NameTags(120))
+				if (tag.id != 0) {
+					click(tag.x, tag.y + 12);
+					printf("[preview] clicked spawn %u at %d,%d: target %u\n", tag.id, tag.x, tag.y + 12, frontend.Target());
+					break;
+				}
+		}
+		for (int i = 0; i < 30; ++i)
+			frontend.OnEvent({InputEvent::Type::Char, 0, 0, 0, 0}); // nothing: not typing
+		h.Key(InputEvent::Key::Enter);
+		h.Type(std::string(120, 'x'));
+		h.RunUntil([] { return false; }, 300);
+		h.Snapshot("c1-chat");
+		h.Key(InputEvent::Key::Escape); // closes the chat line, not a window
+		if (const SidlWindow *chat = where("ChatWindow")) {
+			Rect b = chat->Bounds();
+			InputEvent wheel;
+			wheel.type = InputEvent::Type::Wheel;
+			wheel.x = b.x + b.w / 2;
+			wheel.y = b.y + b.h / 2;
+			wheel.wheel = 1;
+			frontend.OnEvent(wheel);
+			if (const SidlWindow::Control *output = chat->Find("CWChatOutput"))
+				printf("[preview] chat output scroll %d of %d, page %d\n", output->scroll_pos, output->scroll_max, output->scroll_page);
+		}
+		for (const auto &line : frontend.Chat().Lines())
+			printf("[preview] chat %06x %s\n", line.rgb, line.text.c_str());
+		h.Snapshot("c2-target");
 		return 0;
 	}
 
@@ -472,10 +520,23 @@ int main(int argc, char **argv)
 			h.RunUntil([] { return false; }, 1500);
 			h.Snapshot("9-zone-chat");
 
-			h.Key(InputEvent::Key::Escape); // camp prompt
-			h.Key(InputEvent::Key::Enter);  // yes
+			// /target asks the zone, which answers with the target it set.
+			h.Key(InputEvent::Key::Enter);
+			h.Type("/target guard");
+			h.Key(InputEvent::Key::Enter);
+			h.RunUntil([&] { return frontend.Target() != 0; }, 3000);
+			printf("[preview] target %u; our hp %d (+%d worn) of %d\n", frontend.Target(), frontend.Zone().BaseHp(),
+				GameValues::WornHp(frontend.Zone().Items()), frontend.Zone().MaxHp());
+			h.RunUntil([] { return false; }, 500);
+			h.Snapshot("9b-zone-target");
+
+			h.Key(InputEvent::Key::Enter); // camp
+			h.Type("/camp");
+			h.Key(InputEvent::Key::Enter);
 			h.RunUntil([&] { return frontend.DialogOpen(); }, 45000);
 			printf("[preview] dialog: %s\n", frontend.DialogText().c_str());
+			for (const auto &line : frontend.Chat().Lines())
+				printf("[preview] chat %06x %s\n", line.rgb, line.text.c_str());
 			h.Snapshot("10-camped");
 		}
 		else {

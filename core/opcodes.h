@@ -88,6 +88,12 @@ namespace ZoneOp
 	constexpr uint16_t WearChange = 0x4092;
 	constexpr uint16_t LevelUpdate = 0x4198;
 	constexpr uint16_t SkillUpdate = 0x4189;
+	constexpr uint16_t BookPacket = 0x4165;      // Item_Struct: a book or note we now have, in its equipSlot
+	constexpr uint16_t ContainerPacket = 0x4166; // Item_Struct: a bag
+	constexpr uint16_t SummonedItem = 0x4178;    // Item_Struct: an item on the cursor
+	constexpr uint16_t MoveItem = 0x412c;        // MoveItem_Struct {i32 from, to, qty}: to -1 deletes it
+	constexpr uint16_t TargetMouse = 0x4162;   // ClientTarget_Struct {u16 id}: we clicked a spawn (0 clears it)
+	constexpr uint16_t TargetCommand = 0x41fe; // ClientTarget_Struct: /target asks; the zone answers with the target it set
 }
 
 struct OpcodeEntry
@@ -176,5 +182,11 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::WearChange, "OP_WearChange"},
 	{ZoneOp::LevelUpdate, "OP_LevelUpdate"},
 	{ZoneOp::SkillUpdate, "OP_SkillUpdate"},
+	{ZoneOp::BookPacket, "OP_BookPacket"},
+	{ZoneOp::ContainerPacket, "OP_ContainerPacket"},
+	{ZoneOp::SummonedItem, "OP_SummonedItem"},
+	{ZoneOp::MoveItem, "OP_MoveItem"},
+	{ZoneOp::TargetMouse, "OP_TargetMouse"},
+	{ZoneOp::TargetCommand, "OP_TargetCommand"},
 	{0, nullptr},
 };

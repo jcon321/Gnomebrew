@@ -10,7 +10,7 @@ A from-scratch EQMac (TAKP-era) client. Two programs share one core:
   circles them. Empty slots open character creation. Enter World connects to the zone and
   draws it in 3D: you run, walk, turn and jump through it (arrows or WASD, Space, Ctrl+R), with
   everyone else around you and the time of day lighting it, under a chase camera (F9: first
-  person). Over the view are the chat log (Enter to chat), a CAMP button for a proper camp-out, and
+  person). Over the view are eqgame's own windows (player, target, chat and the rest, below) and
   the debug menu (F11): a stat card in sections that fold (your details, frame rate, movement and
   the floor under you, where the zone last heard you are, camera, network, the latest packets, the
   zone header and light, the sound, render toggles for wireframe / no fog / collision walls / a floor
@@ -76,7 +76,7 @@ they also run as-is on Windows 10+.
 
 All settings live in `my-client.ini` next to `eqclient_gui.exe`. The EQ folder is only read for
 assets; its `eqclient.ini` is never used. On startup the GUI adds any missing keys with their
-defaults, so the file always lists every setting:
+defaults, so the file lists every setting except the optional `[TextColors]`:
 
 ```ini
 [Paths]
@@ -140,14 +140,32 @@ RecordPackets=0
   packets arriving when they did (spawns, chat, doors, weather...). You can run around; what you send
   goes nowhere. When the log runs out you stay in the zone. Camping logs out when its timer runs, and
   zone lines are turned down. The console client and `frontend_preview` play the same files.
+- `[TextColors]` is optional and isn't written for you: the chat's text colors, keyed as eqgame's
+  (`User_<n>_Red`, `User_<n>_Green`, `User_<n>_Blue`, n 1..72; all three, 0..255, or the built-in
+  color). For example `User_1_Red=255` with Green and Blue makes says red.
 
 In the zone, the game's own SIDL windows come up as eqgame's do on a first login (player, target,
-group, buffs, spell gems, hotbuttons and the selector, whose buttons open and close the others). You
-drag them (by the title bar, or anywhere on one that isn't sizable), resize sizable ones from their
-borders, close and minimize them from their title bars, and Escape closes the topmost one. They
-fade when the mouse has been off them a while. Their layout is kept in eqgame's own format, in
+group, buffs, spell gems, hotbuttons, chat and the selector, whose buttons open and close the
+others). You drag them (by the title bar, or anywhere on one that isn't sizable), resize sizable
+ones from their borders, and close and minimize them from their title bars. They fade when the
+mouse has been off them a while. Their layout is kept in eqgame's own format, in
 `UI_<character>_<server>.ini` next to the exe (the server part is the login server's address cut
-to 7 characters, as eqgame names it). What's inside the windows mostly isn't filled in yet.
+to 7 characters, as eqgame names it).
+
+- The player window's gauges show HP (with your name), mana (not for classes without any) and
+  stamina; the pet gauge under them, your pet's. The target window shows the target's name, HP bar
+  and percent. Click someone to target them, or `/target name`; Escape clears the target (and, as in
+  eqgame, closes the help, options or inventory window if one's open). Gauges are drawn the way
+  `CGaugeWnd::Draw` does it, bars sliding to a new value at a full bar a second.
+- The chat window keeps the last 400 lines in eqgame's colors (from `[TextColors]` in
+  `my-client.ini`, or the built-in ones), with a scrollbar and the wheel. Enter or `/` opens its
+  input line, Up and Down bring back the last 40 lines sent. Commands are looked up in eqgame's own
+  table, in its order, so abbreviations work as they do there (`/g` is /gsay, `/s` is /split).
+  So far: /say (or no slash, or `'`), /tell, /reply, /gsay, /guildsay, /shout, /auction, /ooc,
+  /emote (`:`, /me), /hail, /target, /location, /camp, /clearchat. The rest say they aren't
+  supported yet.
+- The Actions window's Camp, Run and Walk buttons work.
+- The other windows are still mostly empty frames.
 
 Command-line flags override the ini: `--eqdir`, `--login`, `--size WxH`, `--replay FILE`. The GUI saves the last
 username as `[Login] User=` and the selected character as `[Defaults] LastCharSel=`, and writes a log to `my-client.log` next to the exe.
@@ -192,7 +210,8 @@ at character select instead). `create` instead makes an Erudite wizard from the 
 snapshots every creation screen and the face picker, submits it, and deletes it again. It's for
 checking layout and flow without Windows. `--replay` plays a packet log back instead (no server)
 and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,
-opens, minimizes, resizes and closes windows (the layout goes to OUTDIR).
+opens, minimizes, resizes and closes windows (the layout goes to OUTDIR), types into the chat window
+(a say, commands, /target) and prints what the chat window holds.
 
 ```
 build/scene_preview EQDIR OUT.png --char RACE GENDER CLASS [--face F] [--equip M,M,...] [--camera H] [--frames N] [--size WxH]
@@ -536,8 +555,8 @@ Not yet: the real client's messages use `CConfirmationDialog`; these use the fro
   60 day periods (night until 3:00, dawn to 9:00, day to 15:00, dusk to 20:48), and the fog darkens with
   the light. The sun and moon aren't drawn yet.
 
-The zone screen fills the window: the 3D view, with the chat at the bottom left, our details and the
-nearest spawns at the top left, and the radar at the top right.
+The zone screen fills the window: the 3D view under the SIDL windows; with the debug menu open, our
+details and the nearest spawns at the top left and the radar at the top right.
 
 ## Sound
 

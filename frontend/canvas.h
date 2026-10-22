@@ -64,6 +64,9 @@ public:
 	// SIDL drawing: source rect of an image stretched (bilinear) into dest, alpha-blended
 	// when the image has alpha. This is how eqgame draws Ui2DAnimation frames into controls.
 	void Stretch(const Image &image, const Rect &source, const Rect &dest);
+	// The same with every texel multiplied by `tint` (0xRRGGBB, white leaves it alone), drawing only
+	// the part of dest inside `clip` (CUITexturePiece::Draw's color and clip rect).
+	void Stretch(const Image &image, const Rect &source, const Rect &dest, uint32_t tint, const Rect &clip);
 	// Repeat the source rect across dest at its natural size (window backgrounds).
 	void TileRegion(const Image &image, const Rect &source, const Rect &dest);
 

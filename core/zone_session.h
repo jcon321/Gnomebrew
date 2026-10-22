@@ -40,6 +40,9 @@ struct ZoneProfile
 	int16_t cur_hp = 0;
 	int16_t mana = 0;
 	uint32_t exp = 0;
+	int16_t str = 0, sta = 0, cha = 0, dex = 0, int_ = 0, agi = 0, wis = 0; // base stats, without items or spells
+	int8_t fatigue = 0; // 0 rested .. 100 exhausted (OP_Stamina keeps it up to date)
+	uint8_t languages[32] = {}; // skill in each language, 0..100
 	float x = 0, y = 0, z = 0, heading = 0;
 	uint32_t zone_id = 0;
 	int32_t platinum = 0, gold = 0, silver = 0, copper = 0;
@@ -140,9 +143,23 @@ struct ZoneMovement
 	float dy = 0, dx = 0, dz = 0;
 };
 
+// An item we have, from OP_CharInventory or OP_ItemPacket (Mac::structs::Item_Struct, 360 bytes):
+// what the windows need of it so far.
+struct ZoneItem
+{
+	int16_t slot = 0;        // equipSlot: 1..20 worn (21 ammo), 22..29 the bags' slots, 30 cursor...
+	uint8_t item_class = 0;  // 0 common, 1 container, 2 book
+	std::string name;
+	uint16_t icon = 0;
+	int16_t hp = 0, mana = 0; // common items only, like the stats
+	int8_t str = 0, sta = 0, cha = 0, dex = 0, int_ = 0, agi = 0, wis = 0;
+	uint8_t rec_level = 0, rec_skill = 0;
+};
+
 struct ZoneChat
 {
 	uint16_t channel = 0;    // ChannelMessage_Struct chan_num: 0 guild, 2 group, 3 shout, 4 auction, 5 ooc, 7 tell, 8 say...
+	uint16_t language = 0;
 	std::string sender;
 	std::string target;
 	std::string text;
@@ -166,7 +183,9 @@ public:
 			SpawnsMoved,
 			SpawnChanged, // id: stance, corpse...
 			Chat,         // chat
-			Message,      // text: system/special message
+			Message,      // text: system/special message; value: its color (a chat color type, Chat::*)
+			Emote,        // text: "Name waves." (OP_Emote)
+			TargetChanged,// id: the zone set our target (OP_TargetCommand's answer); 0 none
 			TimeOfDay,    // text: "hour:minute"
 			Weather,      // OP_Weather: id the type (0 rain, 1 snow), value the intensity (0 stops it)
 			DoorsSpawned, // Doors() is set
@@ -201,12 +220,20 @@ public:
 	const std::string &RecordingPath() const; // the current session's log, or empty
 	// Plays a packet log back instead of connecting: its incoming packets arrive when they did,
 	// and what we send goes nowhere. When it runs out we stay in the zone. A camp logs out when
-	// its timer runs; a zone line is turned down ("not ready").
+	// its timer runs; a zone line is turned down ("not ready"); a /target is taken.
 	bool BeginReplay(const std::string &path, std::string &error);
 	bool Replaying() const { return m_replay != nullptr; }
 	void Pump(int timeout_ms, std::vector<Event> &events);
 
-	bool Say(const std::string &text);
+	bool Say(const std::string &text) { return SendChannel(8, "", text); }
+	// CEverQuest::SendNewText: OP_ChannelMessage on a channel (0 guild, 2 group, 3 shout, 4 auction,
+	// 5 ooc, 7 tell, 8 say), to `target` (a tell's recipient; for a say, the NPC we're talking to).
+	bool SendChannel(uint16_t channel, const std::string &target, const std::string &text);
+	// CEverQuest::Emote: OP_Emote; the zone puts our name in front, so it starts with a space.
+	bool Emote(const std::string &text);
+	// Our target: OP_TargetMouse (clicked) or OP_TargetCommand (/target), 0 for none. The zone
+	// sends the target's HP and, for /target, which target it set (TargetChanged).
+	void SetTarget(uint16_t id, bool command = false);
 	// Our movement, every frame once we're in. Pump sends OP_ClientUpdate the way DoMainLoop
 	// does: when the heading moved 2 or the speed 0.2 since the last flag, and every second
 	// (DoPassageOfTime), at most every 150 ms, and not more than 6 identical updates in a row.
@@ -236,6 +263,12 @@ public:
 	// Set before the ZoneInfo event.
 	const ZoneSpawn &Self() const { return m_self; }
 	uint16_t MySpawnId() const { return m_my_id; }
+	// Our hit points as OP_HPUpdate gives them: `hp` leaves out what worn items add (the client
+	// adds that), `max_hp` is the total. Both 0 until the zone has sent them.
+	int32_t BaseHp() const { return m_hp; }
+	int32_t MaxHp() const { return m_max_hp; }
+	// The items we have (OP_CharInventory, then each OP_ItemPacket), by slot.
+	const std::map<int16_t, ZoneItem> &Items() const { return m_items; }
 	uint64_t CampRemainingMs() const;
 	// Norrath's time: OP_TimeOfDay's hour (1..24) and minute, carried on at 20 game seconds a
 	// second as EQWorldData::AdvanceTime does. False until the zone has sent it.
@@ -283,6 +316,7 @@ private:
 	std::unique_ptr<PacketLog> m_replay;
 	size_t m_replay_next = 0;
 	bool m_replay_finished = false;
+	uint16_t m_replay_target = 0; // a /target to answer
 	State m_state = State::Idle;
 	std::string m_character;
 	ZoneProfile m_profile;
@@ -290,6 +324,8 @@ private:
 	std::map<uint16_t, ZoneSpawn> m_spawns;
 	ZoneSpawn m_self;
 	uint16_t m_my_id = 0;
+	int32_t m_hp = 0, m_max_hp = 0;
+	std::map<int16_t, ZoneItem> m_items;
 	bool m_have_profile = false;
 	bool m_have_zone_entry = false;
 	bool m_sent_req_new_zone = false;
