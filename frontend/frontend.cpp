@@ -639,6 +639,10 @@ void FrontEnd::Update(uint64_t now_ms)
 		Rect area = ScreenArea();
 		m_windows.Update(now_ms, m_mouse_x - area.x, m_mouse_y - area.y);
 		HandleWindowClicks();
+		// DoPassageOfTime: the social going's next line.
+		std::string social_line = SocialStep(m_window_state, now_ms);
+		if (!social_line.empty())
+			InterpretCommand(social_line);
 		m_game_values.running = m_run;
 		UpdateGameWindows(m_windows, m_game_values, m_window_state);
 		if (m_windows.TakeChanged())
@@ -1357,7 +1361,7 @@ namespace
 		{"PlayerWindow", true}, {"TargetWindow", true}, {"GroupWindow", true}, {"BuffWindow", true},
 		{"CastSpellWnd", true}, {"HotButtonWnd", true}, {"SelectorWindow", true}, {"ActionsWindow", false},
 		{"InventoryWindow", false}, {"OptionsWindow", false}, {"FriendsWindow", false}, {"PetInfoWindow", false},
-		{"HelpWindow", false}, {"CompassWindow", false}, {"ChatWindow", true},
+		{"HelpWindow", false}, {"CompassWindow", false}, {"SocialEditWnd", false}, {"ChatWindow", true},
 	};
 
 	// The selector's buttons (EQUI_SelectorWnd.xml) and the windows they open and close.
@@ -1391,6 +1395,7 @@ void FrontEnd::BuildZoneWindows()
 	m_ui_layout_path.clear();
 	m_hot_buttons_path.clear();
 	m_window_state = GameWindowState{};
+	DefaultSocials(m_window_state, m_ui.eqstr);
 	const std::string &name = m_zone.Profile().name;
 	if (!m_config.ui_dir.empty() && !name.empty()) {
 		std::string suffix = name + "_" + m_config.login_host.substr(0, 7) + ".ini";
@@ -1402,8 +1407,10 @@ void FrontEnd::BuildZoneWindows()
 		// CEverQuest::CreateIniFilenames: the character's own ini is the layout's name without UI_.
 		m_hot_buttons_path = m_config.ui_dir + "/" + suffix;
 		IniFile custom;
-		if (custom.Load(m_hot_buttons_path))
+		if (custom.Load(m_hot_buttons_path)) {
 			LoadHotButtons(custom, m_window_state);
+			LoadSocials(custom, m_window_state);
+		}
 	}
 	m_windows.TakeChanged();
 	m_chat.Attach(m_windows.Find("ChatWindow"));
@@ -1420,14 +1427,15 @@ void FrontEnd::SaveUiLayout()
 		Log("UI: couldn't write " + m_ui_layout_path);
 }
 
-void FrontEnd::SaveHotButtons()
+void FrontEnd::SaveCustom()
 {
-	m_window_state.hot_buttons_changed = false;
+	m_window_state.hot_buttons_changed = m_window_state.socials_changed = false;
 	if (m_hot_buttons_path.empty())
 		return;
 	IniFile ini;
 	ini.Load(m_hot_buttons_path); // keep the rest of the character's ini
 	StoreHotButtons(ini, m_window_state);
+	StoreSocials(ini, m_window_state);
 	if (!ini.Save(m_hot_buttons_path))
 		Log("UI: couldn't write " + m_hot_buttons_path);
 }
@@ -1447,6 +1455,8 @@ void FrontEnd::HandleWindowClicks()
 {
 	for (const auto &hold : m_windows.TakeHolds())
 		GameWindowHold(m_windows, m_window_state, hold.window, hold.control);
+	for (const auto &click : m_windows.TakeRightClicks())
+		GameWindowRightClick(m_windows, m_window_state, click.window, click.control);
 	for (WindowManager::Click click : m_windows.TakeClicks()) {
 		// A hot button holding one of the Actions window's buttons does what that button does.
 		std::string action = GameWindowClick(m_windows, m_window_state, click.window, click.control);
@@ -1466,8 +1476,8 @@ void FrontEnd::HandleWindowClicks()
 			}
 		}
 	}
-	if (m_window_state.hot_buttons_changed)
-		SaveHotButtons();
+	if (m_window_state.hot_buttons_changed || m_window_state.socials_changed)
+		SaveCustom();
 	// The selector's buttons stay down while their window is open.
 	if (SidlWindow *selector = m_windows.Find("SelectorWindow"))
 		for (const auto &toggle : SelectorToggles)
@@ -1747,9 +1757,20 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			SaveDebugSettings();
 		return;
 	}
-	// Then the windows, unless the world has the mouse.
-	if (event.IsMouse() && !m_mouse_turn && !m_mouse_pan && m_windows.OnMouse(event, m_now_ms))
+	// Then the windows, unless the world has the mouse. The keys go to one edit box: a press in
+	// the social editor's takes them from the chat's, and one in the chat window from the editor.
+	SidlWindow *social_editor = m_windows.Find("SocialEditWnd");
+	if (event.IsMouse() && !m_mouse_turn && !m_mouse_pan && m_windows.OnMouse(event, m_now_ms)) {
+		if (event.type == InputEvent::Type::MouseDown && social_editor) {
+			std::string pressed = m_windows.ScreenAt(event.x, event.y);
+			if (pressed == "SocialEditWnd" && social_editor->Typing())
+				m_chat.Close();
+			else if (pressed == "ChatWindow" && m_chat.Typing())
+				social_editor->Focus("");
+		}
 		return;
+	}
+	bool editing = social_editor && social_editor->Typing();
 	switch (event.type) {
 	case InputEvent::Type::Wheel:
 		// Out of first person into the chase camera and back, as well as closer and farther.
@@ -1838,7 +1859,9 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 	// While it's open, letters go into it and Up and Down go back through what was sent; the other
 	// arrows still move.
 	if (event.type == InputEvent::Type::Char) {
-		if (m_chat.Typing())
+		if (editing)
+			social_editor->OnKey(event);
+		else if (m_chat.Typing())
 			m_chat.OnChar(event.ch);
 		else if (event.ch == '/' && m_chat.Attached()) {
 			m_windows.Show("ChatWindow", true);
@@ -1848,8 +1871,11 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 	}
 	if (event.type != InputEvent::Type::Key)
 		return;
-	bool typing = m_chat.Typing();
-	if (typing) {
+	// Typing into the social editor: Enter does nothing, Escape closes it (below).
+	if (editing && (social_editor->OnKey(event) || event.key == InputEvent::Key::Enter))
+		return;
+	bool typing = m_chat.Typing() || editing;
+	if (m_chat.Typing()) {
 		std::string line;
 		if (m_chat.OnKey(event, line)) {
 			if (event.key == InputEvent::Key::Enter && !line.empty())
@@ -1899,10 +1925,10 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			break;
 		}
 		// ExecuteCmd's escape: no target, then CDisplay_NewUIProcessEscape closes the first of its
-		// windows that's open (of the ones we have: help, options, inventory).
+		// windows that's open (of the ones we have: help, options, the social editor, inventory).
 		SetTarget(0);
 		ChatOut(EqString(12375, "You no longer have a target."), ChatType::Default);
-		for (const char *screen : {"HelpWindow", "OptionsWindow", "InventoryWindow"})
+		for (const char *screen : {"HelpWindow", "OptionsWindow", "SocialEditWnd", "InventoryWindow"})
 			if (m_windows.Shown(screen)) {
 				m_windows.Show(screen, false);
 				break;

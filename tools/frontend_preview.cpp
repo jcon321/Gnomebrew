@@ -334,6 +334,82 @@ int main(int argc, char **argv)
 			report("1 used again (running)");
 			h.Snapshot("h3-hot-buttons");
 		}
+		// Socials: the first page's defaults, one edited (right click, Clear, a name, two lines, a
+		// color, Accept), done from the Actions window, then put on hot button 3 and done from there.
+		auto right_click = [&](int x, int y) {
+			frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+			frontend.OnEvent({InputEvent::Type::RightDown, x, y});
+			frontend.OnEvent({InputEvent::Type::RightUp, x, y});
+			frontend.Update(NowMs());
+		};
+		auto social_report = [&](const char *step) {
+			const GameWindowState &s = frontend.WindowState();
+			const SidlWindow::Control *b1 = windows.Find("ActionsWindow")->Find("ASP_SocialButton1");
+			const SidlWindow::Control *b12 = windows.Find("ActionsWindow")->Find("ASP_SocialButton12");
+			printf("[preview] socials %s: 1 \"%s\" %06x, 12 \"%s\" %06x, going %d line %d wait %d, HB3 \"%s\", editor %s\n",
+				step, b1 ? b1->text.c_str() : "?", b1 ? b1->text_color : 0, b12 ? b12->text.c_str() : "?",
+				b12 ? b12->text_color : 0, s.current_social, s.social_line, s.social_wait, hot_text(3).c_str(),
+				windows.Shown("SocialEditWnd") ? "shown" : "hidden");
+		};
+		if (SidlWindow *actions = windows.Find("ActionsWindow"))
+			if (SidlWindow::Control *tabs = actions->Find("ACTW_ActionsSubwindows")) {
+				actions->SelectTab(*tabs, 3);
+				frontend.Update(NowMs());
+				social_report("defaults");
+				h.Snapshot("s1-socials-page");
+				int s1_x, s1_y, x, y;
+				if (at("ActionsWindow", "ASP_SocialButton1", s1_x, s1_y)) {
+					right_click(s1_x, s1_y);
+					where("SocialEditWnd");
+					h.RunUntil([] { return false; }, 300);
+					h.Snapshot("s2-editor-afk");
+					if (at("SocialEditWnd", "SEW_Clear_Button", x, y))
+						click(x, y);
+					if (at("SocialEditWnd", "SEW_NameInput", x, y)) {
+						click(x, y);
+						h.Type("Testing123456789"); // 15 at most
+					}
+					if (at("SocialEditWnd", "SEW_Line0Input", x, y)) {
+						click(x, y);
+						h.Type("/pause 3, /loc");
+					}
+					if (at("SocialEditWnd", "SEW_Line2Input", x, y)) {
+						click(x, y);
+						h.Type("wasd from a social");
+					}
+					if (at("SocialEditWnd", "SEW_TC3Button", x, y))
+						click(x, y);
+					h.RunUntil([] { return false; }, 300);
+					h.Snapshot("s3-editor-typed");
+					if (at("SocialEditWnd", "SEW_Accept_Button", x, y))
+						click(x, y);
+					social_report("accepted");
+					size_t chat_before = frontend.Chat().Lines().size();
+					click(s1_x, s1_y);
+					for (int i = 0; i < 12; ++i) {
+						h.RunUntil([] { return false; }, 105);
+						social_report("running");
+					}
+					for (size_t i = chat_before; i < frontend.Chat().Lines().size(); ++i)
+						printf("[preview] social chat: %s\n", frontend.Chat().Lines()[i].text.c_str());
+					int hb3_x, hb3_y;
+					if (at("HotButtonWnd", "HB_Button3", hb3_x, hb3_y)) {
+						hold(s1_x, s1_y);
+						click(hb3_x, hb3_y);
+						social_report("on hot button 3");
+						h.RunUntil([] { return false; }, 300);
+						h.Snapshot("s4-hot-button");
+						click(hb3_x, hb3_y);
+						social_report("hot button 3 used");
+						click(hb3_x, hb3_y);
+						social_report("hot button 3 again (still going: nothing)");
+						right_click(hb3_x, hb3_y);
+						social_report("hot button 3 right clicked");
+						h.Key(InputEvent::Key::Escape);
+						social_report("Escape");
+					}
+				}
+			}
 		// The target window is sizable: its bottom right corner, 60 right and 40 down.
 		if (const SidlWindow *target = where("TargetWindow")) {
 			Rect b = target->Bounds();

@@ -1,9 +1,12 @@
 #include "game_windows.h"
+#include "eqstr.h"
 #include "game_values.h"
 #include "ini_file.h"
 #include "window_manager.h"
 #include "zone_session.h"
 
+#include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <iterator>
 #include <string>
@@ -13,7 +16,17 @@ namespace
 	constexpr int BuffSlots = 15;    // CBuffWindow's buttons, Buff0..Buff14
 	constexpr int GroupMembers = 5;  // the others in a group
 	constexpr int Pages = 10;        // of socials, and of hot buttons
-	constexpr int SocialsPerPage = 12;
+	constexpr int SocialStepMs = 101;
+	constexpr int SocialColors = 20; // SEW_TC0Button..SEW_TC19Button
+	constexpr size_t SocialNameChars = 15, SocialLineChars = 255;
+	constexpr size_t SocialNameLoaded = 8; // what loadCustomFromINI keeps of a name
+
+	// The first page's socials (eqstr 6652..6663, their lines 6664..6675) in English.
+	const char *const DefaultSocialNames[SocialsPerPage][2] = {
+		{"Afk", "/afk"}, {"Anon", "/anon"}, {"Split", "/autosplit"}, {"Bug", "/bug"},
+		{"Consider", "/con"}, {"Duel", "/duel"}, {"Feedback", "/feedback"}, {"Hail", "/hail"},
+		{"Played", "/played"}, {"Time", "/time"}, {"GM List", "/who all GM"}, {"Wave", "/wave"},
+	};
 
 	// The Actions window's buttons that go on hot buttons, in eqgame's order for each page
 	// (CActionsWnd's button arrays). The main page's pairs share a place, one shown at a time.
@@ -124,6 +137,119 @@ namespace
 			control->text = text;
 	}
 
+	// CSocialEditWnd::GetSocialTextColor: the TextColor of the editor's SEW_TC<color>Button.
+	uint32_t SocialColor(WindowManager &windows, int color)
+	{
+		SidlWindow *editor = windows.Find("SocialEditWnd");
+		const SidlWindow::Control *button =
+			editor && color >= 0 && color < SocialColors ? editor->Find("SEW_TC" + std::to_string(color) + "Button") : nullptr;
+		return button ? button->text_color : 0x606060;
+	}
+
+	// CActionsWnd::SocialsPageOnProcessFrame: the page's socials' names, in their colors.
+	void SocialsPage(SidlWindow &wnd, WindowManager &windows, const GameWindowState &state)
+	{
+		for (int i = 0; i < SocialsPerPage; ++i)
+			if (SidlWindow::Control *button = wnd.Find("ASP_SocialButton" + std::to_string(i + 1))) {
+				const Social &social = state.socials[state.social_page * SocialsPerPage + i];
+				button->text = social.name;
+				button->text_color = SocialColor(windows, social.color);
+			}
+	}
+
+	bool ValidSocial(int social)
+	{
+		return social >= 0 && social < SocialPages * SocialsPerPage;
+	}
+
+	// Its keys in [Socials]: Page<p>Button<b>...
+	std::string SocialKey(int social)
+	{
+		return "Page" + std::to_string(social / SocialsPerPage + 1) + "Button" + std::to_string(social % SocialsPerPage + 1);
+	}
+
+	// strnicmp(line, "/pause", 4).
+	bool IsPause(const std::string &line)
+	{
+		const char *pause = "/pau";
+		for (int i = 0; i < 4; ++i)
+			if (i >= static_cast<int>(line.size()) || std::tolower(static_cast<unsigned char>(line[i])) != pause[i])
+				return false;
+		return true;
+	}
+
+	// SocialsPageWndNotification's click (the one going or not) and DoHotButton's.
+	void StartSocial(GameWindowState &state, int social)
+	{
+		state.current_social = social;
+		state.social_line = 0;
+		state.social_wait = 0;
+	}
+
+	// CSocialEditWnd::Activate and UpdateControlsFromSocial: the editor on a social, its boxes
+	// filled from it, on top.
+	void OpenSocialEditor(WindowManager &windows, GameWindowState &state, int social)
+	{
+		SidlWindow *editor = windows.Find("SocialEditWnd");
+		if (!editor || !ValidSocial(social))
+			return;
+		const Social &from = state.socials[social];
+		state.edit_social = social;
+		state.edit_color = from.color;
+		if (SidlWindow::Control *name = editor->Find("SEW_NameInput")) {
+			name->text = from.name;
+			name->max_chars = SocialNameChars;
+			name->text_color = SocialColor(windows, from.color); // UpdateSelectedSocialHotkey
+		}
+		for (int i = 0; i < SocialLines; ++i)
+			if (SidlWindow::Control *line = editor->Find("SEW_Line" + std::to_string(i) + "Input")) {
+				line->text = from.lines[i];
+				line->max_chars = SocialLineChars;
+			}
+		windows.Show("SocialEditWnd", true);
+		windows.Raise("SocialEditWnd");
+	}
+
+	// CSocialEditWnd's WndNotification: Accept, Clear, and the color buttons.
+	void SocialEditorClick(WindowManager &windows, GameWindowState &state, const std::string &control)
+	{
+		SidlWindow *editor = windows.Find("SocialEditWnd");
+		if (!editor)
+			return;
+		SidlWindow::Control *name = editor->Find("SEW_NameInput");
+		auto line = [&](int i) { return editor->Find("SEW_Line" + std::to_string(i) + "Input"); };
+		if (control == "SEW_Accept_Button" && ValidSocial(state.edit_social)) {
+			// SaveSocialCommandData: the boxes into the social, kept, and the editor closed.
+			Social &social = state.socials[state.edit_social];
+			if (name)
+				social.name = name->text;
+			for (int i = 0; i < SocialLines; ++i)
+				if (SidlWindow::Control *box = line(i))
+					social.lines[i] = box->text;
+			social.color = state.edit_color;
+			social.changed = true;
+			state.socials_changed = true;
+			windows.Show("SocialEditWnd", false);
+		}
+		else if (control == "SEW_Clear_Button") {
+			// ClearSocialEditFields: the boxes emptied; the social keeps what it had until Accept.
+			if (name)
+				name->text.clear();
+			for (int i = 0; i < SocialLines; ++i)
+				if (SidlWindow::Control *box = line(i))
+					box->text.clear();
+		}
+		else {
+			// UpdateSelectedSocialHotkey: the color picked, the name shown in it.
+			for (int i = 0; i < SocialColors; ++i)
+				if (control == "SEW_TC" + std::to_string(i) + "Button") {
+					state.edit_color = i;
+					if (name)
+						name->text_color = SocialColor(windows, i);
+				}
+		}
+	}
+
 	// CActionsWnd::GetActionButton (@00403044): of a main page pair, the one showing.
 	std::string ActionButton(WindowManager &windows, int index)
 	{
@@ -154,11 +280,13 @@ namespace
 	}
 
 	// The text on a hot button: its button's (GetWindowText), or for the menu buttons and socials,
-	// their names (we don't have the socials yet, so they have none).
-	std::string HotButtonText(WindowManager &windows, const HotButton &button)
+	// their names (no AA abilities yet: socials from 120 on).
+	std::string HotButtonText(WindowManager &windows, const GameWindowState &state, const HotButton &button)
 	{
 		if (button.type == HotButton::Action && button.value >= static_cast<int>(std::size(MainButtons)))
 			return button.value == 10 ? "Spells" : "Menu Button";
+		if (button.type == HotButton::Social)
+			return ValidSocial(button.value) ? state.socials[button.value].name : "";
 		std::string id = SourceButton(windows, button);
 		SidlWindow *actions = windows.Find("ActionsWindow");
 		const SidlWindow::Control *source = actions && !id.empty() ? actions->Find(id) : nullptr;
@@ -202,7 +330,7 @@ namespace
 	void Attach(WindowManager &windows, GameWindowState &state, const HotButton &button)
 	{
 		state.cursor = button;
-		state.cursor_text = HotButtonText(windows, button);
+		state.cursor_text = HotButtonText(windows, state, button);
 	}
 
 	void HotButtonWindow(SidlWindow &wnd, WindowManager &windows, const GameWindowState &state)
@@ -215,8 +343,10 @@ namespace
 			const HotButton &held = state.hot_buttons[state.hot_button_page * HotButtonsPerPage + i - 1];
 			if (SidlWindow::Control *button = wnd.Find("HB_Button" + n)) {
 				button->checked = held.type == HotButton::Empty;
-				button->text = button->checked ? "" : HotButtonText(windows, held);
+				button->text = button->checked ? "" : HotButtonText(windows, state, held);
 				button->text_color = 0xffffff;
+				if (held.type == HotButton::Social && ValidSocial(held.value))
+					button->text_color = SocialColor(windows, state.socials[held.value].color);
 			}
 			Show(wnd, "HB_InvSlot" + n, false);
 			Show(wnd, "HB_SpellGem" + n, false);
@@ -231,6 +361,13 @@ std::string GameWindowClick(WindowManager &windows, GameWindowState &state, cons
 		if (SidlWindow *wnd = windows.Find(window))
 			SetText(*wnd, "ASP_CurrentSocialPageLabel", PageLabel(state.social_page));
 	}
+	if (window == "ActionsWindow") {
+		HotButton social = ActionsHotButton(state, control);
+		if (social.type == HotButton::Social)
+			StartSocial(state, social.value);
+	}
+	if (window == "SocialEditWnd")
+		SocialEditorClick(windows, state, control);
 	if (window != "HotButtonWnd")
 		return "";
 	StepPage(state.hot_button_page, control, "HB_PageLeftButton", "HB_PageRightButton");
@@ -239,7 +376,9 @@ std::string GameWindowClick(WindowManager &windows, GameWindowState &state, cons
 		return "";
 	HotButton &button = PageButton(state, slot);
 	if (state.cursor.type == HotButton::Empty) {
-		// DoHotButton: of what we can do so far, the main page's buttons.
+		// DoHotButton: of what we can do so far, the main page's buttons and socials.
+		if (button.type == HotButton::Social && ValidSocial(button.value) && state.current_social < 0)
+			StartSocial(state, button.value);
 		return button.type == HotButton::Action ? ActionButton(windows, button.value) : "";
 	}
 	// What's on the cursor goes on the button, and what was on it onto the cursor.
@@ -272,6 +411,21 @@ void GameWindowHold(WindowManager &windows, GameWindowState &state, const std::s
 	}
 }
 
+void GameWindowRightClick(WindowManager &windows, GameWindowState &state, const std::string &window, const std::string &control)
+{
+	// SocialsPageWndNotification's 3, and DoHotButtonRightClick for a social.
+	if (window == "ActionsWindow") {
+		HotButton social = ActionsHotButton(state, control);
+		if (social.type == HotButton::Social)
+			OpenSocialEditor(windows, state, social.value);
+	}
+	else if (window == "HotButtonWnd") {
+		int slot = HotButtonSlot(control);
+		if (slot >= 0 && PageButton(state, slot).type == HotButton::Social)
+			OpenSocialEditor(windows, state, PageButton(state, slot).value);
+	}
+}
+
 void UpdateGameWindows(WindowManager &windows, const GameValues &values, const GameWindowState &state)
 {
 	if (!values.zone)
@@ -283,8 +437,10 @@ void UpdateGameWindows(WindowManager &windows, const GameValues &values, const G
 	if (SidlWindow *wnd = windows.Find("BuffWindow"))
 		BuffWindow(*wnd);
 	// The Actions window first: the hot buttons show its buttons as they are this frame.
-	if (SidlWindow *wnd = windows.Find("ActionsWindow"))
+	if (SidlWindow *wnd = windows.Find("ActionsWindow")) {
 		ActionsWindow(*wnd, values);
+		SocialsPage(*wnd, windows, state);
+	}
 	if (SidlWindow *wnd = windows.Find("HotButtonWnd"))
 		HotButtonWindow(*wnd, windows, state);
 }
@@ -333,4 +489,106 @@ void StoreHotButtons(IniFile &ini, const GameWindowState &state)
 			else
 				ini.Set("HotButtons", key, std::string(1, static_cast<char>('A' + button.type)) + std::to_string(button.value));
 		}
+}
+
+void DefaultSocials(GameWindowState &state, const EqStr *eqstr)
+{
+	// initCustom: everything empty, then the first page's names and first lines.
+	for (Social &social : state.socials)
+		social = {};
+	auto text = [eqstr](uint32_t id, const char *fallback) {
+		return eqstr && eqstr->Has(id) ? eqstr->Format(id, {}) : std::string(fallback);
+	};
+	for (int i = 0; i < SocialsPerPage; ++i) {
+		state.socials[i].name = text(6652 + i, DefaultSocialNames[i][0]);
+		state.socials[i].lines[0] = text(6664 + i, DefaultSocialNames[i][1]);
+	}
+	state.socials_changed = false;
+}
+
+void LoadSocials(const IniFile &ini, GameWindowState &state)
+{
+	// loadCustomFromINI: a social with a Name takes it (its first 8 characters), and whichever of
+	// its Color and lines are there; a missing line keeps what it had. "*..." is missing.
+	auto read = [&ini](const std::string &key, std::string &value) {
+		value = ini.Get("Socials", key, "*NULL*");
+		return value.empty() || value[0] != '*';
+	};
+	for (int i = 0; i < SocialPages * SocialsPerPage; ++i) {
+		Social &social = state.socials[i];
+		std::string key = SocialKey(i), value;
+		if (!read(key + "Name", value))
+			continue;
+		social.name = value.substr(0, SocialNameLoaded);
+		if (read(key + "Color", value))
+			social.color = std::atoi(value.c_str());
+		for (int line = 0; line < SocialLines; ++line)
+			if (read(key + "Line" + std::to_string(line + 1), value))
+				social.lines[line] = value;
+	}
+}
+
+void StoreSocials(IniFile &ini, GameWindowState &state)
+{
+	// saveCustom: the changed ones; without a name, all of its keys go, and so does an empty line's.
+	for (int i = 0; i < SocialPages * SocialsPerPage; ++i) {
+		Social &social = state.socials[i];
+		if (!social.changed)
+			continue;
+		social.changed = false;
+		std::string key = SocialKey(i);
+		if (social.name.empty()) {
+			ini.Remove("Socials", key + "Name");
+			ini.Remove("Socials", key + "Color");
+		}
+		else {
+			ini.Set("Socials", key + "Name", social.name);
+			ini.SetInt("Socials", key + "Color", social.color);
+		}
+		for (int line = 0; line < SocialLines; ++line) {
+			std::string line_key = key + "Line" + std::to_string(line + 1);
+			if (social.name.empty() || social.lines[line].empty())
+				ini.Remove("Socials", line_key);
+			else
+				ini.Set("Socials", line_key, social.lines[line]);
+		}
+	}
+	state.socials_changed = false;
+}
+
+std::string SocialStep(GameWindowState &state, uint64_t now_ms)
+{
+	if (state.current_social < 0 || now_ms - state.social_step_ms < SocialStepMs)
+		return "";
+	state.social_step_ms = now_ms;
+	if (state.social_wait > 0) {
+		--state.social_wait;
+		return "";
+	}
+	if (!ValidSocial(state.current_social)) { // an AA ability's "/alt activate" (not yet)
+		state.current_social = -1;
+		return "";
+	}
+	const Social &social = state.socials[state.current_social];
+	int &line = state.social_line;
+	while (line < SocialLines && social.lines[line].empty())
+		++line;
+	if (line >= SocialLines) {
+		state.current_social = -1;
+		return "";
+	}
+	// "/pau..." (strnicmp 4 of "/pause"): atoi from its eighth character, and what's after a comma.
+	const std::string &text = social.lines[line];
+	std::string command = text;
+	int wait = 1;
+	if (IsPause(text)) {
+		wait = std::clamp(text.size() > 7 ? std::atoi(text.c_str() + 7) : 0, 1, 600);
+		size_t comma = text.find(',');
+		command = comma != std::string::npos && text.size() - comma > 1 ? text.substr(comma + 1) : "";
+	}
+	if (++line >= SocialLines)
+		state.current_social = -1;
+	else
+		state.social_wait = wait;
+	return command;
 }

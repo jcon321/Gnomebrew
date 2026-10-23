@@ -262,6 +262,7 @@ public:
 	void Move(const Rect &rect) { Place(0, rect); } // the window itself
 	void Focus(const std::string &screen_id); // "" (or a missing one): nothing
 	bool Focused(const std::string &screen_id) const;
+	bool Typing() const; // a shown, enabled edit box has the focus, and OnKey goes to it
 	// Where a control's content goes: its client area, less the scrollbar.
 	Rect ContentRect(const Control &control) const;
 	bool Shown(const Control &control) const; // it and every parent visible

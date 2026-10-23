@@ -208,6 +208,11 @@ format in `<character>_<server>.ini` next to the exe, under `[HotButtons]`
   draws them, and its Camp, Run and Walk buttons work; Run or Walk, Sit or Stand and Invite or
   Follow show as eqgame picks them. The socials page and the hot button window page through ten
   sets with their arrows, round from the last to the first.
+- Socials work as eqgame's do: the first page starts with its twelve (Afk, Anon, ... Wave), a
+  right click on a social (on the Actions window or a hot button) opens the Edit Social window
+  (a name, its color and five lines), and clicking one does its lines a step apart, with
+  `/pause N[, command]` waiting about N tenths of a second. They're kept in `[Socials]` in
+  `<char>_<server>.ini`, eqgame's format.
 - Names over heads are eqgame's name sprites (`CDisplay::SetNameSpriteState`): a player's first
   name and surname, LFG, AFK and LD, and `<guild>` on a second line (the world's guild list, asked
   for as you enter the world); an NPC's or corpse's name alone. Their colors are eqgame's: blue

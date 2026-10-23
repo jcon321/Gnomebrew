@@ -558,6 +558,11 @@ bool SidlWindow::Focused(const std::string &screen_id) const
 	return control && m_focus == static_cast<int>(control - m_controls.data());
 }
 
+bool SidlWindow::Typing() const
+{
+	return m_focus >= 0 && Shown(m_controls[m_focus]) && m_controls[m_focus].enabled;
+}
+
 Rect SidlWindow::ContentRect(const Control &control) const
 {
 	Rect r = control.client;

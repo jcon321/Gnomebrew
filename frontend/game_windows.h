@@ -29,11 +29,29 @@
 //     through CCursorAttachment::RemoveAttachment @00419474).
 // They're kept in <character>_<server>.ini's [HotButtons] as eqgame's CEverQuest_saveCustom and
 // loadCustomFromINI (@00548348, @0054870d) keep them: Page<p>Button<b>=<type letter, from A><value>.
+//
+// Socials (ten pages of twelve, @007d02f0), each a name, a color and five lines of commands:
+//   - CEverQuest_initCustom (@00548faf): the first page's are eqstr 6652..6663 ("Afk"...), each
+//     with one line, 6664..6675 ("/afk"...); the ini's take their places;
+//   - CActionsWnd::SocialsPageOnProcessFrame (@004039f4) and CHotButtonWnd::OnProcessFrame: a
+//     social's button shows its name, in the TextColor of the editor's SEW_TC<color>Button;
+//   - clicking one on the Actions window starts it, over one that's going
+//     (SocialsPageWndNotification); a hot button starts it only when none is (DoHotButton);
+//   - right clicking either opens CSocialEditWnd (@00432c80, Activate @00432e1f) on it: the name
+//     (15 characters), the lines (255 each) and the color buttons; Accept keeps them
+//     (SaveSocialCommandData @00432efc) and closes it, Clear empties the boxes;
+//   - EQ_Character::DoPassageOfTime (@004c131d) does the one going, a step every 101 ms or more:
+//     a wait to count down, or the next line that isn't empty, through InterpretCmd, and a step's
+//     wait after it. A line from "/pau" on waits its number of steps (1..600, from its eighth
+//     character on), doing what's after its first comma, if anything is.
+// They're kept in [Socials]: Page<p>Button<b>Name, ...Color and ...Line1..5, written only for the
+// ones changed since (an empty name takes them all out); the names are cut to 8 as they're read.
 
 #include <cstdint>
 #include <string>
 
 class Canvas;
+class EqStr;
 class GameValues;
 class IniFile;
 class TextRenderer;
@@ -61,9 +79,21 @@ struct HotButton
 constexpr int HotButtonPages = 10;
 constexpr int HotButtonsPerPage = 10;
 
+struct Social
+{
+	std::string name;
+	std::string lines[5];
+	int color = 0;        // which of the editor's SEW_TC<n>Button's colors (0..19)
+	bool changed = false; // since saved (@007d0278)
+};
+
+constexpr int SocialPages = 10;
+constexpr int SocialsPerPage = 12;
+constexpr int SocialLines = 5;
+
 // The game windows' own state: the page of socials the Actions window shows and the page of hot
-// buttons, 0..9 (eqgame's globals @007f67f9 and __HotkeyPage), the hot buttons, and the button on
-// the cursor.
+// buttons, 0..9 (eqgame's globals @007f67f9 and __HotkeyPage), the hot buttons, the button on
+// the cursor, and the socials.
 struct GameWindowState
 {
 	int social_page = 0;
@@ -72,6 +102,15 @@ struct GameWindowState
 	HotButton cursor;        // Empty: nothing on the cursor
 	std::string cursor_text; // its text when it was picked up
 	bool hot_buttons_changed = false; // since they were last saved
+
+	Social socials[SocialPages * SocialsPerPage];
+	bool socials_changed = false;
+	// __CurrentSocial: the social going (-1: none), its next line, the steps to wait before it,
+	// and when the last step was (@0063db18).
+	int current_social = -1, social_line = 0, social_wait = 0;
+	uint64_t social_step_ms = 0;
+	// The social editor's: the social it's on, and the color picked.
+	int edit_social = 0, edit_color = 0;
 
 	void ClearCursor() { cursor = {}; cursor_text.clear(); } // CCursorAttachment::RemoveAttachment
 };
@@ -82,6 +121,8 @@ struct GameWindowState
 std::string GameWindowClick(WindowManager &windows, GameWindowState &state, const std::string &window, const std::string &control);
 // A button held down: onto the cursor.
 void GameWindowHold(WindowManager &windows, GameWindowState &state, const std::string &window, const std::string &control);
+// A button right clicked: a social's opens the social editor on it.
+void GameWindowRightClick(WindowManager &windows, GameWindowState &state, const std::string &window, const std::string &control);
 void UpdateGameWindows(WindowManager &windows, const GameValues &values, const GameWindowState &state);
 
 // The button on the cursor, drawn at the mouse (x, y), over the windows and under the cursor.
@@ -90,3 +131,11 @@ void DrawCursorAttachment(Canvas &canvas, TextRenderer &text, const WindowManage
 
 void LoadHotButtons(const IniFile &ini, GameWindowState &state);
 void StoreHotButtons(IniFile &ini, const GameWindowState &state);
+
+// The first page's socials, from eqstr (null: its English).
+void DefaultSocials(GameWindowState &state, const EqStr *eqstr);
+void LoadSocials(const IniFile &ini, GameWindowState &state);
+void StoreSocials(IniFile &ini, GameWindowState &state); // the changed ones, which aren't any more
+
+// The social going's step, if it's time for one: the line to do (InterpretCmd), or "".
+std::string SocialStep(GameWindowState &state, uint64_t now_ms);

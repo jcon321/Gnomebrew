@@ -53,6 +53,8 @@ void WindowManager::Reset(const SidlDefinitions *defs, SidlTextures *textures, i
 	m_windows.clear();
 	m_clicks.clear();
 	m_holds.clear();
+	m_right_clicks.clear();
+	m_right_press = {};
 	m_held = false;
 	m_changed = false;
 	m_drag = Drag::None;
@@ -239,6 +241,21 @@ bool WindowManager::Over(int x, int y) const
 	return TopAt(x, y) >= 0;
 }
 
+std::string WindowManager::ScreenAt(int x, int y) const
+{
+	int top = TopAt(x, y);
+	return top >= 0 ? m_windows[top]->screen : "";
+}
+
+void WindowManager::Raise(const std::string &screen)
+{
+	for (int i = 0; i < static_cast<int>(m_windows.size()); ++i)
+		if (m_windows[i]->screen == screen && m_windows[i]->shown) {
+			BringToTop(i);
+			return;
+		}
+}
+
 void WindowManager::BringToTop(int &index)
 {
 	if (index < 0 || index == static_cast<int>(m_windows.size()) - 1)
@@ -381,9 +398,21 @@ bool WindowManager::OnMouse(const InputEvent &event, uint64_t now_ms)
 		return true;
 	}
 	case Type::RightDown:
-	case Type::RightUp:
+	case Type::RightUp: {
 		// No context menus yet, but the world doesn't get them either.
-		return Over(event.x, event.y);
+		int top = TopAt(event.x, event.y);
+		Click at;
+		if (top >= 0)
+			at = {m_windows[top]->screen, m_windows[top]->wnd.ButtonAt(event.x, event.y)};
+		if (event.type == Type::RightDown)
+			m_right_press = at;
+		else {
+			if (!at.control.empty() && at.window == m_right_press.window && at.control == m_right_press.control)
+				m_right_clicks.push_back(at);
+			m_right_press = {};
+		}
+		return top >= 0;
+	}
 	default:
 		return false;
 	}
@@ -472,6 +501,13 @@ std::vector<WindowManager::Click> WindowManager::TakeHolds()
 	std::vector<Click> holds;
 	holds.swap(m_holds);
 	return holds;
+}
+
+std::vector<WindowManager::Click> WindowManager::TakeRightClicks()
+{
+	std::vector<Click> clicks;
+	clicks.swap(m_right_clicks);
+	return clicks;
 }
 
 void WindowManager::Update(uint64_t now_ms, int mouse_x, int mouse_y)

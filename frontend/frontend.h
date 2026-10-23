@@ -179,11 +179,11 @@ private:
 	std::string EqString(uint32_t id, const std::string &fallback) const; // eqstr_en.txt
 	void HandleZoneEvents(const std::vector<ZoneSession::Event> &events);
 	// The in-game SIDL windows, built once we're first in a zone (zoning keeps them), with the
-	// character's layout from UI_<character>_<server>.ini and hot buttons from
+	// character's layout from UI_<character>_<server>.ini and hot buttons and socials from
 	// <character>_<server>.ini; each saved whenever it changes.
 	void BuildZoneWindows();
 	void SaveUiLayout();
-	void SaveHotButtons();
+	void SaveCustom(); // CEverQuest_saveCustom: the hot buttons and the socials changed
 	void SaveDebugSettings(); // the debug menu's, to my-client.ini's [Debug]
 	void HandleWindowClicks();
 	void AddZoneLog(const std::string &text, uint32_t color); // a line of chat in this color
@@ -281,7 +281,7 @@ private:
 	};
 	HeldKeys m_keys;
 	bool m_run = true;
-	GameWindowState m_window_state; // the Actions window's socials, the hot buttons, the button on the cursor
+	GameWindowState m_window_state; // the socials, the hot buttons, the button on the cursor
 	bool m_jump_requested = false;
 	bool m_crouch_sent = false; // the stance last sent for a standing jump's wind-up
 	// Mouse drags in the zone: the right button turns the character and tilts the view, the left

@@ -22,10 +22,15 @@ no rules of its own.
    - Inventory and bags, filled from the item packets (the slots show their empty pictures;
      no item icons yet, here or in the hot button window's weapon slots)
    - Spell gems and the spellbook (pictures only; the gems are all empty)
-   - Hotbuttons: the Actions window's buttons go on them and come off by holding them, and
-     they're kept in `<char>_<server>.ini` (`frontend/game_windows.*`). Still to do: items, spells,
-     pet commands and AA abilities on them, the social names (no socials yet), whether an
-     ability's ready (checked while it isn't), and right-click.
+   - Hotbuttons: the Actions window's buttons and socials go on them and come off by holding
+     them, and they're kept in `<char>_<server>.ini` (`frontend/game_windows.*`). Still to do:
+     items, spells, pet commands and AA abilities on them, whether an ability's ready (checked
+     while it isn't), and right-click on anything but a social (picking a combat or ability
+     button's skill).
+   - Socials: done (defaults, the editor, running them with `/pause`, `[Socials]`). Still to do:
+     the edit boxes take typing only at their end (no caret to move, no Tab between them), and
+     a social's lines go to InterpretCommand as typed, without eqgame's switch to the main chat
+     window's channel while it runs.
    - Compass
    - Selector bar
 3. ~~**A real chat window**~~: done (`frontend/chat_window.*`, `chat_text.*`, `chat_commands.cpp`).

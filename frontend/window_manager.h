@@ -12,7 +12,9 @@
 //   - CXWnd::OnProcessFrame: a window that Fades starts fading to FadeToAlpha once the mouse
 //     has been off it for Delay ms, and back to Alpha when it comes back, over Duration ms
 //     (StartFade / ProcessTransition), everything in it drawn at that alpha (DoAllDrawing);
-//   - minimizing leaves just the title bar (ProcessTransition 1 and 2, without the animation).
+//   - minimizing leaves just the title bar (ProcessTransition 1 and 2, without the animation);
+//   - HandleRButtonUp (@005a0440): the right button let go over a button it went down on is a
+//     right click (notification 3), for its window to handle.
 // Layouts are kept in eqgame's UI_<character>_<server>.ini format, one [section] per window
 // named after its screen (CSidlScreenWnd::LoadIniInfo / StoreIniInfo): XPos<W>x<H> and
 // YPos<W>x<H> per resolution, Width and Height for sizable windows, Show, Locked, Fades, Delay,
@@ -68,6 +70,8 @@ public:
 	void Show(const std::string &screen, bool shown);
 	void Toggle(const std::string &screen) { Show(screen, !Shown(screen)); }
 	bool Shown(const std::string &screen) const;
+	void Raise(const std::string &screen); // on top of the others (CXWnd::Show's bring to front)
+	std::string ScreenAt(int x, int y) const; // the topmost shown window under (x, y), or ""
 
 	// Mouse events, in screen pixels. True when the windows took it (it's over one, or one is
 	// being dragged); the world shouldn't see it then.
@@ -78,6 +82,8 @@ public:
 	std::vector<Click> TakeClicks();
 	// Buttons held down (the left button held on them) since the last call.
 	std::vector<Click> TakeHolds();
+	// Buttons right clicked since the last call.
+	std::vector<Click> TakeRightClicks();
 
 	void Update(uint64_t now_ms, int mouse_x, int mouse_y); // the fades, and a button held
 	void Draw(Canvas &canvas, TextRenderer &text, uint64_t now_ms);
@@ -125,6 +131,8 @@ private:
 	std::vector<std::unique_ptr<Window>> m_windows; // back to front
 	std::vector<Click> m_clicks;
 	std::vector<Click> m_holds;
+	std::vector<Click> m_right_clicks;
+	Click m_right_press; // the button the right button went down on
 	bool m_changed = false;
 
 	Drag m_drag = Drag::None;
