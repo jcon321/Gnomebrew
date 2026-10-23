@@ -4,37 +4,17 @@
 // draws the 3D views (win32_d3d11.cpp), or with GDI and the software rasterizer
 // when Direct3D isn't available or Renderer=software.
 //
-// All settings live in my-client.ini next to the exe (the EQ folder is only read
-// for assets; its eqclient.ini is never used). Missing keys are written with their
-// defaults at startup. The command line overrides the ini:
-//   [Paths]    EQDir=C:\TAKP           (folder with eqfeart*.pak, eqtext.txt, ...; empty = auto)
-//   [Login]    Server=127.0.0.1:6000
-//              User=myname            (remembered from the last login)
-//   [Display]  Width=1920             (game resolution: the window's size)
-//              Height=1080
-//              Renderer=d3d11         (or software: the CPU rasterizer and GDI)
-//              VSync=1                (d3d11: wait for the monitor's refresh; 0 runs as fast as it can;
-//                                      the debug menu toggles it, kept on exit)
-//   [Sound]    Sound=1                (0: no sound at all, as eqclient.ini's Sound=FALSE)
-//              MusicVolume=10         (0..20, the options' music level)
-//              SoundVolume=10         (0..20, the options' sound level)
-//              Music=midi             (the XMI music: midi, Windows' MIDI synth like the real client;
-//                                      sf2, through SoundFont below, in our own mix)
-//              SoundFont=synthus2.sf2 (in the EQ folder, or a full path; synthusr.sf2 if it's missing)
-//   [Defaults] LastCharSel=0          (remembered character select slot, like eqclient.ini's)
-//              ShowNamesLevel=4       (/shownames: 0 off, 1 first names .. 4 everything, Zeal's 5..7; kept on exit)
-//              EnableExtendedNameplateDistance=1 (names as far out as the zone is drawn, as TAKP's
-//                                      eqgame.dll does; 0: eqgame's own 70 units)
-//   [Debug]    RecordPackets=0        (1: each zone session's packets go to replays\<char>-<time>.eqr
-//                                      next to the exe, for --replay)
-//   [TextColors] User_<n>_Red=0 ...   (optional, not written: the chat's text color n, 1..72, as
-//                                      eqgame's; all three of Red, Green and Blue, or the built-in one)
+// All settings live in my-client.ini next to the exe (the EQ folder is only read for assets;
+// its eqclient.ini is never used): settings_file.cpp lists them, and writes the file with a
+// comment on each when it's new, or adds any key missing from it.
 // The in-game windows' layouts go to UI_<character>_<server>.ini next to the exe, as eqgame's do.
+// The command line overrides the ini:
 //   eqclient_gui.exe --eqdir C:\TAKP --login 192.168.0.18:6000 --size 1920x1080
 //   eqclient_gui.exe --replay replays\Name-20261022-124815.eqr   (straight into the recorded zone, no server)
 
 #include "eqstr.h"
 #include "frontend.h"
+#include "settings_file.h"
 #include "win32_audio.h"
 #include "win32_d3d11.h"
 #include "win32_text.h"
@@ -89,15 +69,6 @@ namespace
 		wchar_t buffer[MAX_PATH] = {};
 		GetPrivateProfileStringW(section, key, L"", buffer, MAX_PATH, ini.c_str());
 		return buffer;
-	}
-
-	// Writes key=value unless the key is already there (even empty), so the ini lists every setting.
-	void IniDefault(const std::wstring &ini, const wchar_t *section, const wchar_t *key, const wchar_t *value)
-	{
-		wchar_t buffer[8] = {};
-		GetPrivateProfileStringW(section, key, L"\x01", buffer, 8, ini.c_str());
-		if (buffer[0] == L'\x01' && buffer[1] == 0)
-			WritePrivateProfileStringW(section, key, value, ini.c_str());
 	}
 
 	bool FileExists(const std::wstring &path)
@@ -371,22 +342,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	g_app.log = _wfopen((exe_dir + L"\\my-client.log").c_str(), L"w");
 
 	// Settings: ini first, then command line.
-	IniDefault(ini, L"Paths", L"EQDir", L"");
-	IniDefault(ini, L"Login", L"Server", L"127.0.0.1:6000");
-	IniDefault(ini, L"Login", L"User", L"");
-	IniDefault(ini, L"Display", L"Width", L"1920");
-	IniDefault(ini, L"Display", L"Height", L"1080");
-	IniDefault(ini, L"Display", L"Renderer", L"d3d11");
-	IniDefault(ini, L"Display", L"VSync", L"1");
-	IniDefault(ini, L"Sound", L"Sound", L"1");
-	IniDefault(ini, L"Sound", L"MusicVolume", L"10");
-	IniDefault(ini, L"Sound", L"SoundVolume", L"10");
-	IniDefault(ini, L"Sound", L"Music", L"midi");
-	IniDefault(ini, L"Sound", L"SoundFont", L"synthus2.sf2");
-	IniDefault(ini, L"Defaults", L"LastCharSel", L"0");
-	IniDefault(ini, L"Defaults", L"ShowNamesLevel", L"4");
-	IniDefault(ini, L"Defaults", L"EnableExtendedNameplateDistance", L"1");
-	IniDefault(ini, L"Debug", L"RecordPackets", L"0");
+	std::string settings_error;
+	if (!WriteDefaultSettings(Narrow(ini), settings_error))
+		Log("settings: " + settings_error);
 	std::wstring eq_dir = IniString(ini, L"Paths", L"EQDir");
 	std::wstring login = IniString(ini, L"Login", L"Server");
 	std::wstring user = IniString(ini, L"Login", L"User");

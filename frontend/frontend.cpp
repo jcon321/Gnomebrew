@@ -54,8 +54,12 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 		m_debug.SetSound(m_sound.get());
 	}
 	m_debug.SetWeather(&m_weather);
-	if (!m_config.settings_ini.empty())
+	if (!m_config.settings_ini.empty()) {
 		m_chat_colors.Load(m_config.settings_ini);
+		IniFile ini;
+		if (ini.Load(m_config.settings_ini))
+			m_debug.Load(ini);
+	}
 	m_game_values.zone = &m_zone;
 	EnterStart();
 }
@@ -1403,6 +1407,17 @@ void FrontEnd::SaveUiLayout()
 		Log("UI: couldn't write " + m_ui_layout_path);
 }
 
+void FrontEnd::SaveDebugSettings()
+{
+	if (m_config.settings_ini.empty())
+		return;
+	IniFile ini;
+	ini.Load(m_config.settings_ini); // keep the host's settings
+	m_debug.Store(ini);
+	if (!ini.Save(m_config.settings_ini))
+		Log("debug menu: couldn't write " + m_config.settings_ini);
+}
+
 void FrontEnd::HandleWindowClicks()
 {
 	for (const auto &click : m_windows.TakeClicks()) {
@@ -1694,8 +1709,11 @@ MoveControls FrontEnd::ZoneControls()
 void FrontEnd::ZoneEvent(const InputEvent &event)
 {
 	// The debug menu's stat card takes clicks on it, unless a drag is holding the mouse.
-	if (event.IsMouse() && !m_mouse_turn && !m_mouse_pan && m_debug.OnMouse(event))
+	if (event.IsMouse() && !m_mouse_turn && !m_mouse_pan && m_debug.OnMouse(event)) {
+		if (m_debug.TakeChanged())
+			SaveDebugSettings();
 		return;
+	}
 	// Then the windows, unless the world has the mouse.
 	if (event.IsMouse() && !m_mouse_turn && !m_mouse_pan && m_windows.OnMouse(event, m_now_ms))
 		return;
@@ -1832,6 +1850,7 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 		break;
 	case InputEvent::Key::F11:
 		m_debug.open = !m_debug.open;
+		SaveDebugSettings();
 		break;
 	case InputEvent::Key::PageUp:
 	case InputEvent::Key::PageDown:

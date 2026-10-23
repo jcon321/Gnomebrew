@@ -43,7 +43,8 @@ struct FrontEndConfig
 	uint16_t world_port = 9000;
 	std::string record_dir; // each zone session's packets go to a packet log (.eqr) here; empty: none
 	std::string ui_dir;     // where the UI_<character>_<server>.ini window layouts go; empty: not kept
-	std::string settings_ini; // my-client.ini, for its [TextColors] (the chat's colors); empty: the built-in ones
+	std::string settings_ini; // my-client.ini: its [TextColors] (the chat's colors; empty: the built-in ones) and
+	                          // [Debug] (the debug menu's settings; empty: not kept)
 	int show_names = 4;       // /shownames: 0 (off) .. 7 (ShowNamesLevel)
 	bool extended_nameplates = true; // names as far out as the zone is drawn, not eqgame's 70 units
 };
@@ -179,6 +180,7 @@ private:
 	// character's layout from UI_<character>_<server>.ini; saved whenever it changes.
 	void BuildZoneWindows();
 	void SaveUiLayout();
+	void SaveDebugSettings(); // the debug menu's, to my-client.ini's [Debug]
 	void HandleWindowClicks();
 	void AddZoneLog(const std::string &text, uint32_t color); // a line of chat in this color
 	void ChatOut(const std::string &text, int type);          // in a chat color type (ChatType)

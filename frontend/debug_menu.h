@@ -16,9 +16,13 @@
 //     NEARBY the nearest spawns.
 //   Top right, the radar: spawns within RadarRange, north up.
 // Frame rates and traffic are averaged over a second, so they read steadily.
+// Its settings (open, the folded sections, RENDER's toggles and vision, SOUND's switches) live in
+// my-client.ini's [Debug], kept as they change; settings_file.cpp lists them. VSync stays
+// [Display]'s, which the host keeps.
 
 #include "canvas.h"
 #include "eq_sound.h"
+#include "ini_file.h"
 #include "rdp_session.h"
 #include "text.h"
 #include "weather.h"
@@ -55,6 +59,13 @@ public:
 	// A mouse event in the zone; true when it's on the stat card (clicks there fold sections,
 	// flip toggles and pick targets, and shouldn't reach the world).
 	bool OnMouse(const InputEvent &event);
+
+	// [Debug] above (settings_file.cpp writes its defaults). The sound switches go to the sound
+	// set with SetSound first.
+	void Load(const IniFile &ini);
+	void Store(IniFile &ini) const;
+	// Whether a click on the card changed a setting since the last call.
+	bool TakeChanged() { return std::exchange(m_changed, false); }
 
 	void SelectTarget(uint16_t id) { m_target = id; } // 0: back to the nearest
 	void SetSound(audio::EqSound *sound) { m_sound = sound; }
@@ -119,6 +130,8 @@ private:
 	std::function<void(bool)> m_set_vsync;
 	uint16_t m_target = 0;
 	audio::EqSound *m_sound = nullptr;
+	audio::EqSound::Switches m_switches; // as loaded, kept for Store without a sound
+	bool m_changed = false;
 	const Weather *m_weather = nullptr;
 	Rect m_card{0, 0, 0, 0}; // where the card was drawn
 	std::vector<Hit> m_hits;

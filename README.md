@@ -75,8 +75,10 @@ they also run as-is on Windows 10+.
 ## Running the GUI
 
 All settings live in `my-client.ini` next to `eqclient_gui.exe`. The EQ folder is only read for
-assets; its `eqclient.ini` is never used. On startup the GUI adds any missing keys with their
-defaults, so the file lists every setting except the optional `[TextColors]`:
+assets; its `eqclient.ini` is never used. The first run writes the file with a comment on every
+setting (`frontend/settings_file.cpp` has them all, with their defaults). Later runs add any
+missing keys the same way, and keep the rest of the file, your own `;` comments too. Every
+setting is listed except the optional `[TextColors]`. Without the comments, it looks like this:
 
 ```ini
 [Paths]
@@ -106,6 +108,21 @@ EnableExtendedNameplateDistance=1
 
 [Debug]
 RecordPackets=0
+MenuOpen=1
+Folded=ServerSync,Camera,Packets,Zone
+Wireframe=0
+NoFog=0
+CollisionWalls=0
+FloorMarker=0
+NoOcclusionCulling=0
+NoClipPlane=0
+NoWeatherEffects=0
+Vision=-1
+AllSound=1
+Music=1
+ZoneAmbience=1
+GameSounds=1
+WeatherSounds=1
 ```
 
 - `EQDir` is the EverQuest folder. It needs `eqfeart*.pak` (the front-end art), `eqtext.txt`
@@ -148,6 +165,9 @@ RecordPackets=0
   packets arriving when they did (spawns, chat, doors, weather...). You can run around; what you send
   goes nowhere. When the log runs out you stay in the zone. Camping logs out when its timer runs, and
   zone lines are turned down. The console client and `frontend_preview` play the same files.
+- The rest of `[Debug]` is the debug menu's (F11): whether it's open, the stat card's folded
+  sections, its RENDER toggles and vision, and its SOUND switches. They're saved as you change
+  them in the menu.
 - `[TextColors]` is optional and isn't written for you: the chat's text colors, keyed as eqgame's
   (`User_<n>_Red`, `User_<n>_Green`, `User_<n>_Blue`, n 1..72; all three, 0..255, or the built-in
   color). For example `User_1_Red=255` with Green and Blue makes says red.

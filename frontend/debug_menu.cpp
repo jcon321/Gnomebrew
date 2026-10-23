@@ -3,6 +3,7 @@
 #include "world_client.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
@@ -79,11 +80,83 @@ namespace
 		return buffer;
 	}
 
+	// [Debug]'s names: Folded's sections (in Section's order) and the toggles (in Toggle's, VSync aside).
+	const char *const SectionKeys[] = {"Performance", "Movement", "ServerSync", "Camera", "Network", "Packets", "Zone",
+		"Sound", "Render", "Target", "Nearby"};
+	const char *const ToggleKeys[] = {"Wireframe", "NoFog", "CollisionWalls", "FloorMarker", "NoOcclusionCulling",
+		"NoClipPlane", "NoWeatherEffects"};
+	const char *const SoundKeys[] = {"AllSound", "Music", "ZoneAmbience", "GameSounds", "WeatherSounds"};
+
+	bool SameText(const std::string &a, const char *b)
+	{
+		size_t i = 0;
+		for (; i < a.size() && b[i]; ++i)
+			if (std::tolower(static_cast<unsigned char>(a[i])) != std::tolower(static_cast<unsigned char>(b[i])))
+				return false;
+		return i == a.size() && !b[i];
+	}
+
+	bool *SoundSwitch(audio::EqSound::Switches &switches, int index)
+	{
+		switch (index) {
+		case 0: return &switches.sound;
+		case 1: return &switches.music;
+		case 2: return &switches.ambience;
+		case 3: return &switches.game;
+		default: return &switches.weather;
+		}
+	}
+
 	std::string Age(uint64_t then_ms, uint64_t now_ms)
 	{
 		double seconds = now_ms > then_ms ? (now_ms - then_ms) / 1000.0 : 0;
 		return seconds < 100 ? Format("%.1fs", seconds) : Format("%.0fs", seconds);
 	}
+}
+
+void DebugMenu::Load(const IniFile &ini)
+{
+	auto flag = [&](const char *key, bool fallback) { return ini.GetInt("Debug", key, fallback ? 1 : 0) != 0; };
+	open = flag("MenuOpen", open);
+	if (ini.Has("Debug", "Folded")) {
+		std::string list = ini.Get("Debug", "Folded");
+		std::fill(std::begin(m_folded), std::end(m_folded), false);
+		size_t start = 0;
+		while (start <= list.size()) {
+			size_t comma = std::min(list.find(',', start), list.size());
+			std::string name = list.substr(start, comma - start);
+			name.erase(std::remove_if(name.begin(), name.end(), [](unsigned char c) { return std::isspace(c); }), name.end());
+			for (int i = 0; i < SectionCount; ++i)
+				if (SameText(name, SectionKeys[i]))
+					m_folded[i] = true;
+			start = comma + 1;
+		}
+	}
+	for (int i = 0; i < 7; ++i)
+		*Toggle(i) = flag(ToggleKeys[i], *Toggle(i));
+	m_draw.vision = std::clamp(ini.GetInt("Debug", "Vision", m_draw.vision), -1, 2);
+	for (int i = 0; i < 5; ++i)
+		*SoundSwitch(m_switches, i) = flag(SoundKeys[i], *SoundSwitch(m_switches, i));
+	if (m_sound)
+		m_sound->SetSwitches(m_switches);
+}
+
+void DebugMenu::Store(IniFile &ini) const
+{
+	ini.SetInt("Debug", "MenuOpen", open ? 1 : 0);
+	std::string folded;
+	for (int i = 0; i < SectionCount; ++i)
+		if (m_folded[i])
+			folded += (folded.empty() ? "" : ",") + std::string(SectionKeys[i]);
+	ini.Set("Debug", "Folded", folded);
+	const bool toggles[] = {m_draw.wireframe, m_draw.no_fog, m_draw.walls, m_draw.floor, m_draw.no_culling,
+		m_draw.no_clip, m_draw.no_weather};
+	for (int i = 0; i < 7; ++i)
+		ini.SetInt("Debug", ToggleKeys[i], toggles[i] ? 1 : 0);
+	ini.SetInt("Debug", "Vision", m_draw.vision);
+	audio::EqSound::Switches switches = m_sound ? m_sound->GetSwitches() : m_switches;
+	for (int i = 0; i < 5; ++i)
+		ini.SetInt("Debug", SoundKeys[i], *SoundSwitch(switches, i) ? 1 : 0);
 }
 
 void DebugMenu::Reset()
@@ -179,6 +252,8 @@ bool DebugMenu::OnMouse(const InputEvent &event)
 	for (const Hit &hit : m_hits) {
 		if (event.y < hit.top || event.y >= hit.bottom)
 			continue;
+		if (hit.action != Line::Action::Pick && hit.action != Line::Action::None)
+			m_changed = true;
 		switch (hit.action) {
 		case Line::Action::Fold:
 			m_folded[hit.value] = !m_folded[hit.value];
@@ -196,9 +271,7 @@ bool DebugMenu::OnMouse(const InputEvent &event)
 		case Line::Action::Sound:
 			if (m_sound) {
 				audio::EqSound::Switches switches = m_sound->GetSwitches();
-				bool *flag = hit.value == 0 ? &switches.sound : hit.value == 1 ? &switches.music
-				           : hit.value == 2 ? &switches.ambience : hit.value == 3 ? &switches.game
-				                                                                  : &switches.weather;
+				bool *flag = SoundSwitch(switches, hit.value);
 				*flag = !*flag;
 				m_sound->SetSwitches(switches);
 			}

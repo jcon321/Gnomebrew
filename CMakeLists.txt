@@ -114,6 +114,7 @@ add_library(eqfrontend STATIC
     frontend/game_values.cpp
     frontend/game_windows.cpp
     frontend/name_sprites.cpp
+    frontend/settings_file.cpp
 )
 target_include_directories(eqfrontend PUBLIC frontend)
 target_link_libraries(eqfrontend PUBLIC eqcore eqrender eqaudio)
