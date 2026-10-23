@@ -7,6 +7,7 @@
 #include <cmath>
 #include <functional>
 #include <filesystem>
+#include <initializer_list>
 #include <fstream>
 #include <iterator>
 
@@ -143,6 +144,7 @@ bool SidlDefinitions::Load(const std::string &ui_dir, std::string &error)
 	m_dir = ui_dir;
 	m_animations.clear();
 	m_window_templates.clear();
+	m_frame_templates.clear();
 	m_pieces.clear();
 	m_warnings.clear();
 
@@ -250,6 +252,18 @@ void SidlDefinitions::ReadElement(const XmlNode &node)
 		return;
 	}
 
+	if (node.name == "FrameTemplate") {
+		SidlFrameTemplate t;
+		for (int i = 0; i < BorderPieceCount; ++i)
+			t.border[i] = node.ChildText(BorderNames[i]);
+		t.overlap_left = node.ChildInt("OverlapLeft", 0);
+		t.overlap_top = node.ChildInt("OverlapTop", 0);
+		t.overlap_right = node.ChildInt("OverlapRight", 0);
+		t.overlap_bottom = node.ChildInt("OverlapBottom", 0);
+		m_frame_templates[item] = std::move(t);
+		return;
+	}
+
 	static const char *const PieceTypes[] = {"Screen", "Button", "Label", "StaticAnimation", "StaticText", "StaticFrame",
 		"Editbox", "Listbox", "Gauge", "Slider", "Combobox", "Page", "TabBox", "LayoutBox", "StaticHeader", "STMLbox",
 		"SpellGem", "InvSlot"};
@@ -315,6 +329,17 @@ void SidlDefinitions::ReadElement(const XmlNode &node)
 		p.gauge.cap_left = t->ChildText("EndCapLeft");
 		p.gauge.cap_right = t->ChildText("EndCapRight");
 	}
+	p.tab_text = node.ChildText("TabText");
+	if (const XmlNode *color = node.Child("TabTextColor"))
+		p.tab_text_color = ReadColor(*color);
+	if (const XmlNode *color = node.Child("TabTextActiveColor"))
+		p.tab_text_active_color = ReadColor(*color);
+	p.tab_icon = node.ChildText("TabIcon");
+	p.tab_icon_active = node.ChildText("TabIconActive");
+	p.tab_border = node.ChildText("TabBorderTemplate");
+	p.page_border = node.ChildText("PageBorderTemplate");
+	for (const XmlNode *page : node.Children("Pages"))
+		p.pages.push_back(page->text);
 	p.vscroll = node.ChildBool("Style_VScroll", false);
 	p.draw_template = node.ChildText("DrawTemplate");
 	p.style_border = node.ChildBool("Style_Border", false);
@@ -333,6 +358,12 @@ const SidlWindowTemplate *SidlDefinitions::WindowTemplate(const std::string &nam
 {
 	auto it = m_window_templates.find(name);
 	return it != m_window_templates.end() ? &it->second : nullptr;
+}
+
+const SidlFrameTemplate *SidlDefinitions::FrameTemplate(const std::string &name) const
+{
+	auto it = m_frame_templates.find(name);
+	return it != m_frame_templates.end() ? &it->second : nullptr;
 }
 
 const SidlPiece *SidlDefinitions::Piece(const std::string &item) const
@@ -410,11 +441,19 @@ int SidlWindow::Add(const SidlPiece &piece, int parent)
 	m_controls.push_back(control);
 	if (parent >= 0)
 		m_controls[parent].children.push_back(index);
-	if (piece.type == "Screen") {
+	if (piece.type == "Screen" || piece.type == "Page") {
 		for (const auto &item : piece.pieces)
 			if (const SidlPiece *child = m_defs->Piece(item))
 				if (child != &piece)
 					Add(*child, index);
+	}
+	else if (piece.type == "TabBox") {
+		// CTabWnd::CTabWnd: each of its Pages, the first one showing.
+		for (const auto &item : piece.pages)
+			if (const SidlPiece *page = m_defs->Piece(item))
+				if (page->type == "Page")
+					Add(*page, index);
+		SelectTab(m_controls[index], 0);
 	}
 	return index;
 }
@@ -448,6 +487,15 @@ void SidlWindow::Place(int index, const Rect &rect)
 	control.client = {rect.x + left, rect.y + top, rect.w - left - right, rect.h - top - bottom};
 
 	const Rect parent = control.client;
+	if (control.def->type == "TabBox") {
+		// CTabWnd::UpdatePage: every page fills the inside of the page border, under the tabs.
+		Rect inside = PageRect(control);
+		if (const SidlFrameTemplate *border = m_defs->FrameTemplate(control.def->page_border))
+			inside = FrameInside(*border, inside);
+		for (int child : control.children)
+			Place(child, inside);
+		return;
+	}
 	for (int child : control.children) {
 		const SidlPiece &piece = *m_controls[child].def;
 		Rect r = piece.rect;
@@ -600,6 +648,8 @@ bool SidlWindow::InteractiveAt(int x, int y) const
 			return true;
 		if (HasScrollbar(control) && LayoutScrollbar(control).bar.Contains(x, y) && HitTest(control, x, y))
 			return true;
+		if (type == "TabBox" && HitTest(control, x, y) && TabAt(control, x, y) >= 0)
+			return true;
 	}
 	return false;
 }
@@ -616,6 +666,130 @@ void SidlWindow::Check(const std::string &screen_id)
 	target->checked = true;
 }
 
+void SidlWindow::SelectTab(Control &tab_box, int index)
+{
+	if (index < 0 || index >= static_cast<int>(tab_box.children.size()))
+		return;
+	tab_box.tab = index;
+	for (int i = 0; i < static_cast<int>(tab_box.children.size()); ++i)
+		m_controls[tab_box.children[i]].visible = i == index;
+}
+
+int SidlWindow::TabHeight(const Control &tab_box) const
+{
+	// CTabWnd::CTabWnd: its font's height and 8.
+	return SidlFontHeight(tab_box.def->font) + 8;
+}
+
+Rect SidlWindow::PageRect(const Control &tab_box) const
+{
+	// CTabWnd::UpdatePage: the client area below the tabs, reaching up under their bottom
+	// corners (the tab border's LeftBottom piece).
+	const SidlFrameTemplate *border = m_defs->FrameTemplate(tab_box.def->tab_border);
+	int top = TabHeight(tab_box) - (border ? AnimationSize(border->border[LeftBottom]).h : 0);
+	const Rect &c = tab_box.client;
+	return {c.x, c.y + top, c.w, c.h - top};
+}
+
+Rect SidlWindow::TabRect(const Control &tab_box, int index) const
+{
+	// CTabWnd::CalculateTabRectangle: the tabs share the page's width less the tab border's top
+	// corners evenly, starting in from the page border's top left corner.
+	int count = static_cast<int>(tab_box.children.size());
+	if (index < 0 || index >= count)
+		return {};
+	const SidlFrameTemplate *tab_border = m_defs->FrameTemplate(tab_box.def->tab_border);
+	const SidlFrameTemplate *page_border = m_defs->FrameTemplate(tab_box.def->page_border);
+	Rect page = PageRect(tab_box);
+	int width = page.w;
+	if (tab_border)
+		width -= AnimationSize(tab_border->border[TopLeft]).w + AnimationSize(tab_border->border[TopRight]).w;
+	int left = page.x + (page_border ? AnimationSize(page_border->border[TopLeft]).w : 0);
+	int x0 = left + width * index / count, x1 = left + width * (index + 1) / count;
+	return {x0, tab_box.client.y, x1 - x0, TabHeight(tab_box)};
+}
+
+int SidlWindow::TabAt(const Control &tab_box, int x, int y) const
+{
+	for (int i = 0; i < static_cast<int>(tab_box.children.size()); ++i)
+		if (TabRect(tab_box, i).Contains(x, y))
+			return i;
+	return -1;
+}
+
+void SidlWindow::DrawTabBox(const Control &tab_box, Canvas &canvas, TextRenderer &text, SidlTextures &textures,
+	uint64_t now_ms, const Rect &clip) const
+{
+	// CTabWnd::Draw: the tabs behind, then the page, then the current tab over it.
+	int count = static_cast<int>(tab_box.children.size());
+	for (int i = 0; i < count; ++i)
+		if (i != tab_box.tab)
+			DrawTab(tab_box, i, canvas, text, textures, now_ms, clip);
+	// CTabWnd::DrawCurrentPage: the page border, its top edge only under the tabs behind (the
+	// current tab opens onto the page).
+	canvas.SetClip(clip);
+	if (const SidlFrameTemplate *border = m_defs->FrameTemplate(tab_box.def->page_border)) {
+		Rect pieces[BorderPieceCount];
+		LayoutFrame(border->border, PageRect(tab_box), now_ms, pieces);
+		for (int i = 0; i < BorderPieceCount; ++i)
+			if (i != Top && pieces[i].w > 0 && pieces[i].h > 0)
+				DrawAnimation(canvas, textures, border->border[i], pieces[i], now_ms);
+		for (int i = 0; i < count; ++i)
+			if (i != tab_box.tab) {
+				Rect tab = TabRect(tab_box, i);
+				DrawAnimation(canvas, textures, border->border[Top], {tab.x, pieces[Top].y, tab.w, pieces[Top].h}, now_ms);
+			}
+	}
+	DrawTab(tab_box, tab_box.tab, canvas, text, textures, now_ms, clip);
+	canvas.SetClip(clip);
+}
+
+void SidlWindow::DrawTab(const Control &tab_box, int index, Canvas &canvas, TextRenderer &text, SidlTextures &textures,
+	uint64_t now_ms, const Rect &clip) const
+{
+	// CTabWnd::DrawTab: the tab border, the page's TabIcon (TabIconActive on the current tab) in
+	// its top left corner inside the border, and its TabText centered in the rest.
+	if (index < 0 || index >= static_cast<int>(tab_box.children.size()))
+		return;
+	const SidlPiece &page = *m_controls[tab_box.children[index]].def;
+	bool current = index == tab_box.tab;
+	Rect tab = TabRect(tab_box, index);
+	Rect tab_clip = Intersect(tab, clip);
+	if (!current) {
+		// A tab behind sits 2 pixels lower, cut off the page border's bottom edge short of its own
+		// bottom, so the page's top edge runs under it.
+		tab.y += 2;
+		if (const SidlFrameTemplate *page_border = m_defs->FrameTemplate(tab_box.def->page_border))
+			tab_clip.h = std::max(tab_clip.h - AnimationSize(page_border->border[Bottom]).h, 0);
+	}
+	canvas.SetClip(tab_clip);
+	Rect inside = tab;
+	if (const SidlFrameTemplate *border = m_defs->FrameTemplate(tab_box.def->tab_border)) {
+		Rect pieces[BorderPieceCount];
+		LayoutFrame(border->border, tab, now_ms, pieces);
+		for (int i = 0; i < BorderPieceCount; ++i)
+			if (pieces[i].w > 0 && pieces[i].h > 0)
+				DrawAnimation(canvas, textures, border->border[i], pieces[i], now_ms);
+		// CTabWnd::CalculateTabContentRect: in by the Left, Top and Right pieces.
+		int left = AnimationSize(border->border[Left]).w, top = AnimationSize(border->border[Top]).h;
+		int right = AnimationSize(border->border[Right]).w;
+		inside = {tab.x + left, tab.y + top, tab.w - left - right, tab.h - top};
+	}
+	const std::string &icon = current ? page.tab_icon_active : page.tab_icon;
+	Rect icon_size = AnimationSize(icon);
+	if (icon_size.w > 0) {
+		DrawAnimation(canvas, textures, icon, {inside.x, inside.y, icon_size.w, icon_size.h}, now_ms);
+		inside.x += icon_size.w;
+		inside.w -= icon_size.w;
+	}
+	if (!page.tab_text.empty()) {
+		int height = SidlFontHeight(tab_box.def->font), weight = SidlFontWeight(tab_box.def->font);
+		TextSize size = text.Measure(page.tab_text, height, weight);
+		text.Draw(canvas, inside.x + (inside.w - size.w) / 2, inside.y + (inside.h - size.h) / 2, page.tab_text, height,
+			current ? page.tab_text_active_color : page.tab_text_color, weight);
+	}
+}
+
 void SidlWindow::DrawAnimation(Canvas &canvas, SidlTextures &textures, const std::string &name, const Rect &dest,
 	uint64_t now_ms) const
 {
@@ -628,14 +802,19 @@ void SidlWindow::DrawAnimation(Canvas &canvas, SidlTextures &textures, const std
 
 void SidlWindow::LayoutBorder(const Control &control, uint64_t now_ms, Rect (&pieces)[BorderPieceCount]) const
 {
+	LayoutFrame(control.frame->border, control.rect, now_ms, pieces);
+}
+
+void SidlWindow::LayoutFrame(const std::string (&border)[BorderPieceCount], const Rect &r, uint64_t now_ms,
+	Rect (&pieces)[BorderPieceCount]) const
+{
 	auto frame_of = [&](int piece) -> const SidlFrame * {
-		const SidlAnimation *a = m_defs->Animation(control.frame->border[piece]);
+		const SidlAnimation *a = m_defs->Animation(border[piece]);
 		return a ? a->FrameAt(now_ms) : nullptr;
 	};
 	auto w = [&](int piece) { const SidlFrame *f = frame_of(piece); return f ? f->source.w : 0; };
 	auto h = [&](int piece) { const SidlFrame *f = frame_of(piece); return f ? f->source.h : 0; };
 	// Corners at natural size; edges stretched between them.
-	const Rect &r = control.rect;
 	pieces[TopLeft] = {r.x, r.y, w(TopLeft), h(TopLeft)};
 	pieces[TopRight] = {r.Right() - w(TopRight), r.y, w(TopRight), h(TopRight)};
 	pieces[Top] = {r.x + w(TopLeft), r.y, r.w - w(TopLeft) - w(TopRight), h(Top)};
@@ -650,6 +829,24 @@ void SidlWindow::LayoutBorder(const Control &control, uint64_t now_ms, Rect (&pi
 	pieces[RightTop] = {r.Right() - w(RightTop), right_top, w(RightTop), h(RightTop)};
 	pieces[RightBottom] = {r.Right() - w(RightBottom), right_bottom - h(RightBottom), w(RightBottom), h(RightBottom)};
 	pieces[Right] = {r.Right() - w(Right), right_top + h(RightTop), w(Right), right_bottom - h(RightBottom) - right_top - h(RightTop)};
+}
+
+Rect SidlWindow::FrameInside(const SidlFrameTemplate &frame, const Rect &r) const
+{
+	// CTAFrameDraw::GetInnerRect: in by the widest piece down each side, less the overlap.
+	auto widest = [&](std::initializer_list<int> list, bool width) {
+		int most = 0;
+		for (int piece : list) {
+			Rect size = AnimationSize(frame.border[piece]);
+			most = std::max(most, width ? size.w : size.h);
+		}
+		return most;
+	};
+	int left = widest({LeftTop, Left, LeftBottom}, true) - frame.overlap_left;
+	int top = widest({TopLeft, Top, TopRight}, false) - frame.overlap_top;
+	int right = widest({RightTop, Right, RightBottom}, true) - frame.overlap_right;
+	int bottom = widest({BottomLeft, Bottom, BottomRight}, false) - frame.overlap_bottom;
+	return {r.x + left, r.y + top, r.w - left - right, r.h - top - bottom};
 }
 
 int SidlWindow::BorderPieceAt(int x, int y) const
@@ -798,6 +995,9 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 			text.Draw(canvas, x, control.rect.y, shown, height, control.text_color, weight);
 		}
 	}
+	else if (def.type == "TabBox") {
+		DrawTabBox(control, canvas, text, textures, now_ms, client_clip);
+	}
 	else if (def.type == "Gauge") {
 		DrawGauge(control, canvas, text, textures, now_ms);
 	}
@@ -887,6 +1087,17 @@ std::string SidlWindow::OnMouse(const InputEvent &event)
 		}
 		return "";
 	}
+
+	// CTabWnd's left button down: a press on a tab shows its page.
+	if (event.type == InputEvent::Type::MouseDown || event.type == InputEvent::Type::DoubleClick)
+		for (auto &control : m_controls)
+			if (control.def->type == "TabBox" && HitTest(control, event.x, event.y)) {
+				int tab = TabAt(control, event.x, event.y);
+				if (tab >= 0) {
+					SelectTab(control, tab);
+					return "";
+				}
+			}
 
 	std::string clicked;
 	for (int i = 0; i < static_cast<int>(m_controls.size()); ++i) {

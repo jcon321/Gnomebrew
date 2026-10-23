@@ -4,9 +4,9 @@
 // from uifiles/<skin>/EQUI.xml and the files it <Include>s. This covers the
 // pieces character select, creation and the in-game windows use so far:
 // Ui2DAnimation, ButtonDrawTemplate, WindowDrawTemplate (with its vertical
-// scrollbar), Screen (nested too), Button, Label, StaticAnimation, Editbox,
-// STMLbox, Gauge, and the empty look of SpellGem and InvSlot, with AutoStretch
-// anchors. Schema defaults come from uifiles/default/SIDL.xml.
+// scrollbar), FrameTemplate, Screen (nested too), TabBox and its Pages, Button,
+// Label, StaticAnimation, Editbox, STMLbox, Gauge, and the empty look of SpellGem
+// and InvSlot, with AutoStretch anchors. Schema defaults come from uifiles/default/SIDL.xml.
 
 #include "canvas.h"
 #include "text.h"
@@ -66,6 +66,14 @@ struct SidlWindowTemplate
 	SidlButtonTemplate close_box, minimize_box;        // the title bar's buttons
 };
 
+// FrameTemplate: a border on its own (a TabBox's tabs and page), in CTAFrameDraw order, and how
+// far the inside reaches back over it on each side.
+struct SidlFrameTemplate
+{
+	std::string border[BorderPieceCount];
+	int overlap_left = 0, overlap_top = 0, overlap_right = 0, overlap_bottom = 0;
+};
+
 // GaugeDrawTemplate: animations, each drawn at its own size.
 struct SidlGaugeTemplate
 {
@@ -110,6 +118,13 @@ struct SidlPiece
 	uint32_t fill_tint = 0xffffff, lines_fill_tint = 0xffffff;
 	bool draw_lines_fill = false;
 	SidlGaugeTemplate gauge;
+
+	// Page: its tab's text and icon, and their colors and icons on the current tab.
+	std::string tab_text, tab_icon, tab_icon_active;
+	uint32_t tab_text_color = 0xffffff, tab_text_active_color = 0xffffff;
+	// TabBox: the borders of its tabs and of the page under them, and its Pages.
+	std::string tab_border, page_border;
+	std::vector<std::string> pages;
 
 	// Screen (and the Editbox and STMLbox frames)
 	std::string draw_template;
@@ -159,6 +174,7 @@ public:
 
 	const SidlAnimation *Animation(const std::string &name) const;
 	const SidlWindowTemplate *WindowTemplate(const std::string &name) const;
+	const SidlFrameTemplate *FrameTemplate(const std::string &name) const;
 	const SidlPiece *Piece(const std::string &item) const;
 	const std::string &Directory() const { return m_dir; }
 	const std::vector<std::string> &Warnings() const { return m_warnings; }
@@ -170,6 +186,7 @@ private:
 	std::string m_dir;
 	std::map<std::string, SidlAnimation> m_animations;
 	std::map<std::string, SidlWindowTemplate> m_window_templates;
+	std::map<std::string, SidlFrameTemplate> m_frame_templates;
 	std::map<std::string, SidlPiece> m_pieces;
 	std::vector<std::string> m_warnings;
 };
@@ -209,6 +226,7 @@ public:
 		// Style_VScroll: the content's scroll position in rows, how far it goes, and a page of it.
 		// Whoever fills the control sets max and page; the scrollbar, the wheel and the owner move pos.
 		int scroll_pos = 0, scroll_max = 0, scroll_page = 1;
+		int tab = 0; // TabBox: the page showing (its children are its pages)
 		// Draws the content of a control the window doesn't fill itself (a chat window's text),
 		// inside ContentRect, after the frame and under the children.
 		std::function<void(Canvas &, TextRenderer &, const Rect &)> draw_content;
@@ -232,6 +250,8 @@ public:
 	const Control *Find(const std::string &screen_id) const;
 	// Radio group handling: checks this one, unchecks the rest of its group.
 	void Check(const std::string &screen_id);
+	// CTabWnd::SetActivePage: a TabBox shows its index'th page and hides the rest.
+	void SelectTab(Control &tab_box, int index);
 	// CXWnd::MoveAndInvalidate: a control's new rect, with its children laid out again.
 	void Move(const std::string &screen_id, const Rect &rect);
 	void Move(const Rect &rect) { Place(0, rect); } // the window itself
@@ -276,6 +296,20 @@ private:
 	void DrawAnimation(Canvas &canvas, SidlTextures &textures, const std::string &name, const Rect &dest, uint64_t now_ms) const;
 	void DrawTitleBox(Canvas &canvas, SidlTextures &textures, TitleBox box, const SidlButtonTemplate &look, uint64_t now_ms) const;
 	Rect AnimationSize(const std::string &name) const; // the first frame's size, at 0, 0
+	// CTAFrameDraw: where each of a border's pieces goes around `rect`, and the inside of it.
+	void LayoutFrame(const std::string (&border)[BorderPieceCount], const Rect &rect, uint64_t now_ms,
+		Rect (&pieces)[BorderPieceCount]) const;
+	Rect FrameInside(const SidlFrameTemplate &frame, const Rect &rect) const;
+
+	// CTabWnd: the tabs across the top of a TabBox and the page under them.
+	int TabHeight(const Control &tab_box) const;
+	Rect PageRect(const Control &tab_box) const;        // GetTabContentRect
+	Rect TabRect(const Control &tab_box, int index) const; // CalculateTabRectangle
+	int TabAt(const Control &tab_box, int x, int y) const; // GetTabPageFromMousePosition; -1 none
+	void DrawTabBox(const Control &tab_box, Canvas &canvas, TextRenderer &text, SidlTextures &textures, uint64_t now_ms,
+		const Rect &clip) const;
+	void DrawTab(const Control &tab_box, int index, Canvas &canvas, TextRenderer &text, SidlTextures &textures,
+		uint64_t now_ms, const Rect &clip) const;
 	void DrawGauge(const Control &control, Canvas &canvas, TextRenderer &text, SidlTextures &textures, uint64_t now_ms) const;
 
 	// The vertical scrollbar's parts, for a control that has one.

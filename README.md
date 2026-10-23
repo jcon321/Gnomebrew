@@ -196,7 +196,10 @@ to 7 characters, as eqgame names it).
   So far: /say (or no slash, or `'`), /tell, /reply, /gsay, /guildsay, /shout, /auction, /ooc,
   /emote (`:`, /me), /hail, /target, /location, /camp, /clearchat. The rest say they aren't
   supported yet.
-- The Actions window's Camp, Run and Walk buttons work.
+- The Actions window's tabs (Main, Abilities, Combat, Socials) switch pages, drawn as `CTabWnd`
+  draws them, and its Camp, Run and Walk buttons work; Run or Walk, Sit or Stand and Invite or
+  Follow show as eqgame picks them. The socials page and the hot button window page through ten
+  sets with their arrows, round from the last to the first.
 - Names over heads are eqgame's name sprites (`CDisplay::SetNameSpriteState`): a player's first
   name and surname, LFG, AFK and LD, and `<guild>` on a second line (the world's guild list, asked
   for as you enter the world); an NPC's or corpse's name alone. Their colors are eqgame's: blue

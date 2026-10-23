@@ -19,6 +19,7 @@
 #include "eq_sound.h"
 #include "eqtext.h"
 #include "game_values.h"
+#include "game_windows.h"
 #include "name_sprites.h"
 #include "login_client.h"
 #include "sidl.h"
@@ -276,6 +277,7 @@ private:
 	};
 	HeldKeys m_keys;
 	bool m_run = true;
+	GameWindowPages m_window_pages; // the Actions window's socials and the hot buttons
 	bool m_jump_requested = false;
 	bool m_crouch_sent = false; // the stance last sent for a standing jump's wind-up
 	// Mouse drags in the zone: the right button turns the character and tilts the view, the left

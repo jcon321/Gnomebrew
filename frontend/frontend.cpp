@@ -639,7 +639,8 @@ void FrontEnd::Update(uint64_t now_ms)
 		Rect area = ScreenArea();
 		m_windows.Update(now_ms, m_mouse_x - area.x, m_mouse_y - area.y);
 		HandleWindowClicks();
-		UpdateGameWindows(m_windows, m_game_values);
+		m_game_values.running = m_run;
+		UpdateGameWindows(m_windows, m_game_values, m_window_pages);
 		if (m_windows.TakeChanged())
 			SaveUiLayout();
 	}
@@ -1421,6 +1422,7 @@ void FrontEnd::SaveDebugSettings()
 void FrontEnd::HandleWindowClicks()
 {
 	for (const auto &click : m_windows.TakeClicks()) {
+		GameWindowClick(m_windows, m_window_pages, click.window, click.control);
 		if (click.window == "SelectorWindow")
 			for (const auto &toggle : SelectorToggles)
 				if (click.control == toggle.button)

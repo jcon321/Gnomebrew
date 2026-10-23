@@ -22,6 +22,7 @@ class GameValues : public SidlValues
 public:
 	const ZoneSession *zone = nullptr;
 	uint16_t target = 0; // spawn id; 0 none
+	bool running = true; // run mode (eqgame's @0079856d), not walking
 
 	int Gauge(int eq_type, std::string &text) override;
 	bool Label(int eq_type, std::string &text) override;
