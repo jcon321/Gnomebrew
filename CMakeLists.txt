@@ -41,6 +41,7 @@ add_library(eqcore STATIC
     core/dds.cpp
     core/wld.cpp
     core/creation_rules.cpp
+    core/spell_file.cpp
 )
 target_include_directories(eqcore PUBLIC core)
 target_link_libraries(eqcore PUBLIC rdplib)
@@ -113,6 +114,7 @@ add_library(eqfrontend STATIC
     frontend/chat_text.cpp
     frontend/game_values.cpp
     frontend/game_windows.cpp
+    frontend/item_display.cpp
     frontend/name_sprites.cpp
     frontend/settings_file.cpp
 )

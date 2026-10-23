@@ -24,6 +24,7 @@ struct InputEvent
 	Key key = Key::None;  // Key
 	bool shift = false;
 	bool ctrl = false;
+	bool alt = false;
 	bool IsMouse() const { return type != Type::Char && type != Type::Key && type != Type::KeyUp && type != Type::FocusLost; }
 };
 

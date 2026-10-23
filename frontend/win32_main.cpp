@@ -14,6 +14,7 @@
 //   eqclient_gui.exe --replay replays\Name-20261022-124815.eqr   (straight into the recorded zone, no server)
 
 #include "eqstr.h"
+#include "spell_file.h"
 #include "frontend.h"
 #include "settings_file.h"
 #include "win32_audio.h"
@@ -129,6 +130,9 @@ namespace
 		event.type = type;
 		event.x = static_cast<short>(LOWORD(lparam));
 		event.y = static_cast<short>(HIWORD(lparam));
+		event.shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+		event.ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+		event.alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
 		g_app.mouse_x = event.x;
 		g_app.mouse_y = event.y;
 		return event;
@@ -168,6 +172,7 @@ namespace
 		event.y = g_app.mouse_y;
 		event.shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
 		event.ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+		event.alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
 		return event;
 	}
 
@@ -185,6 +190,12 @@ namespace
 				SetCursor(nullptr); // the front end draws cursor.bmp itself
 				return TRUE;
 			}
+			break;
+		case WM_SYSCOMMAND:
+			// Alt let go on its own would open the window menu and take the next keys; it's a
+			// modifier here (alt+click shows an item). Alt+Space and Alt+F4 still work.
+			if ((wparam & 0xfff0) == SC_KEYMENU && lparam == 0)
+				return 0;
 			break;
 		case WM_MOUSEMOVE:
 			if (!g_app.tracking_mouse) {
@@ -445,6 +456,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 		ui.eqstr = &eqstr;
 	else
 		Log("eqstr_en.txt not found; server messages will show string ids");
+	SpellFile spells;
+	if (spells.Load(Narrow(eq_dir) + "/spells_en.txt"))
+		ui.spells = &spells;
+	else
+		Log("spells_en.txt not found; the item display won't name spells");
 
 	DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
 	PickResolution(width, height, style);

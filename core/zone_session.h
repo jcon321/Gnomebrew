@@ -159,15 +159,44 @@ struct ZoneMovement
 
 // An item we have, from OP_CharInventory or OP_ItemPacket (Mac::structs::Item_Struct, 360 bytes):
 // what the windows need of it so far.
+// Mac::structs::Item_Struct (360 bytes), as eqgame keeps it in memory; the fields from its union
+// only for the kind of item they belong to.
 struct ZoneItem
 {
 	int16_t slot = 0;        // equipSlot: 1..20 worn (21 ammo), 22..29 the bags' slots, 30 cursor...
 	uint8_t item_class = 0;  // 0 common, 1 container, 2 book
 	std::string name;
+	std::string lore;        // its first character marks it: '*' lore, '~' pending lore; then '#' artifact, '&' summoned
+	uint8_t weight = 0, no_rent = 0, no_drop = 0, size = 0; // no_rent, no_drop: 0 means it is
 	uint16_t icon = 0;
-	int16_t hp = 0, mana = 0; // common items only, like the stats
-	int8_t str = 0, sta = 0, cha = 0, dex = 0, int_ = 0, agi = 0, wis = 0;
+	int32_t slots = 0;       // where it can be worn, a bit per slot
+	int32_t cast_time = 0;   // ms; a food or drink's duration
+	uint16_t skill_mod_type = 0;
+	int16_t skill_mod_value = 0;
+	int16_t bane_race = 0, bane_body = 0;
+	uint8_t bane_amount = 0;
 	uint8_t rec_level = 0, rec_skill = 0;
+	uint8_t elem_type = 0, elem_amount = 0; // 1 magic, 2 fire, 3 cold, 4 poison, 5 disease
+	int16_t faction_mod[4] = {}, faction_amount[4] = {};
+	int32_t deity = 0;       // a bit per deity, from bit 1 (201)
+	int16_t req_level = 0;
+	int16_t bard_type = 0;   // an instrument's
+	int16_t focus_effect = 0;
+	// Common items:
+	int16_t hp = 0, mana = 0, ac = 0;
+	int8_t str = 0, sta = 0, cha = 0, dex = 0, int_ = 0, agi = 0, wis = 0;
+	int8_t mr = 0, fr = 0, cr = 0, dr = 0, pr = 0;
+	uint8_t max_charges = 0, delay = 0, damage = 0, range = 0, item_type = 0, magic = 0;
+	int8_t effect_type = 0;  // EffectType1: 0 combat, 1 click, 2 worn, 3 expendable, 4 must equip, 5 click, class checked
+	int16_t effect1 = 0;     // Effect1: a scroll's spell
+	uint8_t stackable = 0;   // IsStackable, @276
+	int8_t charges = 0;
+	int16_t effect2 = 0;     // Effect2: the spell of its effect
+	int32_t classes = 0, races = 0; // a bit per class (WAR first) and per race (HUM first)
+	// Containers:
+	uint8_t bag_slots = 0, bag_open = 0, bag_size = 0, bag_wr = 0; // bag_wr: % weight reduction
+	// Books (the first two bytes of the union): book or note, and open or not.
+	uint8_t book_type = 0, book_open = 0;
 };
 
 struct ZoneChat

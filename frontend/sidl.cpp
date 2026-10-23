@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdlib>
 #include <functional>
 #include <filesystem>
 #include <initializer_list>
@@ -410,10 +411,19 @@ const SidlPiece *SidlDefinitions::Piece(const std::string &item) const
 
 namespace
 {
-	// STML as plain text: <BR> breaks the line, other tags are dropped.
-	std::string StmlToText(const std::string &stml)
+	// STML's lines (<BR> and <P> break them), each as runs of text in one color: <c "#RRGGBB">
+	// colors what follows until its </c>. Other tags are dropped.
+	std::vector<std::vector<SidlWindow::StmlRun>> ParseStml(const std::string &stml, uint32_t color)
 	{
-		std::string out;
+		std::vector<std::vector<SidlWindow::StmlRun>> lines(1);
+		std::vector<uint32_t> colors{color};
+		auto add = [&](const std::string &text) {
+			auto &line = lines.back();
+			if (!line.empty() && line.back().color == colors.back())
+				line.back().text += text;
+			else
+				line.push_back({text, colors.back()});
+		};
 		for (size_t i = 0; i < stml.size(); ++i) {
 			if (stml[i] == '<') {
 				size_t end = stml.find('>', i);
@@ -421,25 +431,70 @@ namespace
 					break;
 				std::string tag = ToLowerCopy(stml.substr(i + 1, end - i - 1));
 				if (tag == "br" || tag == "br/" || tag == "p")
-					out += '\n';
+					lines.emplace_back();
+				else if (tag == "/c" && colors.size() > 1)
+					colors.pop_back();
+				else if (tag.size() > 2 && tag[0] == 'c' && tag[1] == ' ') {
+					size_t hash = tag.find('#');
+					colors.push_back(hash != std::string::npos ? strtoul(tag.c_str() + hash + 1, nullptr, 16) & 0xffffff
+					                                           : colors.back());
+				}
 				i = end;
 			}
 			else if (stml.compare(i, 4, "&lt;") == 0) {
-				out += '<';
+				add("<");
 				i += 3;
 			}
 			else if (stml.compare(i, 4, "&gt;") == 0) {
-				out += '>';
+				add(">");
 				i += 3;
 			}
 			else if (stml.compare(i, 5, "&amp;") == 0) {
-				out += '&';
+				add("&");
 				i += 4;
 			}
 			else if (stml[i] != '\r')
-				out += stml[i];
+				add(std::string(1, stml[i]));
 		}
-		return out;
+		return lines;
+	}
+
+	// A line wrapped into rows at spaces, as the chat window wraps; a word wider than a row has
+	// one to itself.
+	void WrapStml(TextRenderer &text, const std::vector<SidlWindow::StmlRun> &line, int width, int height, int weight,
+		std::vector<std::vector<SidlWindow::StmlRun>> &rows)
+	{
+		std::vector<SidlWindow::StmlRun> row, word;
+		int row_w = 0, word_w = 0;
+		auto flush = [&]() {
+			if (!row.empty() && row_w + word_w > width) {
+				rows.push_back(std::move(row));
+				row.clear();
+				row_w = 0;
+			}
+			for (auto &piece : word) {
+				if (!row.empty() && row.back().color == piece.color)
+					row.back().text += piece.text;
+				else
+					row.push_back(std::move(piece));
+			}
+			row_w += word_w;
+			word.clear();
+			word_w = 0;
+		};
+		for (const auto &run : line)
+			for (size_t pos = 0; pos < run.text.size();) {
+				size_t space = run.text.find(' ', pos);
+				size_t end = space == std::string::npos ? run.text.size() : space + 1;
+				std::string piece = run.text.substr(pos, end - pos);
+				word_w += text.Measure(piece, height, weight).w;
+				word.push_back({piece, run.color});
+				pos = end;
+				if (space != std::string::npos)
+					flush();
+			}
+		flush();
+		rows.push_back(std::move(row));
 	}
 }
 
@@ -683,7 +738,7 @@ bool SidlWindow::InteractiveAt(int x, int y) const
 		return false;
 	for (const auto &control : m_controls) {
 		const std::string &type = control.def->type;
-		if ((type == "Button" || type == "Editbox") && control.enabled && HitTest(control, x, y))
+		if ((type == "Button" || type == "Editbox" || type == "InvSlot") && control.enabled && HitTest(control, x, y))
 			return true;
 		if (HasScrollbar(control) && LayoutScrollbar(control).bar.Contains(x, y) && HitTest(control, x, y))
 			return true;
@@ -734,7 +789,7 @@ std::string SidlWindow::ButtonAt(int x, int y) const
 	if (m_minimized)
 		return "";
 	for (auto it = m_controls.rbegin(); it != m_controls.rend(); ++it)
-		if (it->def->type == "Button" && it->enabled && HitTest(*it, x, y))
+		if ((it->def->type == "Button" || it->def->type == "InvSlot") && it->enabled && HitTest(*it, x, y))
 			return it->def->screen_id;
 	return "";
 }
@@ -1064,18 +1119,20 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 			DrawAnimation(canvas, textures, name, control.rect, now_ms);
 		// The decal at its offset (its own size without DecalSize); the text goes in what's right of it.
 		// A grid decal (a buff's BuffIcons) shows the control's cell, and nothing without one
-		// (CBuffWindow::SetBuffIcon's SetCurCell(-1)).
+		// (CBuffWindow::SetBuffIcon's SetCurCell(-1)). A cell_animation takes the decal's place (the
+		// item display's icon, A_DragItem).
 		Rect text_rect = control.rect;
-		const SidlAnimation *decal_animation = m_defs->Animation(t.normal_decal);
+		const std::string &decal_name = control.cell_animation.empty() ? t.normal_decal : control.cell_animation;
+		const SidlAnimation *decal_animation = m_defs->Animation(decal_name);
 		bool grid_decal = decal_animation && decal_animation->grid;
 		if (decal_animation && !control.blank && (!grid_decal || control.cell >= 0)) {
-			Rect decal = def.decal.w > 0 && def.decal.h > 0 ? def.decal : AnimationSize(t.normal_decal);
+			Rect decal = def.decal.w > 0 && def.decal.h > 0 ? def.decal : AnimationSize(decal_name);
 			decal.x += control.rect.x;
 			decal.y += control.rect.y;
 			if (grid_decal)
-				DrawCell(canvas, textures, t.normal_decal, control.cell, decal);
+				DrawCell(canvas, textures, decal_name, control.cell, decal);
 			else
-				DrawAnimation(canvas, textures, t.normal_decal, decal, now_ms);
+				DrawAnimation(canvas, textures, decal_name, decal, now_ms);
 			text_rect.w -= decal.Right() - text_rect.x;
 			text_rect.x = decal.Right();
 		}
@@ -1144,11 +1201,7 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 		control.draw_content(canvas, text, ContentRect(control));
 	}
 	else if (def.type == "STMLbox") {
-		if (!control.text.empty()) {
-			const Rect &c = control.client;
-			text.DrawWrapped(canvas, {c.x + 2, c.y + 2, c.w - 4, c.h - 4}, StmlToText(control.text), height,
-				def.has_text_color ? control.text_color : 0xffffff, weight);
-		}
+		DrawStml(control, canvas, text);
 	}
 
 	if (HasScrollbar(control))
@@ -1225,7 +1278,7 @@ std::string SidlWindow::OnMouse(const InputEvent &event)
 	for (int i = 0; i < static_cast<int>(m_controls.size()); ++i) {
 		Control &control = m_controls[i];
 		const std::string &type = control.def->type;
-		if ((type != "Button" && type != "Editbox") || !Shown(control))
+		if ((type != "Button" && type != "Editbox" && type != "InvSlot") || !Shown(control))
 			continue;
 		bool inside = HitTest(control, event.x, event.y);
 		if (type == "Editbox") {
@@ -1384,6 +1437,38 @@ void SidlWindow::UpdateListScroll(Control &control) const
 	control.scroll_page = std::max((content.h - ListHeaderHeight(control)) / ListRowHeight(control), 1);
 	control.scroll_max = std::max(rows - control.scroll_page, 0);
 	control.scroll_pos = std::clamp(control.scroll_pos, 0, control.scroll_max);
+}
+
+void SidlWindow::DrawStml(const Control &control, Canvas &canvas, TextRenderer &text) const
+{
+	// CStmlWnd: the text wrapped to the box, 2 pixels in, from the scroll position's row down; its
+	// rows are worked out again only when the text or the width changes.
+	const SidlPiece &def = *control.def;
+	int height = SidlFontHeight(def.font), weight = SidlFontWeight(def.font);
+	Rect content = ContentRect(control);
+	Rect area{content.x + 2, content.y + 2, content.w - 4, content.h - 4};
+	uint32_t color = def.has_text_color ? control.text_color : 0xffffff;
+	if (control.stml_text != control.text || control.stml_width != area.w || control.stml_color != color) {
+		control.stml_text = control.text;
+		control.stml_width = area.w;
+		control.stml_color = color;
+		control.stml_rows.clear();
+		if (!control.text.empty())
+			for (const auto &line : ParseStml(control.text, color))
+				WrapStml(text, line, area.w, height, weight, control.stml_rows);
+	}
+	int row_h = std::max(text.Measure("Wg", height, weight).h, 1);
+	int rows = static_cast<int>(control.stml_rows.size());
+	control.scroll_page = std::max(area.h / row_h, 1);
+	control.scroll_max = std::max(rows - control.scroll_page, 0);
+	int y = area.y;
+	for (int i = std::clamp(control.scroll_pos, 0, control.scroll_max); i < rows && y < area.Bottom(); ++i, y += row_h) {
+		int x = area.x;
+		for (const auto &run : control.stml_rows[i]) {
+			text.Draw(canvas, x, y, run.text, height, run.color, weight);
+			x += text.Measure(run.text, height, weight).w;
+		}
+	}
 }
 
 void SidlWindow::DrawListbox(const Control &control, Canvas &canvas, TextRenderer &text) const

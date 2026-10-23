@@ -10,8 +10,9 @@
 // "charselect" stops at character select (two snapshots of the 3D scene, as the
 // camera turns) instead of entering the world. --replay plays a packet log back (no server)
 // and snapshots the zone once it's in, then every few seconds for SECONDS (default 10), then
-// tries the windows: drags the selector by its title bar, opens the inventory from it and the
-// skills window from that (printing its list), closes both with Escape, minimizes and restores
+// tries the windows: drags the selector by its title bar, opens the inventory from it, shows its
+// items in the item display with alt+click (printing them) and the first by holding the right button,
+// opens the skills window from it (printing its list), closes both with Escape, minimizes and restores
 // the actions window, and sizes the target and chat windows from their borders (the layout goes
 // to OUTDIR/UI_*.ini); puts Actions window buttons on the hot
 // buttons by holding them and clicking a hot button, swaps two, uses one, takes one off again by
@@ -19,6 +20,7 @@
 // into the chat window, targets a spawn and prints the chat.
 
 #include "eqstr.h"
+#include "spell_file.h"
 #include "frontend.h"
 #include "png_writer.h"
 
@@ -206,6 +208,9 @@ int main(int argc, char **argv)
 	EqStr eqstr;
 	if (eqstr.Load(eq_dir + "/eqstr_en.txt"))
 		ui.eqstr = &eqstr;
+	SpellFile spells;
+	if (spells.Load(eq_dir + "/spells_en.txt"))
+		ui.spells = &spells;
 
 	BoxTextRenderer text;
 	FrontEnd frontend(art, strings, text, config, ui);
@@ -270,6 +275,51 @@ int main(int argc, char **argv)
 			for (int i = 0; i < 4; ++i)
 				if (const SidlWindow::Control *money = inventory->Find("IW_Money" + std::to_string(i)))
 					printf("[preview] IW_Money%d: %s\n", i, money->text.c_str());
+			// Alt+click on a slot with an item shows it in the item display (each one printed;
+			// Escape closes it first); the right button held on the first shows it too, and letting
+			// go closes it.
+			bool first = true;
+			for (int slot = 1; slot <= 29; ++slot) {
+				const SidlWindow::Control *c = inventory->Find("InvSlot" + std::to_string(slot));
+				if (!c || c->cell < 0)
+					continue;
+				int x = c->rect.x + c->rect.w / 2, y = c->rect.y + c->rect.h / 2;
+				InputEvent event{InputEvent::Type::MouseMove, x, y};
+				frontend.OnEvent(event);
+				event.alt = true;
+				event.type = InputEvent::Type::MouseDown;
+				frontend.OnEvent(event);
+				event.type = InputEvent::Type::MouseUp;
+				frontend.OnEvent(event);
+				frontend.Update(NowMs());
+				if (const SidlWindow *display = where("ItemDisplayWindow")) {
+					const SidlWindow::Control *description = display->Find("ItemDescription");
+					printf("[preview] InvSlot%d item display '%s':\n", slot, display->Root().text.c_str());
+					std::string text = description ? description->text : "";
+					for (size_t start = 0; start <= text.size();) {
+						size_t br = text.find("<BR>", start);
+						printf("[preview]   %s\n", text.substr(start, br == std::string::npos ? std::string::npos : br - start).c_str());
+						if (br == std::string::npos)
+							break;
+						start = br + 4;
+					}
+					if (first)
+						h.Snapshot("w1-item-display");
+				}
+				if (!first)
+					continue;
+				first = false;
+				h.Key(InputEvent::Key::Escape);
+				where("ItemDisplayWindow");
+				frontend.OnEvent({InputEvent::Type::RightDown, x, y});
+				h.RunUntil([] { return false; }, 900);
+				where("ItemDisplayWindow");
+				frontend.OnEvent({InputEvent::Type::RightUp, x, y});
+				frontend.Update(NowMs());
+				where("ItemDisplayWindow");
+			}
+			h.Key(InputEvent::Key::Escape); // the last item's display
+			where("ItemDisplayWindow");
 			// The Skills button opens the skills window; escape closes it before the inventory.
 			if (const SidlWindow::Control *button = inventory->Find("IW_Skills"))
 				click(button->rect.x + button->rect.w / 2, button->rect.y + button->rect.h / 2);

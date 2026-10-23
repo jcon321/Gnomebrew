@@ -93,6 +93,8 @@ public:
 	uint32_t Expansions() const { return m_expansions; }
 	uint32_t ServerType() const { return m_server_type; } // OP_LogServer: the ruleset (2 and 4 are team PvP)
 	bool StrictNames() const { return m_strict_names; }   // OP_LogServer: no four consonants in a row
+	bool FvRules() const { return m_fv_rules; }           // OP_LogServer: no drop items can be dropped (@0079975c)
+	bool AutoIdentify() const { return m_auto_identify; } // OP_LogServer: items show their lore (@00799764)
 	const std::string &WorldShortName() const { return m_world_short_name; }
 	const std::string &Motd() const { return m_motd; }
 	// OP_GuildsList, asked for as we enter the world: for the zone (ZoneSession::SetGuilds).
@@ -115,6 +117,7 @@ private:
 	uint32_t m_expansions = 0;
 	uint32_t m_server_type = 0;
 	bool m_strict_names = false;
+	bool m_fv_rules = false, m_auto_identify = false;
 	std::string m_world_short_name;
 	std::string m_motd;
 	GuildNames m_guilds;

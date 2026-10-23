@@ -59,6 +59,15 @@
 // (white, the headings 0x8aa3ff, rows 16 high, the rank and value justified 1). We go by what
 // the server sends: a skill (0..73) that isn't 254 or 255; eqgame's EQ_Character::HasSkill asks
 // its class and level table, and also lists racial skills (a halfling's sneak) the server marks 255.
+//
+// The item display (CItemDisplayWnd, @00423331 on), on the item in an inventory slot:
+//   - CInvSlot::HandleLButtonUp (@00421e48): a click with Alt down shows it, and does nothing else;
+//   - CInvSlotWnd::HandleRButtonHeld (@005a7f30, DisplayItemIfValid @00422987): the right button
+//     held on a slot shows it, and HandleRButtonUpAfterHeld (@005a7fc0,
+//     CheckItemDisplayWindowAndActivat @004229cf) closes it when the button's let go over a slot;
+//   - SetItem and Activate (@00423640, @00423606): the item's name for the title, its description
+//     (item_display.h) in ItemDescription, its icon (A_DragItem's cell icon - 500) on IconButton,
+//     and the window shown on top. It stays as it was shown until it's shown again.
 
 #include <cstdint>
 #include <string>
@@ -66,6 +75,7 @@
 class Canvas;
 class EqStr;
 class GameValues;
+struct ZoneItem;
 class IniFile;
 class TextRenderer;
 class WindowManager;
@@ -136,6 +146,10 @@ std::string GameWindowClick(WindowManager &windows, GameWindowState &state, cons
 void GameWindowHold(WindowManager &windows, GameWindowState &state, const std::string &window, const std::string &control);
 // A button right clicked: a social's opens the social editor on it.
 void GameWindowRightClick(WindowManager &windows, GameWindowState &state, const std::string &window, const std::string &control);
+// An inventory slot's item in the item display; false if the control isn't a slot with an item.
+bool ShowItemDisplay(WindowManager &windows, const GameValues &values, const std::string &window, const std::string &control);
+// The right button let go over a slot after holding it: the item display closes.
+void GameWindowRightRelease(WindowManager &windows, const std::string &window, const std::string &control);
 void UpdateGameWindows(WindowManager &windows, const GameValues &values, const GameWindowState &state);
 
 // A skill's name (eqgame's __SkillDict, from InitializeSkillData), from eqstr (null: English).

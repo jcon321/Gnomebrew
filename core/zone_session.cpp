@@ -129,9 +129,15 @@ namespace
 	{
 		ZoneItem item;
 		item.name = CString(d, o, 64);
+		item.lore = CString(d, o + 64, 80);
+		item.weight = d[o + 174];
+		item.no_rent = d[o + 175];
+		item.no_drop = d[o + 176];
+		item.size = d[o + 177];
 		item.item_class = static_cast<uint8_t>(Read<int16_t>(d, o + 178));
 		item.icon = Read<uint16_t>(d, o + 182);
 		item.slot = Read<int16_t>(d, o + 184);
+		item.slots = Read<int32_t>(d, o + 188);
 		if (item.item_class == 0) {
 			item.str = Read<int8_t>(d, o + 228);
 			item.sta = Read<int8_t>(d, o + 229);
@@ -140,11 +146,56 @@ namespace
 			item.int_ = Read<int8_t>(d, o + 232);
 			item.agi = Read<int8_t>(d, o + 233);
 			item.wis = Read<int8_t>(d, o + 234);
+			item.mr = Read<int8_t>(d, o + 235);
+			item.fr = Read<int8_t>(d, o + 236);
+			item.cr = Read<int8_t>(d, o + 237);
+			item.dr = Read<int8_t>(d, o + 238);
+			item.pr = Read<int8_t>(d, o + 239);
 			item.hp = Read<int16_t>(d, o + 240);
 			item.mana = Read<int16_t>(d, o + 242);
+			item.ac = Read<int16_t>(d, o + 244);
+			item.max_charges = d[o + 246];
+			item.delay = d[o + 249];
+			item.damage = d[o + 250];
+			item.effect_type = Read<int8_t>(d, o + 251);
+			item.range = d[o + 252];
+			item.item_type = d[o + 253];
+			item.magic = d[o + 254];
+			item.effect1 = Read<int16_t>(d, o + 266);
+			item.classes = Read<int32_t>(d, o + 268);
+			item.races = Read<int32_t>(d, o + 272);
+			item.stackable = d[o + 276];
 		}
+		else if (item.item_class == 1) {
+			item.bag_slots = d[o + 269];
+			item.bag_open = d[o + 270];
+			item.bag_size = d[o + 271];
+			item.bag_wr = d[o + 272];
+		}
+		else if (item.item_class == 2) {
+			item.book_type = d[o + 228];
+			item.book_open = d[o + 229];
+		}
+		item.charges = Read<int8_t>(d, o + 278);
+		item.effect2 = Read<int16_t>(d, o + 280);
+		item.cast_time = Read<int32_t>(d, o + 292);
+		item.skill_mod_type = Read<uint16_t>(d, o + 312);
+		item.skill_mod_value = Read<int16_t>(d, o + 314);
+		item.bane_race = Read<int16_t>(d, o + 316);
+		item.bane_body = Read<int16_t>(d, o + 318);
+		item.bane_amount = d[o + 320];
 		item.rec_level = Read<uint8_t>(d, o + 324);
 		item.rec_skill = Read<uint8_t>(d, o + 325);
+		item.elem_type = d[o + 328];
+		item.elem_amount = d[o + 329];
+		for (int i = 0; i < 4; ++i) {
+			item.faction_mod[i] = Read<int16_t>(d, o + 330 + i * 2);
+			item.faction_amount[i] = Read<int16_t>(d, o + 338 + i * 2);
+		}
+		item.deity = Read<int32_t>(d, o + 348);
+		item.req_level = Read<int16_t>(d, o + 352);
+		item.bard_type = Read<int16_t>(d, o + 354);
+		item.focus_effect = Read<int16_t>(d, o + 358);
 		return item;
 	}
 

@@ -644,6 +644,8 @@ void FrontEnd::Update(uint64_t now_ms)
 		if (!social_line.empty())
 			InterpretCommand(social_line);
 		m_game_values.running = m_run;
+		if (m_zone_view)
+			m_game_values.heading = m_zone_view->Movement().heading;
 		UpdateGameWindows(m_windows, m_game_values, m_window_state);
 		if (m_windows.TakeChanged())
 			SaveUiLayout();
@@ -1362,7 +1364,7 @@ namespace
 		{"CastSpellWnd", true}, {"HotButtonWnd", true}, {"SelectorWindow", true}, {"ActionsWindow", false},
 		{"InventoryWindow", false}, {"OptionsWindow", false}, {"FriendsWindow", false}, {"PetInfoWindow", false},
 		{"HelpWindow", false}, {"CompassWindow", false}, {"SocialEditWnd", false}, {"ChatWindow", true},
-		{"SkillsWindow", false},
+		{"SkillsWindow", false}, {"ItemDisplayWindow", false},
 	};
 
 	// The selector's buttons (EQUI_SelectorWnd.xml) and the windows they open and close.
@@ -1387,6 +1389,9 @@ void FrontEnd::BuildZoneWindows()
 	m_windows.Reset(m_ui.definitions, m_ui.textures, m_game_width, m_game_height);
 	m_windows.SetValues(&m_game_values);
 	m_game_values.eqstr = m_ui.eqstr;
+	m_game_values.spells = m_ui.spells;
+	m_game_values.fv_rules = m_world.FvRules();
+	m_game_values.auto_identify = m_world.AutoIdentify();
 	for (const auto &window : ZoneWindows) {
 		std::string error;
 		if (!m_windows.Add(window.screen, window.shown, &error))
@@ -1459,7 +1464,14 @@ void FrontEnd::HandleWindowClicks()
 		GameWindowHold(m_windows, m_window_state, hold.window, hold.control);
 	for (const auto &click : m_windows.TakeRightClicks())
 		GameWindowRightClick(m_windows, m_window_state, click.window, click.control);
+	for (const auto &hold : m_windows.TakeRightHolds())
+		ShowItemDisplay(m_windows, m_game_values, hold.window, hold.control);
+	for (const auto &release : m_windows.TakeRightReleases())
+		GameWindowRightRelease(m_windows, release.window, release.control);
 	for (WindowManager::Click click : m_windows.TakeClicks()) {
+		// Alt+click on a slot shows its item and does nothing else (CInvSlot::HandleLButtonUp).
+		if (click.alt && ShowItemDisplay(m_windows, m_game_values, click.window, click.control))
+			continue;
 		// A hot button holding one of the Actions window's buttons does what that button does.
 		std::string action = GameWindowClick(m_windows, m_window_state, click.window, click.control);
 		if (!action.empty())
@@ -1931,10 +1943,12 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			break;
 		}
 		// ExecuteCmd's escape: no target, then CDisplay_NewUIProcessEscape closes the first of its
-		// windows that's open (of the ones we have: help, skills, options, the social editor, inventory).
+		// windows that's open (of the ones we have: the item display, help, skills, options, the social
+		// editor, inventory).
 		SetTarget(0);
 		ChatOut(EqString(12375, "You no longer have a target."), ChatType::Default);
-		for (const char *screen : {"HelpWindow", "SkillsWindow", "OptionsWindow", "SocialEditWnd", "InventoryWindow"})
+		for (const char *screen :
+			{"ItemDisplayWindow", "HelpWindow", "SkillsWindow", "OptionsWindow", "SocialEditWnd", "InventoryWindow"})
 			if (m_windows.Shown(screen)) {
 				m_windows.Show(screen, false);
 				break;

@@ -54,7 +54,10 @@ void WindowManager::Reset(const SidlDefinitions *defs, SidlTextures *textures, i
 	m_clicks.clear();
 	m_holds.clear();
 	m_right_clicks.clear();
+	m_right_holds.clear();
+	m_right_releases.clear();
 	m_right_press = {};
+	m_right_down = m_right_held = false;
 	m_held = false;
 	m_changed = false;
 	m_drag = Drag::None;
@@ -381,7 +384,7 @@ bool WindowManager::OnMouse(const InputEvent &event, uint64_t now_ms)
 			else {
 				std::string clicked = w.wnd.OnMouse(event);
 				if (!clicked.empty() && !m_held)
-					m_clicks.push_back({w.screen, clicked});
+					m_clicks.push_back({w.screen, clicked, event.alt});
 			}
 			w.wnd.SetTitleBoxes(w.wnd.TitleBoxAt(event.x, event.y), Box::None);
 			m_press = -1;
@@ -404,12 +407,18 @@ bool WindowManager::OnMouse(const InputEvent &event, uint64_t now_ms)
 		Click at;
 		if (top >= 0)
 			at = {m_windows[top]->screen, m_windows[top]->wnd.ButtonAt(event.x, event.y)};
-		if (event.type == Type::RightDown)
+		if (event.type == Type::RightDown) {
 			m_right_press = at;
+			m_right_ms = now_ms;
+			m_right_down = true;
+			m_right_held = false;
+		}
 		else {
-			if (!at.control.empty() && at.window == m_right_press.window && at.control == m_right_press.control)
-				m_right_clicks.push_back(at);
+			bool same = !at.control.empty() && at.window == m_right_press.window && at.control == m_right_press.control;
+			if (same)
+				(m_right_held ? m_right_releases : m_right_clicks).push_back(at);
 			m_right_press = {};
+			m_right_down = m_right_held = false;
 		}
 		return top >= 0;
 	}
@@ -510,6 +519,20 @@ std::vector<WindowManager::Click> WindowManager::TakeRightClicks()
 	return clicks;
 }
 
+std::vector<WindowManager::Click> WindowManager::TakeRightHolds()
+{
+	std::vector<Click> holds;
+	holds.swap(m_right_holds);
+	return holds;
+}
+
+std::vector<WindowManager::Click> WindowManager::TakeRightReleases()
+{
+	std::vector<Click> releases;
+	releases.swap(m_right_releases);
+	return releases;
+}
+
 void WindowManager::Update(uint64_t now_ms, int mouse_x, int mouse_y)
 {
 	// The left button held: the button under the mouse now (if it's still on one) is held, and
@@ -521,6 +544,15 @@ void WindowManager::Update(uint64_t now_ms, int mouse_x, int mouse_y)
 		std::string held = top >= 0 ? m_windows[top]->wnd.ButtonAt(mouse_x, mouse_y) : "";
 		if (!held.empty())
 			m_holds.push_back({m_windows[top]->screen, held});
+	}
+	// The right button held (ProcessMouseEvent's 750 ms): the button it went down on, if it's
+	// still under the mouse.
+	if (m_right_down && !m_right_held && now_ms - m_right_ms > HoldMs) {
+		m_right_held = true;
+		int top = TopAt(mouse_x, mouse_y);
+		if (top >= 0 && !m_right_press.control.empty() && m_windows[top]->screen == m_right_press.window &&
+			m_windows[top]->wnd.ButtonAt(mouse_x, mouse_y) == m_right_press.control)
+			m_right_holds.push_back(m_right_press);
 	}
 	for (int i = 0; i < static_cast<int>(m_windows.size()); ++i) {
 		Window &w = *m_windows[i];

@@ -23,8 +23,13 @@ no rules of its own.
      money, the class picture, item icons in the slots, the Alt. Adv. row from 51, Done, and the
      Skills button opening the skills window (`frontend/game_windows.*`). Still to do: eqgame's own
      formulas for the resists, AC, ATK and weight (blank for now), and for stats spells, AAs and
-     drunkenness; the XP and AA gauges (the experience table); the item display, picking items and
-     coins up, Destroy, Alt. Advance, bags, and icons in the hot button window's weapon slots.
+     drunkenness; the XP and AA gauges (the experience table); picking items and coins up, Destroy,
+     Alt. Advance, bags, and icons in the hot button window's weapon slots.
+   - Item display: alt+click or the right button held on an inventory slot shows its item
+     (`frontend/item_display.*`, eqgame's SetItem text with spells_en.txt's spell names); letting
+     the right button go closes it. Still to do: clicking its icon to link the item in chat
+     (`CItemDisplayWnd::WndNotification`), FV's always-no-drop item ids (`EQ_Item::IsSpecialNoDrop`),
+     open bags, and items in other windows (bags, loot, trade, merchants, links).
    - Skills window: the skills the server says we have (not 254 or 255) and our languages, with
      their ranks, kept up to date by OP_SkillUpdate. Still to do: racial skills the server marks
      255 (eqgame's HasSkill table), selecting rows.

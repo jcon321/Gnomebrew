@@ -15,6 +15,7 @@
 #include <map>
 
 class EqStr;
+class SpellFile;
 class ZoneSession;
 struct ZoneItem;
 struct ZoneProfile;
@@ -25,8 +26,11 @@ class GameValues : public SidlValues
 public:
 	const ZoneSession *zone = nullptr;
 	const EqStr *eqstr = nullptr; // for the class and deity names; null: English
+	const SpellFile *spells = nullptr; // for the item display's spells; null: none known
 	uint16_t target = 0; // spawn id; 0 none
 	bool running = true; // run mode (eqgame's @0079856d), not walking
+	float heading = 0;   // ours, 0..512 (a compass item points by it)
+	bool fv_rules = false, auto_identify = false; // OP_LogServer's (WorldSession)
 
 	int Gauge(int eq_type, std::string &text) override;
 	bool Label(int eq_type, std::string &text, uint32_t &color) override;

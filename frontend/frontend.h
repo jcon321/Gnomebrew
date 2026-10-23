@@ -51,6 +51,7 @@ struct FrontEndConfig
 };
 
 class EqStr;
+class SpellFile;
 
 // eqgame's data: the SIDL UI (uifiles/default) that character select is built
 // from, and eqstr_en.txt for server messages. Optional: without the UI the
@@ -61,6 +62,7 @@ struct GameData
 	SidlTextures *textures = nullptr;
 	std::string error; // why the UI couldn't be loaded
 	const EqStr *eqstr = nullptr;
+	const SpellFile *spells = nullptr; // spells_en.txt, for the item display
 	std::string eq_dir; // for the 3D character select scene; empty skips it
 	// The 3D views' renderer (the host's GPU one); unset, they use the software Rasterizer.
 	std::function<std::unique_ptr<render::Renderer>()> make_renderer;

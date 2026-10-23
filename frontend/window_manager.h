@@ -14,7 +14,11 @@
 //     (StartFade / ProcessTransition), everything in it drawn at that alpha (DoAllDrawing);
 //   - minimizing leaves just the title bar (ProcessTransition 1 and 2, without the animation);
 //   - HandleRButtonUp (@005a0440): the right button let go over a button it went down on is a
-//     right click (notification 3), for its window to handle.
+//     right click (notification 3), for its window to handle;
+//   - HandleRightMouseHold and HandleRButtonUpAfterHeld (@0059ff70, @005a0060): the right button
+//     held 750 ms is a hold, for the button it went down on if the mouse is still over it
+//     (CInvSlotWnd's HandleRButtonHeld, @005a7f30), and letting go after it isn't a right click
+//     but a release, for that button if the mouse is over it then (@005a7fc0).
 // Layouts are kept in eqgame's UI_<character>_<server>.ini format, one [section] per window
 // named after its screen (CSidlScreenWnd::LoadIniInfo / StoreIniInfo): XPos<W>x<H> and
 // YPos<W>x<H> per resolution, Width and Height for sizable windows, Show, Locked, Fades, Delay,
@@ -50,6 +54,7 @@ public:
 	{
 		std::string window; // its screen, e.g. "SelectorWindow"
 		std::string control; // the button's ScreenID
+		bool alt = false;    // Alt was down (GetKeyboardFlags' 4), for a click
 	};
 
 	// Forgets every window. The layout is for a screen this size.
@@ -84,8 +89,11 @@ public:
 	std::vector<Click> TakeHolds();
 	// Buttons right clicked since the last call.
 	std::vector<Click> TakeRightClicks();
+	// Buttons the right button was held on, and let go of after a hold, since the last call.
+	std::vector<Click> TakeRightHolds();
+	std::vector<Click> TakeRightReleases();
 
-	void Update(uint64_t now_ms, int mouse_x, int mouse_y); // the fades, and a button held
+	void Update(uint64_t now_ms, int mouse_x, int mouse_y); // the fades, and a button held (either button)
 	void Draw(Canvas &canvas, TextRenderer &text, uint64_t now_ms);
 	// The cursor for the mouse at (x, y), if the windows want their own (moving or sizing one,
 	// or over a sizable one's border): its SIDL animation, drawn at its hotspot. False otherwise.
@@ -132,7 +140,11 @@ private:
 	std::vector<Click> m_clicks;
 	std::vector<Click> m_holds;
 	std::vector<Click> m_right_clicks;
-	Click m_right_press; // the button the right button went down on
+	std::vector<Click> m_right_holds;
+	std::vector<Click> m_right_releases;
+	Click m_right_press;      // the button the right button went down on
+	uint64_t m_right_ms = 0;  // when
+	bool m_right_down = false, m_right_held = false;
 	bool m_changed = false;
 
 	Drag m_drag = Drag::None;

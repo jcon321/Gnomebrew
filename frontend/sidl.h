@@ -226,6 +226,12 @@ void SidlDrawButtonText(TextRenderer &text, Canvas &canvas, const Rect &rect, co
 class SidlWindow
 {
 public:
+	struct StmlRun
+	{
+		std::string text;
+		uint32_t color;
+	};
+
 	struct Control
 	{
 		const SidlPiece *def = nullptr;
@@ -235,7 +241,7 @@ public:
 		Rect title;  // the title bar, when it has one
 		int parent = -1;
 		std::vector<int> children;
-		std::string text; // STMLbox: STML (<BR> line breaks; other tags are dropped)
+		std::string text; // STMLbox: STML (<BR> line breaks, <c "#RRGGBB"> colors; other tags are dropped)
 		uint32_t text_color = 0xffffff;
 		bool visible = true;
 		bool enabled = true;
@@ -261,8 +267,15 @@ public:
 		int row_height = 0;
 		uint32_t row_color = 0xffffff, header_color = 0xffffff;
 		// Style_VScroll: the content's scroll position in rows, how far it goes, and a page of it.
-		// Whoever fills the control sets max and page; the scrollbar, the wheel and the owner move pos.
-		int scroll_pos = 0, scroll_max = 0, scroll_page = 1;
+		// Whoever fills the control sets max and page (an STML box its own, as it wraps its text to
+		// draw it); the scrollbar, the wheel and the owner move pos.
+		int scroll_pos = 0;
+		mutable int scroll_max = 0, scroll_page = 1;
+		// STMLbox: its text wrapped into rows, for the text, width and color they were wrapped for.
+		mutable std::vector<std::vector<StmlRun>> stml_rows;
+		mutable std::string stml_text;
+		mutable int stml_width = -1;
+		mutable uint32_t stml_color = 0;
 		int tab = 0; // TabBox: the page showing (its children are its pages)
 		// Draws the content of a control the window doesn't fill itself (a chat window's text),
 		// inside ContentRect, after the frame and under the children.
@@ -356,6 +369,7 @@ private:
 		uint64_t now_ms, const Rect &clip) const;
 	void DrawGauge(const Control &control, Canvas &canvas, TextRenderer &text, SidlTextures &textures, uint64_t now_ms) const;
 	void DrawListbox(const Control &control, Canvas &canvas, TextRenderer &text) const;
+	void DrawStml(const Control &control, Canvas &canvas, TextRenderer &text) const;
 	int ListHeaderHeight(const Control &control) const;
 	int ListRowHeight(const Control &control) const;
 	void DrawCell(Canvas &canvas, SidlTextures &textures, const std::string &name, int cell, const Rect &dest) const;
