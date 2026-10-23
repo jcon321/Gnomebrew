@@ -97,6 +97,11 @@ int SidlFontHeight(int font)
 	return font >= 0 && font < 7 ? heights[font] : 15;
 }
 
+int SidlFontWeight(int font)
+{
+	return font == 5 || font == 6 ? 700 : 0;
+}
+
 // ---------------------------------------------------------------- textures
 
 const Image *SidlTextures::Get(const std::string &name)
@@ -711,7 +716,7 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 	if (!control.visible)
 		return;
 	const SidlPiece &def = *control.def;
-	int height = SidlFontHeight(def.font);
+	int height = SidlFontHeight(def.font), weight = SidlFontWeight(def.font);
 	bool minimized = index == 0 && m_minimized;
 	// CXWnd::DoAllDrawing: the frame and title bar inside the control's rect, the rest inside its
 	// client area, both cut to the parent's client area (GetScreenClipRect, GetClientClipRect).
@@ -731,8 +736,10 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 		DrawAnimation(canvas, textures, control.frame->title_left, {t.x, t.y, lw, t.h}, now_ms);
 		DrawAnimation(canvas, textures, control.frame->title_right, {t.Right() - rw, t.y, rw, t.h}, now_ms);
 		if (!control.text.empty()) {
-			TextSize size = text.Measure(control.text, 12);
-			text.Draw(canvas, t.x + (t.w - size.w) / 2, t.y + (t.h - size.h) / 2, control.text, 12, control.text_color);
+			// DrawWindowAndContents (@005729b0): the window's own font, centered, a pixel above middle.
+			TextSize size = text.Measure(control.text, height, weight);
+			text.Draw(canvas, t.x + (t.w - size.w) / 2, t.y + (t.h - size.h) / 2 - 1, control.text, height,
+				control.text_color, weight);
 		}
 		if (index == 0) {
 			DrawTitleBox(canvas, textures, TitleBox::Minimize, control.frame->minimize_box, now_ms);
@@ -759,12 +766,12 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 			DrawAnimation(canvas, textures, name, control.rect, now_ms);
 		if (!control.text.empty()) {
 			// CButtonWnd::Draw: grey when disabled, yellow when checked or under the mouse.
-			TextSize size = text.Measure(control.text, height);
+			TextSize size = text.Measure(control.text, height, weight);
 			uint32_t color = !control.enabled                  ? 0x808080
 			                 : control.checked || control.hover ? 0xffff00
 			                                                    : control.text_color;
 			text.Draw(canvas, control.rect.x + (control.rect.w - size.w) / 2, control.rect.y + (control.rect.h - size.h) / 2,
-				control.text, height, color);
+				control.text, height, color, weight);
 		}
 	}
 	else if (def.type == "InvSlot") {
@@ -782,13 +789,13 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 		if (def.eq_type != 0 && m_values)
 			m_values->Label(def.eq_type, shown);
 		if (!shown.empty()) {
-			TextSize size = text.Measure(shown, height);
+			TextSize size = text.Measure(shown, height, weight);
 			int x = control.rect.x;
 			if (def.align_center)
 				x += (control.rect.w - size.w) / 2;
 			else if (def.align_right)
 				x += control.rect.w - size.w;
-			text.Draw(canvas, x, control.rect.y, shown, height, control.text_color);
+			text.Draw(canvas, x, control.rect.y, shown, height, control.text_color, weight);
 		}
 	}
 	else if (def.type == "Gauge") {
@@ -798,14 +805,14 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 		// The end of the text, as much as fits, with the caret after it.
 		const Rect &c = control.client;
 		std::string shown = control.text;
-		TextSize size = text.Measure(shown.empty() ? "W" : shown, height);
+		TextSize size = text.Measure(shown.empty() ? "W" : shown, height, weight);
 		while (!shown.empty() && size.w > c.w - 6) {
 			shown.erase(0, std::max<size_t>(1, shown.size() / 8));
-			size = text.Measure(shown.empty() ? "W" : shown, height);
+			size = text.Measure(shown.empty() ? "W" : shown, height, weight);
 		}
 		int y = c.y + (c.h - size.h) / 2;
 		if (!shown.empty())
-			text.Draw(canvas, c.x + 2, y, shown, height, control.text_color);
+			text.Draw(canvas, c.x + 2, y, shown, height, control.text_color, weight);
 		if (index == m_focus && (now_ms / 500) % 2 == 0) {
 			int x = c.x + 2 + (shown.empty() ? 0 : size.w);
 			canvas.Fill({x, y, 1, size.h}, control.text_color);
@@ -818,7 +825,7 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 		if (!control.text.empty()) {
 			const Rect &c = control.client;
 			text.DrawWrapped(canvas, {c.x + 2, c.y + 2, c.w - 4, c.h - 4}, StmlToText(control.text), height,
-				def.has_text_color ? control.text_color : 0xffffff);
+				def.has_text_color ? control.text_color : 0xffffff, weight);
 		}
 	}
 
@@ -1021,7 +1028,7 @@ void SidlWindow::DrawGauge(const Control &control, Canvas &canvas, TextRenderer 
 		label = control.text;
 	if (!label.empty())
 		text.Draw(canvas, c.x + def.text_offset_x, c.y + def.text_offset_y, label, SidlFontHeight(def.font),
-			def.has_text_color ? control.text_color : 0xf0f0f0);
+			def.has_text_color ? control.text_color : 0xf0f0f0, SidlFontWeight(def.font));
 }
 
 // ---------------------------------------------------------------- scrollbars

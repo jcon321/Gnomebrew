@@ -16,6 +16,7 @@ void ChatWindow::Attach(SidlWindow *window)
 		return;
 	if (SidlWindow::Control *output = Output()) {
 		m_font = SidlFontHeight(output->def->font);
+		m_weight = SidlFontWeight(output->def->font);
 		output->draw_content = [this](Canvas &canvas, TextRenderer &text, const Rect &area) { DrawOutput(canvas, text, area); };
 	}
 	if (SidlWindow::Control *input = Input()) {
@@ -73,16 +74,16 @@ void ChatWindow::Wrap(TextRenderer &text, const Line &line, std::vector<std::str
 		std::string word = s.substr(i, end == std::string::npos ? std::string::npos : end - i + 1);
 		i = end == std::string::npos ? s.size() : end + 1;
 		std::string joined = row + word;
-		while (!word.empty() && text.Measure(joined, m_font).w > m_wrap_width) {
+		while (!word.empty() && text.Measure(joined, m_font, m_weight).w > m_wrap_width) {
 			if (!row.empty()) {
 				rows.push_back(row);
 				row.clear();
 				joined = word;
-				if (text.Measure(joined, m_font).w <= m_wrap_width)
+				if (text.Measure(joined, m_font, m_weight).w <= m_wrap_width)
 					break;
 			}
 			size_t fit = 1;
-			while (fit < word.size() && text.Measure(word.substr(0, fit + 1), m_font).w <= m_wrap_width)
+			while (fit < word.size() && text.Measure(word.substr(0, fit + 1), m_font, m_weight).w <= m_wrap_width)
 				++fit;
 			rows.push_back(word.substr(0, fit));
 			word.erase(0, fit);
@@ -101,7 +102,7 @@ void ChatWindow::Layout(TextRenderer &text)
 		return;
 	Rect area = m_window->ContentRect(*output);
 	int width = std::max(area.w - 4, 8);
-	m_row_height = std::max(text.Measure("Wg", m_font).h, 1);
+	m_row_height = std::max(text.Measure("Wg", m_font, m_weight).h, 1);
 	if (width != m_wrap_width) {
 		m_wrap_width = width;
 		m_rows.clear();
@@ -137,7 +138,7 @@ void ChatWindow::DrawOutput(Canvas &canvas, TextRenderer &text, const Rect &area
 	int first = std::max(output->scroll_pos, 0);
 	int y = area.y + 2;
 	for (int i = first; i < static_cast<int>(m_rows.size()) && y + m_row_height <= area.Bottom(); ++i, y += m_row_height)
-		text.Draw(canvas, area.x + 2, y, m_rows[i].text, m_font, m_rows[i].rgb);
+		text.Draw(canvas, area.x + 2, y, m_rows[i].text, m_font, m_rows[i].rgb, m_weight);
 }
 
 bool ChatWindow::Typing() const

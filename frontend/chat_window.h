@@ -66,6 +66,7 @@ private:
 	int m_wrap_width = -1;
 	int m_row_height = 14;
 	int m_font = 14;
+	int m_weight = 0;
 	std::vector<std::string> m_history; // newest last
 	int m_history_pos = -1;             // Up/Down: which one is showing, -1 none
 };

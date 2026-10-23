@@ -176,7 +176,10 @@ private:
 
 // SIDL font numbers index the seven fonts CDisplay::InitNewUI makes (0..6): Arial 10, 12, 14, 15, 16, 20
 // and 24, the heights Zeal's CreateFontIndirectA hook sees for each (3, 15 pixels, is the default).
+// eqgfx's font table (@10073c30) asks weight 100 for 0..4, which Arial draws as its regular face,
+// and 700 (bold) for 5 and 6.
 int SidlFontHeight(int font);
+int SidlFontWeight(int font);
 
 // A live window built from a <Screen>: a tree of controls (nested screens and
 // their pieces) with absolute rects and state. Control 0 is the screen itself.
