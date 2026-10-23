@@ -46,7 +46,9 @@ struct ZoneProfile
 	float x = 0, y = 0, z = 0, heading = 0;
 	uint32_t zone_id = 0;
 	int32_t platinum = 0, gold = 0, silver = 0, copper = 0;
-	int16_t skills[100] = {}; // by skill id; 50 is swimming
+	// By skill id (50 is swimming): 255 the class never has it, 254 it does at a later level,
+	// 0 it has it untrained.
+	int16_t skills[100] = {};
 };
 
 // One entry of OP_SendZonepoints: where a zone line with teleport index `index` goes.
@@ -200,6 +202,7 @@ public:
 			TargetChanged,// id: the zone set our target (OP_TargetCommand's answer); 0 none
 			TimeOfDay,    // text: "hour:minute"
 			Weather,      // OP_Weather: id the type (0 rain, 1 snow), value the intensity (0 stops it)
+			SkillUp,      // OP_SkillUpdate: id the skill, value its new value (Profile() has it already)
 			DoorsSpawned, // Doors() is set
 			DoorMoved,    // id: the door, value: its new state (OP_MoveDoor)
 			LoggedOut,    // camp finished; the zone closes the connection

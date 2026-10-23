@@ -5,8 +5,8 @@
 // pieces character select, creation and the in-game windows use so far:
 // Ui2DAnimation, ButtonDrawTemplate, WindowDrawTemplate (with its vertical
 // scrollbar), FrameTemplate, Screen (nested too), TabBox and its Pages, Button,
-// Label, StaticAnimation, Editbox, STMLbox, Gauge, and the empty look of SpellGem
-// and InvSlot, with AutoStretch anchors. Schema defaults come from uifiles/default/SIDL.xml.
+// Label, StaticAnimation, Editbox, STMLbox, Gauge, Listbox, InvSlot, and the empty
+// look of SpellGem, with AutoStretch anchors. Schema defaults come from uifiles/default/SIDL.xml.
 
 #include "canvas.h"
 #include "text.h"
@@ -32,13 +32,21 @@ struct SidlAnimation
 {
 	std::vector<SidlFrame> frames;
 	bool cycle = true;
+	// Grid: each frame is a sheet of CellWidth x CellHeight cells (the item icons, A_DragItem),
+	// numbered down the columns when Vertical, else across the rows.
+	bool grid = false, vertical = false;
+	int cell_width = 0, cell_height = 0;
 
 	const SidlFrame *FrameAt(uint64_t now_ms) const;
+	// CTextureAnimation::SetCurCell: a grid's cell, counting on through the frames; one past them
+	// all is cell 0. False when it isn't a grid or cell is below 0.
+	bool Cell(int cell, SidlFrame &out) const;
 };
 
 struct SidlButtonTemplate
 {
 	std::string normal, pressed, flyby, disabled, pressed_flyby;
+	std::string normal_decal; // NormalDecal: drawn over the button at DecalOffset (a coin)
 };
 
 // WindowDrawTemplate border pieces, in CTAFrameDraw order.
@@ -105,6 +113,15 @@ struct SidlPiece
 	bool checkbox = false;
 	std::string radio_group;
 	SidlButtonTemplate button;
+	Rect decal; // DecalOffset and DecalSize; no size: the decal's own
+
+	// Listbox: its Columns' headings and widths.
+	struct Column
+	{
+		std::string heading;
+		int width = 0;
+	};
+	std::vector<Column> columns;
 
 	// StaticAnimation
 	std::string animation;
@@ -147,8 +164,9 @@ public:
 	// 0..1000 full, with the text to show on it (empty: the gauge's own). -1 hides the gauge, -3
 	// draws it empty, -2 is a full dark red bar (no character); below -9, a purple bar of -value.
 	virtual int Gauge(int eq_type, std::string &text) = 0;
-	// The label's text; false keeps its own.
-	virtual bool Label(int eq_type, std::string &text) = 0;
+	// The label's text; false keeps its own. `color` comes in as the label's and can be changed
+	// (fn_GetLabelFromEQ's color: a stat above its base green, below it red).
+	virtual bool Label(int eq_type, std::string &text, uint32_t &color) = 0;
 };
 
 class SidlTextures
@@ -228,6 +246,20 @@ public:
 		// CBuffWindow::SetBuffIcon clears the template it draws).
 		bool blank = false;
 		size_t max_chars = 64; // Editbox
+		std::string animation; // StaticAnimation: another animation in place of its own; "" its own
+		// InvSlot: what's in it, a cell of a grid animation (an item's icon, A_DragItem), over the
+		// slot's picture; cell < 0 nothing. A Button whose NormalDecal is a grid animation (a buff's
+		// BuffIcons) shows that decal's cell the same way.
+		std::string cell_animation;
+		int cell = -1;
+		// Listbox (CListWnd): its rows' text by column, each column's justification (0 left, 1
+		// centered, 2 right: SetColumnJustification's, which DrawHeader turns into text flags 0x10
+		// and 8; that 1 centers is our reading, since the skills window's Value column would be cut
+		// off right-justified), the rows' height (0: the font's), and the colors.
+		std::vector<std::vector<std::string>> rows;
+		std::vector<int> justification;
+		int row_height = 0;
+		uint32_t row_color = 0xffffff, header_color = 0xffffff;
 		// Style_VScroll: the content's scroll position in rows, how far it goes, and a page of it.
 		// Whoever fills the control sets max and page; the scrollbar, the wheel and the owner move pos.
 		int scroll_pos = 0, scroll_max = 0, scroll_page = 1;
@@ -265,6 +297,8 @@ public:
 	bool Typing() const; // a shown, enabled edit box has the focus, and OnKey goes to it
 	// Where a control's content goes: its client area, less the scrollbar.
 	Rect ContentRect(const Control &control) const;
+	// A list box's scroll range and page, from its rows and size; whoever fills it calls this.
+	void UpdateListScroll(Control &control) const;
 	bool Shown(const Control &control) const; // it and every parent visible
 	const Rect &Bounds() const { return m_controls.front().rect; }
 	const SidlPiece &Def() const { return *m_controls.front().def; }
@@ -321,6 +355,10 @@ private:
 	void DrawTab(const Control &tab_box, int index, Canvas &canvas, TextRenderer &text, SidlTextures &textures,
 		uint64_t now_ms, const Rect &clip) const;
 	void DrawGauge(const Control &control, Canvas &canvas, TextRenderer &text, SidlTextures &textures, uint64_t now_ms) const;
+	void DrawListbox(const Control &control, Canvas &canvas, TextRenderer &text) const;
+	int ListHeaderHeight(const Control &control) const;
+	int ListRowHeight(const Control &control) const;
+	void DrawCell(Canvas &canvas, SidlTextures &textures, const std::string &name, int cell, const Rect &dest) const;
 
 	// The vertical scrollbar's parts, for a control that has one.
 	enum class ScrollPart { None, Up, Down, PageUp, PageDown, Thumb };

@@ -1,4 +1,5 @@
 #include "game_windows.h"
+#include "chat_text.h"
 #include "eqstr.h"
 #include "game_values.h"
 #include "ini_file.h"
@@ -7,6 +8,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <cstdlib>
 #include <iterator>
 #include <string>
@@ -135,6 +137,86 @@ namespace
 	{
 		if (SidlWindow::Control *control = wnd.Find(screen_id))
 			control->text = text;
+	}
+
+	// InitializeSkillData (@004d0e88): each skill's name, eqstr ids by skill number.
+	constexpr uint32_t SkillNames[74] = {13855, 13856, 13857, 13858, 13859, 13861, 13862, 13863, 13864, 13866, 13867,
+		13871, 13872, 13874, 13875, 13876, 13877, 13878, 13879, 13880, 13881, 13882, 13883, 13884, 13885, 13886, 13888,
+		13889, 13890, 13891, 13893, 13894, 13895, 13896, 13897, 13899, 13900, 13903, 13904, 13905, 13906, 13908, 13909,
+		13910, 13911, 13912, 13913, 13914, 13915, 13916, 13917, 13919, 13920, 13921, 13923, 13854, 13853, 13852, 13851,
+		13850, 13865, 13918, 13907, 13870, 13887, 13873, 13860, 13868, 13892, 13901, 13898, 13922, 13869, 13902};
+	constexpr int SkillCount = 74;
+
+	// CSkillsWnd::UpdateSkill's ranks (@005fe3ec, @005fe418): the first whose limit the value is
+	// within, "Awful" (eqstr 3224) to "Master" (3234).
+	constexpr int RankLimits[] = {10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 2000};
+	constexpr uint32_t FirstRankName = 3224;
+
+	std::string EqText(const EqStr *eqstr, uint32_t id, const std::string &fallback)
+	{
+		return eqstr && eqstr->Has(id) ? eqstr->Format(id, {}) : fallback;
+	}
+
+	void InventoryWindow(SidlWindow &wnd, const WindowManager &windows, const GameValues &values)
+	{
+		const ZoneProfile &me = values.zone->Profile();
+		const int32_t coins[4] = {me.platinum, me.gold, me.silver, me.copper};
+		for (int i = 0; i < 4; ++i)
+			SetText(wnd, "IW_Money" + std::to_string(i), std::to_string(coins[i]));
+		Show(wnd, "AltAdvLabel", me.level > 50);
+		Show(wnd, "AltAdvGauge", me.level > 50);
+		if (SidlWindow::Control *anim = wnd.Find("ClassAnim")) {
+			char name[32];
+			snprintf(name, sizeof(name), "A_ClassAnim%02d", me.class_id);
+			const SidlDefinitions *defs = windows.Definitions();
+			if (defs && defs->Animation(name))
+				anim->animation = name;
+		}
+		// The slots are numbered by their EQType, as the items are.
+		const std::map<int16_t, ZoneItem> &items = values.zone->Items();
+		for (int slot = 1; slot <= 29; ++slot)
+			if (SidlWindow::Control *control = wnd.Find("InvSlot" + std::to_string(slot))) {
+				auto it = items.find(static_cast<int16_t>(control->def->eq_type));
+				control->cell_animation = "A_DragItem";
+				control->cell = it != items.end() && it->second.icon >= 500 ? it->second.icon - 500 : -1;
+			}
+	}
+
+	void SkillsWindow(SidlWindow &wnd, const GameValues &values)
+	{
+		SidlWindow::Control *list = wnd.Find("SkillList");
+		if (!list)
+			return;
+		// CSkillsWnd::CSkillsWnd's look.
+		list->row_color = 0xffffff;
+		list->header_color = 0x8aa3ff;
+		list->row_height = 16;
+		list->justification = {0, 1, 1};
+		const ZoneProfile &me = values.zone->Profile();
+		auto rank = [&](int value, bool language) {
+			int i = 0;
+			while (i + 1 < static_cast<int>(std::size(RankLimits)) && value > RankLimits[i])
+				++i;
+			if (i == 9 && language && value == 100) // a language spoken fully is mastered
+				i = 10;
+			return EqText(values.eqstr, FirstRankName + i, "");
+		};
+		list->rows.clear();
+		for (int skill = 0; skill < SkillCount; ++skill) {
+			int value = me.skills[skill];
+			if (value < 0 || value >= 254)
+				continue;
+			list->rows.push_back({SkillName(values.eqstr, skill), rank(value, false), std::to_string(value)});
+		}
+		for (int language = 0; language < 32; ++language) {
+			int value = me.languages[language];
+			if (value == 0)
+				continue;
+			uint32_t name = LanguageNameId(language);
+			list->rows.push_back({name ? EqText(values.eqstr, name, "Language " + std::to_string(language)) : "Unknown",
+				rank(value, true), std::to_string(value)});
+		}
+		wnd.UpdateListScroll(*list);
 	}
 
 	// CSocialEditWnd::GetSocialTextColor: the TextColor of the editor's SEW_TC<color>Button.
@@ -368,6 +450,15 @@ std::string GameWindowClick(WindowManager &windows, GameWindowState &state, cons
 	}
 	if (window == "SocialEditWnd")
 		SocialEditorClick(windows, state, control);
+	if ((window == "InventoryWindow" || window == "SkillsWindow") && control == "DoneButton")
+		windows.Show(window, false);
+	if (window == "InventoryWindow" && control == "IW_Skills" && !windows.Shown("SkillsWindow")) {
+		// CSkillsWnd::Activate: the list from the top.
+		if (SidlWindow *skills = windows.Find("SkillsWindow"))
+			if (SidlWindow::Control *list = skills->Find("SkillList"))
+				list->scroll_pos = 0;
+		windows.Show("SkillsWindow", true);
+	}
 	if (window != "HotButtonWnd")
 		return "";
 	StepPage(state.hot_button_page, control, "HB_PageLeftButton", "HB_PageRightButton");
@@ -443,6 +534,18 @@ void UpdateGameWindows(WindowManager &windows, const GameValues &values, const G
 	}
 	if (SidlWindow *wnd = windows.Find("HotButtonWnd"))
 		HotButtonWindow(*wnd, windows, state);
+	if (SidlWindow *wnd = windows.Find("InventoryWindow"); wnd && windows.Shown("InventoryWindow"))
+		InventoryWindow(*wnd, windows, values);
+	if (SidlWindow *wnd = windows.Find("SkillsWindow"); wnd && windows.Shown("SkillsWindow"))
+		SkillsWindow(*wnd, values);
+}
+
+std::string SkillName(const EqStr *eqstr, int skill)
+{
+	// Past them, InitializeSkillData's default: "None" (eqstr 1216).
+	if (skill < 0 || skill >= SkillCount)
+		return EqText(eqstr, 1216, "None");
+	return EqText(eqstr, SkillNames[skill], "Skill " + std::to_string(skill));
 }
 
 void DrawCursorAttachment(Canvas &canvas, TextRenderer &text, const WindowManager &windows, const GameWindowState &state,

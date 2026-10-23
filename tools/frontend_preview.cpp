@@ -10,9 +10,10 @@
 // "charselect" stops at character select (two snapshots of the 3D scene, as the
 // camera turns) instead of entering the world. --replay plays a packet log back (no server)
 // and snapshots the zone once it's in, then every few seconds for SECONDS (default 10), then
-// tries the windows: drags the selector by its title bar, opens the inventory from it, minimizes
-// and restores it, sizes the target and chat windows from their borders, and closes the inventory
-// with Escape (the layout goes to OUTDIR/UI_*.ini); puts Actions window buttons on the hot
+// tries the windows: drags the selector by its title bar, opens the inventory from it and the
+// skills window from that (printing its list), closes both with Escape, minimizes and restores
+// the actions window, and sizes the target and chat windows from their borders (the layout goes
+// to OUTDIR/UI_*.ini); puts Actions window buttons on the hot
 // buttons by holding them and clicking a hot button, swaps two, uses one, takes one off again by
 // holding it and drops it with Escape (the hot buttons go to OUTDIR/<character>_*.ini); then types
 // into the chat window, targets a spawn and prints the chat.
@@ -265,6 +266,26 @@ int main(int argc, char **argv)
 		h.RunUntil([] { return false; }, 300);
 		h.Snapshot("w1-inventory");
 		if (where("InventoryWindow")) {
+			SidlWindow *inventory = windows.Find("InventoryWindow");
+			for (int i = 0; i < 4; ++i)
+				if (const SidlWindow::Control *money = inventory->Find("IW_Money" + std::to_string(i)))
+					printf("[preview] IW_Money%d: %s\n", i, money->text.c_str());
+			// The Skills button opens the skills window; escape closes it before the inventory.
+			if (const SidlWindow::Control *button = inventory->Find("IW_Skills"))
+				click(button->rect.x + button->rect.w / 2, button->rect.y + button->rect.h / 2);
+			h.RunUntil([] { return false; }, 300);
+			if (where("SkillsWindow")) {
+				const SidlWindow *skills = windows.Find("SkillsWindow");
+				h.Snapshot("w1-skills");
+				if (const SidlWindow::Control *list = skills->Find("SkillList")) {
+					printf("[preview] skills list: %zu rows, scroll 0..%d, a page of %d\n", list->rows.size(), list->scroll_max,
+						list->scroll_page);
+					for (const auto &row : list->rows)
+						printf("[preview]   %-24s %-12s %s\n", row[0].c_str(), row[1].c_str(), row[2].c_str());
+				}
+				h.Key(InputEvent::Key::Escape);
+				where("SkillsWindow");
+			}
 			h.Key(InputEvent::Key::Escape); // eqgame's escape closes the inventory
 			where("InventoryWindow");
 		}

@@ -28,6 +28,7 @@ namespace ChatType
 	constexpr int Shout = 0x106;
 	constexpr int Emote = 0x107;
 	constexpr int Broadcast = 0x10d;
+	constexpr int Skills = 0x10e;   // "You have become better at..."
 	constexpr int Default = 0x111;  // DefaultText
 	constexpr int EchoSay = 0x133;
 	constexpr int EchoTell = 0x134;
@@ -59,6 +60,9 @@ private:
 // `languages` is our skill in each language (the profile's).
 bool ChannelLine(const ZoneChat &chat, const std::string &me, const uint8_t *languages, const EqStr *strings,
 	std::string &line, int &type);
+
+// CEverQuest_GetLangDesc: the eqstr_en.txt id of a language's name (0..24), 0 for any other.
+uint32_t LanguageNameId(int language);
 
 // eqstr_en.txt's string `id` with %1.. filled in, or `fallback` (in the same form) without the table.
 std::string FormatEqString(const EqStr *strings, uint32_t id, const std::string &fallback, const std::vector<std::string> &args);

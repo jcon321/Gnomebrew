@@ -46,6 +46,19 @@
 //     character on), doing what's after its first comma, if anything is.
 // They're kept in [Socials]: Page<p>Button<b>Name, ...Color and ...Line1..5, written only for the
 // ones changed since (an empty name takes them all out); the names are cut to 8 as they're read.
+//
+// The inventory window (CInventoryWnd, @0042128f on):
+//   - Activate: ClassAnim shows A_ClassAnim<class, 2 digits>;
+//   - ProcessInventoryWindowFrame: the money buttons' counts (UpdateCurrencyDisplays), and the
+//     Alt. Adv. label and gauge only from level 51;
+//   - CInvSlot::SetItem: a slot with an item shows its icon, A_DragItem's cell icon - 500;
+//   - WndNotification: Done closes it, Skills opens the skills window. Destroy, Alt. Advance and
+//     the money buttons (coins onto the cursor) do nothing yet.
+// The skills window (CSkillsWnd, @0043273a on): Activate lists the skills we have, by number,
+// then the languages we know some of; UpdateSkill puts each one's name, rank and value in the list
+// (white, the headings 0x8aa3ff, rows 16 high, the rank and value justified 1). We go by what
+// the server sends: a skill (0..73) that isn't 254 or 255; eqgame's EQ_Character::HasSkill asks
+// its class and level table, and also lists racial skills (a halfling's sneak) the server marks 255.
 
 #include <cstdint>
 #include <string>
@@ -124,6 +137,9 @@ void GameWindowHold(WindowManager &windows, GameWindowState &state, const std::s
 // A button right clicked: a social's opens the social editor on it.
 void GameWindowRightClick(WindowManager &windows, GameWindowState &state, const std::string &window, const std::string &control);
 void UpdateGameWindows(WindowManager &windows, const GameValues &values, const GameWindowState &state);
+
+// A skill's name (eqgame's __SkillDict, from InitializeSkillData), from eqstr (null: English).
+std::string SkillName(const EqStr *eqstr, int skill);
 
 // The button on the cursor, drawn at the mouse (x, y), over the windows and under the cursor.
 void DrawCursorAttachment(Canvas &canvas, TextRenderer &text, const WindowManager &windows, const GameWindowState &state,

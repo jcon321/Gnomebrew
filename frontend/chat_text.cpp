@@ -109,6 +109,11 @@ std::string FormatEqString(const EqStr *strings, uint32_t id, const std::string 
 	return out;
 }
 
+uint32_t LanguageNameId(int language)
+{
+	return language >= 0 && language < static_cast<int>(std::size(LanguageNames)) ? LanguageNames[language] : 0;
+}
+
 bool ChannelLine(const ZoneChat &chat, const std::string &me, const uint8_t *languages, const EqStr *strings,
 	std::string &line, int &type)
 {

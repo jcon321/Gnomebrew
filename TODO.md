@@ -19,8 +19,15 @@ no rules of its own.
    - Buff window: the buttons are arranged as `CBuffWindow` does and empty slots draw nothing;
      still to do: our buffs from the player profile and `OP_Buff`, their icons (`BuffIcons`
      decals, from the spell file) and names (label EQTypes 45..59).
-   - Inventory and bags, filled from the item packets (the slots show their empty pictures;
-     no item icons yet, here or in the hot button window's weapon slots)
+   - Inventory: name, level, class (its title from 51), deity, HP, stats (base and worn items),
+     money, the class picture, item icons in the slots, the Alt. Adv. row from 51, Done, and the
+     Skills button opening the skills window (`frontend/game_windows.*`). Still to do: eqgame's own
+     formulas for the resists, AC, ATK and weight (blank for now), and for stats spells, AAs and
+     drunkenness; the XP and AA gauges (the experience table); the item display, picking items and
+     coins up, Destroy, Alt. Advance, bags, and icons in the hot button window's weapon slots.
+   - Skills window: the skills the server says we have (not 254 or 255) and our languages, with
+     their ranks, kept up to date by OP_SkillUpdate. Still to do: racial skills the server marks
+     255 (eqgame's HasSkill table), selecting rows.
    - Spell gems and the spellbook (pictures only; the gems are all empty)
    - Hotbuttons: the Actions window's buttons and socials go on them and come off by holding
      them, and they're kept in `<char>_<server>.ini` (`frontend/game_windows.*`). Still to do:

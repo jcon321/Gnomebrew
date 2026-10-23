@@ -1,4 +1,6 @@
 #include "game_values.h"
+#include "eqstr.h"
+#include "world_client.h"
 #include "zone_session.h"
 
 #include <algorithm>
@@ -23,6 +25,74 @@ namespace
 	{
 		return max > 0 ? static_cast<int>(std::clamp<int64_t>(value * 1000 / max, 0, 1000)) : 0;
 	}
+
+	// getComparisonColor (@004365e9): a value above what it's compared with green, below it red,
+	// the same grey.
+	uint32_t ComparisonColor(int value, int base)
+	{
+		return value == base ? 0xc0c0c0 : value > base ? 0x00ff00 : 0xff0000;
+	}
+
+	std::string EqText(const EqStr *eqstr, uint32_t id, const std::string &fallback)
+	{
+		return eqstr && eqstr->Has(id) ? eqstr->Format(id, {}) : fallback;
+	}
+
+	// KunarkClass's eqstr ids for classes 1..15: the class, its titles at 51, 55 and 60 (the next
+	// three), and at 65. Rangers' and shadow knights' are the other way round from their numbers.
+	constexpr uint32_t ClassNameIds[15] = {1502, 1506, 1510, 1518, 1514, 1522, 1526, 1530, 1534, 1538, 1542, 1546, 1550,
+		1554, 1558};
+	constexpr uint32_t ClassTitle65Ids[15] = {5755, 5756, 5757, 5759, 5758, 5760, 5761, 5762, 5763, 5764, 5765, 5766,
+		5767, 5768, 5769};
+	// Merchant and the GMs' classes, 16..32 (32 is 1485, the rest 1486 on, but 20 and 21 swapped).
+	constexpr uint32_t OtherClassIds[17] = {1486, 1487, 1488, 1489, 1491, 1490, 1492, 1493, 1494, 1495, 1496, 1497, 1498,
+		1499, 1500, 1501, 1485};
+
+	// The deities, 201..216 (Bertoxxulous .. Veeshan).
+	constexpr uint32_t DeityNameIds[16] = {3251, 3262, 3253, 3256, 3252, 3254, 3255, 3257, 3259, 3260, 3266, 3258, 3261,
+		3263, 3264, 3265};
+}
+
+std::string GameValues::ClassTitle(const EqStr *eqstr, int class_id, int level)
+{
+	if (class_id >= 1 && class_id <= 15) {
+		std::string fallback = ClassName(static_cast<uint8_t>(class_id));
+		uint32_t id = ClassNameIds[class_id - 1];
+		if (level > 50) {
+			if (level >= 65)
+				return EqText(eqstr, ClassTitle65Ids[class_id - 1], fallback);
+			id += level < 55 ? 1 : level < 60 ? 2 : 3;
+		}
+		return EqText(eqstr, id, fallback);
+	}
+	// Above 50, only the player classes have a name.
+	if (class_id >= 16 && class_id <= 32 && level <= 50)
+		return EqText(eqstr, OtherClassIds[class_id - 16], "Unknown");
+	return EqText(eqstr, 1484, "Unknown");
+}
+
+std::string GameValues::DeityName(const EqStr *eqstr, int deity)
+{
+	if (deity >= 201 && deity <= 216)
+		return EqText(eqstr, DeityNameIds[deity - 201], "");
+	return EqText(eqstr, 3250, "Agnostic");
+}
+
+int GameValues::Stat(const ZoneProfile &p, const std::map<int16_t, ZoneItem> &items, int eq_type, int &base)
+{
+	int worn = 0;
+	switch (eq_type) {
+	case 5: base = p.str; worn = WornSum(items, &ZoneItem::str); break;
+	case 6: base = p.sta; worn = WornSum(items, &ZoneItem::sta); break;
+	case 7: base = p.dex; worn = WornSum(items, &ZoneItem::dex); break;
+	case 8: base = p.agi; worn = WornSum(items, &ZoneItem::agi); break;
+	case 9: base = p.wis; worn = WornSum(items, &ZoneItem::wis); break;
+	case 10: base = p.int_; worn = WornSum(items, &ZoneItem::int_); break;
+	case 11: base = p.cha; worn = WornSum(items, &ZoneItem::cha); break;
+	default: base = 0; return 0;
+	}
+	// CalculateMaxStatAA2 without AAs: no more than 255.
+	return std::min(base + worn, 255);
 }
 
 int GameValues::WornHp(const std::map<int16_t, ZoneItem> &items)
@@ -120,17 +190,41 @@ int GameValues::Gauge(int eq_type, std::string &text)
 	}
 }
 
-bool GameValues::Label(int eq_type, std::string &text)
+bool GameValues::Label(int eq_type, std::string &text, uint32_t &color)
 {
 	if (!zone)
 		return false;
 	const ZoneSpawn *spawn = Target();
+	const ZoneProfile &me = zone->Profile();
 	switch (eq_type) {
 	case 1:
-		text = zone->Profile().name;
+		text = me.name;
 		return true;
 	case 2:
-		text = std::to_string(zone->Profile().level);
+		text = std::to_string(me.level);
+		return true;
+	case 3:
+		text = ClassTitle(eqstr, me.class_id, me.level);
+		return true;
+	case 4:
+		text = DeityName(eqstr, me.deity);
+		return true;
+	case 5: case 6: case 7: case 8: case 9: case 10: case 11: { // colored against the base
+		int base = 0;
+		int value = Stat(me, zone->Items(), eq_type, base);
+		text = std::to_string(value);
+		color = ComparisonColor(value, base);
+		return true;
+	}
+	case 17: // our HP, with what worn items add (the zone leaves that out)
+		text = std::to_string(zone->BaseHp() + WornHp(zone->Items()));
+		return true;
+	case 18: // our max HP, against itself less spell effects (none yet): grey
+		text = std::to_string(zone->MaxHp());
+		color = ComparisonColor(0, 0);
+		return true;
+	case 12: case 13: case 14: case 15: case 16: case 22: case 23: case 24: case 25:
+		text.clear();
 		return true;
 	case 28:
 		text = spawn ? spawn->DisplayName() : "";

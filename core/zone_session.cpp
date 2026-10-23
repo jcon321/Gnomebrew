@@ -846,6 +846,39 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 			m_profile.exp = Read<uint32_t>(data, 8);
 		}
 		break;
+	case ZoneOp::SkillUpdate: {
+		// msg_skillimprove: skills 0..99, with its message.
+		int32_t skill = Read<int32_t>(data, 0);
+		if (data.size() < 8 || skill < 0 || skill >= 100)
+			break;
+		m_profile.skills[skill] = static_cast<int16_t>(Read<int32_t>(data, 4));
+		Event e{Event::Type::SkillUp};
+		e.id = static_cast<uint16_t>(skill);
+		e.value = m_profile.skills[skill];
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::SkillUpdate2: {
+		// HandleWorldMessage's 0x41be: ours only, skills 0..73, and no value below 0.
+		int32_t skill = Read<int32_t>(data, 4), value = Read<int32_t>(data, 8);
+		if (data.size() >= 12 && Read<uint16_t>(data, 0) == m_my_id && skill >= 0 && skill <= 73 && value >= 0)
+			m_profile.skills[skill] = static_cast<int16_t>(value);
+		break;
+	}
+	case ZoneOp::TradeMoneyUpdate: {
+		// UpdateMoneyDisplay: the amount added to one kind of coin.
+		if (data.size() < 8)
+			break;
+		int32_t amount = Read<int32_t>(data, 4);
+		switch (data[2]) {
+		case 0: m_profile.copper += amount; break;
+		case 1: m_profile.silver += amount; break;
+		case 2: m_profile.gold += amount; break;
+		case 3: m_profile.platinum += amount; break;
+		default: break;
+		}
+		break;
+	}
 	case ZoneOp::CharInventory: {
 		// A count byte, a byte unused, then deflated {u16 opcode, Item_Struct} records.
 		std::vector<uint8_t> items;

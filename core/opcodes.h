@@ -82,12 +82,14 @@ namespace ZoneOp
 	constexpr uint16_t ZoneChange = 0x40a3;     // ZoneChange_Struct, 76 bytes, both directions
 	constexpr uint16_t Stamina = 0x4157;
 	constexpr uint16_t MoneyUpdate = 0x4008;
+	constexpr uint16_t TradeMoneyUpdate = 0x413d; // TradeMoney_Struct {u16, u8 type (0 copper .. 3 platinum), u8, i32 amount}: coins added
 	constexpr uint16_t Emote = 0x4015;
 	constexpr uint16_t Death = 0x404a;
 	constexpr uint16_t Animation = 0x40a1;
 	constexpr uint16_t WearChange = 0x4092;
 	constexpr uint16_t LevelUpdate = 0x4198;
-	constexpr uint16_t SkillUpdate = 0x4189;
+	constexpr uint16_t SkillUpdate = 0x4189;  // SkillUpdate_Struct {u32 skill, u32 value}: "You have become better at..."
+	constexpr uint16_t SkillUpdate2 = 0x41be; // SkillUpdate2_Struct {u16 spawn, u16, i32 skill, i32 value}: the same, silently
 	constexpr uint16_t BookPacket = 0x4165;      // Item_Struct: a book or note we now have, in its equipSlot
 	constexpr uint16_t ContainerPacket = 0x4166; // Item_Struct: a bag
 	constexpr uint16_t SummonedItem = 0x4178;    // Item_Struct: an item on the cursor
@@ -178,12 +180,14 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::ZoneChange, "OP_ZoneChange"},
 	{ZoneOp::Stamina, "OP_Stamina"},
 	{ZoneOp::MoneyUpdate, "OP_MoneyUpdate"},
+	{ZoneOp::TradeMoneyUpdate, "OP_TradeMoneyUpdate"},
 	{ZoneOp::Emote, "OP_Emote"},
 	{ZoneOp::Death, "OP_Death"},
 	{ZoneOp::Animation, "OP_Animation"},
 	{ZoneOp::WearChange, "OP_WearChange"},
 	{ZoneOp::LevelUpdate, "OP_LevelUpdate"},
 	{ZoneOp::SkillUpdate, "OP_SkillUpdate"},
+	{ZoneOp::SkillUpdate2, "OP_SkillUpdate2"},
 	{ZoneOp::BookPacket, "OP_BookPacket"},
 	{ZoneOp::ContainerPacket, "OP_ContainerPacket"},
 	{ZoneOp::SummonedItem, "OP_SummonedItem"},

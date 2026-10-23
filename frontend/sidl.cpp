@@ -53,6 +53,7 @@ namespace
 		t.flyby = node.ChildText("Flyby");
 		t.disabled = node.ChildText("Disabled");
 		t.pressed_flyby = node.ChildText("PressedFlyby");
+		t.normal_decal = node.ChildText("NormalDecal");
 		return t;
 	}
 
@@ -90,6 +91,25 @@ const SidlFrame *SidlAnimation::FrameAt(uint64_t now_ms) const
 		t -= d;
 	}
 	return &frames.back();
+}
+
+bool SidlAnimation::Cell(int cell, SidlFrame &out) const
+{
+	if (!grid || cell < 0 || frames.empty() || cell_width <= 0 || cell_height <= 0)
+		return false;
+	const SidlFrame &first = frames.front();
+	int columns = first.source.w / cell_width, rows = first.source.h / cell_height;
+	int per_frame = columns * rows;
+	if (per_frame <= 0)
+		return false;
+	if (cell >= static_cast<int>(frames.size()) * per_frame)
+		cell = 0;
+	out = frames[cell / per_frame];
+	int index = cell % per_frame;
+	int column = vertical ? index / rows : index % columns;
+	int row = vertical ? index % rows : index / columns;
+	out.source = {out.source.x + column * cell_width, out.source.y + row * cell_height, cell_width, cell_height};
+	return true;
 }
 
 int SidlFontHeight(int font)
@@ -204,6 +224,10 @@ void SidlDefinitions::ReadElement(const XmlNode &node)
 	if (node.name == "Ui2DAnimation") {
 		SidlAnimation animation;
 		animation.cycle = node.ChildBool("Cycle", true);
+		animation.grid = node.ChildBool("Grid", false);
+		animation.vertical = node.ChildBool("Vertical", false);
+		animation.cell_width = node.ChildInt("CellWidth", 0);
+		animation.cell_height = node.ChildInt("CellHeight", 0);
 		for (const XmlNode *f : node.Children("Frames")) {
 			SidlFrame frame;
 			frame.texture = f->ChildText("Texture");
@@ -304,6 +328,16 @@ void SidlDefinitions::ReadElement(const XmlNode &node)
 	p.radio_group = node.ChildText("RadioGroup");
 	if (const XmlNode *t = node.Child("ButtonDrawTemplate"))
 		p.button = ReadButtonTemplate(*t);
+	if (const XmlNode *offset = node.Child("DecalOffset")) {
+		p.decal.x = offset->ChildInt("X", 0);
+		p.decal.y = offset->ChildInt("Y", 0);
+	}
+	if (const XmlNode *size = node.Child("DecalSize")) {
+		p.decal.w = size->ChildInt("CX", 0);
+		p.decal.h = size->ChildInt("CY", 0);
+	}
+	for (const XmlNode *column : node.Children("Columns"))
+		p.columns.push_back({column->ChildText("Heading"), column->ChildInt("Width", 0)});
 	p.animation = node.ChildText("Animation");
 	if (p.type == "InvSlot")
 		p.slot_background = node.ChildText("Background");
@@ -847,6 +881,16 @@ void SidlWindow::DrawTab(const Control &tab_box, int index, Canvas &canvas, Text
 	}
 }
 
+void SidlWindow::DrawCell(Canvas &canvas, SidlTextures &textures, const std::string &name, int cell, const Rect &dest) const
+{
+	const SidlAnimation *animation = m_defs->Animation(name);
+	SidlFrame frame;
+	if (!animation || !animation->Cell(cell, frame))
+		return;
+	if (const Image *image = textures.Get(frame.texture))
+		canvas.Stretch(*image, frame.source, dest);
+}
+
 void SidlWindow::DrawAnimation(Canvas &canvas, SidlTextures &textures, const std::string &name, const Rect &dest,
 	uint64_t now_ms) const
 {
@@ -1005,7 +1049,7 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 
 	canvas.SetClip(client_clip);
 	if (def.type == "StaticAnimation") {
-		DrawAnimation(canvas, textures, def.animation, control.rect, now_ms);
+		DrawAnimation(canvas, textures, control.animation.empty() ? def.animation : control.animation, control.rect, now_ms);
 	}
 	else if (def.type == "Button") {
 		const SidlButtonTemplate &t = def.button;
@@ -1018,17 +1062,36 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 			name = t.normal;
 		if (!control.blank)
 			DrawAnimation(canvas, textures, name, control.rect, now_ms);
+		// The decal at its offset (its own size without DecalSize); the text goes in what's right of it.
+		// A grid decal (a buff's BuffIcons) shows the control's cell, and nothing without one
+		// (CBuffWindow::SetBuffIcon's SetCurCell(-1)).
+		Rect text_rect = control.rect;
+		const SidlAnimation *decal_animation = m_defs->Animation(t.normal_decal);
+		bool grid_decal = decal_animation && decal_animation->grid;
+		if (decal_animation && !control.blank && (!grid_decal || control.cell >= 0)) {
+			Rect decal = def.decal.w > 0 && def.decal.h > 0 ? def.decal : AnimationSize(t.normal_decal);
+			decal.x += control.rect.x;
+			decal.y += control.rect.y;
+			if (grid_decal)
+				DrawCell(canvas, textures, t.normal_decal, control.cell, decal);
+			else
+				DrawAnimation(canvas, textures, t.normal_decal, decal, now_ms);
+			text_rect.w -= decal.Right() - text_rect.x;
+			text_rect.x = decal.Right();
+		}
 		if (!control.text.empty()) {
 			// CButtonWnd::Draw: grey when disabled, yellow when checked or under the mouse.
 			uint32_t color = !control.enabled                  ? 0x808080
 			                 : control.checked || control.hover ? 0xffff00
 			                                                    : control.text_color;
-			SidlDrawButtonText(text, canvas, control.rect, control.text, height, color, weight);
+			SidlDrawButtonText(text, canvas, text_rect, control.text, height, color, weight);
 		}
 	}
 	else if (def.type == "InvSlot") {
-		// CInvSlotWnd with nothing in it: the slot's own picture.
+		// CInvSlotWnd: the slot's own picture, and what's in it over that.
 		DrawAnimation(canvas, textures, def.slot_background, control.rect, now_ms);
+		if (control.cell >= 0)
+			DrawCell(canvas, textures, control.cell_animation, control.cell, control.rect);
 	}
 	else if (def.type == "SpellGem") {
 		// CSpellGemWnd::Draw (@005a6050): a gem with a spell is the Background ring tinted the
@@ -1038,8 +1101,9 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 	}
 	else if (def.type == "Label" || def.type == "StaticText") {
 		std::string shown = control.text;
+		uint32_t color = control.text_color;
 		if (def.eq_type != 0 && m_values)
-			m_values->Label(def.eq_type, shown);
+			m_values->Label(def.eq_type, shown, color);
 		if (!shown.empty()) {
 			TextSize size = text.Measure(shown, height, weight);
 			int x = control.rect.x;
@@ -1047,7 +1111,7 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 				x += (control.rect.w - size.w) / 2;
 			else if (def.align_right)
 				x += control.rect.w - size.w;
-			text.Draw(canvas, x, control.rect.y, shown, height, control.text_color, weight);
+			text.Draw(canvas, x, control.rect.y, shown, height, color, weight);
 		}
 	}
 	else if (def.type == "TabBox") {
@@ -1055,6 +1119,9 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 	}
 	else if (def.type == "Gauge") {
 		DrawGauge(control, canvas, text, textures, now_ms);
+	}
+	else if (def.type == "Listbox") {
+		DrawListbox(control, canvas, text);
 	}
 	else if (def.type == "Editbox") {
 		// The end of the text, as much as fits, with the caret after it.
@@ -1295,6 +1362,67 @@ void SidlWindow::DrawGauge(const Control &control, Canvas &canvas, TextRenderer 
 	if (!label.empty())
 		text.Draw(canvas, c.x + def.text_offset_x, c.y + def.text_offset_y, label, SidlFontHeight(def.font),
 			def.has_text_color ? control.text_color : 0xf0f0f0, SidlFontWeight(def.font));
+}
+
+// ---------------------------------------------------------------- list boxes
+
+int SidlWindow::ListHeaderHeight(const Control &control) const
+{
+	// CListWnd::CListWnd: its font's height and 4, when it has columns.
+	return control.def->columns.empty() ? 0 : SidlFontHeight(control.def->font) + 4;
+}
+
+int SidlWindow::ListRowHeight(const Control &control) const
+{
+	return control.row_height > 0 ? control.row_height : SidlFontHeight(control.def->font) + 2;
+}
+
+void SidlWindow::UpdateListScroll(Control &control) const
+{
+	Rect content = ContentRect(control);
+	int rows = static_cast<int>(control.rows.size());
+	control.scroll_page = std::max((content.h - ListHeaderHeight(control)) / ListRowHeight(control), 1);
+	control.scroll_max = std::max(rows - control.scroll_page, 0);
+	control.scroll_pos = std::clamp(control.scroll_pos, 0, control.scroll_max);
+}
+
+void SidlWindow::DrawListbox(const Control &control, Canvas &canvas, TextRenderer &text) const
+{
+	// CListWnd::DrawHeader and DrawLine: the headings across the top, then the rows from the scroll
+	// position down, each column's text 2 pixels in from its edges.
+	const SidlPiece &def = *control.def;
+	int height = SidlFontHeight(def.font), weight = SidlFontWeight(def.font);
+	Rect content = ContentRect(control);
+	Rect clip = canvas.Clip();
+	auto draw = [&](const std::string &str, int column, int x, int width, int y, int line_height, uint32_t color) {
+		if (str.empty() || width <= 4)
+			return;
+		Rect cell{x + 2, y, width - 4, line_height};
+		TextSize size = text.Measure(str, height, weight);
+		int justification = column < static_cast<int>(control.justification.size()) ? control.justification[column] : 0;
+		int tx = justification == 1 ? cell.x + (cell.w - size.w) / 2 : justification == 2 ? cell.Right() - size.w : cell.x;
+		canvas.SetClip(Intersect(cell, clip));
+		text.Draw(canvas, tx, y + (line_height - size.h) / 2, str, height, color, weight);
+	};
+	int header = ListHeaderHeight(control);
+	int x = content.x;
+	for (size_t i = 0; i < def.columns.size(); ++i) {
+		draw(def.columns[i].heading, static_cast<int>(i), x, def.columns[i].width, content.y, header, control.header_color);
+		x += def.columns[i].width;
+	}
+	int row_height = ListRowHeight(control);
+	int y = content.y + header;
+	for (size_t r = static_cast<size_t>(std::max(control.scroll_pos, 0)); r < control.rows.size() && y < content.Bottom(); ++r) {
+		const std::vector<std::string> &row = control.rows[r];
+		x = content.x;
+		for (size_t i = 0; i < row.size(); ++i) {
+			int width = i < def.columns.size() ? def.columns[i].width : content.Right() - x;
+			draw(row[i], static_cast<int>(i), x, width, y, row_height, control.row_color);
+			x += width;
+		}
+		y += row_height;
+	}
+	canvas.SetClip(clip);
 }
 
 // ---------------------------------------------------------------- scrollbars

@@ -1362,6 +1362,7 @@ namespace
 		{"CastSpellWnd", true}, {"HotButtonWnd", true}, {"SelectorWindow", true}, {"ActionsWindow", false},
 		{"InventoryWindow", false}, {"OptionsWindow", false}, {"FriendsWindow", false}, {"PetInfoWindow", false},
 		{"HelpWindow", false}, {"CompassWindow", false}, {"SocialEditWnd", false}, {"ChatWindow", true},
+		{"SkillsWindow", false},
 	};
 
 	// The selector's buttons (EQUI_SelectorWnd.xml) and the windows they open and close.
@@ -1385,6 +1386,7 @@ void FrontEnd::BuildZoneWindows()
 		return;
 	m_windows.Reset(m_ui.definitions, m_ui.textures, m_game_width, m_game_height);
 	m_windows.SetValues(&m_game_values);
+	m_game_values.eqstr = m_ui.eqstr;
 	for (const auto &window : ZoneWindows) {
 		std::string error;
 		if (!m_windows.Add(window.screen, window.shown, &error))
@@ -1607,6 +1609,10 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			break;
 		case Type::Emote:
 			ChatOut(event.text, ChatType::Emote);
+			break;
+		case Type::SkillUp: // msg_skillimprove
+			ChatOut(FormatEqString(m_ui.eqstr, 12091, "You have become better at %1! (%2)",
+				{SkillName(m_ui.eqstr, event.id), std::to_string(event.value)}), ChatType::Skills);
 			break;
 		case Type::TargetChanged:
 			// The zone's answer to /target (or its refusal of a click).
@@ -1925,10 +1931,10 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			break;
 		}
 		// ExecuteCmd's escape: no target, then CDisplay_NewUIProcessEscape closes the first of its
-		// windows that's open (of the ones we have: help, options, the social editor, inventory).
+		// windows that's open (of the ones we have: help, skills, options, the social editor, inventory).
 		SetTarget(0);
 		ChatOut(EqString(12375, "You no longer have a target."), ChatType::Default);
-		for (const char *screen : {"HelpWindow", "OptionsWindow", "SocialEditWnd", "InventoryWindow"})
+		for (const char *screen : {"HelpWindow", "SkillsWindow", "OptionsWindow", "SocialEditWnd", "InventoryWindow"})
 			if (m_windows.Shown(screen)) {
 				m_windows.Show(screen, false);
 				break;
