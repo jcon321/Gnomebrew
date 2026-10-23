@@ -7,6 +7,8 @@ namespace
 {
 	// SIDL screens are laid out for 640x480 (CSidlScreenWnd::InitializeScreen's starting resolution).
 	constexpr int BaseWidth = 640, BaseHeight = 480;
+	// ProcessMouseEvent: how long the left button is down before it's a hold (0x2ee).
+	constexpr uint64_t HoldMs = 750;
 
 	// CSidlScreenWnd_ConvertToRes (@005702a0): a window's position along one axis at another
 	// resolution. Windows on the far half keep their distance from that edge, ones across the
@@ -50,6 +52,8 @@ void WindowManager::Reset(const SidlDefinitions *defs, SidlTextures *textures, i
 	m_height = screen_height;
 	m_windows.clear();
 	m_clicks.clear();
+	m_holds.clear();
+	m_held = false;
 	m_changed = false;
 	m_drag = Drag::None;
 	m_drag_window = m_press = -1;
@@ -316,6 +320,8 @@ bool WindowManager::OnMouse(const InputEvent &event, uint64_t now_ms)
 		}
 		if (w.wnd.InteractiveAt(event.x, event.y)) {
 			m_press = top;
+			m_press_ms = now_ms;
+			m_held = false;
 			w.wnd.OnMouse(event);
 			return true;
 		}
@@ -357,7 +363,7 @@ bool WindowManager::OnMouse(const InputEvent &event, uint64_t now_ms)
 			}
 			else {
 				std::string clicked = w.wnd.OnMouse(event);
-				if (!clicked.empty())
+				if (!clicked.empty() && !m_held)
 					m_clicks.push_back({w.screen, clicked});
 			}
 			w.wnd.SetTitleBoxes(w.wnd.TitleBoxAt(event.x, event.y), Box::None);
@@ -443,6 +449,17 @@ bool WindowManager::DrawCursor(Canvas &canvas, int x, int y, uint64_t now_ms) co
 	return true;
 }
 
+bool WindowManager::DrawAnimation(Canvas &canvas, const std::string &name, const Rect &dest, uint64_t now_ms) const
+{
+	const SidlAnimation *animation = m_defs && m_textures ? m_defs->Animation(name) : nullptr;
+	const SidlFrame *frame = animation ? animation->FrameAt(now_ms) : nullptr;
+	const Image *image = frame ? m_textures->Get(frame->texture) : nullptr;
+	if (!image)
+		return false;
+	canvas.Stretch(*image, frame->source, dest);
+	return true;
+}
+
 std::vector<WindowManager::Click> WindowManager::TakeClicks()
 {
 	std::vector<Click> clicks;
@@ -450,8 +467,25 @@ std::vector<WindowManager::Click> WindowManager::TakeClicks()
 	return clicks;
 }
 
+std::vector<WindowManager::Click> WindowManager::TakeHolds()
+{
+	std::vector<Click> holds;
+	holds.swap(m_holds);
+	return holds;
+}
+
 void WindowManager::Update(uint64_t now_ms, int mouse_x, int mouse_y)
 {
+	// The left button held: the button under the mouse now (if it's still on one) is held, and
+	// the one pressed comes back up without a click.
+	if (m_press >= 0 && m_box_down == SidlWindow::TitleBox::None && !m_held && now_ms - m_press_ms > HoldMs) {
+		m_held = true;
+		m_windows[m_press]->wnd.CancelPress();
+		int top = TopAt(mouse_x, mouse_y);
+		std::string held = top >= 0 ? m_windows[top]->wnd.ButtonAt(mouse_x, mouse_y) : "";
+		if (!held.empty())
+			m_holds.push_back({m_windows[top]->screen, held});
+	}
 	for (int i = 0; i < static_cast<int>(m_windows.size()); ++i) {
 		Window &w = *m_windows[i];
 		if (!w.shown || !w.settings.fades)

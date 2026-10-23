@@ -121,6 +121,7 @@ public:
 	const ZoneView *ZoneScene() const { return m_zone_view.get(); }
 	ZoneView *ZoneScene() { return m_zone_view.get(); }
 	WindowManager &Windows() { return m_windows; }
+	const GameWindowState &WindowState() const { return m_window_state; }
 	const std::string &UiLayoutPath() const { return m_ui_layout_path; }
 	CharacterCreation *Creation() { return m_creation.get(); }
 	// For tools: the window-pixel center of a visible SIDL control on character select or creation.
@@ -178,9 +179,11 @@ private:
 	std::string EqString(uint32_t id, const std::string &fallback) const; // eqstr_en.txt
 	void HandleZoneEvents(const std::vector<ZoneSession::Event> &events);
 	// The in-game SIDL windows, built once we're first in a zone (zoning keeps them), with the
-	// character's layout from UI_<character>_<server>.ini; saved whenever it changes.
+	// character's layout from UI_<character>_<server>.ini and hot buttons from
+	// <character>_<server>.ini; each saved whenever it changes.
 	void BuildZoneWindows();
 	void SaveUiLayout();
+	void SaveHotButtons();
 	void SaveDebugSettings(); // the debug menu's, to my-client.ini's [Debug]
 	void HandleWindowClicks();
 	void AddZoneLog(const std::string &text, uint32_t color); // a line of chat in this color
@@ -271,13 +274,14 @@ private:
 	WindowManager m_windows;
 	bool m_windows_built = false;
 	std::string m_ui_layout_path;
+	std::string m_hot_buttons_path;
 	struct HeldKeys
 	{
 		bool up = false, down = false, left = false, right = false, w = false, a = false, s = false, d = false;
 	};
 	HeldKeys m_keys;
 	bool m_run = true;
-	GameWindowPages m_window_pages; // the Actions window's socials and the hot buttons
+	GameWindowState m_window_state; // the Actions window's socials, the hot buttons, the button on the cursor
 	bool m_jump_requested = false;
 	bool m_crouch_sent = false; // the stance last sent for a standing jump's wind-up
 	// Mouse drags in the zone: the right button turns the character and tilts the view, the left

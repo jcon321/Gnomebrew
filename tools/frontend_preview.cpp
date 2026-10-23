@@ -12,8 +12,10 @@
 // and snapshots the zone once it's in, then every few seconds for SECONDS (default 10), then
 // tries the windows: drags the selector by its title bar, opens the inventory from it, minimizes
 // and restores it, sizes the target and chat windows from their borders, and closes the inventory
-// with Escape (the layout goes to OUTDIR/UI_*.ini); then types into
-// the chat window, targets a spawn and prints the chat.
+// with Escape (the layout goes to OUTDIR/UI_*.ini); puts Actions window buttons on the hot
+// buttons by holding them and clicking a hot button, swaps two, uses one, takes one off again by
+// holding it and drops it with Escape (the hot buttons go to OUTDIR/<character>_*.ini); then types
+// into the chat window, targets a spawn and prints the chat.
 
 #include "eqstr.h"
 #include "frontend.h"
@@ -277,6 +279,60 @@ int main(int argc, char **argv)
 			h.Snapshot("w2-minimized");
 			click(box.x + box.w / 2, box.y + box.h / 2);
 			where("ActionsWindow");
+		}
+		// Hot buttons. Holding is the left button down 750 ms; letting go after that isn't a click.
+		auto hold = [&](int x, int y) {
+			frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+			frontend.OnEvent({InputEvent::Type::MouseDown, x, y});
+			h.RunUntil([] { return false; }, 900);
+			frontend.OnEvent({InputEvent::Type::MouseUp, x, y});
+			frontend.Update(NowMs());
+		};
+		auto at = [&](const char *screen, const std::string &id, int &x, int &y) {
+			SidlWindow *w = windows.Find(screen);
+			const SidlWindow::Control *c = w ? w->Find(id) : nullptr;
+			if (!c)
+				return false;
+			x = c->rect.x + c->rect.w / 2;
+			y = c->rect.y + c->rect.h / 2;
+			return true;
+		};
+		auto hot_text = [&](int n) {
+			const SidlWindow::Control *c = windows.Find("HotButtonWnd")->Find("HB_Button" + std::to_string(n));
+			return c ? c->text : std::string("?");
+		};
+		auto report = [&](const char *step) {
+			const GameWindowState &s = frontend.WindowState();
+			printf("[preview] hot buttons %s: cursor %d/%d \"%s\", HB1 \"%s\", HB2 \"%s\"\n", step, s.cursor.type,
+				s.cursor.value, s.cursor_text.c_str(), hot_text(1).c_str(), hot_text(2).c_str());
+		};
+		int camp_x, camp_y, walk_x, walk_y, hb1_x, hb1_y, hb2_x, hb2_y;
+		if (where("HotButtonWnd") && at("ActionsWindow", "AMP_CampButton", camp_x, camp_y) &&
+		    at("ActionsWindow", "AMP_WalkButton", walk_x, walk_y) && at("HotButtonWnd", "HB_Button1", hb1_x, hb1_y) &&
+		    at("HotButtonWnd", "HB_Button2", hb2_x, hb2_y)) {
+			hold(camp_x, camp_y);
+			report("Camp held");
+			click(hb1_x, hb1_y);
+			report("dropped on 1");
+			hold(walk_x, walk_y);
+			frontend.OnEvent({InputEvent::Type::MouseMove, hb1_x, hb1_y});
+			h.Snapshot("h1-walk-attached");
+			click(hb1_x, hb1_y);
+			report("Walk dropped on 1 (Camp back on the cursor)");
+			h.Snapshot("h2-swapped");
+			click(hb2_x, hb2_y);
+			report("dropped on 2");
+			click(hb1_x, hb1_y);
+			frontend.Update(NowMs());
+			report("1 used (walking)");
+			hold(hb2_x, hb2_y);
+			report("2 held");
+			h.Key(InputEvent::Key::Escape);
+			report("Escape");
+			click(hb1_x, hb1_y);
+			frontend.Update(NowMs());
+			report("1 used again (running)");
+			h.Snapshot("h3-hot-buttons");
 		}
 		// The target window is sizable: its bottom right corner, 60 right and 40 down.
 		if (const SidlWindow *target = where("TargetWindow")) {

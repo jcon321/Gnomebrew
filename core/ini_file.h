@@ -24,6 +24,8 @@ public:
 	void Set(const std::string &section, const std::string &key, const std::string &value);
 	void SetInt(const std::string &section, const std::string &key, int value) { Set(section, key, std::to_string(value)); }
 	void SetBool(const std::string &section, const std::string &key, bool value) { Set(section, key, value ? "true" : "false"); }
+	// The key gone (WritePrivateProfileString with no value).
+	void Remove(const std::string &section, const std::string &key);
 	// key=value, under `comment` (each of its lines a ; comment), unless the key is there already;
 	// true when it was added.
 	bool Add(const std::string &section, const std::string &key, const std::string &value, const std::string &comment);

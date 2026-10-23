@@ -181,11 +181,19 @@ mouse has been off them a while. Their layout is kept in eqgame's own format, in
 `UI_<character>_<server>.ini` next to the exe (the server part is the login server's address cut
 to 7 characters, as eqgame names it).
 
+Hot buttons work as eqgame's do: hold the left button on any button of the Actions window, on any
+of its pages, for 3/4 of a second and a copy of it follows the cursor; click a hot button to put it
+there (whatever was there goes onto the cursor instead). Hold a hot button to take it off onto the
+cursor. Clicking the world or pressing Escape drops what's on the cursor. Clicking a hot button
+does what its button does (so far, the main page's Camp and Run/Walk). They're kept in eqgame's
+format in `<character>_<server>.ini` next to the exe, under `[HotButtons]`
+(`Page<p>Button<b>=<type letter><number>`).
+
 - The player window's gauges show HP (with your name), mana (not for classes without any) and
   stamina; the pet gauge along the bottom of the HP bar, only while you have a pet. The target
   window shows the target's name, HP bar and percent. What the windows do for themselves each frame
   in eqgame is in `frontend/game_windows.cpp`: the group window's Invite and Disband buttons, the
-  buff window's buttons in columns from the top right (empty slots draw nothing), and empty hot
+  buff window's buttons in columns from the top right (empty slots draw nothing), and the hot
   buttons. Click someone to target them, or `/target name`; Escape clears the target (and, as in
   eqgame, closes the help, options or inventory window if one's open). Gauges are drawn the way
   `CGaugeWnd::Draw` does it, bars sliding to a new value at a full bar a second.

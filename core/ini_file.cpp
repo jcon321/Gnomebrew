@@ -208,6 +208,16 @@ void IniFile::Set(const std::string &section, const std::string &key, const std:
 	target.entries.insert(InsertPoint(target), {key, value, ""});
 }
 
+void IniFile::Remove(const std::string &section, const std::string &key)
+{
+	if (Section *target = FindSection(section))
+		for (auto it = target->entries.begin(); it != target->entries.end(); ++it)
+			if (!it->key.empty() && SameText(it->key, key)) {
+				target->entries.erase(it);
+				return;
+			}
+}
+
 bool IniFile::Add(const std::string &section, const std::string &key, const std::string &value, const std::string &comment)
 {
 	if (Has(section, key))

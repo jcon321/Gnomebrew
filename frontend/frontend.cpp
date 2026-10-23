@@ -640,7 +640,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		m_windows.Update(now_ms, m_mouse_x - area.x, m_mouse_y - area.y);
 		HandleWindowClicks();
 		m_game_values.running = m_run;
-		UpdateGameWindows(m_windows, m_game_values, m_window_pages);
+		UpdateGameWindows(m_windows, m_game_values, m_window_state);
 		if (m_windows.TakeChanged())
 			SaveUiLayout();
 	}
@@ -836,6 +836,9 @@ void FrontEnd::Render(Canvas &canvas, uint64_t now_ms)
 		RenderDialog(dialog);
 	}
 
+	// The button on the cursor, over everything but the cursor.
+	if (m_cursor_visible && !m_mouse_grabbed && m_screen == Screen::Zone && !m_dialog.open)
+		DrawCursorAttachment(screen, m_text, m_windows, m_window_state, m_mouse_x - area.x, m_mouse_y - area.y, now_ms);
 	// In the zone, the windows' own cursors while moving or sizing one (or over a border that sizes).
 	if (m_cursor_visible && !m_mouse_grabbed &&
 	    !(m_screen == Screen::Zone && !m_dialog.open && m_windows.DrawCursor(screen, m_mouse_x - area.x, m_mouse_y - area.y, now_ms)))
@@ -1327,6 +1330,7 @@ void FrontEnd::EnterZoneScreen(bool zoning)
 		AddZoneLog("Entering the zone...", ZoneGrey);
 		m_windows.Reset(nullptr, nullptr, m_game_width, m_game_height);
 		m_windows_built = false;
+		m_window_state.ClearCursor();
 	}
 	if (m_sound) // DoCharacterSelection, entering the world
 		m_sound->SetMusicSelection(audio::EqSound::CharacterSelect, false);
@@ -1385,13 +1389,21 @@ void FrontEnd::BuildZoneWindows()
 	// eqgame names the file after the character and the first 7 characters of the login
 	// server's address (UI_Name_loginse.ini for loginserver.takproject.net).
 	m_ui_layout_path.clear();
+	m_hot_buttons_path.clear();
+	m_window_state = GameWindowState{};
 	const std::string &name = m_zone.Profile().name;
 	if (!m_config.ui_dir.empty() && !name.empty()) {
-		m_ui_layout_path = m_config.ui_dir + "/UI_" + name + "_" + m_config.login_host.substr(0, 7) + ".ini";
+		std::string suffix = name + "_" + m_config.login_host.substr(0, 7) + ".ini";
+		m_ui_layout_path = m_config.ui_dir + "/UI_" + suffix;
 		IniFile ini;
 		if (ini.Load(m_ui_layout_path))
 			m_windows.Load(ini);
 		Log("UI: " + std::to_string(m_windows.Count()) + " windows, layout " + m_ui_layout_path);
+		// CEverQuest::CreateIniFilenames: the character's own ini is the layout's name without UI_.
+		m_hot_buttons_path = m_config.ui_dir + "/" + suffix;
+		IniFile custom;
+		if (custom.Load(m_hot_buttons_path))
+			LoadHotButtons(custom, m_window_state);
 	}
 	m_windows.TakeChanged();
 	m_chat.Attach(m_windows.Find("ChatWindow"));
@@ -1408,6 +1420,18 @@ void FrontEnd::SaveUiLayout()
 		Log("UI: couldn't write " + m_ui_layout_path);
 }
 
+void FrontEnd::SaveHotButtons()
+{
+	m_window_state.hot_buttons_changed = false;
+	if (m_hot_buttons_path.empty())
+		return;
+	IniFile ini;
+	ini.Load(m_hot_buttons_path); // keep the rest of the character's ini
+	StoreHotButtons(ini, m_window_state);
+	if (!ini.Save(m_hot_buttons_path))
+		Log("UI: couldn't write " + m_hot_buttons_path);
+}
+
 void FrontEnd::SaveDebugSettings()
 {
 	if (m_config.settings_ini.empty())
@@ -1421,8 +1445,13 @@ void FrontEnd::SaveDebugSettings()
 
 void FrontEnd::HandleWindowClicks()
 {
-	for (const auto &click : m_windows.TakeClicks()) {
-		GameWindowClick(m_windows, m_window_pages, click.window, click.control);
+	for (const auto &hold : m_windows.TakeHolds())
+		GameWindowHold(m_windows, m_window_state, hold.window, hold.control);
+	for (WindowManager::Click click : m_windows.TakeClicks()) {
+		// A hot button holding one of the Actions window's buttons does what that button does.
+		std::string action = GameWindowClick(m_windows, m_window_state, click.window, click.control);
+		if (!action.empty())
+			click = {"ActionsWindow", action};
 		if (click.window == "SelectorWindow")
 			for (const auto &toggle : SelectorToggles)
 				if (click.control == toggle.button)
@@ -1437,6 +1466,8 @@ void FrontEnd::HandleWindowClicks()
 			}
 		}
 	}
+	if (m_window_state.hot_buttons_changed)
+		SaveHotButtons();
 	// The selector's buttons stay down while their window is open.
 	if (SidlWindow *selector = m_windows.Find("SelectorWindow"))
 		for (const auto &toggle : SelectorToggles)
@@ -1749,6 +1780,8 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 	case InputEvent::Type::MouseUp:
 		// A click that didn't drag uses the door or switch under the cursor (CEverQuest_ClickedSwitch),
 		// or else targets the spawn under the cursor (nobody: the target stays).
+		if (m_world_click && m_click_travel <= 3)
+			m_window_state.ClearCursor(); // and the click goes on
 		if (m_world_click && m_click_travel <= 3 && m_zone_view) {
 			uint8_t door = 0;
 			int16_t skill = 0;
@@ -1860,6 +1893,11 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			m_zone_view->Pitch(event.key == InputEvent::Key::PageUp ? 5.0f : -5.0f);
 		break;
 	case InputEvent::Key::Escape: {
+		// A button on the cursor goes, and that's all (CDisplay_NewUIProcessEscape's RemoveAttachment).
+		if (m_window_state.cursor.type != HotButton::Empty) {
+			m_window_state.ClearCursor();
+			break;
+		}
 		// ExecuteCmd's escape: no target, then CDisplay_NewUIProcessEscape closes the first of its
 		// windows that's open (of the ones we have: help, options, inventory).
 		SetTarget(0);

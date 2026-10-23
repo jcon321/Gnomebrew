@@ -6,6 +6,9 @@
 //     Style_Sizable, while a sizable one resizes from its border's pieces instead (corners both
 //     ways), with the resize cursors over them; locked windows don't move; the title bar's close
 //     and minimize boxes act when let go over them;
+//   - ProcessMouseEvent and HandleLeftMouseHold (@00525db4, @0059fe70): the left button held
+//     750 ms is a hold, sent to the button under the mouse then (CButtonWnd's HandleLButtonHeld,
+//     @005953e0, notification 0x16), and letting go after it isn't a click;
 //   - CXWnd::OnProcessFrame: a window that Fades starts fading to FadeToAlpha once the mouse
 //     has been off it for Delay ms, and back to Alpha when it comes back, over Duration ms
 //     (StartFade / ProcessTransition), everything in it drawn at that alpha (DoAllDrawing);
@@ -73,12 +76,18 @@ public:
 	bool Busy() const { return m_drag != Drag::None || m_press >= 0; }
 	// Buttons clicked since the last call.
 	std::vector<Click> TakeClicks();
+	// Buttons held down (the left button held on them) since the last call.
+	std::vector<Click> TakeHolds();
 
-	void Update(uint64_t now_ms, int mouse_x, int mouse_y); // the fades
+	void Update(uint64_t now_ms, int mouse_x, int mouse_y); // the fades, and a button held
 	void Draw(Canvas &canvas, TextRenderer &text, uint64_t now_ms);
 	// The cursor for the mouse at (x, y), if the windows want their own (moving or sizing one,
 	// or over a sizable one's border): its SIDL animation, drawn at its hotspot. False otherwise.
 	bool DrawCursor(Canvas &canvas, int x, int y, uint64_t now_ms) const;
+	// A SIDL animation stretched over dest, for what's drawn outside the windows (the cursor's
+	// attachment). False when there's no such animation.
+	bool DrawAnimation(Canvas &canvas, const std::string &name, const Rect &dest, uint64_t now_ms) const;
+	const SidlDefinitions *Definitions() const { return m_defs; }
 
 	int Count() const { return static_cast<int>(m_windows.size()); }
 
@@ -115,6 +124,7 @@ private:
 	int m_width = 640, m_height = 480;
 	std::vector<std::unique_ptr<Window>> m_windows; // back to front
 	std::vector<Click> m_clicks;
+	std::vector<Click> m_holds;
 	bool m_changed = false;
 
 	Drag m_drag = Drag::None;
@@ -123,6 +133,8 @@ private:
 	Rect m_grab_rect;                 // the window's rect then
 	bool m_edge_left = false, m_edge_top = false, m_edge_right = false, m_edge_bottom = false;
 	int m_press = -1;                 // the window a button or title box went down in
+	uint64_t m_press_ms = 0;          // when
+	bool m_held = false;              // held long enough to be a hold, not a click
 	SidlWindow::TitleBox m_box_down = SidlWindow::TitleBox::None;
 	std::vector<uint32_t> m_kept;     // Canvas::Keep, for drawing faded windows
 };

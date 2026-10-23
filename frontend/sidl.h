@@ -198,6 +198,11 @@ private:
 int SidlFontHeight(int font);
 int SidlFontWeight(int font);
 
+// A button's text, centered in rect; text wider than it breaks between words onto more lines
+// (a hot button's "Melee Attack").
+void SidlDrawButtonText(TextRenderer &text, Canvas &canvas, const Rect &rect, const std::string &str, int height,
+	uint32_t rgb, int weight);
+
 // A live window built from a <Screen>: a tree of controls (nested screens and
 // their pieces) with absolute rects and state. Control 0 is the screen itself.
 class SidlWindow
@@ -285,6 +290,10 @@ public:
 	// (x, y) is on the control where it's drawn: inside it and its parents' client areas (the
 	// part of a control outside its parent is cut off, so it can't be clicked either).
 	bool HitTest(const Control &control, int x, int y) const;
+	// The ScreenID of the shown, enabled button under (x, y), or "".
+	std::string ButtonAt(int x, int y) const;
+	// A held button let go of without being clicked (after CXWndManager's left button hold).
+	void CancelPress();
 
 private:
 	int Add(const SidlPiece &piece, int parent);

@@ -654,6 +654,58 @@ bool SidlWindow::InteractiveAt(int x, int y) const
 	return false;
 }
 
+void SidlDrawButtonText(TextRenderer &text, Canvas &canvas, const Rect &rect, const std::string &str, int height,
+	uint32_t rgb, int weight)
+{
+	// As many words on each line as fit (at least one).
+	std::vector<std::string> lines;
+	TextSize whole = text.Measure(str, height, weight);
+	if (whole.w <= rect.w)
+		lines.push_back(str);
+	else {
+		std::string line;
+		size_t start = 0;
+		while (start < str.size()) {
+			size_t end = str.find(' ', start);
+			std::string word = str.substr(start, end == std::string::npos ? std::string::npos : end - start);
+			start = end == std::string::npos ? str.size() : end + 1;
+			if (word.empty())
+				continue;
+			std::string longer = line.empty() ? word : line + " " + word;
+			if (!line.empty() && text.Measure(longer, height, weight).w > rect.w) {
+				lines.push_back(line);
+				line = word;
+			}
+			else
+				line = longer;
+		}
+		if (!line.empty())
+			lines.push_back(line);
+	}
+	int y = rect.y + (rect.h - whole.h * static_cast<int>(lines.size())) / 2;
+	for (const auto &line : lines) {
+		TextSize size = text.Measure(line, height, weight);
+		text.Draw(canvas, rect.x + (rect.w - size.w) / 2, y, line, height, rgb, weight);
+		y += whole.h;
+	}
+}
+
+std::string SidlWindow::ButtonAt(int x, int y) const
+{
+	if (m_minimized)
+		return "";
+	for (auto it = m_controls.rbegin(); it != m_controls.rend(); ++it)
+		if (it->def->type == "Button" && it->enabled && HitTest(*it, x, y))
+			return it->def->screen_id;
+	return "";
+}
+
+void SidlWindow::CancelPress()
+{
+	for (auto &control : m_controls)
+		control.pressed = false;
+}
+
 void SidlWindow::Check(const std::string &screen_id)
 {
 	Control *target = Find(screen_id);
@@ -963,12 +1015,10 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 			DrawAnimation(canvas, textures, name, control.rect, now_ms);
 		if (!control.text.empty()) {
 			// CButtonWnd::Draw: grey when disabled, yellow when checked or under the mouse.
-			TextSize size = text.Measure(control.text, height, weight);
 			uint32_t color = !control.enabled                  ? 0x808080
 			                 : control.checked || control.hover ? 0xffff00
 			                                                    : control.text_color;
-			text.Draw(canvas, control.rect.x + (control.rect.w - size.w) / 2, control.rect.y + (control.rect.h - size.h) / 2,
-				control.text, height, color, weight);
+			SidlDrawButtonText(text, canvas, control.rect, control.text, height, color, weight);
 		}
 	}
 	else if (def.type == "InvSlot") {

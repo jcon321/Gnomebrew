@@ -22,7 +22,10 @@ no rules of its own.
    - Inventory and bags, filled from the item packets (the slots show their empty pictures;
      no item icons yet, here or in the hot button window's weapon slots)
    - Spell gems and the spellbook (pictures only; the gems are all empty)
-   - Hotbuttons (shown empty; the hot buttons themselves aren't loaded)
+   - Hotbuttons: the Actions window's buttons go on them and come off by holding them, and
+     they're kept in `<char>_<server>.ini` (`frontend/game_windows.*`). Still to do: items, spells,
+     pet commands and AA abilities on them, the social names (no socials yet), whether an
+     ability's ready (checked while it isn't), and right-click.
    - Compass
    - Selector bar
 3. ~~**A real chat window**~~: done (`frontend/chat_window.*`, `chat_text.*`, `chat_commands.cpp`).

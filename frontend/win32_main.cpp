@@ -7,7 +7,8 @@
 // All settings live in my-client.ini next to the exe (the EQ folder is only read for assets;
 // its eqclient.ini is never used): settings_file.cpp lists them, and writes the file with a
 // comment on each when it's new, or adds any key missing from it.
-// The in-game windows' layouts go to UI_<character>_<server>.ini next to the exe, as eqgame's do.
+// The in-game windows' layouts go to UI_<character>_<server>.ini next to the exe, as eqgame's do,
+// and the hot buttons to <character>_<server>.ini's [HotButtons].
 // The command line overrides the ini:
 //   eqclient_gui.exe --eqdir C:\TAKP --login 192.168.0.18:6000 --size 1920x1080
 //   eqclient_gui.exe --replay replays\Name-20261022-124815.eqr   (straight into the recorded zone, no server)
