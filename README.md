@@ -781,3 +781,5 @@ A rejected world login gets no error packet. The server just drops the connectio
   - [EQMacEmu](https://github.com/EQMacEmu)
   - [Zeal](https://github.com/CoastalRedwood/Zeal)
   - [TakpUnderthehood](https://github.com/adonislive/TAKP-Client-Underthehood)
+  - [eqgame_dll_takp](https://github.com/EQMacEmu/eqgame_dll_takp) (the client fixes TAKP's eqgame.dll makes)
+  - [eqw_takp](https://github.com/CoastalRedwood/eqw_takp) (eqgame's input globals and focus handling)
