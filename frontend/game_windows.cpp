@@ -63,10 +63,14 @@ namespace
 
 	void HotButtonWindow(SidlWindow &wnd)
 	{
+		// CHotButtonWnd::OnProcessFrame (@0041fae9): an empty slot has no text and is checked,
+		// so it shows its Pressed picture.
 		for (int i = 1; i <= HotButtons; ++i) {
 			std::string n = std::to_string(i);
-			if (SidlWindow::Control *button = wnd.Find("HB_Button" + n))
+			if (SidlWindow::Control *button = wnd.Find("HB_Button" + n)) {
 				button->text.clear();
+				button->checked = true;
+			}
 			Show(wnd, "HB_InvSlot" + n, false);
 			Show(wnd, "HB_SpellGem" + n, false);
 		}
