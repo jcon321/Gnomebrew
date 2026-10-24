@@ -1182,14 +1182,15 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 		if (control.cell >= 0)
 			DrawCell(canvas, textures, control.cell_animation, control.cell, control.rect);
 		// A stack's count in its bottom right corner: a dark box 12 by 10, a pixel in from the
-		// edges, and the number padded to two places over it in the slot's font.
+		// edges, and the number padded to two places over it in font 1 (the CTextureFont the
+		// slot makes for itself, @005a75e0), whatever the slot's own font.
 		if (control.cell >= 0 && control.count > 0) {
 			int r = control.rect.Right(), b = control.rect.Bottom();
 			canvas.Fill({r - 13, b - 11, 12, 10}, 0x404040);
 			std::string count = std::to_string(control.count);
 			if (count.size() < 2)
 				count = " " + count;
-			text.Draw(canvas, r - 13, b - 11, count, height, 0xffffff, weight);
+			text.Draw(canvas, r - 13, b - 11, count, SidlFontHeight(1), 0xffffff, SidlFontWeight(1));
 		}
 	}
 	else if (def.type == "Slider") {

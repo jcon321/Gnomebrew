@@ -20,11 +20,11 @@ no rules of its own.
      still to do: our buffs from the player profile and `OP_Buff`, their icons (`BuffIcons`
      decals, from the spell file) and names (label EQTypes 45..59).
    - Inventory: name, level, class (its title from 51), deity, HP, stats (base and worn items),
-     money, the class picture, item icons in the slots, the Alt. Adv. row from 51, Done, and the
+     AC, ATK and weight (`GameValues::Ac`, `Atk`, `Weight`), money, the class picture, item icons in the slots, the Alt. Adv. row from 51, Done, and the
      Skills button opening the skills window (`frontend/game_windows.*`), and items picked up, put
      down, split through the quantity window and put away on the character view (`core/inventory.*`).
-     Still to do: eqgame's own formulas for the resists, AC, ATK and weight (blank for now), and for
-     stats spells, AAs and drunkenness; the XP and AA gauges (the experience table); coins onto the
+     Still to do: eqgame's own formulas for the resists (blank for now), and for stats, AC and ATK
+     spells (buffs and items' worn effects), AAs, drunkenness and berserking; the XP and AA gauges (the experience table); coins onto the
      cursor, Destroy, Alt. Advance, bag windows, and icons in the hot button window's weapon slots.
    - Equipping: our model's armor, weapons and light follow what we have on (`ZoneSession::UpdateAppearance`).
      Still to do: the worn slots' empty pictures' names (`CInvSlot::SetItem`'s tooltip), dual wield

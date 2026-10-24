@@ -1,9 +1,11 @@
 #include "game_values.h"
 #include "eqstr.h"
+#include "inventory.h"
 #include "world_client.h"
 #include "zone_session.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace
 {
@@ -78,21 +80,267 @@ std::string GameValues::DeityName(const EqStr *eqstr, int deity)
 	return EqText(eqstr, 3250, "Agnostic");
 }
 
-int GameValues::Stat(const ZoneProfile &p, const std::map<int16_t, ZoneItem> &items, int eq_type, int &base)
+int GameValues::SkillUsed(int item_type)
 {
-	int worn = 0;
-	switch (eq_type) {
-	case 5: base = p.str; worn = WornSum(items, &ZoneItem::str); break;
-	case 6: base = p.sta; worn = WornSum(items, &ZoneItem::sta); break;
-	case 7: base = p.dex; worn = WornSum(items, &ZoneItem::dex); break;
-	case 8: base = p.agi; worn = WornSum(items, &ZoneItem::agi); break;
-	case 9: base = p.wis; worn = WornSum(items, &ZoneItem::wis); break;
-	case 10: base = p.int_; worn = WornSum(items, &ZoneItem::int_); break;
-	case 11: base = p.cha; worn = WornSum(items, &ZoneItem::cha); break;
-	default: base = 0; return 0;
+	switch (item_type) {
+	case 0: return 1;
+	case 1: return 3;
+	case 2: return 36;
+	case 3: return 0;
+	case 4: return 2;
+	case 5: case 6: case 17: case 27: case 28: return 7;
+	case 7: case 19: return 51;
+	case 9: return 231;
+	case 10: return 15;
+	case 35: return 36;
+	default: return 28;
 	}
+}
+
+bool GameValues::IsWeapon(const ZoneItem &item)
+{
+	int t = item.item_type;
+	return t != 27 && t != 28 && t != 43 && t != 44 && item.damage != 0;
+}
+
+int GameValues::Skill(int skill) const
+{
+	if (!zone || skill < 0 || skill >= static_cast<int>(std::size(zone->Profile().skills)))
+		return 0;
+	int value = zone->Profile().skills[skill];
+	if (value < 0 || value >= 254)
+		return 0;
+	if (value < 252) {
+		// the ammo slot's counts too
+		int mod = 0;
+		for (const auto &[slot, item] : zone->Items())
+			if (slot >= FirstWornSlot && slot <= Inventory::Ammo && item.item_class == 0 && item.skill_mod_type == skill)
+				mod = std::max<int>(mod, item.skill_mod_value);
+		value = std::min(value + mod * value / 100, 252);
+	}
+	return value;
+}
+
+int GameValues::AntiTwinkAdj(const ZoneItem &item, int value) const
+{
+	if (!zone || value == 0)
+		return value;
+	const ZoneProfile &me = zone->Profile();
+	double scaled;
+	if (item.rec_level != 0 && me.level < item.rec_level)
+		scaled = std::floor(value * (static_cast<double>(me.level) / item.rec_level) + 0.5);
+	else {
+		if (item.rec_skill == 0)
+			return value;
+		int skill = SkillUsed(item.item_type);
+		if (Skill(skill) >= item.rec_skill)
+			return value;
+		// by the skill as it is, not as Skill has it
+		int have = skill < static_cast<int>(std::size(me.skills)) ? me.skills[skill] : 0;
+		scaled = std::floor(value * (static_cast<double>(std::max(have, 1)) / item.rec_skill) + 0.5);
+	}
+	return std::max(static_cast<int>(scaled), 1);
+}
+
+int GameValues::Stat(int eq_type, int &base) const
+{
+	base = 0;
+	if (!zone)
+		return 0;
+	const ZoneProfile &p = zone->Profile();
+	int8_t ZoneItem::*field;
+	switch (eq_type) {
+	case 5: base = p.str; field = &ZoneItem::str; break;
+	case 6: base = p.sta; field = &ZoneItem::sta; break;
+	case 7: base = p.dex; field = &ZoneItem::dex; break;
+	case 8: base = p.agi; field = &ZoneItem::agi; break;
+	case 9: base = p.wis; field = &ZoneItem::wis; break;
+	case 10: base = p.int_; field = &ZoneItem::int_; break;
+	case 11: base = p.cha; field = &ZoneItem::cha; break;
+	default: return 0;
+	}
+	int value = base;
+	for (const auto &[slot, item] : zone->Items())
+		if (slot >= FirstWornSlot && slot <= LastWornSlot && item.item_class == 0)
+			value += AntiTwinkAdj(item, item.*field);
+	if (eq_type == 8)
+		value = static_cast<int>(value * EncumFactor());
 	// CalculateMaxStatAA2 without AAs: no more than 255.
-	return std::min(base + worn, 255);
+	return std::min(value, 255);
+}
+
+int GameValues::Weight() const
+{
+	if (!zone)
+		return 0;
+	const auto &items = zone->Items();
+	// eqgame's float constants, added up in doubles
+	const double tenth = 0.1f, hundredth = 0.01f;
+	double weight = 0;
+	auto add = [&](int16_t slot) {
+		auto it = items.find(slot);
+		if (it == items.end())
+			return;
+		const ZoneItem &item = it->second;
+		weight += item.weight * tenth;
+		if (item.item_class != 1)
+			return;
+		for (int n = 0; n < item.bag_slots; ++n) {
+			auto in = items.find(Inventory::BagSlot(slot, n));
+			if (in != items.end())
+				weight += (100.0 - item.bag_wr) * hundredth * (in->second.weight * tenth);
+		}
+	};
+	add(Inventory::Cursor);
+	for (int16_t slot = FirstWornSlot; slot <= Inventory::Ammo; ++slot)
+		add(slot);
+	int reduction = 0;
+	for (int16_t slot = Inventory::FirstGeneral; slot <= Inventory::LastGeneral; ++slot) {
+		add(slot);
+		// 17201..17210, 17211..17220 and 17221..17230: 10% off the coins' weight .. all of it
+		auto it = items.find(slot);
+		if (it != items.end() && it->second.id >= 17201 && it->second.id <= 17230)
+			reduction = std::max(reduction, ((it->second.id - 17201) % 10 + 1) * 10);
+	}
+	// what's on the person; coins on the cursor count too, but we don't keep those
+	const ZoneProfile &p = zone->Profile();
+	double coins = static_cast<double>(p.platinum + p.gold + p.silver + p.copper) * 0.025f;
+	if (reduction > 0)
+		coins = (100 - reduction) * coins * hundredth;
+	return static_cast<int>(std::clamp(weight + coins, 0.0, 32766.0));
+}
+
+double GameValues::EncumFactor() const
+{
+	if (!zone)
+		return 1;
+	const ZoneProfile &me = zone->Profile();
+	float factor = 1;
+	float hp = static_cast<float>(zone->BaseHp() + WornHp(zone->Items()));
+	float max = static_cast<float>(zone->MaxHp());
+	if (hp < max && me.level > 3) {
+		float part = hp / max;
+		if (part < 0.2 && hp < 50.0)
+			factor = 0.5f;
+		else if (part < 0.33 && hp < 100.0)
+			factor = 0.75f;
+	}
+	int base = 0;
+	int str = Stat(5, base), weight = Weight();
+	if (str >= weight || str == 0)
+		return factor;
+	if (me.zone_id == 151) // the Bazaar
+		return 1;
+	return std::max(factor - static_cast<double>(weight - str) / (static_cast<double>(str) + str), 0.0);
+}
+
+namespace
+{
+	// GetClassACBonus (@004b961b)'s multiplier for a rogue's or beastlord's AGI from 80.
+	int AgiTimes(int agi)
+	{
+		return agi < 80 ? 1 : agi < 85 ? 2 : agi < 90 ? 3 : agi < 100 ? 4 : 5;
+	}
+}
+
+int GameValues::Ac() const
+{
+	if (!zone)
+		return 0;
+	const ZoneProfile &me = zone->Profile();
+	int level = me.level, c = me.class_id;
+	bool caster = c >= 11 && c <= 14;
+	int base = 0;
+	int agi = Stat(8, base);
+
+	// old_ac
+	int ac = 0;
+	for (const auto &[slot, item] : zone->Items())
+		if (slot >= FirstWornSlot && slot <= LastWornSlot && item.item_class == 0)
+			ac += AntiTwinkAdj(item, item.ac);
+	if (!caster)
+		ac = ac * 4 / 3;
+	int bonus = 0;
+	if (c == 7) { // monk: by what we carry, from a weight that goes up with our level
+		int cap = 30, soft = 14;
+		if (level > 14) cap = 32, soft = 15;
+		if (level > 29) cap = 34, soft = 16;
+		if (level > 44) cap = 36, soft = 17;
+		if (level > 50) cap = 38, soft = 18;
+		if (level > 54) cap = 40, soft = 20;
+		if (level > 59) cap = 45, soft = 24;
+		if (level > 61) cap = 47;
+		if (level > 63) cap = 50;
+		if (level > 64) cap = 53;
+		int weight = Weight();
+		double full = level + 5;
+		if (weight < cap - 1) {
+			double value = full;
+			if (weight > soft) {
+				double part = std::min((weight - soft) * 6.66667, 100.0);
+				value = std::max((100.0 - part) * 0.01 * full, 0.0);
+			}
+			bonus = static_cast<int>(value * 4.0 * (1.0 / 3));
+		}
+		else if (weight > cap + 1) {
+			double part = std::min((weight - (cap - 10.0)) * 0.01, 1.0);
+			bonus -= static_cast<int>(full * 4.0 * (1.0 / 3) * part);
+		}
+	}
+	else if (c == 9) { // rogue
+		if (agi > 75 && level > 29)
+			bonus = std::min((level - 26) * AgiTimes(agi) / 4, 12);
+	}
+	else if (c == 15) { // beastlord
+		if (level > 10)
+			bonus = std::min((level - 6) * AgiTimes(agi) / 5, 16);
+	}
+	if (me.race == 128) // iksar
+		bonus += std::clamp(level, 10, 35);
+	ac = std::max(ac + static_cast<int16_t>(bonus), 0);
+	int defense = Skill(15);
+	ac += caster ? defense / 2 : defense / 3;
+	if (agi > 70)
+		ac += agi / 20;
+	ac = static_cast<int16_t>(std::max(ac, 0));
+
+	// compute_defense, with defense_agility_bonus
+	int agi_bonus = 0;
+	if (agi < 40)
+		agi_bonus = (agi - 40) * 25 / 40;
+	else if (agi >= 61 && agi < 75)
+		agi_bonus = (28 - static_cast<int16_t>(200 - agi) / 5) * 2 / 3;
+	else if (agi >= 75) {
+		int most = level < 7 ? 35 : level < 20 ? 55 : level < 40 ? 70 : 80;
+		agi_bonus = (most - std::max(200 - agi, 0) / 5) * 2 / 3;
+	}
+	int compute_defense = std::max(agi_bonus + static_cast<int16_t>(std::max(defense, 0) * 400 / 225), 1);
+
+	return (ac + compute_defense) * 1000 / 847;
+}
+
+int GameValues::Atk() const
+{
+	if (!zone)
+		return 0;
+	const ZoneProfile &me = zone->Profile();
+	int skill = 28; // hand to hand
+	auto primary = zone->Items().find(Inventory::Primary);
+	if (primary != zone->Items().end() && primary->second.item_class == 0 && IsWeapon(primary->second))
+		skill = SkillUsed(primary->second.item_type);
+
+	int tohit = std::max(Skill(33) + 7 + Skill(skill), 1);
+
+	int base = 0;
+	int stat = skill == 7 || skill == 51 ? Stat(7, base) : Stat(5, base);
+	int offense = Skill(skill);
+	if (stat > 74)
+		offense += (stat * 2 - 150) / 3;
+	if (me.class_id == 4 && me.level > 54) // ranger
+		offense += me.level * 4 - 216;
+	offense = std::max(offense, 1);
+
+	return (offense + tohit) * 1000 / 744;
 }
 
 int GameValues::WornHp(const std::map<int16_t, ZoneItem> &items)
@@ -211,7 +459,7 @@ bool GameValues::Label(int eq_type, std::string &text, uint32_t &color)
 		return true;
 	case 5: case 6: case 7: case 8: case 9: case 10: case 11: { // colored against the base
 		int base = 0;
-		int value = Stat(me, zone->Items(), eq_type, base);
+		int value = Stat(eq_type, base);
 		text = std::to_string(value);
 		color = ComparisonColor(value, base);
 		return true;
@@ -223,7 +471,25 @@ bool GameValues::Label(int eq_type, std::string &text, uint32_t &color)
 		text = std::to_string(zone->MaxHp());
 		color = ComparisonColor(0, 0);
 		return true;
-	case 12: case 13: case 14: case 15: case 16: case 22: case 23: case 24: case 25:
+	case 22: case 23: { // AC and ATK, against themselves less spell effects (none yet): grey
+		int value = eq_type == 22 ? Ac() : Atk();
+		text = std::to_string(value);
+		color = ComparisonColor(value, value);
+		return true;
+	}
+	case 24: { // what we carry, grey, red over our STR
+		int base = 0;
+		int weight = Weight();
+		text = std::to_string(weight);
+		color = weight > Stat(5, base) ? 0xff0000 : 0xc0c0c0;
+		return true;
+	}
+	case 25: { // what we can carry: our STR
+		int base = 0;
+		text = std::to_string(Stat(5, base));
+		return true;
+	}
+	case 12: case 13: case 14: case 15: case 16:
 		text.clear();
 		return true;
 	case 28:

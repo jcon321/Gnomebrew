@@ -110,53 +110,6 @@ namespace
 		return std::to_string(value);
 	}
 
-	// EQPlayer_SkillUsed (@0050ba7e): the skill an ItemType is used with; 28 (hand to hand) for
-	// what isn't a weapon.
-	int SkillUsed(int item_type)
-	{
-		switch (item_type) {
-		case 0: return 1;
-		case 1: return 3;
-		case 2: return 36;
-		case 3: return 0;
-		case 4: return 2;
-		case 5: case 6: case 17: case 27: case 28: return 7;
-		case 7: case 19: return 51;
-		case 9: return 231;
-		case 10: return 15;
-		case 35: return 36;
-		default: return 28;
-		}
-	}
-
-	// EQ_Equipment::IsWeapon (@004cd9c2): not arrows or throwing items (27, 28), nor 43 and 44,
-	// and with damage.
-	bool IsWeapon(const ZoneItem &item)
-	{
-		int t = item.item_type;
-		return t != 27 && t != 28 && t != 43 && t != 44 && item.damage != 0;
-	}
-
-	// EQ_Character::AntiTwinkAdj (@004bdbab): an item's value, scaled down by our level below its
-	// recommended level, or else by our skill below its recommended skill; never under 1.
-	int AntiTwinkAdj(const ZoneProfile &me, const ZoneItem &item, int value, int skill)
-	{
-		if (value == 0)
-			return 0;
-		double scaled;
-		if (item.rec_level != 0 && me.level < item.rec_level)
-			scaled = std::floor(value * (static_cast<double>(me.level) / item.rec_level) + 0.5);
-		else {
-			if (item.rec_skill == 0)
-				return value;
-			int have = skill >= 0 && skill < static_cast<int>(std::size(me.skills)) ? me.skills[skill] : 0;
-			if (have >= item.rec_skill)
-				return value;
-			scaled = std::floor(value * (static_cast<double>(std::max(have, 1)) / item.rec_skill) + 0.5);
-		}
-		return std::max(static_cast<int>(scaled), 1);
-	}
-
 	// DisplayPCBonus2HDam (@004f313b): the damage bonus warriors, paladins, rangers, shadow knights,
 	// monks, bards, rogues and beastlords get from 28, more with a two-handed weapon by its delay.
 	int DamageBonus(const ZoneProfile &me, const ZoneItem &item)
@@ -300,7 +253,7 @@ namespace
 		if (value == 0)
 			return "";
 		char text[64];
-		int adjusted = value > 0 ? AntiTwinkAdj(values.zone->Profile(), item, value, SkillUsed(item.item_type)) : value;
+		int adjusted = value > 0 ? values.AntiTwinkAdj(item, value) : value;
 		if (adjusted == value)
 			snprintf(text, sizeof(text), "%+d", value);
 		else
@@ -371,8 +324,8 @@ namespace
 			lines += 3;
 		}
 
-		if (IsWeapon(item) || item.item_type == 27 || item.item_type == 28) {
-			int skill = SkillUsed(item.item_type);
+		if (GameValues::IsWeapon(item) || item.item_type == 27 || item.item_type == 28) {
+			int skill = GameValues::SkillUsed(item.item_type);
 			if (item.item_type == 27 || item.item_type == 28)
 				skill = 7;
 			if (item.item_type == 19)
@@ -407,8 +360,8 @@ namespace
 			++lines;
 		}
 
-		int skill_used = SkillUsed(item.item_type);
-		int ac = item.ac ? AntiTwinkAdj(me, item, item.ac, skill_used) : 0;
+		int skill_used = GameValues::SkillUsed(item.item_type);
+		int ac = item.ac ? values.AntiTwinkAdj(item, item.ac) : 0;
 		if (item.damage == 0) {
 			if (item.ac != 0) {
 				line(ac < item.ac ? Text(values, 3015, "AC: <c \"#FF4040\">%1</c> (%2)", {Number(ac), Number(item.ac)})
@@ -419,7 +372,7 @@ namespace
 		else {
 			int bonus = DamageBonus(me, item);
 			std::string bonus_text = bonus > 0 ? Text(values, 3010, "Dmg Bonus: %1", {Number(bonus)}) : "";
-			int damage = AntiTwinkAdj(me, item, item.damage, skill_used);
+			int damage = values.AntiTwinkAdj(item, item.damage);
 			bool reduced = damage < item.damage;
 			if (item.ac == 0)
 				line(reduced ? Text(values, 3013, "DMG: <c \"#FF4040\">%1</c> (%2)  %3",

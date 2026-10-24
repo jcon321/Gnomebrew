@@ -278,6 +278,20 @@ int main(int argc, char **argv)
 			for (int i = 0; i < 4; ++i)
 				if (const SidlWindow::Control *money = inventory->Find("IW_Money" + std::to_string(i)))
 					printf("[preview] IW_Money%d: %s\n", i, money->text.c_str());
+			{
+				// The stats the inventory window's labels show (EQTypes 5..11 and 22..25).
+				GameValues values;
+				values.zone = &frontend.Zone();
+				std::string shown[11];
+				uint32_t color = 0;
+				const int types[11] = {5, 6, 7, 8, 9, 10, 11, 22, 23, 24, 25};
+				for (int i = 0; i < 11; ++i)
+					values.Label(types[i], shown[i], color);
+				printf("[preview] STR %s STA %s DEX %s AGI %s WIS %s INT %s CHA %s  AC %s ATK %s  weight %s / %s\n",
+					shown[0].c_str(), shown[1].c_str(), shown[2].c_str(), shown[3].c_str(), shown[4].c_str(),
+					shown[5].c_str(), shown[6].c_str(), shown[7].c_str(), shown[8].c_str(), shown[9].c_str(),
+					shown[10].c_str());
+			}
 			// Alt+click on a slot with an item shows it in the item display (each one printed;
 			// Escape closes it first); the right button held on the first shows it too, and letting
 			// go closes it.
