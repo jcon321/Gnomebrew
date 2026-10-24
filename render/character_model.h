@@ -6,6 +6,7 @@
 // their weapons and shield (the IT models in gequip*.s3d) and playing any of their
 // animations by track code (see animations.h).
 
+#include "particles.h"
 #include "point_lights.h"
 #include "renderer.h"
 #include "skeleton.h"
@@ -68,6 +69,19 @@ namespace render
 		float Scale() const { return m_scale; } // model units -> world
 		size_t TriangleCount() const;
 
+		// A held item's particle cloud (a torch's flame and smoke): on the model's bone the item
+		// hangs from, `local` its own bone's place there (IT36_P1_DAG in the item's base pose).
+		struct Emitter
+		{
+			uint16_t bone = 0;
+			Transform local;
+			ParticleCloudDef def;
+		};
+		const std::vector<Emitter> &Emitters() const { return m_emitters; }
+		// Where each emitter is (world space) for Draw's arguments.
+		void PlaceEmitters(const Transform &placement, uint64_t time_ms, const std::string &animation, bool loop,
+			std::vector<Transform> &out) const;
+
 	private:
 		friend class CharacterModels;
 		struct Batch
@@ -84,6 +98,7 @@ namespace render
 		std::vector<uint16_t> m_bones;           // per vertex
 		std::vector<float> m_uvs;
 		std::vector<Batch> m_batches;
+		std::vector<Emitter> m_emitters;
 		float m_min_z = 0, m_max_z = 0, m_head_z = 0;
 		float m_scale = 1;
 		float m_origin_over_feet = 0;
@@ -98,6 +113,22 @@ namespace render
 		mutable std::vector<BoneMatrix> m_bone_matrices;
 		mutable std::vector<Vec3> m_intensity;
 		mutable std::vector<Vertex> m_vertices;
+	};
+
+	// The particle clouds of one actor's held items, made for the model it's drawn with (t3dCreateActorEx
+	// -> t3dCreateParticleCloud, one set per actor), following their bones.
+	class HeldParticles
+	{
+	public:
+		// After the model's Draw, with its arguments: the clouds move on and are drawn.
+		void Draw(Renderer &renderer, const CharacterModel &model, const Transform &placement, uint64_t time_ms,
+			const std::string &animation, bool loop, uint64_t now_ms, const Vec3 &ambient);
+		void Clear();
+
+	private:
+		const CharacterModel *m_model = nullptr;
+		std::vector<std::unique_ptr<ParticleCloud>> m_clouds;
+		std::vector<Transform> m_emitters;
 	};
 
 	class CharacterModels

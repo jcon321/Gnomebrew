@@ -63,6 +63,37 @@ namespace render
 			       (it >= 11001 && it <= 11020);
 		}
 
+		// A 0x34 as t3dDefineParticleCloud keeps it, with its sprite's frames.
+		bool CloudDef(const WldFile &wld, TextureCache &textures, int index, ParticleCloudDef &def)
+		{
+			WldParticleCloud cloud;
+			if (!wld.ReadParticleCloud(index, cloud) || cloud.kind < 1 || cloud.kind > 4)
+				return false;
+			if (cloud.spawn_type != 0 && cloud.spawn_type != 3 && cloud.spawn_type != 4)
+				return false; // spawn types 1, 2 and 5 aren't done
+			auto vec = [](const WldVec3 &v) { return Vec3{v.x, v.y, v.z}; };
+			def.kind = static_cast<ParticleCloudDef::Kind>(cloud.kind);
+			def.spawn = static_cast<ParticleCloudDef::Spawn>(cloud.spawn_type);
+			def.flags = cloud.flags;
+			def.max_particles = cloud.max_particles;
+			def.low = vec(cloud.low);
+			def.high = vec(cloud.high);
+			def.normal = vec(cloud.normal);
+			def.radius = cloud.radius;
+			def.angle = cloud.angle;
+			def.speed = cloud.speed;
+			def.lifespan_ms = cloud.lifespan_ms;
+			def.interval_ms = cloud.interval_ms;
+			def.size = cloud.size;
+			def.color = cloud.color & 0xffffff;
+			MaterialInfo info = DescribeRenderMethod(cloud.sprite.render_method);
+			for (const std::string &name : cloud.sprite.textures)
+				if (const Texture *texture = textures.Get(name, info.masked))
+					def.frames.push_back(texture);
+			def.frame_ms = cloud.sprite.frame_ms;
+			return true;
+		}
+
 		uint32_t PackLight(float r, float g, float b)
 		{
 			auto channel = [](float c) { return static_cast<uint32_t>(std::clamp(c, 0.0f, 1.0f) * 255.0f + 0.5f); };
@@ -284,7 +315,9 @@ namespace render
 				tint = appearance.tint[slot];
 			else if (slot < 0 && TintedByHelm(Upper(material.name), appearance.race))
 				tint = appearance.tint[0];
-			return (tint >> 24) != 0 ? tint & 0xffffff : 0xffffffu;
+			// CDisplay::ReplaceMaterial: untinted (white) only when the RGB is all zero. The
+			// use_tint byte isn't checked (crafted armor is 0x007387C8).
+			return (tint & 0xffffff) != 0 ? tint & 0xffffff : 0xffffffu;
 		};
 
 		model->m_min_z = 1e30f;
@@ -378,6 +411,22 @@ namespace render
 						append(piece, *from, point);
 					}
 				}
+				// Meshes a bone carries itself (a torch's IT36_O_DAG), all on that bone, and its
+				// particle clouds (the flame and smoke on IT36_P1_DAG and IT36_P2_DAG).
+				for (size_t b = 0; b < item.bones.size(); ++b) {
+					WldMesh piece;
+					if (item.bones[b].mesh >= 0 && from->wld.ReadMesh(item.bones[b].mesh, piece)) {
+						piece.pieces = {{static_cast<uint16_t>(piece.positions.size()), static_cast<uint16_t>(b)}};
+						SkinMesh(piece, pose);
+						append(piece, *from, point);
+					}
+					CharacterModel::Emitter emitter;
+					if (item.bones[b].particle_cloud >= 0 && CloudDef(from->wld, from->textures, item.bones[b].particle_cloud, emitter.def)) {
+						emitter.bone = static_cast<uint16_t>(point);
+						emitter.local = pose[b];
+						model->m_emitters.push_back(std::move(emitter));
+					}
+				}
 				return;
 			}
 			snprintf(name, sizeof(name), "IT%u_DMSPRITEDEF", it);
@@ -423,6 +472,49 @@ namespace render
 		model->m_head_z *= model->m_scale;
 		model->m_origin_over_feet = 3.125f * model->m_scale;
 		return model;
+	}
+
+	void CharacterModel::PlaceEmitters(const Transform &placement, uint64_t time_ms, const std::string &animation, bool loop,
+		std::vector<Transform> &out) const
+	{
+		out.clear();
+		if (m_emitters.empty())
+			return;
+		auto it = m_animations->find(animation);
+		if (it == m_animations->end())
+			it = m_animations->find("P01");
+		std::vector<Transform> bones = PoseSkeleton(m_skeleton, it == m_animations->end() ? nullptr : &it->second, time_ms, loop);
+		Transform scaled = placement;
+		scaled.scale *= m_scale;
+		for (const Emitter &emitter : m_emitters)
+			out.push_back(scaled * (emitter.bone < bones.size() ? bones[emitter.bone] : Transform{}) * emitter.local);
+	}
+
+	void HeldParticles::Draw(Renderer &renderer, const CharacterModel &model, const Transform &placement, uint64_t time_ms,
+		const std::string &animation, bool loop, uint64_t now_ms, const Vec3 &ambient)
+	{
+		if (&model != m_model) {
+			m_model = &model;
+			m_clouds.clear();
+			for (const CharacterModel::Emitter &emitter : model.Emitters()) // at CDisplay's highest density
+				m_clouds.push_back(std::make_unique<ParticleCloud>(emitter.def, 1.0f, nullptr, nullptr));
+		}
+		if (m_clouds.empty())
+			return;
+		model.PlaceEmitters(placement, time_ms, animation, loop, m_emitters);
+		static const ParticleCloud::Collide no_collision;
+		Vec3 camera = renderer.CurrentCamera().position;
+		for (size_t i = 0; i < m_clouds.size() && i < m_emitters.size(); ++i) {
+			m_clouds[i]->SetEmitter(m_emitters[i]);
+			m_clouds[i]->Update(now_ms, camera, no_collision);
+			m_clouds[i]->Draw(renderer, now_ms, 0, ambient);
+		}
+	}
+
+	void HeldParticles::Clear()
+	{
+		m_model = nullptr;
+		m_clouds.clear();
 	}
 
 	uint32_t CharacterModel::AnimationMs(const std::string &animation) const

@@ -98,6 +98,7 @@ void CharacterSelectView::PlaceCharacter()
 {
 	m_dirty = false;
 	m_model.reset();
+	m_held.Clear();
 	if (m_appearance) {
 		std::string error;
 		m_model = m_models.Build(*m_appearance, error);
@@ -207,6 +208,7 @@ void CharacterSelectView::Render(Canvas &canvas, uint64_t now_ms)
 		lighting.sun_direction = (render::Normalize(offset) + render::Vec3{0, 0, 0.8f}) * -1.0f;
 		lighting.sun_color = {0.65f, 0.65f, 0.65f};
 		m_model->Draw(*m_renderer, placement, lighting, now_ms);
+		m_held.Draw(*m_renderer, *m_model, placement, now_ms, "P01", true, now_ms, lighting.ambient);
 	}
 	// The sky, around the camera, wherever the zone leaves the screen open.
 	bool sky = m_sky.Loaded();

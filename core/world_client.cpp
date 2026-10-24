@@ -51,7 +51,8 @@ namespace
 
 	// CharacterSelect_Struct: name[10][64] @0, level[10] @640, class[10] @650, race u16[10] @660,
 	// zone u32[10] @680, gender[10] @720, face[10] @730, equip u32[10][9] @740, tints u32[10][9] @1100,
-	// deity u16[10] @1460. 1620 bytes.
+	// deity u16[10] @1460, primary/secondary IT numbers u32[10] @1480/@1520 (equip's weapon slots
+	// carry the item's material, not its model). 1620 bytes.
 	std::vector<CharacterSlot> ParseCharacterSelect(const std::vector<uint8_t> &data)
 	{
 		std::vector<CharacterSlot> slots;
@@ -71,6 +72,8 @@ namespace
 				slot.equip[k] = Read<uint32_t>(data, 740 + i * 36 + k * 4);
 				slot.tint[k] = Read<uint32_t>(data, 1100 + i * 36 + k * 4);
 			}
+			slot.equip[7] = Read<uint32_t>(data, 1480 + i * 4);
+			slot.equip[8] = Read<uint32_t>(data, 1520 + i * 4);
 			slots.push_back(slot);
 		}
 		return slots;

@@ -16,8 +16,11 @@
 //                                        rain's color, not fogged), sprites facing the camera, or
 //                                        rings growing on the ground (the sprite's additive method)
 //   t3dStopPCloudAndAutoDestroy          no more made; the cloud goes once its particles have
-// The rest (gravity, wrapping, the other spawn shapes, binding to an actor, sprite animation, the
-// distance level of detail) the weather doesn't use and isn't done.
+// Held items' clouds (a torch's flame and smoke, IT36_P1_DAG and IT36_P2_DAG) are bound to their
+// bone (getObjectPosition, getParticleEmitterMatrix): made from where it is and the way it
+// points, or with Local carried along in its space, and their sprites animate.
+// The rest (gravity, wrapping, spawn types 1, 2 and 5, the distance level of detail) nothing here
+// uses and isn't done.
 
 #include "renderer.h"
 
@@ -36,24 +39,38 @@ namespace render
 			Sprites = 3, // renderPointLightParticle
 			Rings = 4,   // flat on the ground, growing from nothing to `size` over their life
 		};
+		// Where each is made (t3dUpdateParticleCloud's spawn types).
+		enum class Spawn : uint8_t
+		{
+			Box = 0,  // a random point of the box around the cloud's place
+			Cone = 3, // at the emitter, heading along its normal, up to `angle` off it
+			Disk = 4, // a random point within `radius` of the emitter, across its normal, heading along it
+		};
 		enum : uint32_t
 		{
 			Collide = 0x2,                                  // the path is tried against the world as it's made
 			FollowX = 0x8, FollowY = 0x10, FollowZ = 0x20, // made around the camera, not the cloud's place
 			Wobble = 0x80,                                  // drawn circling 0.5 about its place (a step a frame for sprites)
 			Fade = 0x100,                                   // fades out over its life; otherwise half strength
+			Local = 0x4000,                                 // made in the emitter's space and carried along with it
+			ActorScaled = 0x10000,                          // the sprites sized with the emitter (always so with Local)
 		};
 		Kind kind = Kind::Points;
+		Spawn spawn = Spawn::Box;
 		uint32_t flags = 0;
 		uint32_t max_particles = 0; // times the density
 		Vec3 low, high;             // the box they're made in
 		Vec3 normal;                // their velocity is this times speed (not normalized)
+		float radius = 0;           // the disk's
+		float angle = 0;            // the cone's, in 512ths of a turn
 		float speed = 0;
 		uint32_t lifespan_ms = 0;
 		uint32_t interval_ms = 0xffffffff; // between each one made (over the density); 0xffffffff: none
 		float size = 1;                    // a sprite's half width; a ring's at the end of its life
 		uint32_t color = 0xffffff;         // sprites'
 		const Texture *sprite = nullptr;   // sprites' and rings'
+		std::vector<const Texture *> frames; // an animated sprite's, in place of `sprite`
+		uint32_t frame_ms = 0;
 	};
 
 	class ParticleCloud
@@ -74,6 +91,8 @@ namespace render
 		// Stopped and all gone: t3dPaintParticleCloud destroys it then.
 		bool Done(uint64_t now_ms) const { return m_stop_ms != 0 && m_stop_ms <= now_ms && m_particles.empty(); }
 		size_t Count() const { return m_particles.size(); }
+		// A bound cloud's emitter (its bone, in world space), before each Update.
+		void SetEmitter(const Transform &emitter) { m_emitter = emitter; m_bound = true; }
 
 		// t3dUpdateParticleCloud. `camera` is where the camera is (FollowX and the rest).
 		void Update(uint64_t now_ms, const Vec3 &camera, const Collide &collide);
@@ -91,7 +110,7 @@ namespace render
 			uint32_t hit_flags = 0; // 0 nothing; the region's flags, or 1 a solid surface
 			int wobble = 0;    // into the wobble's 32 steps
 		};
-		void Make(Particle &p, const Vec3 &position, float age_s, uint64_t now_ms, const Collide *collide);
+		void Make(Particle &p, const Vec3 &position, const Vec3 &velocity, float age_s, uint64_t now_ms, const Collide *collide);
 		// updateParticlePhysics with a parent's particle: one made where it hit, born as it died.
 		void Carry(const Particle &parent, uint64_t now_ms);
 		int Rand(); // the MSVC runtime's rand()
@@ -105,6 +124,10 @@ namespace render
 		uint64_t m_last_ms = 0, m_carry_ms = 0, m_stop_ms = 0;
 		Vec3 m_camera;
 		uint32_t m_random;
+		// t3dSetPCloudBaseSpawnNormal: the emitter's axes, two across the normal and the normal.
+		Vec3 m_axes[3];
+		Transform m_emitter;
+		bool m_bound = false;
 		std::vector<Vertex> m_vertices;
 		std::vector<uint32_t> m_indices;
 	};

@@ -70,6 +70,7 @@ private:
 	uint8_t m_class = 1;
 	bool m_dirty = true;
 	std::unique_ptr<render::CharacterModel> m_model;
+	render::HeldParticles m_held; // a torch's flame and smoke
 	render::Vec3 m_position; // the model's feet, world space
 	float m_heading = 0;
 

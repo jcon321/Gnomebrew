@@ -224,7 +224,7 @@ private:
 	void PoseSpawn(SpawnView &view, const ZoneSpawn &spawn, uint64_t now_ms);
 	static std::string SpawnModelKey(const ZoneSpawn &spawn);
 	std::shared_ptr<render::CharacterModel> SpawnModel(const ZoneSpawn &spawn, const std::string &key);
-	void DrawSpawns();
+	void DrawSpawns(uint64_t now_ms);
 	// The lights spawns carry (point_lights.h), placed for this frame, and the regions each reaches.
 	void PlaceCarriedLights(uint64_t now_ms);
 	// The (up to 3) carried lights that light something centered at `center`.
@@ -263,6 +263,7 @@ private:
 	std::optional<render::CharacterAppearance> m_appearance;
 	bool m_model_dirty = false;
 	std::unique_ptr<render::CharacterModel> m_model;
+	render::HeldParticles m_held; // our torch's flame and smoke
 	bool m_model_shown = false;
 	render::Vec3 m_server_position; // x, y, z as the server sends them
 	float m_heading = 0;
@@ -297,6 +298,7 @@ private:
 		float center_height = 0;   // ModelHeightOffset: the server's z over the feet
 		float size = 6;
 		ActorSound sound;
+		render::HeldParticles held; // a torch's flame and smoke
 		render::Environment sound_feet = render::Environment::Dry; // the feet's, as the sound last saw them
 		const render::Vec3 &Feet() const { return actor.Feet(); }
 	};

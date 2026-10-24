@@ -266,6 +266,7 @@ void ZoneView::PlacePlayer()
 	if (m_model_dirty) {
 		m_model_dirty = false;
 		m_model.reset();
+		m_held.Clear();
 		if (m_appearance) {
 			std::string error;
 			m_model = m_models.Build(*m_appearance, error);
@@ -720,9 +721,10 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 		bool held = m_animation == "L03" || m_animation == "L04" || m_animation == "L05" || m_animation == "L08";
 		m_model->Draw(*m_renderer, placement, ModelLightingAt(m_feet + render::Vec3{0, 0, m_height / 5 * 3.125f}), time,
 			m_animation, !held);
+		m_held.Draw(*m_renderer, *m_model, placement, time, m_animation, !held, now_ms, light.ambient);
 	}
 	m_camera_position = camera.position;
-	DrawSpawns();
+	DrawSpawns(now_ms);
 	DrawWeather(now_ms);
 	m_times.models = since(start);
 	start = Clock::now();
@@ -1113,7 +1115,7 @@ void ZoneView::PoseSpawn(SpawnView &view, const ZoneSpawn &spawn, uint64_t now_m
 		view.actor.Animate(spawn, *view.model, ms, now_ms);
 }
 
-void ZoneView::DrawSpawns()
+void ZoneView::DrawSpawns(uint64_t now_ms)
 {
 	float far_plane = FarPlane();
 	for (auto &[id, view] : m_actors) {
@@ -1130,8 +1132,11 @@ void ZoneView::DrawSpawns()
 		render::Transform placement;
 		placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(view.actor.Heading()));
 		placement.translation = view.Feet() + render::Vec3{0, 0, model.OriginOverFeet()};
+		uint64_t time = view.actor.AnimationTime(model);
+		std::string animation = render::AnimationCode(view.actor.Animation());
 		model.Draw(*m_renderer, placement, ModelLightingAt(view.Feet() + render::Vec3{0, 0, view.center_height}, view.warm),
-			view.actor.AnimationTime(model), render::AnimationCode(view.actor.Animation()), view.actor.AnimationLoops());
+			time, animation, view.actor.AnimationLoops());
+		view.held.Draw(*m_renderer, model, placement, time, animation, view.actor.AnimationLoops(), now_ms, m_daylight.ambient);
 		view.drawn = true;
 	}
 }

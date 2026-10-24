@@ -95,12 +95,17 @@ bool WldFile::ReadMaterial(int index, WldMaterial &material) const
 	material.name = f.name;
 	material.render_method = Get<uint32_t>(f.offset + 4);
 
-	const Fragment *sprite = Ref(Get<int32_t>(f.offset + 20));
+	ReadSpriteFrames(Ref(Get<int32_t>(f.offset + 20)), material); // none: untextured (invisible collision surfaces)
+	return true;
+}
+
+void WldFile::ReadSpriteFrames(const Fragment *sprite, WldMaterial &material) const
+{
 	if (!sprite || sprite->type != 0x05)
-		return true; // untextured (e.g. invisible collision surfaces)
+		return;
 	const Fragment *def = Ref(Get<int32_t>(sprite->offset));
 	if (!def || def->type != 0x04)
-		return true;
+		return;
 
 	uint32_t flags = Get<uint32_t>(def->offset);
 	uint32_t frames = Get<uint32_t>(def->offset + 4);
@@ -124,7 +129,6 @@ bool WldFile::ReadMaterial(int index, WldMaterial &material) const
 		Decode(name.data(), name.size());
 		material.textures.emplace_back(name.data(), strnlen(name.data(), name.size()));
 	}
-	return true;
 }
 
 bool WldFile::ReadMesh(int index, WldMesh &mesh) const
@@ -362,6 +366,14 @@ bool WldFile::ReadSkeleton(int index, WldSkeleton &skeleton) const
 	for (auto &bone : skeleton.bones) {
 		bone.name = String(Get<int32_t>(p));
 		int track = FragmentIndex(Get<int32_t>(p + 8));
+		int model = FragmentIndex(Get<int32_t>(p + 12));
+		if (model >= 0 && m_fragments[model].type == 0x2d) {
+			int mesh = FragmentIndex(Get<int32_t>(m_fragments[model].offset));
+			if (mesh >= 0 && m_fragments[mesh].type == 0x36)
+				bone.mesh = mesh;
+		}
+		else if (model >= 0 && m_fragments[model].type == 0x34)
+			bone.particle_cloud = model;
 		uint32_t children = Get<uint32_t>(p + 16);
 		p += 20;
 		if (track >= 0) {
@@ -392,6 +404,56 @@ bool WldFile::ReadSkeleton(int index, WldSkeleton &skeleton) const
 				if (mesh >= 0 && m_fragments[mesh].type == 0x36)
 					skeleton.meshes.push_back(mesh);
 			}
+		}
+	}
+	return true;
+}
+
+bool WldFile::ReadParticleCloud(int index, WldParticleCloud &cloud) const
+{
+	if (index < 0 || index >= static_cast<int>(m_fragments.size()) || m_fragments[index].type != 0x34)
+		return false;
+	const Fragment &f = m_fragments[index];
+	if (f.size < 80)
+		return false;
+	// u32 fragment flags (1: the box follows, 2: two more vectors, 4: the sprite), kind, spawn
+	// type, cloud flags, count, gravity, its direction, a duration, radius, angle, lifespan,
+	// speed, normal, interval, size, color; then by flag the box, the vectors and the sprite.
+	auto vec = [&](size_t at) { return WldVec3{Get<float>(at), Get<float>(at + 4), Get<float>(at + 8)}; };
+	size_t o = f.offset;
+	uint32_t fragment_flags = Get<uint32_t>(o);
+	cloud = WldParticleCloud{};
+	cloud.kind = Get<uint32_t>(o + 4);
+	cloud.spawn_type = Get<uint32_t>(o + 8);
+	cloud.flags = Get<uint32_t>(o + 12);
+	cloud.max_particles = Get<uint32_t>(o + 16);
+	cloud.gravity = Get<float>(o + 20);
+	cloud.gravity_direction = vec(o + 24);
+	cloud.radius = Get<float>(o + 40);
+	cloud.angle = Get<float>(o + 44);
+	cloud.lifespan_ms = Get<uint32_t>(o + 48);
+	cloud.speed = Get<float>(o + 52);
+	cloud.normal = vec(o + 56);
+	cloud.interval_ms = Get<uint32_t>(o + 68);
+	cloud.size = Get<float>(o + 72);
+	cloud.color = Get<uint32_t>(o + 76);
+	size_t p = o + 80;
+	if (fragment_flags & 1) {
+		if (p + 24 > o + f.size)
+			return false;
+		cloud.low = vec(p);
+		cloud.high = vec(p + 12);
+		p += 24;
+	}
+	if (fragment_flags & 2)
+		p += 24;
+	if ((fragment_flags & 4) && p + 4 <= o + f.size) {
+		// A blit sprite (0x26): flags, its sprite (0x05), the render method.
+		const Fragment *blit = Ref(Get<int32_t>(p));
+		if (blit && blit->type == 0x26 && blit->size >= 12) {
+			cloud.sprite.name = blit->name;
+			cloud.sprite.render_method = Get<uint32_t>(blit->offset + 8);
+			ReadSpriteFrames(Ref(Get<int32_t>(blit->offset + 4)), cloud.sprite);
 		}
 	}
 	return true;

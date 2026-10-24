@@ -43,6 +43,17 @@ namespace render
 		if (m_makes)
 			m_interval = static_cast<uint64_t>(static_cast<double>(def.interval_ms) * (1.0 / density));
 		m_particles.reserve(m_max);
+		// t3dSetPCloudBaseSpawnNormal: one axis square to the normal on the ground (or, for a
+		// normal straight up or down, square to it on x), the second square to both.
+		if (def.spawn != ParticleCloudDef::Spawn::Box) {
+			const Vec3 &n = def.normal;
+			Vec3 v{n.y, -n.x, 0};
+			if (std::fabs(v.x) < 0.0001f && std::fabs(v.y) < 0.0001f)
+				v = {0, n.z, -n.y};
+			m_axes[0] = Cross(v, n);
+			m_axes[1] = v;
+			m_axes[2] = n;
+		}
 	}
 
 	int ParticleCloud::Rand()
@@ -57,7 +68,8 @@ namespace render
 			m_stop_ms = std::max<uint64_t>(now_ms, 1);
 	}
 
-	void ParticleCloud::Make(Particle &p, const Vec3 &position, float age_s, uint64_t now_ms, const Collide *collide)
+	void ParticleCloud::Make(Particle &p, const Vec3 &position, const Vec3 &velocity, float age_s, uint64_t now_ms,
+		const Collide *collide)
 	{
 		p.position = position;
 		if (m_def.flags & ParticleCloudDef::FollowX)
@@ -66,12 +78,12 @@ namespace render
 			p.position.y += m_camera.y;
 		if (m_def.flags & ParticleCloudDef::FollowZ)
 			p.position.z += m_camera.z;
-		p.velocity = m_def.normal * m_def.speed;
+		p.velocity = velocity;
 		uint64_t age_ms = static_cast<uint64_t>(std::lround(age_s * 1000));
 		p.birth_ms = now_ms - std::min(now_ms, age_ms);
 		p.hit_flags = 0;
 		p.death_ms = p.birth_ms + m_def.lifespan_ms;
-		if (collide && (m_def.flags & ParticleCloudDef::Collide)) {
+		if (collide && *collide && (m_def.flags & ParticleCloudDef::Collide)) {
 			// updateParticleCollision: the whole path over its life; it dies just short of what it meets.
 			Vec3 to = p.position + p.velocity * (static_cast<float>(m_def.lifespan_ms) * 0.001f);
 			float fraction;
@@ -93,7 +105,7 @@ namespace render
 			return;
 		m_particles.emplace_back();
 		float age_s = static_cast<float>(now_ms - std::min(now_ms, parent.death_ms)) * 0.001f;
-		Make(m_particles.back(), parent.hit, age_s, now_ms, nullptr);
+		Make(m_particles.back(), parent.hit, m_def.normal * m_def.speed, age_s, now_ms, nullptr);
 	}
 
 	void ParticleCloud::Update(uint64_t now_ms, const Vec3 &camera, const Collide &collide)
@@ -133,13 +145,38 @@ namespace render
 			m_carry_ms -= count * m_interval;
 		}
 		count = std::min<uint64_t>(count, m_max - std::min<size_t>(m_max, m_particles.size()));
+		// getParticleEmitterMatrix: a bound cloud is made from its bone, along the way it points;
+		// a Local one in the bone's own space.
+		bool world = m_bound && !(m_def.flags & ParticleCloudDef::Local);
+		Vec3 origin = world ? m_emitter.translation : Vec3{};
+		Vec3 axes[3];
+		for (int k = 0; k < 3; ++k)
+			axes[k] = world ? m_emitter.ApplyDirection(m_axes[k]) : m_axes[k];
 		const Vec3 span = m_def.high - m_def.low;
+		constexpr float TurnStep = 6.2831855f / 512; // t3dFloatFastSine's table
 		for (uint64_t n = 0; n < count; ++n) {
-			Vec3 at{span.x * Rand() * 3.051851e-05f + m_def.low.x, span.y * Rand() * 3.051851e-05f + m_def.low.y,
-				span.z * Rand() * 3.051851e-05f + m_def.low.z};
+			Vec3 at = origin, velocity = m_def.normal * m_def.speed;
+			switch (m_def.spawn) {
+			case ParticleCloudDef::Spawn::Box:
+				at = at + Vec3{span.x * Rand() * 3.051851e-05f + m_def.low.x, span.y * Rand() * 3.051851e-05f + m_def.low.y,
+					span.z * Rand() * 3.051851e-05f + m_def.low.z};
+				break;
+			case ParticleCloudDef::Spawn::Cone: {
+				float spread = std::sin(static_cast<float>(Rand()) * m_def.angle * 3.051851e-05f * TurnStep);
+				float around = static_cast<float>(Rand() & 0x1ff) * TurnStep;
+				velocity = (axes[0] * (std::cos(around) * spread) + axes[1] * (std::sin(around) * spread) + axes[2]) * m_def.speed;
+				break;
+			}
+			case ParticleCloudDef::Spawn::Disk: {
+				float r = static_cast<float>(Rand()) * m_def.radius * 3.051851e-05f;
+				float around = static_cast<float>(Rand() & 0x1ff) * TurnStep;
+				at = at + axes[0] * (std::cos(around) * r) + axes[1] * (std::sin(around) * r);
+				break;
+			}
+			}
 			float age_s = elapsed_s * static_cast<float>(Rand() & 0x3ff) * 0.0009765625f;
 			m_particles.emplace_back();
-			Make(m_particles.back(), at, age_s, now_ms, &collide);
+			Make(m_particles.back(), at, velocity, age_s, now_ms, &collide);
 		}
 	}
 
@@ -176,6 +213,13 @@ namespace render
 		};
 		bool fade = m_def.flags & ParticleCloudDef::Fade;
 		bool wobble = m_def.flags & ParticleCloudDef::Wobble;
+		// t3dPaintParticleCloud: a Local cloud's particles placed by its bone, and the sprites
+		// sized with it (the actor's scale times the bone's).
+		bool local = m_bound && (m_def.flags & ParticleCloudDef::Local);
+		float size = m_def.size * (m_bound && (m_def.flags & (ParticleCloudDef::Local | ParticleCloudDef::ActorScaled)) ? m_emitter.scale : 1);
+		// renderPointLightParticle steps the sprite's frames on with the time.
+		const Texture *sprite = m_def.frames.empty() ? m_def.sprite
+		                        : m_def.frames[(now_ms / std::max<uint32_t>(m_def.frame_ms, 1)) % m_def.frames.size()];
 		Material material;
 		material.blend = Blend::Additive;
 		material.two_sided = true;
@@ -208,24 +252,27 @@ namespace render
 			break;
 		}
 		case ParticleCloudDef::Kind::Sprites:
-			// renderPointLightParticle: the sprite facing the camera, `size` either side, in the
+			// renderPointLightParticle: the sprite facing the camera, its corners `size` out at 45
+			// degrees (so 0.707 of it either side) with the texture's v = 1 along the top, in the
 			// cloud's color at the particle's alpha; the wobble steps on a frame each time.
-			if (!m_def.sprite)
+			if (!sprite)
 				return;
 			for (Particle &p : m_particles) {
-				Vec3 at = wobble ? p.position + WobbleAt(p.wobble) : p.position;
-				if (wobble)
+				Vec3 at = local ? m_emitter.Apply(p.position) : p.position;
+				if (wobble) {
+					at = at + WobbleAt(p.wobble);
 					p.wobble = (p.wobble + 1) & 31;
+				}
 				uint32_t color = Scale(m_def.color, fade ? static_cast<int>(Lerp(p.birth_ms, p.death_ms, now_ms)) + 1 : 0x80);
-				Vec3 r = right * m_def.size, u = up * m_def.size;
-				quad(at - r - u, at + r - u, at + r + u, at - r + u, color, color, color, color);
+				Vec3 r = right * (size * 0.7071068f), u = up * (size * 0.7071068f);
+				quad(at - r + u, at + r + u, at + r - u, at - r - u, color, color, color, color);
 			}
-			material.texture = m_def.sprite;
+			material.texture = sprite;
 			break;
 		case ParticleCloudDef::Kind::Rings: {
 			// The sprite flat on the ground, from nothing to `size` either side over its life, lit
 			// by the world's ambient light and fading out.
-			if (!m_def.sprite)
+			if (!sprite)
 				return;
 			uint32_t lit = (static_cast<uint32_t>(std::clamp(ambient.x, 0.0f, 1.0f) * 255) << 16) |
 			               (static_cast<uint32_t>(std::clamp(ambient.y, 0.0f, 1.0f) * 255) << 8) |
@@ -241,7 +288,7 @@ namespace render
 				quad({c.x - half, c.y - half, c.z}, {c.x + half, c.y - half, c.z}, {c.x + half, c.y + half, c.z},
 					{c.x - half, c.y + half, c.z}, color, color, color, color);
 			}
-			material.texture = m_def.sprite;
+			material.texture = sprite;
 			break;
 		}
 		}

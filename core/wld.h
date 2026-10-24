@@ -67,6 +67,28 @@ struct WldPlacement
 	std::vector<uint32_t> colors;
 };
 
+// A particle cloud definition (0x34), as createParticleCloudFromFileContext (@1002f690) hands it
+// to t3dDefineParticleCloud, and its blit sprite (0x26 -> 0x05 -> 0x04).
+struct WldParticleCloud
+{
+	uint32_t kind = 0;        // 1 points, 2 lines, 3 sprites, 4 rings
+	uint32_t spawn_type = 0;  // 0 a box, 3 a cone along the normal, 4 a disk across it...
+	uint32_t flags = 0;       // t3dPaintParticleCloud's and t3dUpdateParticleCloud's
+	uint32_t max_particles = 0;
+	float gravity = 0;
+	WldVec3 gravity_direction;
+	WldVec3 low, high;        // the box (spawn type 0)
+	float radius = 0;         // the disk's (4)
+	float angle = 0;          // the cone's spread, in 512ths of a turn (3)
+	uint32_t lifespan_ms = 0;
+	float speed = 0;
+	WldVec3 normal;
+	uint32_t interval_ms = 0; // between each one made; 0xffffffff none
+	float size = 0;
+	uint32_t color = 0;       // 0x..RRGGBB
+	WldMaterial sprite;       // the blit sprite's render method and frames (no textures: none)
+};
+
 // A point light (0x28 -> 0x1c -> 0x1b) from lights.wld.
 struct WldLight
 {
@@ -95,6 +117,8 @@ struct WldSkeleton
 		WldBoneTransform pose;
 		int parent = -1;
 		std::vector<int> children;
+		int mesh = -1; // a 0x36 mesh the bone itself carries (item models: a torch's IT36_O_DAG)
+		int particle_cloud = -1; // a 0x34 particle cloud it carries (the torch's flame, IT36_P1_DAG)
 	};
 	std::string name;
 	std::vector<Bone> bones;
@@ -153,6 +177,7 @@ public:
 	// The skeleton (0x10) an actor definition uses through its 0x11 reference, or -1.
 	int ActorSkeleton(int actor_index) const;
 	bool ReadSkeleton(int index, WldSkeleton &skeleton) const;
+	bool ReadParticleCloud(int index, WldParticleCloud &cloud) const;
 	// First frame of a track instance (0x13) by name, e.g. "P01HUMPE_TRACK".
 	bool ReadTrackPose(const std::string &track, WldBoneTransform &pose) const;
 	// Every frame of a track instance, and its frame time (0 when not given).
@@ -167,6 +192,7 @@ public:
 
 private:
 	bool ReadMaterial(int index, WldMaterial &material) const;
+	void ReadSpriteFrames(const Fragment *sprite, WldMaterial &material) const; // a 0x05's 0x04
 	bool ActorReferences(int index, size_t &refs, uint32_t &count) const;
 	bool ReadTrackFrames(int track_instance, std::vector<WldBoneTransform> &frames, size_t limit) const;
 
