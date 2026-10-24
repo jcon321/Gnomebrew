@@ -21,10 +21,21 @@ no rules of its own.
      decals, from the spell file) and names (label EQTypes 45..59).
    - Inventory: name, level, class (its title from 51), deity, HP, stats (base and worn items),
      money, the class picture, item icons in the slots, the Alt. Adv. row from 51, Done, and the
-     Skills button opening the skills window (`frontend/game_windows.*`). Still to do: eqgame's own
-     formulas for the resists, AC, ATK and weight (blank for now), and for stats spells, AAs and
-     drunkenness; the XP and AA gauges (the experience table); picking items and coins up, Destroy,
-     Alt. Advance, bags, and icons in the hot button window's weapon slots.
+     Skills button opening the skills window (`frontend/game_windows.*`), and items picked up, put
+     down, split through the quantity window and put away on the character view (`core/inventory.*`).
+     Still to do: eqgame's own formulas for the resists, AC, ATK and weight (blank for now), and for
+     stats spells, AAs and drunkenness; the XP and AA gauges (the experience table); coins onto the
+     cursor, Destroy, Alt. Advance, bag windows, and icons in the hot button window's weapon slots.
+   - Equipping: an item goes into a worn slot (the rules and the move are done), but what eqgame
+     does besides for itself isn't: our model's armor and weapons (`CDisplay::HandleMaterial`,
+     `UpdateEquipmentDisplay`) and light (`UpdateLight`). Also the worn slots' empty pictures' names
+     (`CInvSlot::SetItem`'s tooltip), dual wield from the class table rather than the zone's 254/255,
+     and the casting check (no moves but from the cursor while casting).
+   - The item on the cursor: clicking the world with it drops it on the ground or gives it to the
+     target (`CEverQuest_LMouseUp`, `DropHeldItemOnGround`, `DropItemOrMoneyOnPlayer`), and
+     AutoInventory with no room drops it ("There was no place to put that!"); for now it stays on the
+     cursor. Holding a slot's item to make an item hot button (`CInvSlot::HandleLButtonHeld`), and
+     the right button on a slot (eat, drink, click effects: `CInvSlot::HandleRButtonUp`).
    - Item display: alt+click or the right button held on an inventory slot shows its item
      (`frontend/item_display.*`, eqgame's SetItem text with spells_en.txt's spell names); letting
      the right button go closes it. Still to do: clicking its icon to link the item in chat
@@ -51,8 +62,8 @@ no rules of its own.
    size, STML links, hold-to-repeat on the scrollbar's arrows, languages scrambled by skill
    (`HearBabel`), and the commands that still say they aren't supported (/who, /consider, /sit,
    socials, /time...).
-4. **Cursor and dragging.** EQ's own cursors, item icons that follow the cursor when dragged, and
-   hover tooltips.
+4. **Cursor and dragging.** EQ's own cursors and hover tooltips. (An item on the cursor follows it:
+   `DrawCursorAttachment`.)
 5. **Options / Escape menu.** Graphics, sound and display settings, mouse sensitivity, the keymap.
 6. **A configurable keymap.** `InputEvent::Key` is a hard-coded list of about 18 keys; make it an
    EQ-style keymap with primary and alternate bindings.

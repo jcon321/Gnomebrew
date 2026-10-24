@@ -1,5 +1,6 @@
 // Headless EQMac (TAKP) client: login server -> world server -> zone handoff.
 
+#include "inventory.h"
 #include "login_client.h"
 #include "world_client.h"
 #include "zone_session.h"
@@ -12,6 +13,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <vector>
 
 namespace
 {
@@ -31,6 +33,9 @@ namespace
 			"  --click-door ID       with --zone, use door ID once in the zone and print the doors that move\n"
 			"  --zone-to ID          with --zone, once in, ask to zone to zone ID (the zone checks it against its\n"
 			"                        zone points), go there through world, then stay and camp there\n"
+			"  --move FROM:TO[:N]    with --zone, once in, move what's in slot FROM to TO as the inventory window\n"
+			"                        does (0 the cursor; N takes N of a stack onto the cursor); \"auto\" puts the\n"
+			"                        cursor's item away. Repeatable, done in order; the items print before and after\n"
 			"  --record DIR          with --zone, write each zone session's packets to DIR/<char>-<time>.eqr\n"
 			"  --replay FILE         play a recorded zone session back (no server): stay --zone seconds\n"
 			"                        (default 10), print what's around, then camp out\n"
@@ -106,6 +111,40 @@ namespace
 
 	std::string g_record_dir;
 	std::string g_replay_path;
+	std::vector<std::string> g_moves; // --move
+
+	void PrintItems(const ZoneSession &zone)
+	{
+		for (const auto &[slot, item] : zone.Items())
+			printf("[items] %3d %s%s\n", slot, item.name.c_str(),
+				Inventory::Stacks(item) ? (" x" + std::to_string(Inventory::Count(item))).c_str() : "");
+	}
+
+	// --move's FROM:TO[:N] and "auto", through core/inventory.h as the windows do them.
+	void DoMoves(ZoneSession &zone)
+	{
+		for (const std::string &move : g_moves) {
+			if (move == "auto") {
+				printf("[items] auto inventory: %s\n", Inventory::AutoInventory(zone) ? "put away" : "no room");
+				continue;
+			}
+			int from = 0, to = 0, count = 0;
+			int parts = sscanf(move.c_str(), "%d:%d:%d", &from, &to, &count);
+			if (parts < 2) {
+				fprintf(stderr, "[items] bad --move %s\n", move.c_str());
+				continue;
+			}
+			if (parts == 3) {
+				printf("[items] taking %d from %d\n", count, from);
+				Inventory::TakeFromStack(zone, static_cast<int16_t>(from), count);
+				continue;
+			}
+			uint32_t message = 0;
+			bool moved = Inventory::Move(zone, static_cast<int16_t>(from), static_cast<int16_t>(to), message);
+			printf("[items] %d -> %d: %s%s\n", from, to, moved ? "moved" : "not moved",
+				message ? (std::string(" (") + Inventory::MessageText(message) + ")").c_str() : "");
+		}
+	}
 
 	bool RunZone(const ZoneHandoff &handoff, int seconds, const std::string &say, bool verbose, uint32_t zone_to = 0,
 		const LoginResult *login = nullptr, const WorldOptions *world = nullptr, int click_door = -1)
@@ -133,6 +172,11 @@ namespace
 				switch (event.type) {
 				case ZoneSession::Event::Type::InZone:
 					PrintNearby(zone);
+					if (!g_moves.empty()) {
+						PrintItems(zone);
+						DoMoves(zone);
+						PrintItems(zone);
+					}
 					if (!say.empty())
 						zone.Say(say);
 					if (click_door >= 0) {
@@ -231,6 +275,8 @@ int main(int argc, char **argv)
 			click_door = atoi(next().c_str());
 		else if (arg == "--zone-to")
 			zone_to = static_cast<uint32_t>(atoi(next().c_str()));
+		else if (arg == "--move")
+			g_moves.push_back(next());
 		else if (arg == "--record")
 			g_record_dir = next();
 		else if (arg == "--replay")

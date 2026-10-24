@@ -41,6 +41,7 @@ add_library(eqcore STATIC
     core/dds.cpp
     core/wld.cpp
     core/creation_rules.cpp
+    core/inventory.cpp
     core/spell_file.cpp
 )
 target_include_directories(eqcore PUBLIC core)

@@ -55,6 +55,7 @@ public:
 		std::string window; // its screen, e.g. "SelectorWindow"
 		std::string control; // the button's ScreenID
 		bool alt = false;    // Alt was down (GetKeyboardFlags' 4), for a click
+		bool shift = false, ctrl = false; // and Shift and Ctrl (1 and 2)
 	};
 
 	// Forgets every window. The layout is for a screen this size.
@@ -76,6 +77,9 @@ public:
 	void Toggle(const std::string &screen) { Show(screen, !Shown(screen)); }
 	bool Shown(const std::string &screen) const;
 	void Raise(const std::string &screen); // on top of the others (CXWnd::Show's bring to front)
+	void MoveTo(const std::string &screen, int x, int y); // CXWnd::Move: its top left, the same size
+	int ScreenWidth() const { return m_width; }
+	int ScreenHeight() const { return m_height; }
 	std::string ScreenAt(int x, int y) const; // the topmost shown window under (x, y), or ""
 
 	// Mouse events, in screen pixels. True when the windows took it (it's over one, or one is
@@ -101,6 +105,7 @@ public:
 	// A SIDL animation stretched over dest, for what's drawn outside the windows (the cursor's
 	// attachment). False when there's no such animation.
 	bool DrawAnimation(Canvas &canvas, const std::string &name, const Rect &dest, uint64_t now_ms) const;
+	bool DrawCell(Canvas &canvas, const std::string &name, int cell, const Rect &dest) const; // a grid's cell
 	const SidlDefinitions *Definitions() const { return m_defs; }
 
 	int Count() const { return static_cast<int>(m_windows.size()); }

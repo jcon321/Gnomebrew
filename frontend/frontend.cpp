@@ -3,6 +3,7 @@
 #include "eqstr.h"
 #include "game_windows.h"
 #include "ini_file.h"
+#include "inventory.h"
 
 #include <algorithm>
 #include <chrono>
@@ -842,9 +843,10 @@ void FrontEnd::Render(Canvas &canvas, uint64_t now_ms)
 		RenderDialog(dialog);
 	}
 
-	// The button on the cursor, over everything but the cursor.
+	// The item or button on the cursor, over everything but the cursor.
 	if (m_cursor_visible && !m_mouse_grabbed && m_screen == Screen::Zone && !m_dialog.open)
-		DrawCursorAttachment(screen, m_text, m_windows, m_window_state, m_mouse_x - area.x, m_mouse_y - area.y, now_ms);
+		DrawCursorAttachment(screen, m_text, m_windows, m_window_state, m_game_values, m_mouse_x - area.x,
+			m_mouse_y - area.y, now_ms);
 	// In the zone, the windows' own cursors while moving or sizing one (or over a border that sizes).
 	if (m_cursor_visible && !m_mouse_grabbed &&
 	    !(m_screen == Screen::Zone && !m_dialog.open && m_windows.DrawCursor(screen, m_mouse_x - area.x, m_mouse_y - area.y, now_ms)))
@@ -1364,7 +1366,7 @@ namespace
 		{"CastSpellWnd", true}, {"HotButtonWnd", true}, {"SelectorWindow", true}, {"ActionsWindow", false},
 		{"InventoryWindow", false}, {"OptionsWindow", false}, {"FriendsWindow", false}, {"PetInfoWindow", false},
 		{"HelpWindow", false}, {"CompassWindow", false}, {"SocialEditWnd", false}, {"ChatWindow", true},
-		{"SkillsWindow", false}, {"ItemDisplayWindow", false},
+		{"SkillsWindow", false}, {"ItemDisplayWindow", false}, {"QuantityWnd", false},
 	};
 
 	// The selector's buttons (EQUI_SelectorWnd.xml) and the windows they open and close.
@@ -1410,6 +1412,7 @@ void FrontEnd::BuildZoneWindows()
 		IniFile ini;
 		if (ini.Load(m_ui_layout_path))
 			m_windows.Load(ini);
+		m_windows.Show("QuantityWnd", false); // only ever up for a stack
 		Log("UI: " + std::to_string(m_windows.Count()) + " windows, layout " + m_ui_layout_path);
 		// CEverQuest::CreateIniFilenames: the character's own ini is the layout's name without UI_.
 		m_hot_buttons_path = m_config.ui_dir + "/" + suffix;
@@ -1460,8 +1463,10 @@ void FrontEnd::SaveDebugSettings()
 
 void FrontEnd::HandleWindowClicks()
 {
+	// Nothing goes on the cursor over an item (CCursorAttachment::IsOkToActivate).
 	for (const auto &hold : m_windows.TakeHolds())
-		GameWindowHold(m_windows, m_window_state, hold.window, hold.control);
+		if (!m_zone.Items().count(Inventory::Cursor))
+			GameWindowHold(m_windows, m_window_state, hold.window, hold.control);
 	for (const auto &click : m_windows.TakeRightClicks())
 		GameWindowRightClick(m_windows, m_window_state, click.window, click.control);
 	for (const auto &hold : m_windows.TakeRightHolds())
@@ -1472,6 +1477,21 @@ void FrontEnd::HandleWindowClicks()
 		// Alt+click on a slot shows its item and does nothing else (CInvSlot::HandleLButtonUp).
 		if (click.alt && ShowItemDisplay(m_windows, m_game_values, click.window, click.control))
 			continue;
+		// The inventory's slots and character view, and the quantity window's Accept.
+		InventoryClickResult moved;
+		if (InventoryClick(m_windows, m_window_state, m_zone, click.window, click.control, click.shift, click.ctrl, moved)) {
+			if (moved.sound && m_sound)
+				m_sound->PlayWave(0x92);
+			if (moved.message)
+				ChatOut(EqString(moved.message, Inventory::MessageText(moved.message)), ChatType::Red);
+			// The quantity window's edit box takes the keys from the others.
+			if (m_windows.Shown("QuantityWnd")) {
+				m_chat.Close();
+				if (SidlWindow *social_editor = m_windows.Find("SocialEditWnd"))
+					social_editor->Focus("");
+			}
+			continue;
+		}
 		// A hot button holding one of the Actions window's buttons does what that button does.
 		std::string action = GameWindowClick(m_windows, m_window_state, click.window, click.control);
 		if (!action.empty())
@@ -1776,19 +1796,31 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 		return;
 	}
 	// Then the windows, unless the world has the mouse. The keys go to one edit box: a press in
-	// the social editor's takes them from the chat's, and one in the chat window from the editor.
+	// the social editor's or the quantity window's takes them from the others, and one in the chat
+	// window from the editors.
 	SidlWindow *social_editor = m_windows.Find("SocialEditWnd");
+	SidlWindow *quantity = m_windows.Find("QuantityWnd");
 	if (event.IsMouse() && !m_mouse_turn && !m_mouse_pan && m_windows.OnMouse(event, m_now_ms)) {
-		if (event.type == InputEvent::Type::MouseDown && social_editor) {
+		if (event.type == InputEvent::Type::MouseDown) {
 			std::string pressed = m_windows.ScreenAt(event.x, event.y);
-			if (pressed == "SocialEditWnd" && social_editor->Typing())
+			SidlWindow *pressed_editor = pressed == "SocialEditWnd" ? social_editor
+			                             : pressed == "QuantityWnd" ? quantity
+			                                                        : nullptr;
+			if (pressed_editor && pressed_editor->Typing()) {
 				m_chat.Close();
+				for (SidlWindow *other : {social_editor, quantity})
+					if (other && other != pressed_editor)
+						other->Focus("");
+			}
 			else if (pressed == "ChatWindow" && m_chat.Typing())
-				social_editor->Focus("");
+				for (SidlWindow *other : {social_editor, quantity})
+					if (other)
+						other->Focus("");
 		}
 		return;
 	}
-	bool editing = social_editor && social_editor->Typing();
+	SidlWindow *editor = quantity && quantity->Typing() ? quantity : social_editor;
+	bool editing = editor && editor->Typing();
 	switch (event.type) {
 	case InputEvent::Type::Wheel:
 		// Out of first person into the chase camera and back, as well as closer and farther.
@@ -1878,7 +1910,7 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 	// arrows still move.
 	if (event.type == InputEvent::Type::Char) {
 		if (editing)
-			social_editor->OnKey(event);
+			editor->OnKey(event);
 		else if (m_chat.Typing())
 			m_chat.OnChar(event.ch);
 		else if (event.ch == '/' && m_chat.Attached()) {
@@ -1889,8 +1921,13 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 	}
 	if (event.type != InputEvent::Type::Key)
 		return;
-	// Typing into the social editor: Enter does nothing, Escape closes it (below).
-	if (editing && (social_editor->OnKey(event) || event.key == InputEvent::Key::Enter))
+	// Typing into the social editor: Enter does nothing, Escape closes it (below). Into the
+	// quantity window's box, Enter is its Accept.
+	if (editing && event.key == InputEvent::Key::Enter && editor == quantity) {
+		QuantityEnter(m_windows, m_window_state, m_zone);
+		return;
+	}
+	if (editing && (editor->OnKey(event) || event.key == InputEvent::Key::Enter))
 		return;
 	bool typing = m_chat.Typing() || editing;
 	if (m_chat.Typing()) {
@@ -1943,12 +1980,13 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			break;
 		}
 		// ExecuteCmd's escape: no target, then CDisplay_NewUIProcessEscape closes the first of its
-		// windows that's open (of the ones we have: the item display, help, skills, options, the social
-		// editor, inventory).
+		// windows that's open (of the ones we have: the item display, quantity, help, skills, options,
+		// the social editor, inventory).
 		SetTarget(0);
 		ChatOut(EqString(12375, "You no longer have a target."), ChatType::Default);
 		for (const char *screen :
-			{"ItemDisplayWindow", "HelpWindow", "SkillsWindow", "OptionsWindow", "SocialEditWnd", "InventoryWindow"})
+			{"ItemDisplayWindow", "QuantityWnd", "HelpWindow", "SkillsWindow", "OptionsWindow", "SocialEditWnd",
+			 "InventoryWindow"})
 			if (m_windows.Shown(screen)) {
 				m_windows.Show(screen, false);
 				break;

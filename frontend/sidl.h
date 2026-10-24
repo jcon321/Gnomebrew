@@ -5,7 +5,7 @@
 // pieces character select, creation and the in-game windows use so far:
 // Ui2DAnimation, ButtonDrawTemplate, WindowDrawTemplate (with its vertical
 // scrollbar), FrameTemplate, Screen (nested too), TabBox and its Pages, Button,
-// Label, StaticAnimation, Editbox, STMLbox, Gauge, Listbox, InvSlot, and the empty
+// Label, StaticAnimation, Editbox, STMLbox, Gauge, Listbox, InvSlot, Slider, and the empty
 // look of SpellGem, with AutoStretch anchors. Schema defaults come from uifiles/default/SIDL.xml.
 
 #include "canvas.h"
@@ -88,6 +88,13 @@ struct SidlGaugeTemplate
 	std::string background, fill, lines, lines_fill, cap_left, cap_right;
 };
 
+// SliderDrawTemplate: the thumb's looks, and the bar's background between its end caps.
+struct SidlSliderTemplate
+{
+	SidlButtonTemplate thumb;
+	std::string background, cap_left, cap_right;
+};
+
 struct SidlPiece
 {
 	std::string type; // element name: Screen, Button, Label, StaticAnimation, ...
@@ -125,6 +132,9 @@ struct SidlPiece
 
 	// StaticAnimation
 	std::string animation;
+
+	// Slider: its SliderDrawTemplate (SliderArt).
+	std::string slider_art;
 
 	// InvSlot: the empty slot's picture (Background). SpellGem: SpellGemDrawTemplate.
 	std::string slot_background;
@@ -193,6 +203,7 @@ public:
 	const SidlAnimation *Animation(const std::string &name) const;
 	const SidlWindowTemplate *WindowTemplate(const std::string &name) const;
 	const SidlFrameTemplate *FrameTemplate(const std::string &name) const;
+	const SidlSliderTemplate *SliderTemplate(const std::string &name) const;
 	const SidlPiece *Piece(const std::string &item) const;
 	const std::string &Directory() const { return m_dir; }
 	const std::vector<std::string> &Warnings() const { return m_warnings; }
@@ -205,6 +216,7 @@ private:
 	std::map<std::string, SidlAnimation> m_animations;
 	std::map<std::string, SidlWindowTemplate> m_window_templates;
 	std::map<std::string, SidlFrameTemplate> m_frame_templates;
+	std::map<std::string, SidlSliderTemplate> m_slider_templates;
 	std::map<std::string, SidlPiece> m_pieces;
 	std::vector<std::string> m_warnings;
 };
@@ -251,6 +263,9 @@ public:
 		// A button drawing none of its ButtonDrawTemplate, just its text (an empty buff slot:
 		// CBuffWindow::SetBuffIcon clears the template it draws).
 		bool blank = false;
+		// A screen that takes clicks as a button does (the inventory window's character view, while
+		// an item's on the cursor: CInventoryWnd::HandleLButtonUp).
+		bool clickable = false;
 		size_t max_chars = 64; // Editbox
 		std::string animation; // StaticAnimation: another animation in place of its own; "" its own
 		// InvSlot: what's in it, a cell of a grid animation (an item's icon, A_DragItem), over the
@@ -259,6 +274,11 @@ public:
 		// animation (a buff's BuffIcons) shows that decal's cell the same way.
 		std::string cell_animation;
 		int cell = -1;
+		// InvSlot: how many of the item are in it, in a dark box at its corner (CInvSlotWnd::Draw);
+		// 0 shows none.
+		int count = 0;
+		// Slider (CSliderWnd): its value, 0 to ticks - 1. The mouse moves it; its owner reads it.
+		int slider_value = 0, slider_ticks = 2;
 		// Listbox (CListWnd): its rows' text by column, each column's justification (0 left, 1
 		// centered, 2 right: SetColumnJustification's, which DrawHeader turns into text flags 0x10
 		// and 8; that 1 centers is our reading, since the skills window's Value column would be cut
@@ -296,6 +316,8 @@ public:
 	bool OnKey(const InputEvent &event);
 	// The wheel over a scrolling control: three rows a notch. False if there's none under (x, y).
 	bool OnWheel(int x, int y, int notches);
+	// CSliderWnd::SetValue: to 0..ticks - 1.
+	void SetSlider(Control &slider, int value);
 
 	Control *Find(const std::string &screen_id);
 	const Control *Find(const std::string &screen_id) const;
@@ -375,6 +397,15 @@ private:
 	int ListRowHeight(const Control &control) const;
 	void DrawCell(Canvas &canvas, SidlTextures &textures, const std::string &name, int cell, const Rect &dest) const;
 
+	// CSliderWnd's parts: the end caps, the bar between them (GetSliderBounds), the thumb on it.
+	struct SliderLayout
+	{
+		Rect cap_left, cap_right, bar, thumb;
+	};
+	SliderLayout LayoutSlider(const Control &slider) const;
+	void DrawSlider(const Control &slider, Canvas &canvas, SidlTextures &textures, uint64_t now_ms) const;
+	void SlideTo(Control &slider, int x); // the value at x on the bar
+
 	// The vertical scrollbar's parts, for a control that has one.
 	enum class ScrollPart { None, Up, Down, PageUp, PageDown, Thumb };
 	struct ScrollLayout
@@ -396,6 +427,7 @@ private:
 	ScrollPart m_scroll_part = ScrollPart::None;
 	int m_scroll_grab_y = 0, m_scroll_grab_pos = 0;
 	int m_scroll_hover = -1;
+	int m_slider = -1; // a slider being moved
 	ScrollPart m_scroll_hover_part = ScrollPart::None;
 	bool m_minimized = false;
 	TitleBox m_box_hover = TitleBox::None, m_box_pressed = TitleBox::None;

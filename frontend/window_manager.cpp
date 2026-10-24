@@ -223,6 +223,16 @@ void WindowManager::Show(const std::string &screen, bool shown)
 	}
 }
 
+void WindowManager::MoveTo(const std::string &screen, int x, int y)
+{
+	for (auto &w : m_windows)
+		if (w->screen == screen) {
+			Place(*w, {x, y, w->rect.w, w->rect.h});
+			m_changed = true;
+			return;
+		}
+}
+
 bool WindowManager::Shown(const std::string &screen) const
 {
 	for (const auto &w : m_windows)
@@ -384,7 +394,7 @@ bool WindowManager::OnMouse(const InputEvent &event, uint64_t now_ms)
 			else {
 				std::string clicked = w.wnd.OnMouse(event);
 				if (!clicked.empty() && !m_held)
-					m_clicks.push_back({w.screen, clicked, event.alt});
+					m_clicks.push_back({w.screen, clicked, event.alt, event.shift, event.ctrl});
 			}
 			w.wnd.SetTitleBoxes(w.wnd.TitleBoxAt(event.x, event.y), Box::None);
 			m_press = -1;
@@ -495,6 +505,17 @@ bool WindowManager::DrawAnimation(Canvas &canvas, const std::string &name, const
 	if (!image)
 		return false;
 	canvas.Stretch(*image, frame->source, dest);
+	return true;
+}
+
+bool WindowManager::DrawCell(Canvas &canvas, const std::string &name, int cell, const Rect &dest) const
+{
+	const SidlAnimation *animation = m_defs && m_textures ? m_defs->Animation(name) : nullptr;
+	SidlFrame frame;
+	const Image *image = animation && animation->Cell(cell, frame) ? m_textures->Get(frame.texture) : nullptr;
+	if (!image)
+		return false;
+	canvas.Stretch(*image, frame.source, dest);
 	return true;
 }
 

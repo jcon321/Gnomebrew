@@ -189,6 +189,15 @@ does what its button does (so far, the main page's Camp and Run/Walk). They're k
 format in `<character>_<server>.ini` next to the exe, under `[HotButtons]`
 (`Page<p>Button<b>=<type letter><number>`).
 
+Items move as they do in eqgame (`core/inventory.*`, mirroring its `CInvSlot`, `SwapCombine` and
+`AutoInventory`): click an item in the inventory window to pick it up, and click a slot to put it
+there, taking whatever was in it onto the cursor (or topping up the same stack). Worn slots only
+take what can go there and what your class, race and deity can use. A stack shows its count; a
+click on one opens the quantity window to say how many to take (Shift takes it all, Ctrl one).
+Clicking the character picture with an item on the cursor puts it away: onto the same stack,
+into an empty worn slot it fits, then a general slot, then a bag. Each move goes to the zone as
+eqgame's `OP_MoveItem`.
+
 - The player window's gauges show HP (with your name), mana (not for classes without any) and
   stamina; the pet gauge along the bottom of the HP bar, only while you have a pet. The target
   window shows the target's name, HP bar and percent. What the windows do for themselves each frame

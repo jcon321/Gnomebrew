@@ -289,6 +289,17 @@ void SidlDefinitions::ReadElement(const XmlNode &node)
 		return;
 	}
 
+	if (node.name == "SliderDrawTemplate") {
+		SidlSliderTemplate t;
+		if (const XmlNode *thumb = node.Child("Thumb"))
+			t.thumb = ReadButtonTemplate(*thumb);
+		t.background = node.ChildText("Background");
+		t.cap_left = node.ChildText("EndCapLeft");
+		t.cap_right = node.ChildText("EndCapRight");
+		m_slider_templates[item] = std::move(t);
+		return;
+	}
+
 	static const char *const PieceTypes[] = {"Screen", "Button", "Label", "StaticAnimation", "StaticText", "StaticFrame",
 		"Editbox", "Listbox", "Gauge", "Slider", "Combobox", "Page", "TabBox", "LayoutBox", "StaticHeader", "STMLbox",
 		"SpellGem", "InvSlot"};
@@ -340,6 +351,7 @@ void SidlDefinitions::ReadElement(const XmlNode &node)
 	for (const XmlNode *column : node.Children("Columns"))
 		p.columns.push_back({column->ChildText("Heading"), column->ChildInt("Width", 0)});
 	p.animation = node.ChildText("Animation");
+	p.slider_art = node.ChildText("SliderArt");
 	if (p.type == "InvSlot")
 		p.slot_background = node.ChildText("Background");
 	if (const XmlNode *t = node.Child("SpellGemDrawTemplate")) {
@@ -399,6 +411,12 @@ const SidlFrameTemplate *SidlDefinitions::FrameTemplate(const std::string &name)
 {
 	auto it = m_frame_templates.find(name);
 	return it != m_frame_templates.end() ? &it->second : nullptr;
+}
+
+const SidlSliderTemplate *SidlDefinitions::SliderTemplate(const std::string &name) const
+{
+	auto it = m_slider_templates.find(name);
+	return it != m_slider_templates.end() ? &it->second : nullptr;
 }
 
 const SidlPiece *SidlDefinitions::Piece(const std::string &item) const
@@ -746,7 +764,8 @@ bool SidlWindow::InteractiveAt(int x, int y) const
 		return false;
 	for (const auto &control : m_controls) {
 		const std::string &type = control.def->type;
-		if ((type == "Button" || type == "Editbox" || type == "InvSlot") && control.enabled && HitTest(control, x, y))
+		if ((type == "Button" || type == "Editbox" || type == "InvSlot" || type == "Slider" || control.clickable) &&
+		    control.enabled && HitTest(control, x, y))
 			return true;
 		if (HasScrollbar(control) && LayoutScrollbar(control).bar.Contains(x, y) && HitTest(control, x, y))
 			return true;
@@ -1162,6 +1181,19 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 		DrawAnimation(canvas, textures, def.slot_background, control.rect, now_ms);
 		if (control.cell >= 0)
 			DrawCell(canvas, textures, control.cell_animation, control.cell, control.rect);
+		// A stack's count in its bottom right corner: a dark box 12 by 10, a pixel in from the
+		// edges, and the number padded to two places over it in the slot's font.
+		if (control.cell >= 0 && control.count > 0) {
+			int r = control.rect.Right(), b = control.rect.Bottom();
+			canvas.Fill({r - 13, b - 11, 12, 10}, 0x404040);
+			std::string count = std::to_string(control.count);
+			if (count.size() < 2)
+				count = " " + count;
+			text.Draw(canvas, r - 13, b - 11, count, height, 0xffffff, weight);
+		}
+	}
+	else if (def.type == "Slider") {
+		DrawSlider(control, canvas, textures, now_ms);
 	}
 	else if (def.type == "SpellGem") {
 		// CSpellGemWnd::Draw (@005a6050): a gem with a spell is the Background ring tinted the
@@ -1287,11 +1319,36 @@ std::string SidlWindow::OnMouse(const InputEvent &event)
 				}
 			}
 
+	// A slider moves with the mouse while the button's down on it.
+	if (m_slider >= 0) {
+		if (event.type == InputEvent::Type::MouseUp) {
+			m_controls[m_slider].pressed = false;
+			m_slider = -1;
+		}
+		else if (event.type == InputEvent::Type::MouseMove)
+			SlideTo(m_controls[m_slider], event.x);
+		return "";
+	}
+	if (event.type == InputEvent::Type::MouseDown || event.type == InputEvent::Type::DoubleClick)
+		for (int i = static_cast<int>(m_controls.size()) - 1; i >= 0; --i) {
+			Control &control = m_controls[i];
+			if (control.def->type == "Slider" && control.enabled && HitTest(control, event.x, event.y)) {
+				m_slider = i;
+				control.pressed = true;
+				SlideTo(control, event.x);
+				return "";
+			}
+		}
+
 	std::string clicked;
 	for (int i = 0; i < static_cast<int>(m_controls.size()); ++i) {
 		Control &control = m_controls[i];
 		const std::string &type = control.def->type;
-		if ((type != "Button" && type != "Editbox" && type != "InvSlot") || !Shown(control))
+		if (type == "Slider" && Shown(control)) {
+			control.hover = HitTest(control, event.x, event.y);
+			continue;
+		}
+		if ((type != "Button" && type != "Editbox" && type != "InvSlot" && !control.clickable) || !Shown(control))
 			continue;
 		bool inside = HitTest(control, event.x, event.y);
 		if (type == "Editbox") {
@@ -1325,6 +1382,63 @@ std::string SidlWindow::OnMouse(const InputEvent &event)
 		}
 	}
 	return clicked;
+}
+
+void SidlWindow::SetSlider(Control &slider, int value)
+{
+	slider.slider_value = std::clamp(value, 0, std::max(slider.slider_ticks - 1, 0));
+}
+
+// CSliderWnd's layout (GetSliderTextureRect, CalculateSliderRect, GetSliderBounds, GetSliderRect
+// @005a6e20 on): the bar's background as high as its animation, centered down the control; the
+// left end cap at the control's left, the right one at its right, the bar between them; the thumb
+// from the bar's top left, its value's share of the bar's width along (UpdateThumb).
+SidlWindow::SliderLayout SidlWindow::LayoutSlider(const Control &slider) const
+{
+	SliderLayout l;
+	const SidlSliderTemplate *t = m_defs->SliderTemplate(slider.def->slider_art);
+	if (!t)
+		return l;
+	const Rect &r = slider.rect;
+	Rect background = AnimationSize(t->background), left = AnimationSize(t->cap_left), right = AnimationSize(t->cap_right);
+	int y = r.y + (r.h - background.h) / 2;
+	l.cap_left = {r.x, y, left.w, left.h};
+	l.cap_right = {r.Right() - right.w, y, right.w, right.h};
+	l.bar = {l.cap_left.Right(), y, l.cap_right.x - l.cap_left.Right(), background.h};
+	Rect thumb = AnimationSize(t->thumb.normal);
+	int along = slider.slider_ticks > 1 ? l.bar.w * slider.slider_value / (slider.slider_ticks - 1) : 0;
+	l.thumb = {l.bar.x + along, l.bar.y, thumb.w, thumb.h};
+	return l;
+}
+
+void SidlWindow::DrawSlider(const Control &slider, Canvas &canvas, SidlTextures &textures, uint64_t now_ms) const
+{
+	const SidlSliderTemplate *t = m_defs->SliderTemplate(slider.def->slider_art);
+	if (!t)
+		return;
+	SliderLayout l = LayoutSlider(slider);
+	DrawAnimation(canvas, textures, t->background, l.bar, now_ms);
+	DrawAnimation(canvas, textures, t->cap_left, l.cap_left, now_ms);
+	DrawAnimation(canvas, textures, t->cap_right, l.cap_right, now_ms);
+	// DrawSliderBackground's thumb: Disabled, PressedFlyby or Pressed while held, Flyby under the mouse.
+	const SidlButtonTemplate &thumb = t->thumb;
+	bool held = slider.pressed;
+	std::string name = !slider.enabled                                         ? thumb.disabled
+	                   : held && slider.hover && !thumb.pressed_flyby.empty() ? thumb.pressed_flyby
+	                   : held                                                 ? thumb.pressed
+	                   : slider.hover                                         ? thumb.flyby
+	                                                                          : thumb.normal;
+	DrawAnimation(canvas, textures, name.empty() ? thumb.normal : name, l.thumb, now_ms);
+}
+
+void SidlWindow::SlideTo(Control &slider, int x)
+{
+	// SetScaledSliderValue: ticks times the distance along the bar over its width. Where on the bar
+	// counts as 0 is our reading (its left end); the mouse handler that calls it isn't decompiled.
+	SliderLayout l = LayoutSlider(slider);
+	if (l.bar.w <= 0)
+		return;
+	SetSlider(slider, slider.slider_ticks * (x - l.bar.x) / l.bar.w);
 }
 
 bool SidlWindow::OnKey(const InputEvent &event)

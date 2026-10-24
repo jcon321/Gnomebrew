@@ -51,9 +51,29 @@
 //   - Activate: ClassAnim shows A_ClassAnim<class, 2 digits>;
 //   - ProcessInventoryWindowFrame: the money buttons' counts (UpdateCurrencyDisplays), and the
 //     Alt. Adv. label and gauge only from level 51;
-//   - CInvSlot::SetItem: a slot with an item shows its icon, A_DragItem's cell icon - 500;
+//   - CInvSlot::SetItem: a slot with an item shows its icon, A_DragItem's cell icon - 500, and a
+//     stack how many are in it;
 //   - WndNotification: Done closes it, Skills opens the skills window. Destroy, Alt. Advance and
 //     the money buttons (coins onto the cursor) do nothing yet.
+// Its slots, and the item on the cursor (core/inventory.h has how the items move):
+//   - CInvSlot::HandleLButtonUp (@00421e48), with nothing on the cursor: a click on a slot picks
+//     up its item, but a stack of more than one opens the quantity window to say how many (all
+//     of it with Shift down, one with Ctrl: CQuantityWnd::Activate @0042f28a doesn't open then);
+//     with an item on the cursor, a click puts it in the slot, taking what was there (or tops up
+//     the same stack). A worn slot takes only what can go there (CanItemEquipInSlot), and only
+//     what our class, race and deity can use ("Your class, deity and/or race may not equip that
+//     item."). A button on the cursor goes, and the click goes on. Nothing while the quantity
+//     window's up;
+//   - CQuantityWnd (@0042f1a0 on): the slider from 0 to the stack's count, starting at all of it,
+//     the number in the edit box under it, each following the other (no more than the count can
+//     be typed); Accept or Enter takes that many (CInvSlot::SliderComplete), its close box or
+//     Escape none; the window opens with its top left at the slot's middle, kept on the screen;
+//   - CInventoryWnd::HandleLButtonUp (@004217c8): a click on IW_CharacterView with an item on
+//     the cursor puts it away (AutoInventory);
+//   - CCursorAttachment::Activate's item (2): its icon (CA_Anim, A_DragItem) and a stack's count
+//     in font 1 in a dark box at its corner (DrawCursorAttachmentText). Escape and clicking the
+//     world leave it there (RemoveAttachment won't take an item; the world click would drop it,
+//     which we don't do yet), and nothing goes on the cursor over it (IsOkToActivate).
 // The skills window (CSkillsWnd, @0043273a on): Activate lists the skills we have, by number,
 // then the languages we know some of; UpdateSkill puts each one's name, rank and value in the list
 // (white, the headings 0x8aa3ff, rows 16 high, the rank and value justified 1). We go by what
@@ -79,6 +99,7 @@ struct ZoneItem;
 class IniFile;
 class TextRenderer;
 class WindowManager;
+class ZoneSession;
 
 // A hot button (eqgame's ten pages of ten @007f6860): which kind of button it holds, and which one.
 struct HotButton
@@ -136,6 +157,12 @@ struct GameWindowState
 	int edit_social = 0, edit_color = 0;
 
 	void ClearCursor() { cursor = {}; cursor_text.clear(); } // CCursorAttachment::RemoveAttachment
+
+	// The quantity window's: the slot it takes from (-1: it isn't up), the stack's count, and
+	// the slider's value and the edit box's text as last seen, to tell which one changed.
+	int quantity_slot = -1, quantity_max = 0;
+	int quantity_value = 0;
+	std::string quantity_text;
 };
 
 // A button clicked in one of the windows: the page arrows and the hot buttons. A hot button that
@@ -150,14 +177,27 @@ void GameWindowRightClick(WindowManager &windows, GameWindowState &state, const 
 bool ShowItemDisplay(WindowManager &windows, const GameValues &values, const std::string &window, const std::string &control);
 // The right button let go over a slot after holding it: the item display closes.
 void GameWindowRightRelease(WindowManager &windows, const std::string &window, const std::string &control);
-void UpdateGameWindows(WindowManager &windows, const GameValues &values, const GameWindowState &state);
+
+// A click in the inventory window (a slot or the character view) or the quantity window, with
+// what it did: whether to play eqgame's WavePlay 0x92 (an item put somewhere, or picked up whole)
+// and an eqstr message for the chat (0 none). False when it wasn't one of theirs.
+struct InventoryClickResult
+{
+	bool sound = false;
+	uint32_t message = 0;
+};
+bool InventoryClick(WindowManager &windows, GameWindowState &state, ZoneSession &zone, const std::string &window,
+	const std::string &control, bool shift, bool ctrl, InventoryClickResult &result);
+// Enter in the quantity window's edit box: as Accept.
+bool QuantityEnter(WindowManager &windows, GameWindowState &state, ZoneSession &zone);
+void UpdateGameWindows(WindowManager &windows, const GameValues &values, GameWindowState &state);
 
 // A skill's name (eqgame's __SkillDict, from InitializeSkillData), from eqstr (null: English).
 std::string SkillName(const EqStr *eqstr, int skill);
 
-// The button on the cursor, drawn at the mouse (x, y), over the windows and under the cursor.
+// The item or button on the cursor, drawn at the mouse (x, y), over the windows and under the cursor.
 void DrawCursorAttachment(Canvas &canvas, TextRenderer &text, const WindowManager &windows, const GameWindowState &state,
-	int x, int y, uint64_t now_ms);
+	const GameValues &values, int x, int y, uint64_t now_ms);
 
 void LoadHotButtons(const IniFile &ini, GameWindowState &state);
 void StoreHotButtons(IniFile &ini, const GameWindowState &state);

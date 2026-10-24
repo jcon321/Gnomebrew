@@ -12,7 +12,9 @@
 // and snapshots the zone once it's in, then every few seconds for SECONDS (default 10), then
 // tries the windows: drags the selector by its title bar, opens the inventory from it, shows its
 // items in the item display with alt+click (printing them) and the first by holding the right button,
-// opens the skills window from it (printing its list), closes both with Escape, minimizes and restores
+// opens the skills window from it (printing its list), picks items up and puts them down (a stack
+// through the quantity window, with Ctrl, and put away on the character view), closes both with
+// Escape, minimizes and restores
 // the actions window, and sizes the target and chat windows from their borders (the layout goes
 // to OUTDIR/UI_*.ini); puts Actions window buttons on the hot
 // buttons by holding them and clicking a hot button, swaps two, uses one, takes one off again by
@@ -22,6 +24,7 @@
 #include "eqstr.h"
 #include "spell_file.h"
 #include "frontend.h"
+#include "inventory.h"
 #include "png_writer.h"
 
 #include <algorithm>
@@ -335,6 +338,90 @@ int main(int argc, char **argv)
 				}
 				h.Key(InputEvent::Key::Escape);
 				where("SkillsWindow");
+			}
+			// Items onto the cursor and back (each step printing what's where): a click picks the
+			// first lone item up and puts it in the first empty general slot; a click on the first
+			// stack opens the quantity window, the slider goes halfway and Enter takes that many,
+			// which the character view puts away again; Ctrl takes one, which goes back on its stack.
+			auto items = [&](const char *when) {
+				printf("[preview] items %s:", when);
+				for (const auto &[slot, item] : frontend.Zone().Items())
+					printf(" %d=%s%s", slot, item.name.c_str(),
+						Inventory::Stacks(item) ? ("x" + std::to_string(Inventory::Count(item))).c_str() : "");
+				printf("\n");
+			};
+			auto slot_click = [&](int slot, bool ctrl) {
+				const SidlWindow::Control *c = inventory->Find("InvSlot" + std::to_string(slot));
+				if (!c)
+					return;
+				int x = c->rect.x + c->rect.w / 2, y = c->rect.y + c->rect.h / 2;
+				InputEvent event{InputEvent::Type::MouseMove, x, y};
+				frontend.OnEvent(event);
+				event.ctrl = ctrl;
+				event.type = InputEvent::Type::MouseDown;
+				frontend.OnEvent(event);
+				event.type = InputEvent::Type::MouseUp;
+				frontend.OnEvent(event);
+				frontend.Update(NowMs());
+			};
+			int lone = -1, stack = -1, empty = -1;
+			for (const auto &[slot, item] : frontend.Zone().Items()) {
+				if (slot < Inventory::FirstGeneral || slot > Inventory::LastGeneral)
+					continue;
+				if (Inventory::Count(item) > 1 && stack < 0)
+					stack = slot;
+				else if (!Inventory::Stacks(item) && item.item_class == 0 && lone < 0)
+					lone = slot;
+			}
+			for (int slot = Inventory::FirstGeneral; slot <= Inventory::LastGeneral && empty < 0; ++slot)
+				if (!frontend.Zone().Items().count(static_cast<int16_t>(slot)))
+					empty = slot;
+			items("before");
+			if (lone >= 0 && empty >= 0) {
+				slot_click(lone, false);
+				items("picked up");
+				frontend.OnEvent({InputEvent::Type::MouseMove, 600, 400});
+				h.RunUntil([] { return false; }, 200);
+				h.Snapshot("w1-cursor-item");
+				// Escape can't take an item off the cursor, so it closes the inventory (as eqgame's
+				// CDisplay_NewUIProcessEscape goes on when RemoveAttachment won't); the selector opens
+				// it again.
+				h.Key(InputEvent::Key::Escape);
+				items("after Escape");
+				where("InventoryWindow");
+				if (const SidlWindow::Control *button = windows.Find("SelectorWindow")->Find("SELW_InventoryToggleButton"))
+					click(button->rect.x + button->rect.w / 2, button->rect.y + button->rect.h / 2);
+				where("InventoryWindow");
+				slot_click(empty, false);
+				items("put down");
+			}
+			if (stack >= 0) {
+				slot_click(stack, false);
+				if (const SidlWindow *quantity = where("QuantityWnd")) {
+					h.RunUntil([] { return false; }, 200);
+					h.Snapshot("w1-quantity");
+					const SidlWindow::Control *slider = quantity->Find("QTYW_Slider");
+					const SidlWindow::Control *edit = quantity->Find("QTYW_SliderInput");
+					printf("[preview] quantity: slider %d of %d, box '%s'\n", slider->slider_value, slider->slider_ticks - 1,
+						edit->text.c_str());
+					drag(slider->rect.x + 5, slider->rect.y + slider->rect.h / 2, slider->rect.x + slider->rect.w / 2,
+						slider->rect.y + slider->rect.h / 2);
+					printf("[preview] quantity: slider %d, box '%s'\n", slider->slider_value, edit->text.c_str());
+					h.Snapshot("w1-quantity-half");
+					h.Key(InputEvent::Key::Enter);
+					where("QuantityWnd");
+					items("took some");
+					frontend.OnEvent({InputEvent::Type::MouseMove, 600, 400});
+					h.RunUntil([] { return false; }, 200);
+					h.Snapshot("w1-cursor-stack");
+					if (const SidlWindow::Control *view = inventory->Find("IW_CharacterView"))
+						click(view->rect.x + view->rect.w / 2, view->rect.y + view->rect.h / 2);
+					items("put away");
+				}
+				slot_click(stack, true);
+				items("ctrl took one");
+				slot_click(stack, false);
+				items("put back");
 			}
 			h.Key(InputEvent::Key::Escape); // eqgame's escape closes the inventory
 			where("InventoryWindow");

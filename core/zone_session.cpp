@@ -1,6 +1,7 @@
 #include "zone_session.h"
 #include "eqstr.h"
 #include "inflate.h"
+#include "inventory.h"
 #include "opcodes.h"
 #include "packet_log.h"
 #include "rdp_session.h"
@@ -135,6 +136,7 @@ namespace
 		item.no_drop = d[o + 176];
 		item.size = d[o + 177];
 		item.item_class = static_cast<uint8_t>(Read<int16_t>(d, o + 178));
+		item.id = Read<uint16_t>(d, o + 180);
 		item.icon = Read<uint16_t>(d, o + 182);
 		item.slot = Read<int16_t>(d, o + 184);
 		item.slots = Read<int32_t>(d, o + 188);
@@ -155,18 +157,21 @@ namespace
 			item.mana = Read<int16_t>(d, o + 242);
 			item.ac = Read<int16_t>(d, o + 244);
 			item.max_charges = d[o + 246];
+			item.light = d[o + 248];
 			item.delay = d[o + 249];
 			item.damage = d[o + 250];
 			item.effect_type = Read<int8_t>(d, o + 251);
 			item.range = d[o + 252];
 			item.item_type = d[o + 253];
 			item.magic = d[o + 254];
+			item.effect_level = d[o + 255];
 			item.effect1 = Read<int16_t>(d, o + 266);
 			item.classes = Read<int32_t>(d, o + 268);
 			item.races = Read<int32_t>(d, o + 272);
 			item.stackable = d[o + 276];
 		}
 		else if (item.item_class == 1) {
+			item.bag_type = d[o + 268];
 			item.bag_slots = d[o + 269];
 			item.bag_open = d[o + 270];
 			item.bag_size = d[o + 271];
@@ -563,6 +568,16 @@ bool ZoneSession::ClickDoor(uint8_t door, uint16_t item, int16_t skill)
 	return Send(ZoneOp::ClickDoor, body, sizeof(body), "OP_ClickDoor " + std::to_string(door));
 }
 
+bool ZoneSession::MoveItem(int16_t from, int16_t to, int32_t qty)
+{
+	if (m_state != State::InZone)
+		return false;
+	// MoveItem_Struct: from, to and the count, each an i32.
+	int32_t body[3] = {from, to, qty};
+	return Send(ZoneOp::MoveItem, body, sizeof(body),
+		"OP_MoveItem " + std::to_string(from) + " -> " + std::to_string(to) + (qty ? " x" + std::to_string(qty) : ""));
+}
+
 void ZoneSession::SetMovement(const ZoneMovement &movement)
 {
 	if (m_state != State::InZone && m_state != State::Camping)
@@ -953,22 +968,17 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		}
 		break;
 	case ZoneOp::MoveItem: {
-		// The zone moving one of our items (or deleting it: to -1); one already there swaps.
+		// The zone moving one of our items (or deleting it: to -1); one already there swaps, and a
+		// bag's contents go with it.
+		if (data.size() < 8)
+			break;
 		int16_t from = static_cast<int16_t>(Read<int32_t>(data, 0)), to = static_cast<int16_t>(Read<int32_t>(data, 4));
-		auto it = m_items.find(from);
-		if (it == m_items.end())
+		if (!m_items.count(from))
 			break;
-		ZoneItem moved = it->second;
-		m_items.erase(it);
 		if (to < 0)
-			break;
-		auto there = m_items.find(to);
-		if (there != m_items.end()) {
-			there->second.slot = from;
-			m_items[from] = there->second;
-		}
-		moved.slot = to;
-		m_items[to] = moved;
+			Inventory::Remove(m_items, from);
+		else
+			Inventory::Swap(m_items, from, to);
 		break;
 	}
 	case ZoneOp::Emote: {

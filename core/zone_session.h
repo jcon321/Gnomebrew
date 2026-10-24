@@ -163,7 +163,8 @@ struct ZoneMovement
 // only for the kind of item they belong to.
 struct ZoneItem
 {
-	int16_t slot = 0;        // equipSlot: 1..20 worn (21 ammo), 22..29 the bags' slots, 30 cursor...
+	int16_t slot = 0;        // equipSlot: 0 the cursor, 1..21 worn (21 ammo), 22..29 general, 250..329 in their bags
+	uint16_t id = 0;         // the item's number: two of the same stack
 	uint8_t item_class = 0;  // 0 common, 1 container, 2 book
 	std::string name;
 	std::string lore;        // its first character marks it: '*' lore, '~' pending lore; then '#' artifact, '&' summoned
@@ -187,6 +188,8 @@ struct ZoneItem
 	int8_t str = 0, sta = 0, cha = 0, dex = 0, int_ = 0, agi = 0, wis = 0;
 	int8_t mr = 0, fr = 0, cr = 0, dr = 0, pr = 0;
 	uint8_t max_charges = 0, delay = 0, damage = 0, range = 0, item_type = 0, magic = 0;
+	uint8_t light = 0;
+	uint8_t effect_level = 0; // EffectLevel1: a clicky's casting level, which we must have from 51
 	int8_t effect_type = 0;  // EffectType1: 0 combat, 1 click, 2 worn, 3 expendable, 4 must equip, 5 click, class checked
 	int16_t effect1 = 0;     // Effect1: a scroll's spell
 	uint8_t stackable = 0;   // IsStackable, @276
@@ -194,6 +197,7 @@ struct ZoneItem
 	int16_t effect2 = 0;     // Effect2: the spell of its effect
 	int32_t classes = 0, races = 0; // a bit per class (WAR first) and per race (HUM first)
 	// Containers:
+	uint8_t bag_type = 0;    // 2 a quiver, 8 a bandolier...
 	uint8_t bag_slots = 0, bag_open = 0, bag_size = 0, bag_wr = 0; // bag_wr: % weight reduction
 	// Books (the first two bytes of the union): book or note, and open or not.
 	uint8_t book_type = 0, book_open = 0;
@@ -313,6 +317,11 @@ public:
 	int32_t MaxHp() const { return m_max_hp; }
 	// The items we have (OP_CharInventory, then each OP_ItemPacket), by slot.
 	const std::map<int16_t, ZoneItem> &Items() const { return m_items; }
+	// The items to change as eqgame changes its own before it tells the zone (an item picked up,
+	// put down or split, core/inventory.h): the zone doesn't answer a move it agrees with.
+	std::map<int16_t, ZoneItem> &EditItems() { return m_items; }
+	// OP_MoveItem: we moved `qty` of a stack (0: the whole item) from one slot to another (0 the cursor).
+	bool MoveItem(int16_t from, int16_t to, int32_t qty);
 	// The guild names, from the world (SetGuilds, before Begin) and then the zone.
 	void SetGuilds(const GuildNames &guilds) { m_guilds = guilds; }
 	const GuildNames &Guilds() const { return m_guilds; }
