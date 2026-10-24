@@ -412,20 +412,28 @@ const SidlPiece *SidlDefinitions::Piece(const std::string &item) const
 namespace
 {
 	// STML's lines (<BR> and <P> break them), each as runs of text in one color: <c "#RRGGBB">
-	// colors what follows until its </c>. Other tags are dropped.
+	// colors what follows until its </c>. Other tags are dropped. As CStmlWnd::ParseSTML
+	// (@005826a0), a run of whitespace is one space, and none starts a line.
 	std::vector<std::vector<SidlWindow::StmlRun>> ParseStml(const std::string &stml, uint32_t color)
 	{
 		std::vector<std::vector<SidlWindow::StmlRun>> lines(1);
 		std::vector<uint32_t> colors{color};
+		bool after_space = false;
 		auto add = [&](const std::string &text) {
 			auto &line = lines.back();
 			if (!line.empty() && line.back().color == colors.back())
 				line.back().text += text;
 			else
 				line.push_back({text, colors.back()});
+			after_space = false;
 		};
 		for (size_t i = 0; i < stml.size(); ++i) {
-			if (stml[i] == '<') {
+			if (stml[i] == ' ' || stml[i] == '\t' || stml[i] == '\n' || stml[i] == '\r') {
+				if (!after_space && !lines.back().empty())
+					add(" ");
+				after_space = true;
+			}
+			else if (stml[i] == '<') {
 				size_t end = stml.find('>', i);
 				if (end == std::string::npos)
 					break;
@@ -453,7 +461,7 @@ namespace
 				add("&");
 				i += 4;
 			}
-			else if (stml[i] != '\r')
+			else
 				add(std::string(1, stml[i]));
 		}
 		return lines;
@@ -696,20 +704,20 @@ Rect SidlWindow::TitleBoxRect(TitleBox box) const
 	const Control &root = m_controls.front();
 	if (!root.frame || root.title.h <= 0)
 		return {};
-	// Right-aligned in the title bar, the close box last; each its Normal frame's size.
+	// CXWnd's hit test rects (@00571540, pieces 3 and 5), from the rect inside the border: the
+	// minimize box 8 in from its left and 2 down, the close box ending 7 short of its right and
+	// 1 down; each its Normal frame's size.
 	const Rect &t = root.title;
-	int right = t.Right() - 2;
-	Rect close, minimize;
-	if (root.def->closebox) {
+	if (box == TitleBox::Close) {
+		if (!root.def->closebox)
+			return {};
 		Rect size = AnimationSize(root.frame->close_box.normal);
-		close = {right - size.w, t.y + (t.h - size.h) / 2, size.w, size.h};
-		right = close.x - 1;
+		return {t.Right() - 7 - size.w, t.y + 1, size.w, size.h};
 	}
-	if (root.def->minimizebox) {
-		Rect size = AnimationSize(root.frame->minimize_box.normal);
-		minimize = {right - size.w, t.y + (t.h - size.h) / 2, size.w, size.h};
-	}
-	return box == TitleBox::Close ? close : minimize;
+	if (!root.def->minimizebox)
+		return {};
+	Rect size = AnimationSize(root.frame->minimize_box.normal);
+	return {t.x + 8, t.y + 2, size.w, size.h};
 }
 
 SidlWindow::TitleBox SidlWindow::TitleBoxAt(int x, int y) const
@@ -1115,15 +1123,20 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 		                                     : t.normal;
 		if (name.empty())
 			name = t.normal;
-		if (!control.blank)
+		// A cell_animation takes the place of the template and its decal, filling the button (the item
+		// display's icon: CItemDisplayWnd::SetItem makes A_DragItem the Normal and clears the decal, so
+		// the window's RedIconBackground doesn't show).
+		bool cell_background = !control.cell_animation.empty();
+		if (cell_background && control.cell >= 0)
+			DrawCell(canvas, textures, control.cell_animation, control.cell, control.rect);
+		else if (!control.blank && !cell_background)
 			DrawAnimation(canvas, textures, name, control.rect, now_ms);
 		// The decal at its offset (its own size without DecalSize); the text goes in what's right of it.
 		// A grid decal (a buff's BuffIcons) shows the control's cell, and nothing without one
-		// (CBuffWindow::SetBuffIcon's SetCurCell(-1)). A cell_animation takes the decal's place (the
-		// item display's icon, A_DragItem).
+		// (CBuffWindow::SetBuffIcon's SetCurCell(-1)).
 		Rect text_rect = control.rect;
-		const std::string &decal_name = control.cell_animation.empty() ? t.normal_decal : control.cell_animation;
-		const SidlAnimation *decal_animation = m_defs->Animation(decal_name);
+		const std::string &decal_name = t.normal_decal;
+		const SidlAnimation *decal_animation = cell_background ? nullptr : m_defs->Animation(decal_name);
 		bool grid_decal = decal_animation && decal_animation->grid;
 		if (decal_animation && !control.blank && (!grid_decal || control.cell >= 0)) {
 			Rect decal = def.decal.w > 0 && def.decal.h > 0 ? def.decal : AnimationSize(decal_name);

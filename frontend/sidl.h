@@ -254,8 +254,9 @@ public:
 		size_t max_chars = 64; // Editbox
 		std::string animation; // StaticAnimation: another animation in place of its own; "" its own
 		// InvSlot: what's in it, a cell of a grid animation (an item's icon, A_DragItem), over the
-		// slot's picture; cell < 0 nothing. A Button whose NormalDecal is a grid animation (a buff's
-		// BuffIcons) shows that decal's cell the same way.
+		// slot's picture; cell < 0 nothing. A Button with one draws that cell in place of its
+		// template and decal (the item display's icon). A Button whose NormalDecal is a grid
+		// animation (a buff's BuffIcons) shows that decal's cell the same way.
 		std::string cell_animation;
 		int cell = -1;
 		// Listbox (CListWnd): its rows' text by column, each column's justification (0 left, 1
@@ -319,8 +320,8 @@ public:
 	Control &Root() { return m_controls.front(); }
 	bool Empty() const { return m_controls.empty(); }
 
-	// The title bar's close and minimize boxes (Style_Closebox, Style_Minimizebox), at its right
-	// end, and how they look: the mouse over one, one held down.
+	// The title bar's close and minimize boxes (Style_Closebox, Style_Minimizebox), close at its
+	// right end and minimize at its left, and how they look: the mouse over one, one held down.
 	enum class TitleBox { None, Close, Minimize };
 	Rect TitleBoxRect(TitleBox box) const; // empty when it has no such box
 	TitleBox TitleBoxAt(int x, int y) const;
