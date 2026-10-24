@@ -32,6 +32,22 @@ namespace
 			c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 		return out;
 	}
+
+	// Our model's look: our spawn, as the zone entered us and our items since have it.
+	render::CharacterAppearance PlayerAppearance(const ZoneSession &zone)
+	{
+		const ZoneSpawn &me = zone.Self();
+		render::CharacterAppearance appearance;
+		appearance.race = me.race ? me.race : zone.Profile().race;
+		appearance.gender = me.gender;
+		appearance.face = me.face;
+		appearance.height = me.size;
+		for (int k = 0; k < render::EquipSlots; ++k) {
+			appearance.equip[k] = me.equipment[k];
+			appearance.tint[k] = me.colors[k];
+		}
+		return appearance;
+	}
 }
 
 FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, const FrontEndConfig &config, GameData ui)
@@ -622,6 +638,13 @@ void FrontEnd::Update(uint64_t now_ms)
 		if (m_zone.GameTime(hour, minute))
 			m_zone_view->SetGameTime(hour, minute);
 		m_zone_view->UpdateSpawns(m_zone.Spawns(), m_zone.MySpawnId(), now_ms);
+		// What we put on or took off (UpdatePlayerAppearance), and the light we carry.
+		const ZoneSpawn &me = m_zone.Self();
+		if (me.look_serial != m_my_look_serial) {
+			m_my_look_serial = me.look_serial;
+			m_zone_view->SetPlayer(PlayerAppearance(m_zone), me.walk_speed, me.run_speed);
+		}
+		m_zone_view->SetMyLight(me.light);
 		m_zone_view->SetDebugDraw(m_debug.Drawing());
 		bool jumped = m_zone_view->Move(ZoneControls(), now_ms, m_mouse_turn || m_mouse_pan);
 		if (m_zone_view->Placed())
@@ -1564,16 +1587,8 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			if (m_sound) // StartWorldDisplay
 				m_sound->SetCurrentZone(m_zone.Info().short_name);
 			const ZoneSpawn &me = m_zone.Self();
-			render::CharacterAppearance appearance;
-			appearance.race = me.race ? me.race : m_zone.Profile().race;
-			appearance.gender = me.gender;
-			appearance.face = me.face;
-			appearance.height = me.size;
-			for (int k = 0; k < render::EquipSlots; ++k) {
-				appearance.equip[k] = me.equipment[k];
-				appearance.tint[k] = me.colors[k];
-			}
-			m_zone_view->SetPlayer(appearance, me.walk_speed, me.run_speed);
+			m_zone_view->SetPlayer(PlayerAppearance(m_zone), me.walk_speed, me.run_speed);
+			m_my_look_serial = me.look_serial;
 			m_zone_view->SetPlayerPosition(me.x, me.y, me.z, me.heading);
 			if (!m_zone.Doors().empty())
 				m_zone_view->SetDoors(m_zone.Doors(), m_now_ms);

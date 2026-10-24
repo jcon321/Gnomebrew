@@ -79,6 +79,8 @@ public:
 
 	// Everyone else, every frame: their models, carried on from their last update.
 	void UpdateSpawns(const std::map<uint16_t, ZoneSpawn> &spawns, uint16_t my_id, uint64_t now_ms);
+	// The light we carry (our ZoneSpawn::light; we're not among the spawns).
+	void SetMyLight(uint8_t light) { m_my_light = light; }
 	struct NameTag
 	{
 		uint16_t id;  // 0: us

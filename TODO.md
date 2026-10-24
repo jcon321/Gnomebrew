@@ -26,11 +26,11 @@ no rules of its own.
      Still to do: eqgame's own formulas for the resists, AC, ATK and weight (blank for now), and for
      stats spells, AAs and drunkenness; the XP and AA gauges (the experience table); coins onto the
      cursor, Destroy, Alt. Advance, bag windows, and icons in the hot button window's weapon slots.
-   - Equipping: an item goes into a worn slot (the rules and the move are done), but what eqgame
-     does besides for itself isn't: our model's armor and weapons (`CDisplay::HandleMaterial`,
-     `UpdateEquipmentDisplay`) and light (`UpdateLight`). Also the worn slots' empty pictures' names
-     (`CInvSlot::SetItem`'s tooltip), dual wield from the class table rather than the zone's 254/255,
-     and the casting check (no moves but from the cursor while casting).
+   - Equipping: our model's armor, weapons and light follow what we have on (`ZoneSession::UpdateAppearance`).
+     Still to do: the worn slots' empty pictures' names (`CInvSlot::SetItem`'s tooltip), dual wield
+     from the class table rather than the zone's 254/255, the casting check (no moves but from the
+     cursor while casting), /showhelm, and a carried light going out underwater (`UpdateLight`'s
+     check of the body's environment; it's only not drawn there now).
    - The item on the cursor: clicking the world with it drops it on the ground or gives it to the
      target (`CEverQuest_LMouseUp`, `DropHeldItemOnGround`, `DropItemOrMoneyOnPlayer`), and
      AutoInventory with no room drops it ("There was no place to put that!"); for now it stays on the

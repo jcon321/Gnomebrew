@@ -170,6 +170,7 @@ struct ZoneItem
 	std::string lore;        // its first character marks it: '*' lore, '~' pending lore; then '#' artifact, '&' summoned
 	uint8_t weight = 0, no_rent = 0, no_drop = 0, size = 0; // no_rent, no_drop: 0 means it is
 	uint16_t icon = 0;
+	std::string idfile;      // its model when held or worn: "IT92" (CDisplay draws IT<n>)
 	int32_t slots = 0;       // where it can be worn, a bit per slot
 	int32_t cast_time = 0;   // ms; a food or drink's duration
 	uint16_t skill_mod_type = 0;
@@ -189,6 +190,8 @@ struct ZoneItem
 	int8_t mr = 0, fr = 0, cr = 0, dr = 0, pr = 0;
 	uint8_t max_charges = 0, delay = 0, damage = 0, range = 0, item_type = 0, magic = 0;
 	uint8_t light = 0;
+	uint8_t material = 0;    // what it looks like worn (0 none, 1 leather, 2 chain, 3 plate, 10-16 robes...)
+	uint32_t color = 0;      // its tint, 0x..RRGGBB (0: none)
 	uint8_t effect_level = 0; // EffectLevel1: a clicky's casting level, which we must have from 51
 	int8_t effect_type = 0;  // EffectType1: 0 combat, 1 click, 2 worn, 3 expendable, 4 must equip, 5 click, class checked
 	int16_t effect1 = 0;     // Effect1: a scroll's spell
@@ -321,7 +324,14 @@ public:
 	// put down or split, core/inventory.h): the zone doesn't answer a move it agrees with.
 	std::map<int16_t, ZoneItem> &EditItems() { return m_items; }
 	// OP_MoveItem: we moved `qty` of a stack (0: the whole item) from one slot to another (0 the cursor).
+	// Then UpdateAppearance.
 	bool MoveItem(int16_t from, int16_t to, int32_t qty);
+	// CEverQuest_UpdatePlayerAppearance and UpdateLight (@004f0c7b), after our items move: our look
+	// (CDisplay::HandleMaterial per armor slot, UpdateEquipmentDisplay's weapons) where what's on
+	// changed since, and the light we carry from what we have on, into Self() (its look_serial
+	// counting the looks); each change goes to the zone, OP_WearChange and OP_SpawnAppearance, as
+	// eqgame tells it.
+	void UpdateAppearance();
 	// The guild names, from the world (SetGuilds, before Begin) and then the zone.
 	void SetGuilds(const GuildNames &guilds) { m_guilds = guilds; }
 	const GuildNames &Guilds() const { return m_guilds; }
@@ -380,6 +390,11 @@ private:
 	std::map<uint16_t, ZoneSpawn> m_spawns;
 	ZoneSpawn m_self;
 	uint16_t m_my_id = 0;
+	// What we had on as UpdateAppearance last saw it (from OP_CharInventory on): the slots it tells.
+	void WornLook(uint16_t material[9], uint32_t color[9]) const;
+	uint16_t m_worn_material[9] = {};
+	uint32_t m_worn_color[9] = {};
+	bool m_worn_known = false;
 	int32_t m_hp = 0, m_max_hp = 0;
 	std::map<int16_t, ZoneItem> m_items;
 	GuildNames m_guilds;

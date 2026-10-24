@@ -11,6 +11,7 @@
 #include <cmath>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace
@@ -139,6 +140,7 @@ namespace
 		item.id = Read<uint16_t>(d, o + 180);
 		item.icon = Read<uint16_t>(d, o + 182);
 		item.slot = Read<int16_t>(d, o + 184);
+		item.idfile = CString(d, o + 144, 30);
 		item.slots = Read<int32_t>(d, o + 188);
 		if (item.item_class == 0) {
 			item.str = Read<int8_t>(d, o + 228);
@@ -165,6 +167,8 @@ namespace
 			item.item_type = d[o + 253];
 			item.magic = d[o + 254];
 			item.effect_level = d[o + 255];
+			item.material = d[o + 256];
+			item.color = Read<uint32_t>(d, o + 260);
 			item.effect1 = Read<int16_t>(d, o + 266);
 			item.classes = Read<int32_t>(d, o + 268);
 			item.races = Read<int32_t>(d, o + 272);
@@ -219,6 +223,7 @@ namespace
 		s.race = Read<uint16_t>(d, 174);
 		s.gender = d[176];
 		s.level = d[177];
+		s.light = d[182];
 		s.face = d[183];
 		for (int k = 0; k < 9; ++k) {
 			s.equipment[k] = Read<uint16_t>(d, 184 + k * 2);
@@ -414,6 +419,7 @@ void ZoneSession::Reset(const std::string &character)
 	m_spawns.clear();
 	m_self = ZoneSpawn{};
 	m_my_id = 0;
+	m_worn_known = false;
 	m_hp = m_max_hp = 0;
 	m_items.clear();
 	m_have_profile = m_have_zone_entry = m_sent_req_new_zone = m_sent_exp_zonein = false;
@@ -574,8 +580,114 @@ bool ZoneSession::MoveItem(int16_t from, int16_t to, int32_t qty)
 		return false;
 	// MoveItem_Struct: from, to and the count, each an i32.
 	int32_t body[3] = {from, to, qty};
-	return Send(ZoneOp::MoveItem, body, sizeof(body),
+	bool sent = Send(ZoneOp::MoveItem, body, sizeof(body),
 		"OP_MoveItem " + std::to_string(from) + " -> " + std::to_string(to) + (qty ? " x" + std::to_string(qty) : ""));
+	UpdateAppearance();
+	return sent;
+}
+
+void ZoneSession::WornLook(uint16_t material[9], uint32_t color[9]) const
+{
+	auto at = [&](int16_t slot) -> const ZoneItem * {
+		auto it = m_items.find(slot);
+		return it != m_items.end() && it->second.item_class == 0 ? &it->second : nullptr;
+	};
+	auto it_number = [](const ZoneItem *item) {
+		return item && item->idfile.size() > 2 ? static_cast<uint16_t>(atoi(item->idfile.c_str() + 2)) : uint16_t{0};
+	};
+	// HandleMaterial: head, chest, arms, wrists (the first that has one), hands, legs and feet show
+	// their item's material and tint; a helm whose model is IT240 or over (the custom ones) that.
+	static const int16_t worn[7] = {2, 17, 7, 9, 12, 18, 19};
+	for (int k = 0; k < 9; ++k) {
+		material[k] = 0;
+		color[k] = 0;
+	}
+	for (int k = 0; k < 7; ++k) {
+		const ZoneItem *item = at(worn[k]);
+		if (k == 3 && !item)
+			item = at(10);
+		if (!item)
+			continue;
+		material[k] = item->material;
+		color[k] = item->color;
+		if (k == 0 && it_number(item) >= 240)
+			material[k] = it_number(item);
+	}
+	// UpdateEquipmentDisplay: the hands hold their items' IT models, the left the ranged item when
+	// both are empty.
+	const ZoneItem *left = at(14);
+	if (!at(13) && !left)
+		left = at(11);
+	material[7] = it_number(at(13));
+	material[8] = it_number(left);
+}
+
+void ZoneSession::UpdateAppearance()
+{
+	uint16_t material[9];
+	uint32_t color[9];
+	WornLook(material, color);
+	if (!m_worn_known) {
+		std::copy(material, material + 9, m_worn_material);
+		std::copy(color, color + 9, m_worn_color);
+		m_worn_known = true;
+	}
+	bool tell = m_my_id != 0 && (m_state == State::InZone || m_state == State::Camping);
+	bool looks = false;
+	for (uint8_t k = 0; k < 9; ++k) {
+		if (m_worn_material[k] == material[k] && m_worn_color[k] == color[k])
+			continue;
+		m_worn_material[k] = material[k];
+		m_worn_color[k] = color[k];
+		m_self.equipment[k] = material[k];
+		m_self.colors[k] = color[k];
+		looks = true;
+		if (!tell)
+			continue;
+		// WearChange_Struct: {u16 spawn, u8 slot, pad, u16 material, pad, u32 color}.
+		uint8_t body[12] = {};
+		memcpy(body, &m_my_id, 2);
+		body[2] = k;
+		memcpy(body + 4, &material[k], 2);
+		memcpy(body + 8, &color[k], 4);
+		Send(ZoneOp::WearChange, body, sizeof(body),
+			"OP_WearChange slot " + std::to_string(k) + " material " + std::to_string(material[k]));
+	}
+	if (looks)
+		++m_self.look_serial;
+
+	auto at = [&](int16_t slot) -> const ZoneItem * {
+		auto it = m_items.find(slot);
+		return it != m_items.end() && it->second.item_class == 0 ? &it->second : nullptr;
+	};
+	// UpdateLight: the brightest light (CDisplay_GetIntensity) of a common item we have on, unless
+	// one in a general slot is a lightstone's (types 9 to 13), which shines instead.
+	auto intensity = [](uint8_t type) {
+		static const uint8_t by_type[16] = {0, 1, 2, 3, 6, 7, 8, 9, 10, 3, 7, 9, 4, 5, 4, 5};
+		return type < 16 ? by_type[type] : uint8_t{0};
+	};
+	uint8_t light = 0, brightest = 0;
+	for (int16_t slot = 1; slot <= 21; ++slot)
+		if (const ZoneItem *item = at(slot); item && intensity(item->light) > brightest) {
+			brightest = intensity(item->light);
+			light = item->light;
+		}
+	for (int16_t slot = 22; slot <= 29; ++slot)
+		if (const ZoneItem *item = at(slot); item && item->light >= 9 && item->light <= 13 && item->light > intensity(item->light))
+			light = item->light;
+	if (light != m_self.light) {
+		m_self.light = light;
+		// CDisplay::ChangeLight -> CEverQuest_SendLightInfo: SpawnAppearance_Struct {u16 spawn, u16 type, u32 value}.
+		if (tell) {
+			uint8_t body[8] = {};
+			memcpy(body, &m_my_id, 2);
+			uint16_t type = AppearanceLight;
+			memcpy(body + 2, &type, 2);
+			uint32_t value = light;
+			memcpy(body + 4, &value, 4);
+			Send(ZoneOp::SpawnAppearance, body, sizeof(body), "OP_SpawnAppearance light " + std::to_string(light));
+		}
+	}
 }
 
 void ZoneSession::SetMovement(const ZoneMovement &movement)
@@ -955,6 +1067,8 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 				m_items[item.slot] = item;
 			}
 			Log("[zone]    inventory: " + std::to_string(m_items.size()) + " items");
+			WornLook(m_worn_material, m_worn_color); // what the zone already showed us in
+			m_worn_known = true;
 		}
 		break;
 	}
@@ -965,6 +1079,7 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		if (data.size() >= ItemSize) {
 			ZoneItem item = ParseItem(data, 0);
 			m_items[item.slot] = item;
+			UpdateAppearance(); // msg_snd_ieq
 		}
 		break;
 	case ZoneOp::MoveItem: {
@@ -979,6 +1094,7 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 			Inventory::Remove(m_items, from);
 		else
 			Inventory::Swap(m_items, from, to);
+		UpdateAppearance();
 		break;
 	}
 	case ZoneOp::Emote: {
@@ -1032,6 +1148,9 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 				}
 			}
 		}
+		else if (type == AppearanceLight && Read<uint16_t>(data, 0) == m_my_id && m_my_id != 0) {
+			m_self.light = static_cast<uint8_t>(Read<uint32_t>(data, 4)); // we're not among the spawns
+		}
 		else if (type == AppearanceAnimation || type == AppearanceLight) {
 			auto it = m_spawns.find(Read<uint16_t>(data, 0));
 			if (it != m_spawns.end()) {
@@ -1047,9 +1166,20 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 	}
 	case ZoneOp::WearChange: {
 		// WearChange_Struct: a slot's material and tint changed (an item worn or taken off).
-		auto it = m_spawns.find(Read<uint16_t>(data, 0));
+		uint16_t id = Read<uint16_t>(data, 0);
+		auto it = m_spawns.find(id);
 		uint8_t slot = data.size() >= 12 ? data[2] : 0xff;
-		if (it != m_spawns.end() && slot < 9) {
+		if (id == m_my_id && id != 0 && slot < 9) {
+			// SwapItem's for us, after an item went on: we're not among the spawns.
+			uint16_t material = Read<uint16_t>(data, 4);
+			uint32_t color = Read<uint32_t>(data, 8);
+			if (m_self.equipment[slot] != material || m_self.colors[slot] != color) {
+				m_self.equipment[slot] = material;
+				m_self.colors[slot] = color;
+				++m_self.look_serial;
+			}
+		}
+		else if (it != m_spawns.end() && slot < 9) {
 			it->second.equipment[slot] = Read<uint16_t>(data, 4);
 			it->second.colors[slot] = Read<uint32_t>(data, 8);
 			++it->second.look_serial;

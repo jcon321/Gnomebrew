@@ -992,8 +992,6 @@ void ZoneView::UpdateSpawns(const std::map<uint16_t, ZoneSpawn> &spawns, uint16_
 			m_sound->RemoveActorLoop(it->first);
 		it = m_actors.erase(it);
 	}
-	auto me = spawns.find(my_id);
-	m_my_light = me != spawns.end() ? me->second.light : 0;
 	for (const auto &[id, spawn] : spawns) {
 		if (id == my_id || id == 0)
 			continue;

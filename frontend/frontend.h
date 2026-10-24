@@ -270,6 +270,7 @@ private:
 	std::string m_last_tell; // who to /reply to (AddNameToTellList)
 	std::string m_time_of_day;
 	std::unique_ptr<ZoneView> m_zone_view;
+	uint32_t m_my_look_serial = 0; // ZoneSpawn::look_serial our model was built for
 	bool m_zone_error_logged = false;
 	bool m_zoning = false; // through a zone line: from the zone's approval until the next zone is in
 	DebugMenu m_debug;
