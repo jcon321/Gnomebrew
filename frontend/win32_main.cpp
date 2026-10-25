@@ -370,6 +370,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	if (show_names < 0 || show_names > 7)
 		show_names = 4;
 	bool extended_nameplates = GetPrivateProfileIntW(L"Defaults", L"EnableExtendedNameplateDistance", 1, ini.c_str()) != 0;
+	bool velious_textures = GetPrivateProfileIntW(L"Defaults", L"VeliousTextures", 1, ini.c_str()) != 0;
 	bool record_packets = GetPrivateProfileIntW(L"Debug", L"RecordPackets", 0, ini.c_str()) != 0;
 	std::wstring replay;
 	bool sound_on = GetPrivateProfileIntW(L"Sound", L"Sound", 1, ini.c_str()) != 0;
@@ -409,6 +410,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	config.last_character = last_character;
 	config.show_names = show_names;
 	config.extended_nameplates = extended_nameplates;
+	config.velious_textures = velious_textures;
 	if (record_packets)
 		config.record_dir = Narrow(exe_dir) + "\\replays";
 	config.ui_dir = Narrow(exe_dir); // UI_<character>_<server>.ini, as eqgame keeps them in its folder

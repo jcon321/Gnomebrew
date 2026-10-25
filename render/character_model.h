@@ -33,6 +33,7 @@ namespace render
 		float height = 0;                // the spawn's size; 0 = the race's default
 		uint8_t texture = 0xff;          // 0xFF: dressed per slot; else an NPC's body texture (Spawn_Struct bodytexture)
 		uint8_t helm = 0;                // an NPC's head (Spawn_Struct helm)
+		uint8_t class_id = 0;            // a monk wears materials 4 and 23 as they are; anyone else as leather
 	};
 
 	// Three-letter model code for a playable race ("HUM", "IKF", ...), or empty.
@@ -135,8 +136,10 @@ namespace render
 	{
 	public:
 		// global_chr.s3d (required), global4_chr.s3d (Iksar) and global7_chr.s3d (Vah Shir); with
-		// `creatures` all of global2..7_chr.s3d. And the weapons and shields, gequip*.s3d.
-		bool Open(const std::string &eq_dir, std::string &error, bool creatures = false);
+		// `creatures` all of global2..7_chr.s3d. And the weapons and shields, gequip*.s3d. With
+		// `velious_textures`, the Velious armor, materials 17..23 (global17..23_amr.s3d, as eqgame's
+		// LoadArmor17..23 load them); without, they're the leather, chain and plate they stand in for.
+		bool Open(const std::string &eq_dir, std::string &error, bool creatures = false, bool velious_textures = true);
 		// A zone's own models, <zone>_chr.s3d and friends, searched first.
 		bool AddZone(const std::string &eq_dir, const std::string &zone);
 		std::unique_ptr<CharacterModel> Build(const CharacterAppearance &appearance, std::string &error);
@@ -151,6 +154,8 @@ namespace render
 		bool AddSource(std::vector<std::unique_ptr<Source>> &to, const std::string &eq_dir, const std::string &name);
 		std::vector<std::unique_ptr<Source>> m_sources;
 		std::vector<std::unique_ptr<Source>> m_items; // gequip*.s3d, searched after the models
+		std::vector<std::unique_ptr<Source>> m_armor; // global17..23_amr.s3d: materials, searched after the model's own
+		bool m_velious_textures = false;
 		std::map<std::string, std::shared_ptr<const std::map<std::string, SkeletonAnimation>>> m_animation_sets; // by model code
 	};
 }

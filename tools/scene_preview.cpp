@@ -30,6 +30,7 @@
 // --weather rain|snow MS has it start raining or snowing (OP_Weather at intensity 3) and runs that
 // long in 16 ms frames first, printing the weather's state and particles each second, and
 // --debug-draw noweather draws none of it.
+// With --char, --velious 0 shows the Velious armor (materials 17..23) as the older armor (VeliousTextures=0).
 // --frames renders N times and prints the average frame time. --size picks the
 // image size (default 640x480).
 
@@ -115,10 +116,11 @@ namespace
 	}
 
 	int CharacterSelect(const std::string &eq_dir, const std::string &out, const render::CharacterAppearance &appearance,
-		uint8_t class_id, float camera_heading, int frames, int Width, int Height)
+		uint8_t class_id, float camera_heading, int frames, int Width, int Height, bool velious)
 	{
 		auto t0 = std::chrono::steady_clock::now();
 		CharacterSelectView view(eq_dir);
+		view.SetVeliousTextures(velious);
 		view.StartLoading();
 		while (!view.Loaded())
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -333,6 +335,7 @@ int main(int argc, char **argv)
 	bool character = false;
 	render::CharacterAppearance appearance;
 	int class_id = 1;
+	bool velious = true;
 	float camera_heading = 0;
 	bool player = false, first_person = false;
 	float orbit = 0;
@@ -460,7 +463,10 @@ int main(int argc, char **argv)
 			appearance.race = static_cast<uint16_t>(atoi(argv[++i]));
 			appearance.gender = static_cast<uint8_t>(atoi(argv[++i]));
 			class_id = atoi(argv[++i]);
+			appearance.class_id = static_cast<uint8_t>(class_id);
 		}
+		else if (arg == "--velious" && i + 1 < argc)
+			velious = atoi(argv[++i]) != 0;
 		else if (arg == "--face" && i + 1 < argc)
 			appearance.face = static_cast<uint8_t>(atoi(argv[++i]));
 		else if (arg == "--equip" && i + 1 < argc) {
@@ -518,7 +524,7 @@ int main(int argc, char **argv)
 		return result;
 	}
 	if (character)
-		return CharacterSelect(eq_dir, out, appearance, static_cast<uint8_t>(class_id), camera_heading, frames, width, height);
+		return CharacterSelect(eq_dir, out, appearance, static_cast<uint8_t>(class_id), camera_heading, frames, width, height, velious);
 
 	auto t0 = std::chrono::steady_clock::now();
 	render::ZoneScene scene;

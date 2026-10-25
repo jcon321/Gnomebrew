@@ -105,6 +105,7 @@ SoundFont=synthus2.sf2
 LastCharSel=0
 ShowNamesLevel=4
 EnableExtendedNameplateDistance=1
+VeliousTextures=1
 
 [Debug]
 RecordPackets=0
@@ -159,6 +160,9 @@ WeatherSounds=1
   kept when the GUI exits.
 - `EnableExtendedNameplateDistance=1` shows names as far out as the zone is drawn, as TAKP's
   eqgame.dll and Zeal do; `0` keeps eqgame's own 70 units.
+- `VeliousTextures=1` dresses the Velious armor (materials 17..23) in its own textures from
+  `global17_amr.s3d`..`global23_amr.s3d`, one switch for eqclient.ini's `LoadArmor17`..`LoadArmor23`;
+  `0` shows it as the leather, chain or plate it stands in for, as eqgame does without them.
 
 - `RecordPackets=1` writes each zone session's packets to `replays\<char>-<time>.eqr` next to the exe.
   `--replay FILE` plays one back: the GUI goes straight into that zone with no server, the recorded

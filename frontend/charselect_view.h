@@ -35,6 +35,8 @@ public:
 
 	// nullptr shows the empty default room.
 	void SetCharacter(const render::CharacterAppearance *appearance, uint8_t class_id);
+	// The Velious armor textures (VeliousTextures); before StartLoading.
+	void SetVeliousTextures(bool on) { m_velious_textures = on; }
 	void SetRotate(bool rotate) { m_rotate = rotate; }
 	// CFacePick::Activate: the camera close in front of the face, not turning.
 	void SetCloseUp(bool close_up) { m_close_up = close_up; }
@@ -63,6 +65,7 @@ private:
 	render::ZoneScene m_zone;
 	render::Sky m_sky;
 	render::CharacterModels m_models;
+	bool m_velious_textures = true;
 	std::unique_ptr<render::Renderer> m_renderer;
 
 	// What's selected, applied once loading finishes.

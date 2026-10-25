@@ -55,6 +55,9 @@ namespace
 		{"Defaults", "EnableExtendedNameplateDistance", "1",
 			"1: names over heads as far out as the zone is drawn (as TAKP's eqgame.dll and Zeal do).\n"
 			"0: eqgame's own 70 units."},
+		{"Defaults", "VeliousTextures", "1",
+			"1: the Velious armor's own textures (global17..23_amr.s3d, eqclient.ini's LoadArmor17..23).\n"
+			"0: that armor shows as the leather, chain or plate it stands in for."},
 
 		{"Debug", "RecordPackets", "0",
 			"1: each zone session's packets go to replays\\<character>-<time>.eqr next to the exe, to\n"

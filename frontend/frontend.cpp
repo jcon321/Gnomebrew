@@ -42,6 +42,7 @@ namespace
 		appearance.gender = me.gender;
 		appearance.face = me.face;
 		appearance.height = me.size;
+		appearance.class_id = me.class_id ? me.class_id : static_cast<uint8_t>(zone.Profile().class_id);
 		for (int k = 0; k < render::EquipSlots; ++k) {
 			appearance.equip[k] = me.equipment[k];
 			appearance.tint[k] = me.colors[k];
@@ -63,6 +64,7 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 	if (!m_ui.eq_dir.empty() && m_ui.definitions) {
 		// Character select's zone takes a moment to load; start while the player logs in.
 		m_charselect_view = std::make_unique<CharacterSelectView>(m_ui.eq_dir, MakeRenderer());
+		m_charselect_view->SetVeliousTextures(config.velious_textures);
 		m_charselect_view->StartLoading();
 	}
 	m_rules.CheckInstall(m_ui.eq_dir);
@@ -1030,6 +1032,7 @@ void FrontEnd::RefreshCharacterButtons()
 			appearance.race = c.race;
 			appearance.gender = c.gender;
 			appearance.face = c.face;
+			appearance.class_id = static_cast<uint8_t>(c.class_id);
 			for (int k = 0; k < render::EquipSlots; ++k) {
 				appearance.equip[k] = c.equip[k];
 				appearance.tint[k] = c.tint[k];
@@ -1213,6 +1216,7 @@ void FrontEnd::ShowCreatedCharacter()
 	if (!m_charselect_view || !m_creation)
 		return;
 	render::CharacterAppearance appearance = m_creation->Appearance();
+	appearance.class_id = static_cast<uint8_t>(m_creation->ClassId());
 	m_charselect_view->SetCharacter(&appearance, m_creation->ClassId());
 	m_charselect_view->SetRotate(m_creation->Rotate());
 	m_charselect_view->SetCloseUp(m_creation->PickingFace());
@@ -1582,6 +1586,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			if (m_ui.eq_dir.empty())
 				break;
 			m_zone_view = std::make_unique<ZoneView>(m_ui.eq_dir, MakeRenderer());
+			m_zone_view->SetVeliousTextures(m_config.velious_textures);
 			m_zone_view->StartLoading(m_zone.Info());
 			m_zone_view->SetSound(m_sound.get());
 			if (m_sound) // StartWorldDisplay

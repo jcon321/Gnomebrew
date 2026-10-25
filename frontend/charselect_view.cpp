@@ -67,7 +67,7 @@ void CharacterSelectView::Load()
 	std::string error;
 	if (!m_zone.Load(m_eq_dir, m_zone_name, error))
 		m_error = error;
-	else if (!m_models.Open(m_eq_dir, error))
+	else if (!m_models.Open(m_eq_dir, error, false, m_velious_textures))
 		m_error = error;
 	else if (!m_sky.Load(m_eq_dir, 1, error)) // no sky is fine; the rooms are mostly indoors
 		fprintf(stderr, "[charselect] %s\n", error.c_str());

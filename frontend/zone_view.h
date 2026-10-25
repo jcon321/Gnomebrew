@@ -54,6 +54,8 @@ public:
 	// Our own character: appearance (and size) and speeds from OP_ZoneEntry, the starting
 	// position from the server. From then on Move() moves them.
 	void SetPlayer(const render::CharacterAppearance &appearance, float walk_speed, float run_speed);
+	// The Velious armor textures (VeliousTextures); before StartLoading.
+	void SetVeliousTextures(bool on) { m_velious_textures = on; }
 	void SetPlayerPosition(float x, float y, float z, float heading);
 	void SetSwimSkill(int skill) { m_movement.SetSwimSkill(skill); } // the profile's swimming skill
 	void SetSafeFallSkill(int skill) { m_safe_fall = skill; }        // for the landing sounds
@@ -260,6 +262,7 @@ private:
 	render::ZoneScene m_zone;
 	render::Sky m_sky;
 	render::CharacterModels m_models;
+	bool m_velious_textures = true;
 	std::unique_ptr<render::Renderer> m_renderer;
 
 	std::optional<render::CharacterAppearance> m_appearance;

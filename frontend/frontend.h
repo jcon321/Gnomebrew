@@ -48,6 +48,7 @@ struct FrontEndConfig
 	                          // [Debug] (the debug menu's settings; empty: not kept)
 	int show_names = 4;       // /shownames: 0 (off) .. 7 (ShowNamesLevel)
 	bool extended_nameplates = true; // names as far out as the zone is drawn, not eqgame's 70 units
+	bool velious_textures = true;    // the Velious armor (materials 17..23), else the older armor they stand in for
 };
 
 class EqStr;

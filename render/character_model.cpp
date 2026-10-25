@@ -39,6 +39,57 @@ namespace render
 			return material < 240 ? static_cast<int>(material) : 0;
 		}
 
+		// CDisplay_SwapHead2 (@004a1512): the Velious helms, 240 and 241, as each race's own item
+		// model by gender (IT530..IT656 in gequip2.s3d; 241 is a barbarian's or an ogre's, plate on
+		// the rest). `hair` goes false for those that hide a woman's hair (and an Erudite's hood).
+		unsigned VeliousHelm(unsigned material, uint16_t race, uint8_t gender, bool &hair)
+		{
+			hair = true;
+			bool female = gender != 0;
+			auto hides = [&](unsigned it) {
+				hair = false;
+				return it;
+			};
+			if (material == 241) {
+				if (race == 2)
+					return female ? hides(530) : 537;
+				if (race == 10)
+					return female ? 641 : 646;
+				return race == 0 || (race > 12 && race != 128) ? 241 : 3;
+			}
+			if (material != 240)
+				return material;
+			switch (race) {
+			case 1: return female ? hides(620) : 627;
+			case 2: return female ? hides(530) : 537;
+			case 3: return hides(female ? 570 : 575);
+			case 4: return female ? hides(561) : 565;
+			case 5: return female ? 600 : 605;
+			case 6: return female ? hides(540) : 545;
+			case 7: return female ? 590 : 595;
+			case 8: return female ? 550 : 557;
+			case 9: return female ? 650 : 655;
+			case 10: return female ? 640 : 645;
+			case 11: return female ? 610 : 615;
+			case 12: return female ? 580 : 585;
+			case 128: return female ? 630 : 635;
+			default: return 240;
+			}
+		}
+
+		// CDisplay_SwapMaterial (@004a1eb7)'s body materials: the Velious armor (17..23) as the
+		// older armor it stands in for when it isn't loaded (leather, chain, plate, then again, and
+		// 23 a monk's 4); and 4 and 23, the monks' own, as leather on anyone else.
+		unsigned BodyMaterial(unsigned material, uint8_t class_id, bool velious)
+		{
+			bool monk = class_id == 7;
+			if (material == 4 || material == 23)
+				return !monk ? 1 : material == 23 && !velious ? 4 : material;
+			if (material >= 17 && material <= 22 && !velious)
+				return (material - 17) % 3 + 1;
+			return material;
+		}
+
 		// SwapHead tints only these of the head's materials with the helm's color, not the face.
 		bool TintedByHelm(const std::string &name, uint16_t race)
 		{
@@ -137,10 +188,12 @@ namespace render
 		return true;
 	}
 
-	bool CharacterModels::Open(const std::string &eq_dir, std::string &error, bool creatures)
+	bool CharacterModels::Open(const std::string &eq_dir, std::string &error, bool creatures, bool velious_textures)
 	{
 		m_sources.clear();
 		m_items.clear();
+		m_armor.clear();
+		m_velious_textures = velious_textures;
 		if (!AddSource(m_sources, eq_dir, "global_chr")) {
 			error = "Couldn't read global_chr.s3d in " + eq_dir;
 			return false;
@@ -152,6 +205,13 @@ namespace render
 		// CDisplay::InitWorld's order (GEquip6 goes with the low-poly Vah Shir we use).
 		for (const char *name : {"gequip", "gequip8", "gequip2", "gequip5", "gequip4", "gequip3", "gequip6"})
 			AddSource(m_items, eq_dir, name);
+		// CDisplay::InitWorld: Global<n>_amr.s3d for each LoadArmor<n> that's on. Without them the
+		// materials fall back (BodyMaterial).
+		if (velious_textures) {
+			for (int n = 17; n <= 23; ++n)
+				if (!AddSource(m_armor, eq_dir, "global" + std::to_string(n) + "_amr"))
+					m_velious_textures = false;
+		}
 		return true;
 	}
 
@@ -177,6 +237,9 @@ namespace render
 				appearance.equip[slot] = appearance.texture;
 			appearance.texture = 0xff;
 		}
+		if (appearance.texture == 0xff)
+			for (int slot = 1; slot <= 6; ++slot)
+				appearance.equip[slot] = BodyMaterial(appearance.equip[slot], appearance.class_id, m_velious_textures);
 
 		// CDisplay::CreatePlayerActor: the race's actor, or race 75's when the zone doesn't have it.
 		auto find = [this](const std::string &tag, Source *&source, int &actor) {
@@ -237,9 +300,27 @@ namespace render
 				model->m_head_z = bones[i].translation.z;
 		}
 
-		// The head: the helm's mesh in place of the bare head, where the model has one (Vah Shir
-		// helms are item models). An NPC's helm byte picks it, else the helm material does.
+		// The head: the helm's mesh in place of the bare head, where the model has one. An NPC's
+		// helm byte picks it, else the helm material does. CDisplay::SwapHead: the Velious helms
+		// (VeliousHelm) and anything else from 240 are item models (IT<n>) on the bare head, hung
+		// on the head itself (<tag>HE_DAG: CDisplay_GetDagPointerByITS's slot 0 is ActorInfo's
+		// DagHead, not DagHeadPoint), where they're made to fit; a Vah Shir's helms all are, 1..3
+		// (and 240 as 3) IT661..663 on a woman, IT666..668 on a man.
 		bool npc_texture = appearance.texture != 0xff;
+		unsigned helm = appearance.equip[0];
+		bool hair = true;
+		unsigned helm_item = 0;
+		if (appearance.race == 130) {
+			unsigned m = helm == 240 ? 3 : helm;
+			if (m >= 1 && m <= 3)
+				helm_item = m + (appearance.gender == 1 ? 660 : 665);
+		}
+		else {
+			if (helm >= 240 && helm < 256)
+				helm = VeliousHelm(helm, appearance.race, appearance.gender, hair);
+			if (helm >= 240)
+				helm_item = helm;
+		}
 		std::string bare_head = code + "HE00_DMSPRITEDEF";
 		int head_mesh = -1;
 		auto head_named = [&](int head) {
@@ -252,7 +333,7 @@ namespace render
 			if (npc_texture && appearance.helm < 0xf0)
 				head_mesh = head_named(appearance.helm);
 			if (head_mesh < 0)
-				head_mesh = head_named(HeadForMaterial(appearance.equip[0], appearance.race));
+				head_mesh = head_named(HeadForMaterial(helm, appearance.race));
 		}
 
 		// A robe (chest 10 to 16) as CDisplay_SwapMaterial puts it on: the robed body
@@ -273,8 +354,11 @@ namespace render
 		// (CDisplay_SwapFace); a creature's body texture goes on every part instead (SwapNPCMaterials),
 		// untinted. Skeletons (race 60) only have the one.
 		unsigned body_texture = appearance.texture < 31 && !(appearance.race == 60) ? appearance.texture : 0;
-		auto material_for = [&](const WldMaterial &material, int &slot) {
+		// The material's textures are in `textures_from`'s archive: the model's own, or the Velious
+		// armor's.
+		auto material_for = [&](const WldMaterial &material, int &slot, Source *&textures_from) {
 			slot = -1;
+			textures_from = source;
 			std::string upper = Upper(material.name);
 			if (robe && upper.size() > 9 && upper.compare(0, 3, "CLK") == 0 && Digits(upper, 3, 2)) {
 				slot = 1;
@@ -307,7 +391,16 @@ namespace render
 				swapped = name;
 			}
 			WldMaterial found;
-			return swapped != upper && source->wld.FindMaterial(swapped, found) ? found : material;
+			if (swapped == upper)
+				return material;
+			if (source->wld.FindMaterial(swapped, found))
+				return found;
+			for (auto &armor : m_armor)
+				if (armor->wld.FindMaterial(swapped, found)) {
+					textures_from = armor.get();
+					return found;
+				}
+			return material;
 		};
 		auto tint_for = [&](const WldMaterial &material, int slot) {
 			uint32_t tint = 0;
@@ -322,6 +415,16 @@ namespace render
 
 		model->m_min_z = 1e30f;
 		model->m_max_z = -1e30f;
+		// SwapHead: under a helm that hides it (VeliousHelm), a woman's hair (<tag>HE00<face>2) and
+		// an Erudite's hood (CLKER*) aren't drawn.
+		bool appending_head = false;
+		auto hidden_by_helm = [&](const WldMaterial &material) {
+			if (hair || !appending_head)
+				return false;
+			std::string upper = Upper(material.name);
+			return (upper.size() > 8 && upper.compare(2, 5, "FHE00") == 0 && upper[8] == '2') ||
+			       (appearance.race == 3 && upper.compare(0, 5, "CLKER") == 0);
+		};
 		// A mesh's vertices on their bones (the body), or all on the one `point` an item hangs from.
 		auto append = [&](const WldMesh &mesh, Source &from, int point) {
 			bool body = point < 0;
@@ -352,9 +455,10 @@ namespace render
 				auto found = batch_of.find(t.material);
 				if (found == batch_of.end()) {
 					int slot = -1;
-					WldMaterial material = body ? material_for(mesh.materials[t.material], slot) : mesh.materials[t.material];
+					Source *textures_from = &from;
+					WldMaterial material = body ? material_for(mesh.materials[t.material], slot, textures_from) : mesh.materials[t.material];
 					MaterialInfo info = DescribeRenderMethod(material.render_method);
-					if (!info.visible) {
+					if (!info.visible || (body && hidden_by_helm(mesh.materials[t.material]))) {
 						batch_of.emplace(t.material, SIZE_MAX);
 						continue;
 					}
@@ -363,7 +467,7 @@ namespace render
 					batch.material.opacity = info.opacity;
 					batch.material.two_sided = info.blend != Blend::Opaque;
 					if (!material.textures.empty())
-						batch.material.texture = from.textures.Get(material.textures[0], info.masked);
+						batch.material.texture = textures_from->textures.Get(material.textures[0], info.masked);
 					batch.tint = body ? tint_for(material, slot) : 0xffffffu;
 					found = batch_of.emplace(t.material, model->m_batches.size()).first;
 					model->m_batches.push_back(std::move(batch));
@@ -381,9 +485,11 @@ namespace render
 				index = head_mesh;
 			else if (robe_body >= 0 && name == bare_body)
 				index = robe_body;
+			appending_head = name == bare_head;
 			if (source->wld.ReadMesh(index, mesh))
 				append(mesh, *source, -1);
 		}
+		appending_head = false;
 
 		// EQPlayer::DisplayWeaponsAndArmor -> CDisplay_UpdateItemSlot2: IT<primary> in the right hand
 		// (<tag>R_POINT_DAG), IT<secondary> in the left (L_POINT_DAG), or on the arm (SHIELD_POINT_DAG)
@@ -445,6 +551,11 @@ namespace render
 					return static_cast<int>(i);
 			return -1;
 		};
+		if (helm_item != 0 && !npc_texture && appearance.race != 14) {
+			int bone = bone_named(code + "HE_DAG");
+			if (bone >= 0)
+				append_item(helm_item, bone);
+		}
 		for (int slot : {7, 8}) {
 			unsigned it = appearance.equip[slot];
 			if (it == 0 || appearance.race == 14)
