@@ -434,7 +434,8 @@ void ZoneView::SetSitting(bool sitting)
 	if (sitting == m_sitting)
 		return;
 	m_sitting = sitting;
-	m_standing_up = !sitting;
+	// A model without P02 is up at once.
+	m_standing_up = !sitting && m_model && m_model->HasAnimation("P02");
 }
 
 void ZoneView::ChooseAnimation(float ms)
@@ -468,11 +469,11 @@ void ZoneView::ChooseAnimation(float ms)
 		animation = moving ? "P06" : "L09";
 		rate = moving ? across * 0.5f + 1 : 1;
 	}
-	// Sitting: getting down, held; standing up: the same backwards, unless we move off first.
-	bool still = speed == 0 && m_movement.Strafe() == 0;
+	// Sitting: getting down, held; standing up: the same backwards, played out even as we move off
+	// (a jump, a fall or the water cut it short).
 	if (animation.empty() && m_sitting)
 		animation = "P02";
-	else if (animation.empty() && m_standing_up && still) {
+	else if (animation.empty() && m_standing_up) {
 		animation = "P02";
 		reversed = true;
 	}
@@ -507,12 +508,18 @@ void ZoneView::ChooseAnimation(float ms)
 		if (length > 0)
 			m_animation_ms = std::min(m_animation_ms, length);
 	}
+	m_eye_drop = 0;
 	if (m_model && animation == "P02") {
 		double length = m_model->AnimationMs(animation);
 		if (length > 0) {
 			if (reversed && m_animation_ms >= length - 1)
 				m_standing_up = false; // up: P01 from the next frame
 			m_animation_ms = std::min(m_animation_ms, length - 1);
+			// The time Render draws it at (backwards for getting up), and our head there.
+			uint64_t time = static_cast<uint64_t>(m_animation_ms);
+			if (reversed)
+				time = static_cast<uint64_t>(length) - 1 - time;
+			m_eye_drop = std::max(m_model->HeadZ() - m_model->HeadZAt(time, animation, false), 0.0f);
 		}
 	}
 }
@@ -654,7 +661,7 @@ render::Camera ZoneView::MakeCamera(float &distance) const
 	}
 	distance = 0;
 	if (m_view == CameraView::FirstPerson) {
-		camera.position = m_feet + render::Vec3{0, 0, eye};
+		camera.position = m_feet + render::Vec3{0, 0, eye - m_eye_drop * 1.05f};
 		camera.forward = look;
 	}
 	else {

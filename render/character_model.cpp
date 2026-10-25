@@ -294,10 +294,13 @@ namespace render
 		auto idle = model->m_animations->find("P01");
 		std::vector<Transform> bones = PoseSkeleton(skeleton, idle == model->m_animations->end() ? nullptr : &idle->second, 0);
 		model->m_head_z = 0;
+		model->m_head_bone = -1;
 		for (size_t i = 0; i < skeleton.bones.size(); ++i) {
 			const std::string &name = skeleton.bones[i].name;
-			if (name.size() > 6 && name.compare(name.size() - 6, 6, "HE_DAG") == 0)
+			if (name.size() > 6 && name.compare(name.size() - 6, 6, "HE_DAG") == 0) {
 				model->m_head_z = bones[i].translation.z;
+				model->m_head_bone = static_cast<int>(i);
+			}
 		}
 
 		// The head: the helm's mesh in place of the bare head, where the model has one. An NPC's
@@ -583,6 +586,15 @@ namespace render
 		model->m_head_z *= model->m_scale;
 		model->m_origin_over_feet = 3.125f * model->m_scale;
 		return model;
+	}
+
+	float CharacterModel::HeadZAt(uint64_t time_ms, const std::string &animation, bool loop) const
+	{
+		auto it = m_animations->find(animation);
+		if (m_head_bone < 0 || it == m_animations->end())
+			return m_head_z;
+		std::vector<Transform> bones = PoseSkeleton(m_skeleton, &it->second, time_ms, loop);
+		return static_cast<size_t>(m_head_bone) < bones.size() ? bones[m_head_bone].translation.z * m_scale : m_head_z;
 	}
 
 	void CharacterModel::PlaceEmitters(const Transform &placement, uint64_t time_ms, const std::string &animation, bool loop,

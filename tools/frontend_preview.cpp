@@ -933,6 +933,54 @@ int main(int argc, char **argv)
 				h.Snapshot("b9-closed");
 			}
 		}
+		// Sitting: /sit lowers the first person view with our head; Space, the back key and turning
+		// with the right button do nothing; W stands us up and we run at once, getting up playing out.
+		if (ZoneView *view = frontend.ZoneScene()) {
+			auto sit_report = [&](const char *when) {
+				ZoneMovement m = view->Movement();
+				printf("[preview] sitting %s: stance %d, standing up %d, eye drop %.2f, at %.2f,%.2f,%.2f\n", when,
+					frontend.Zone().Self().stance, view->StandingUp(), view->EyeDrop(), m.x, m.y, m.z);
+			};
+			// On the Qeynos dock: a new character starts at 0, 0, 0 in South Qeynos, over nothing.
+			if (frontend.Zone().Info().short_name == "qeynos") {
+				view->SetPlayerPosition(0, 10, 5, 0);
+				h.RunUntil([] { return false; }, 1500);
+			}
+			sit_report("standing");
+			while (view->View() != ZoneView::CameraView::FirstPerson)
+				view->CycleCamera();
+			h.Key(InputEvent::Key::Enter);
+			h.Type("/sit");
+			h.Key(InputEvent::Key::Enter);
+			h.RunUntil([] { return false; }, 300);
+			sit_report("down 0.3 s");
+			h.Snapshot("p1-sitting-first-person");
+			h.RunUntil([] { return false; }, 1500);
+			sit_report("down 1.8 s");
+			h.Snapshot("p2-sat-first-person");
+			h.Key(InputEvent::Key::Space);
+			h.Key(InputEvent::Key::S);
+			h.RunUntil([] { return false; }, 500);
+			h.KeyUp(InputEvent::Key::S);
+			float heading = view->Movement().heading;
+			frontend.OnEvent({InputEvent::Type::MouseMove, 640, 360});
+			frontend.OnEvent({InputEvent::Type::RightDown, 640, 360});
+			for (int i = 1; i <= 4; ++i)
+				frontend.OnEvent({InputEvent::Type::MouseMove, 640 + 40 * i, 360});
+			frontend.OnEvent({InputEvent::Type::RightUp, 800, 360});
+			frontend.Update(NowMs());
+			printf("[preview] sitting right drag: heading %.1f -> %.1f\n", heading, view->Movement().heading);
+			sit_report("after Space and S");
+			h.Key(InputEvent::Key::W);
+			h.RunUntil([] { return false; }, 200);
+			sit_report("W pressed 0.2 s");
+			h.RunUntil([&] { return !view->StandingUp(); }, 5000);
+			sit_report("up");
+			h.RunUntil([] { return false; }, 500);
+			sit_report("W held 0.5 s more");
+			h.KeyUp(InputEvent::Key::W);
+			view->CycleCamera();
+		}
 		for (const auto &line : frontend.Chat().Lines())
 			if (line.text.find("pell") != std::string::npos || line.text.find("scrib") != std::string::npos ||
 			    line.text.find("memoriz") != std::string::npos || line.text.find("forget") != std::string::npos)

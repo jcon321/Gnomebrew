@@ -649,10 +649,12 @@ void FrontEnd::Update(uint64_t now_ms)
 		m_zone_view->SetMyLight(me.light);
 		m_zone_view->SetDebugDraw(m_debug.Drawing());
 		MoveControls controls = ZoneControls();
-		// Moving or jumping while sitting stands us up first.
-		if (m_zone.Self().stance == 110 &&
-		    (controls.forward || controls.back || controls.left || controls.right || controls.jump))
-			ChangeStance(100);
+		// Sitting nothing moves us, a jump included (ProcessControls takes the keys only standing or
+		// crouching). Forward stands us up (ZoneEvent), and we go at once.
+		if (m_zone.Self().stance == 110) {
+			controls.forward = controls.back = controls.left = controls.right = false;
+			controls.strafe = controls.jump = false;
+		}
 		bool jumped = m_zone_view->Move(controls, now_ms, m_mouse_turn || m_mouse_pan);
 		if (m_zone_view->Placed())
 			m_zone.SetMovement(m_zone_view->Movement());
@@ -1931,7 +1933,7 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			m_look_y = event.y;
 		}
 		m_mouse_turn = true;
-		if (m_zone_view)
+		if (m_zone_view && m_zone.Self().stance != 110) // sitting, the mouse doesn't turn us
 			m_zone_view->FaceCamera();
 		return;
 	case InputEvent::Type::MouseDown:
@@ -1990,10 +1992,10 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			float dx = -0.6f * static_cast<float>(moved_x);
 			float dy = -0.25f * static_cast<float>(moved_y);
 			if (m_zone_view) {
-				if (turn)
-					m_zone_view->Turn(dx);
-				else
+				if (!turn)
 					m_zone_view->Orbit(dx);
+				else if (m_zone.Self().stance != 110) // sitting, the mouse doesn't turn us
+					m_zone_view->Turn(dx);
 				m_zone_view->Pitch(dy);
 			}
 			return;
@@ -2038,6 +2040,11 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 	// The open spellbook's page keys (HandleKeys, ahead of the movement keys) and Delete.
 	if (m_spell_book.Key(event.key, m_now_ms))
 		return;
+	// Forward stands us up from sitting, closing the book (Zeal's movement binds; the other
+	// movement keys do nothing sitting).
+	if (m_zone.Self().stance == 110 &&
+	    (event.key == InputEvent::Key::Up || (event.key == InputEvent::Key::W && !typing)))
+		ChangeStance(100);
 	if (SetZoneKey(event.key, true, typing))
 		return;
 	switch (event.key) {

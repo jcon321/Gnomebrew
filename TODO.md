@@ -71,10 +71,15 @@ no rules of its own.
        (DAT_007d0254 also blocks casting);
      - spellsets and memorizing a whole page are later eras (the default UI's "Mem. This Page"
        buttons are zero-sized and eqgame ignores them).
-   - Our own stance: /sit, /stand, the Actions window's Sit and Stand, and moving or jumping
-     standing us up (EQPlayer::ChangeStance), with our model sitting down (P02) and getting up.
-     Still to do: sitting's idle and fidgets (P07, the sitting fidget), kneeling (105), feign death,
-     meditating's regen, and the zone putting us in a stance (stunned, knocked out).
+   - Our own stance: /sit, /stand and the Actions window's Sit and Stand (EQPlayer::ChangeStance),
+     our model sitting down (P02) and getting up. Sitting, nothing moves us and Space doesn't jump
+     (ProcessControls takes the movement keys only standing or crouching), nor does the right
+     button turn us (the left still circles the chase camera); forward stands us up (and closes
+     the book) and we move off at once, getting up playing out all the same. In first person the
+     view goes down and up with our head. Still to do: sitting's idle and fidgets (P07, the sitting
+     fidget), kneeling (105), feign death,
+     meditating's regen, being hit standing us up (msg_successful_hit), and the zone putting us in
+     a stance (stunned, knocked out).
    - Hotbuttons: the Actions window's buttons and socials go on them and come off by holding
      them, and they're kept in `<char>_<server>.ini` (`frontend/game_windows.*`). Still to do:
      items, spells, pet commands and AA abilities on them, whether an ability's ready (checked

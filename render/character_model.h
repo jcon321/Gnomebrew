@@ -64,6 +64,8 @@ namespace render
 		float MinZ() const { return m_min_z; }
 		float MaxZ() const { return m_max_z; }
 		float HeadZ() const { return m_head_z; } // the head bone
+		// The head bone's height in an animation at time_ms, scaled like HeadZ (sitting down lowers it).
+		float HeadZAt(uint64_t time_ms, const std::string &animation, bool loop) const;
 		// How far the model's origin sits over its feet: placement = feet + (0, 0, OriginOverFeet()).
 		float OriginOverFeet() const { return m_origin_over_feet; }
 		const std::string &Code() const { return m_code; }
@@ -101,6 +103,7 @@ namespace render
 		std::vector<Batch> m_batches;
 		std::vector<Emitter> m_emitters;
 		float m_min_z = 0, m_max_z = 0, m_head_z = 0;
+		int m_head_bone = -1;
 		float m_scale = 1;
 		float m_origin_over_feet = 0;
 		// Draw's scratch: the posed bones as matrices, and the vertices' light.
