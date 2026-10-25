@@ -267,6 +267,7 @@ public:
 		// an item's on the cursor: CInventoryWnd::HandleLButtonUp).
 		bool clickable = false;
 		size_t max_chars = 64; // Editbox
+		uint32_t link_color = 0xff00ff; // Editbox: its item tags' (item_tags.h)
 		std::string animation; // StaticAnimation: another animation in place of its own; "" its own
 		// InvSlot: what's in it, a cell of a grid animation (an item's icon, A_DragItem), over the
 		// slot's picture; cell < 0 nothing. A Button with one draws that cell in place of its

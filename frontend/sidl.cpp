@@ -1,4 +1,5 @@
 #include "sidl.h"
+#include "item_tags.h"
 #include "tga.h"
 #include "xml.h"
 
@@ -1227,17 +1228,26 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 		DrawListbox(control, canvas, text);
 	}
 	else if (def.type == "Editbox") {
-		// The end of the text, as much as fits, with the caret after it.
+		// The end of the text, as much as fits, with the caret after it. An item tag shows its name,
+		// in the link color (CEditWnd::RenderEditWindowText).
 		const Rect &c = control.client;
-		std::string shown = control.text;
+		std::vector<ItemTag> tags;
+		std::string all = ShowItemTags(control.text, &tags);
+		size_t from = 0;
+		std::string shown = all;
 		TextSize size = text.Measure(shown.empty() ? "W" : shown, height, weight);
 		while (!shown.empty() && size.w > c.w - 6) {
-			shown.erase(0, std::max<size_t>(1, shown.size() / 8));
+			from += std::max<size_t>(1, shown.size() / 8);
+			shown = all.substr(std::min(from, all.size()));
 			size = text.Measure(shown.empty() ? "W" : shown, height, weight);
 		}
 		int y = c.y + (c.h - size.h) / 2;
-		if (!shown.empty())
-			text.Draw(canvas, c.x + 2, y, shown, height, control.text_color, weight);
+		int x = c.x + 2;
+		for (const ItemTagPiece &piece : SplitAtItemTags(tags, std::min(from, all.size()), all.size())) {
+			std::string run = all.substr(piece.begin, piece.end - piece.begin);
+			text.Draw(canvas, x, y, run, height, piece.tag >= 0 ? control.link_color : control.text_color, weight);
+			x += text.Measure(run, height, weight).w;
+		}
 		if (index == m_focus && (now_ms / 500) % 2 == 0) {
 			int x = c.x + 2 + (shown.empty() ? 0 : size.w);
 			canvas.Fill({x, y, 1, size.h}, control.text_color);

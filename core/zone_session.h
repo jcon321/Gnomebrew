@@ -241,6 +241,7 @@ public:
 			SkillUp,      // OP_SkillUpdate: id the skill, value its new value (Profile() has it already)
 			DoorsSpawned, // Doors() is set
 			DoorMoved,    // id: the door, value: its new state (OP_MoveDoor)
+			ItemLink,     // LinkedItem() is the item of a link we clicked (OP_ItemLinkResponse)
 			LoggedOut,    // camp finished; the zone closes the connection
 			ZoneApproved, // value: the zone we're going to; OP_DeleteSpawn is sent
 			ZoneDenied,   // value: the answer (ZoningMessage: 0 down, -1 not ready, -7 not experienced...)
@@ -304,6 +305,11 @@ public:
 	// EQSwitch::UseSwitch: we used a door, holding `item` (0xffff none) with `skill` (disarm traps).
 	// The zone answers everyone with OP_MoveDoor when it opens.
 	bool ClickDoor(uint8_t door, uint16_t item, int16_t skill);
+	// CChatWindow::WndNotification's 0x1a: a link clicked in the chat, OP_ItemLinkResponse with its
+	// id and the first word of its text. An item's comes back as ItemLink; the zone says a say
+	// link's phrase for us.
+	bool ClickItemLink(uint16_t id, const std::string &text);
+	const ZoneItem &LinkedItem() const { return m_linked_item; }
 	void Close();
 
 	State GetState() const { return m_state; }
@@ -397,6 +403,7 @@ private:
 	bool m_worn_known = false;
 	int32_t m_hp = 0, m_max_hp = 0;
 	std::map<int16_t, ZoneItem> m_items;
+	ZoneItem m_linked_item;
 	GuildNames m_guilds;
 	bool m_have_profile = false;
 	bool m_have_zone_entry = false;

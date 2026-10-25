@@ -87,7 +87,11 @@
 //     CheckItemDisplayWindowAndActivat @004229cf) closes it when the button's let go over a slot;
 //   - SetItem and Activate (@00423640, @00423606): the item's name for the title, its description
 //     (item_display.h) in ItemDescription, its icon (A_DragItem's cell icon - 500) on IconButton,
-//     and the window shown on top. It stays as it was shown until it's shown again.
+//     and the window shown on top. It stays as it was shown until it's shown again;
+//   - msg_request_inspect_item: a link's item, when the zone sends it for a click on the link;
+//   - WndNotification (@00425cf6): a click on the icon puts the item's tag in the chat input.
+
+#include "zone_session.h"
 
 #include <cstdint>
 #include <string>
@@ -95,7 +99,6 @@
 class Canvas;
 class EqStr;
 class GameValues;
-struct ZoneItem;
 class IniFile;
 class TextRenderer;
 class WindowManager;
@@ -163,6 +166,8 @@ struct GameWindowState
 	int quantity_slot = -1, quantity_max = 0;
 	int quantity_value = 0;
 	std::string quantity_text;
+
+	ZoneItem display_item; // the item display's (id 0: none yet)
 };
 
 // A button clicked in one of the windows: the page arrows and the hot buttons. A hot button that
@@ -173,8 +178,12 @@ std::string GameWindowClick(WindowManager &windows, GameWindowState &state, cons
 void GameWindowHold(WindowManager &windows, GameWindowState &state, const std::string &window, const std::string &control);
 // A button right clicked: a social's opens the social editor on it.
 void GameWindowRightClick(WindowManager &windows, GameWindowState &state, const std::string &window, const std::string &control);
+// The item in an inventory slot; null if the control isn't a slot with an item.
+const ZoneItem *SlotItem(WindowManager &windows, const GameValues &values, const std::string &window, const std::string &control);
 // An inventory slot's item in the item display; false if the control isn't a slot with an item.
-bool ShowItemDisplay(WindowManager &windows, const GameValues &values, const std::string &window, const std::string &control);
+bool ShowItemDisplay(WindowManager &windows, const GameValues &values, GameWindowState &state, const std::string &window,
+	const std::string &control);
+void ShowItemDisplay(WindowManager &windows, const GameValues &values, GameWindowState &state, const ZoneItem &item);
 // The right button let go over a slot after holding it: the item display closes.
 void GameWindowRightRelease(WindowManager &windows, const std::string &window, const std::string &control);
 

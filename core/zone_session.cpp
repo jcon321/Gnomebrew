@@ -574,6 +574,18 @@ bool ZoneSession::ClickDoor(uint8_t door, uint16_t item, int16_t skill)
 	return Send(ZoneOp::ClickDoor, body, sizeof(body), "OP_ClickDoor " + std::to_string(door));
 }
 
+bool ZoneSession::ClickItemLink(uint16_t id, const std::string &text)
+{
+	if (m_state != State::InZone)
+		return false;
+	// ItemViewRequest_Struct: the id, then the name (sscanf's "%s": up to the first space).
+	uint8_t body[66] = {};
+	memcpy(body, &id, 2);
+	std::string word = text.substr(0, text.find(' '));
+	memcpy(body + 2, word.c_str(), std::min<size_t>(word.size(), 63));
+	return Send(ZoneOp::ItemLinkResponse, body, sizeof(body), "OP_ItemLinkResponse " + std::to_string(id));
+}
+
 bool ZoneSession::MoveItem(int16_t from, int16_t to, int32_t qty)
 {
 	if (m_state != State::InZone)
@@ -1080,6 +1092,13 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 			ZoneItem item = ParseItem(data, 0);
 			m_items[item.slot] = item;
 			UpdateAppearance(); // msg_snd_ieq
+		}
+		break;
+	case ZoneOp::ItemLinkResponse:
+		// msg_request_inspect_item: a link's item, for the item display.
+		if (data.size() >= ItemSize) {
+			m_linked_item = ParseItem(data, 0);
+			events.push_back({Event::Type::ItemLink});
 		}
 		break;
 	case ZoneOp::MoveItem: {

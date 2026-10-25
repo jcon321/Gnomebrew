@@ -603,41 +603,46 @@ void GameWindowRightClick(WindowManager &windows, GameWindowState &state, const 
 	}
 }
 
-namespace
+const ZoneItem *SlotItem(WindowManager &windows, const GameValues &values, const std::string &window, const std::string &control)
 {
 	// The InvSlot a control is and the item in it (the slots are numbered by their EQType, as the
-	// items are); null for anything else or an empty slot.
-	const ZoneItem *SlotItem(WindowManager &windows, const GameValues &values, const std::string &window,
-		const std::string &control)
-	{
-		SidlWindow *wnd = windows.Find(window);
-		const SidlWindow::Control *slot = wnd ? wnd->Find(control) : nullptr;
-		if (!slot || slot->def->type != "InvSlot" || !values.zone)
-			return nullptr;
-		const std::map<int16_t, ZoneItem> &items = values.zone->Items();
-		auto it = items.find(static_cast<int16_t>(slot->def->eq_type));
-		return it != items.end() ? &it->second : nullptr;
-	}
+	// items are).
+	SidlWindow *wnd = windows.Find(window);
+	const SidlWindow::Control *slot = wnd ? wnd->Find(control) : nullptr;
+	if (!slot || slot->def->type != "InvSlot" || !values.zone)
+		return nullptr;
+	const std::map<int16_t, ZoneItem> &items = values.zone->Items();
+	auto it = items.find(static_cast<int16_t>(slot->def->eq_type));
+	return it != items.end() ? &it->second : nullptr;
 }
 
-bool ShowItemDisplay(WindowManager &windows, const GameValues &values, const std::string &window, const std::string &control)
+bool ShowItemDisplay(WindowManager &windows, const GameValues &values, GameWindowState &state, const std::string &window,
+	const std::string &control)
 {
 	const ZoneItem *item = SlotItem(windows, values, window, control);
-	SidlWindow *display = windows.Find("ItemDisplayWindow");
-	if (!item || !display)
+	if (!item || !windows.Find("ItemDisplayWindow"))
 		return false;
-	display->Root().text = item->name;
+	ShowItemDisplay(windows, values, state, *item);
+	return true;
+}
+
+void ShowItemDisplay(WindowManager &windows, const GameValues &values, GameWindowState &state, const ZoneItem &item)
+{
+	SidlWindow *display = windows.Find("ItemDisplayWindow");
+	if (!display)
+		return;
+	state.display_item = item;
+	display->Root().text = item.name;
 	if (SidlWindow::Control *description = display->Find("ItemDescription")) {
-		description->text = ItemDisplayText(values, *item);
+		description->text = ItemDisplayText(values, item);
 		description->scroll_pos = 0;
 	}
 	if (SidlWindow::Control *icon = display->Find("IconButton")) {
 		icon->cell_animation = "A_DragItem";
-		icon->cell = item->icon >= 500 ? item->icon - 500 : -1;
+		icon->cell = item.icon >= 500 ? item.icon - 500 : -1;
 	}
 	windows.Show("ItemDisplayWindow", true);
 	windows.Raise("ItemDisplayWindow");
-	return true;
 }
 
 bool InventoryClick(WindowManager &windows, GameWindowState &state, ZoneSession &zone, const std::string &window,

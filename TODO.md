@@ -38,9 +38,12 @@ no rules of its own.
      the right button on a slot (eat, drink, click effects: `CInvSlot::HandleRButtonUp`).
    - Item display: alt+click or the right button held on an inventory slot shows its item
      (`frontend/item_display.*`, eqgame's SetItem text with spells_en.txt's spell names); letting
-     the right button go closes it. Still to do: clicking its icon to link the item in chat
-     (`CItemDisplayWnd::WndNotification`), FV's always-no-drop item ids (`EQ_Item::IsSpecialNoDrop`),
-     open bags, and items in other windows (bags, loot, trade, merchants, links).
+     the right button go closes it. A link clicked in the chat shows its item (the zone's
+     OP_ItemLinkResponse), and clicking the icon links the item in the chat line
+     (`CItemDisplayWnd::WndNotification`; so does Shift+click on a slot while typing, our own).
+     Still to do: FV's always-no-drop item ids (`EQ_Item::IsSpecialNoDrop`), open bags, items in
+     other windows (bags, loot, trade, merchants), and the item+0xdc check WndNotification makes
+     before linking (unknown field).
    - Skills window: the skills the server says we have (not 254 or 255) and our languages, with
      their ranks, kept up to date by OP_SkillUpdate. Still to do: racial skills the server marks
      255 (eqgame's HasSkill table), selecting rows.
@@ -59,7 +62,7 @@ no rules of its own.
 3. ~~**A real chat window**~~: done (`frontend/chat_window.*`, `chat_text.*`, `chat_commands.cpp`).
    Still to do: more windows and the channel map (eqgame's `CChatManager`: which window each
    channel goes to, set from the right-click menu; there were no tabs in this era), the chat font
-   size, STML links, hold-to-repeat on the scrollbar's arrows, languages scrambled by skill
+   size, hold-to-repeat on the scrollbar's arrows, languages scrambled by skill
    (`HearBabel`), and the commands that still say they aren't supported (/who, /consider, /sit,
    socials, /time...).
 4. **Cursor and dragging.** EQ's own cursors and hover tooltips. (An item on the cursor follows it:

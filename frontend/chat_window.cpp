@@ -22,7 +22,9 @@ void ChatWindow::Attach(SidlWindow *window)
 	if (SidlWindow::Control *input = Input()) {
 		input->max_chars = MaxInput;
 		input->text_color = 0xffffff;
+		input->link_color = m_link_rgb;
 	}
+	m_hover = m_pressed = {};
 }
 
 SidlWindow::Control *ChatWindow::Output() const
@@ -41,7 +43,10 @@ void ChatWindow::Add(const std::string &text, uint32_t rgb)
 	size_t start = 0;
 	while (start <= text.size()) {
 		size_t end = text.find('\n', start);
-		m_lines.push_back({text.substr(start, end == std::string::npos ? std::string::npos : end - start), rgb});
+		Line line;
+		line.text = ShowItemTags(text.substr(start, end == std::string::npos ? std::string::npos : end - start), &line.links);
+		line.rgb = rgb;
+		m_lines.push_back(std::move(line));
 		if (end == std::string::npos)
 			break;
 		start = end + 1;
@@ -58,41 +63,38 @@ void ChatWindow::Clear()
 	m_lines.clear();
 	m_rows.clear();
 	m_wrapped = m_dropped;
+	m_hover = m_pressed = {};
 	if (SidlWindow::Control *output = Output())
 		output->scroll_pos = output->scroll_max = 0;
 }
 
-void ChatWindow::Wrap(TextRenderer &text, const Line &line, std::vector<std::string> &rows) const
+void ChatWindow::Wrap(TextRenderer &text, const std::string &s, std::vector<std::pair<size_t, size_t>> &rows) const
 {
 	// Word wrap at spaces; a word wider than the whole row is broken where it has to be.
 	rows.clear();
-	std::string row;
+	auto width = [&](size_t from, size_t to) { return text.Measure(s.substr(from, to - from), m_font, m_weight).w; };
+	size_t row = 0; // where the row being filled starts
 	size_t i = 0;
-	const std::string &s = line.text;
 	while (i < s.size()) {
 		size_t end = s.find(' ', i);
-		std::string word = s.substr(i, end == std::string::npos ? std::string::npos : end - i + 1);
-		i = end == std::string::npos ? s.size() : end + 1;
-		std::string joined = row + word;
-		while (!word.empty() && text.Measure(joined, m_font, m_weight).w > m_wrap_width) {
-			if (!row.empty()) {
-				rows.push_back(row);
-				row.clear();
-				joined = word;
-				if (text.Measure(joined, m_font, m_weight).w <= m_wrap_width)
-					break;
+		size_t next = end == std::string::npos ? s.size() : end + 1; // the word and its space
+		if (width(row, next) > m_wrap_width) {
+			if (row < i) {
+				rows.push_back({row, i});
+				row = i;
 			}
-			size_t fit = 1;
-			while (fit < word.size() && text.Measure(word.substr(0, fit + 1), m_font, m_weight).w <= m_wrap_width)
-				++fit;
-			rows.push_back(word.substr(0, fit));
-			word.erase(0, fit);
-			joined = word;
+			while (width(row, next) > m_wrap_width) {
+				size_t fit = row + 1;
+				while (fit < next && width(row, fit + 1) <= m_wrap_width)
+					++fit;
+				rows.push_back({row, fit});
+				row = fit;
+			}
 		}
-		row = joined;
+		i = next;
 	}
-	if (!row.empty() || rows.empty())
-		rows.push_back(row);
+	if (row < s.size() || rows.empty())
+		rows.push_back({row, s.size()});
 }
 
 void ChatWindow::Layout(TextRenderer &text)
@@ -114,12 +116,22 @@ void ChatWindow::Layout(TextRenderer &text)
 		++gone;
 	m_rows.erase(m_rows.begin(), m_rows.begin() + static_cast<long>(gone));
 	m_wrapped = std::max(m_wrapped, m_dropped);
-	std::vector<std::string> rows;
+	std::vector<std::pair<size_t, size_t>> rows;
 	for (; m_wrapped < m_dropped + m_lines.size(); ++m_wrapped) {
 		const Line &line = m_lines[m_wrapped - m_dropped];
-		Wrap(text, line, rows);
-		for (auto &row : rows)
-			m_rows.push_back({m_wrapped, std::move(row), line.rgb});
+		Wrap(text, line.text, rows);
+		for (const auto &range : rows) {
+			Row row{m_wrapped, line.rgb, {}};
+			for (const ItemTagPiece &cut : SplitAtItemTags(line.links, range.first, range.second)) {
+				Piece piece;
+				piece.text = line.text.substr(cut.begin, cut.end - cut.begin);
+				piece.x = cut.begin > range.first ? text.Measure(line.text.substr(range.first, cut.begin - range.first), m_font, m_weight).w : 0;
+				piece.w = text.Measure(piece.text, m_font, m_weight).w;
+				piece.link = cut.tag;
+				row.pieces.push_back(std::move(piece));
+			}
+			m_rows.push_back(std::move(row));
+		}
 	}
 
 	// Scrolled to the bottom, it stays there as lines come in.
@@ -137,8 +149,71 @@ void ChatWindow::DrawOutput(Canvas &canvas, TextRenderer &text, const Rect &area
 		return;
 	int first = std::max(output->scroll_pos, 0);
 	int y = area.y + 2;
-	for (int i = first; i < static_cast<int>(m_rows.size()) && y + m_row_height <= area.Bottom(); ++i, y += m_row_height)
-		text.Draw(canvas, area.x + 2, y, m_rows[i].text, m_font, m_rows[i].rgb, m_weight);
+	for (int i = first; i < static_cast<int>(m_rows.size()) && y + m_row_height <= area.Bottom(); ++i, y += m_row_height) {
+		const Row &row = m_rows[i];
+		for (const Piece &piece : row.pieces) {
+			uint32_t rgb = row.rgb;
+			if (piece.link >= 0) {
+				// CStmlWnd::DrawInRect: the one under the mouse blue, navy while it's pressed there.
+				LinkAt at{row.line, piece.link};
+				rgb = !(at == m_hover) ? m_link_rgb : at == m_pressed ? ItemTags::PressedColor : ItemTags::HoverColor;
+			}
+			text.Draw(canvas, area.x + 2 + piece.x, y, piece.text, m_font, rgb, m_weight);
+		}
+	}
+}
+
+ChatWindow::LinkAt ChatWindow::LinkUnder(int x, int y) const
+{
+	const SidlWindow::Control *output = Output();
+	if (!output || m_window->Minimized() || !m_window->Shown(*output))
+		return {};
+	Rect area = m_window->ContentRect(*output);
+	if (!area.Contains(x, y) || y < area.y + 2)
+		return {};
+	int i = std::max(output->scroll_pos, 0) + (y - area.y - 2) / m_row_height;
+	if (i >= static_cast<int>(m_rows.size()) || area.y + 2 + (i - std::max(output->scroll_pos, 0) + 1) * m_row_height > area.Bottom())
+		return {};
+	const Row &row = m_rows[i];
+	for (const Piece &piece : row.pieces)
+		if (piece.link >= 0 && x >= area.x + 2 + piece.x && x < area.x + 2 + piece.x + piece.w)
+			return {row.line, piece.link};
+	return {};
+}
+
+void ChatWindow::SetLinkColor(uint32_t rgb)
+{
+	m_link_rgb = rgb;
+	if (SidlWindow::Control *input = Input())
+		input->link_color = rgb;
+}
+
+bool ChatWindow::OnMouse(const InputEvent &event, bool over, ItemTag &clicked)
+{
+	LinkAt under = over && m_window ? LinkUnder(event.x, event.y) : LinkAt{};
+	switch (event.type) {
+	case InputEvent::Type::MouseMove:
+		m_hover = under;
+		return false;
+	case InputEvent::Type::MouseDown:
+	case InputEvent::Type::DoubleClick:
+		m_hover = m_pressed = under;
+		return false;
+	case InputEvent::Type::MouseUp: {
+		LinkAt pressed = m_pressed;
+		m_pressed = {};
+		m_hover = under;
+		if (pressed.link < 0 || !(pressed == under) || pressed.line < m_dropped)
+			return false;
+		const Line &line = m_lines[pressed.line - m_dropped];
+		if (pressed.link >= static_cast<int>(line.links.size()))
+			return false;
+		clicked = line.links[pressed.link];
+		return true;
+	}
+	default:
+		return false;
+	}
 }
 
 bool ChatWindow::Typing() const
@@ -169,6 +244,20 @@ void ChatWindow::OnChar(uint32_t ch)
 		input->text += static_cast<char>(ch);
 }
 
+void ChatWindow::AddItemTag(uint16_t id, const std::string &name)
+{
+	SidlWindow::Control *input = Input();
+	if (!input)
+		return;
+	if (!Typing()) {
+		m_window->Focus(InputId);
+		m_history_pos = -1;
+	}
+	std::string tag = MakeItemTag(id, name);
+	if (CountItemTags(input->text) < ItemTags::MaxPerLine && input->text.size() + tag.size() <= MaxInput)
+		input->text += tag;
+}
+
 bool ChatWindow::OnKey(const InputEvent &event, std::string &line)
 {
 	SidlWindow::Control *input = Input();
@@ -191,7 +280,12 @@ bool ChatWindow::OnKey(const InputEvent &event, std::string &line)
 		Close();
 		return true;
 	case InputEvent::Key::Backspace:
-		if (!input->text.empty())
+		// A tag goes whole.
+		if (input->text.size() >= 2 && input->text.back() == ItemTags::Marker) {
+			size_t open = input->text.rfind(ItemTags::Marker, input->text.size() - 2);
+			input->text.erase(open == std::string::npos ? input->text.size() - 1 : open);
+		}
+		else if (!input->text.empty())
 			input->text.pop_back();
 		return true;
 	case InputEvent::Key::Up:

@@ -111,6 +111,7 @@ add_library(eqfrontend STATIC
     frontend/debug_menu.cpp
     frontend/window_manager.cpp
     frontend/chat_window.cpp
+    frontend/item_tags.cpp
     frontend/chat_commands.cpp
     frontend/chat_text.cpp
     frontend/game_values.cpp

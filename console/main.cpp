@@ -31,6 +31,8 @@ namespace
 			"  --zone SECONDS        with --char, enter the zone, stay this long, then /camp (30s) and log out\n"
 			"  --say TEXT            with --zone, /say this once in the zone\n"
 			"  --click-door ID       with --zone, use door ID once in the zone and print the doors that move\n"
+			"  --click-link ID       with --zone, click a chat link to item (or say link) ID once in the zone and\n"
+			"                        print the item the zone sends back\n"
 			"  --zone-to ID          with --zone, once in, ask to zone to zone ID (the zone checks it against its\n"
 			"                        zone points), go there through world, then stay and camp there\n"
 			"  --move FROM:TO[:N]    with --zone, once in, move what's in slot FROM to TO as the inventory window\n"
@@ -110,6 +112,7 @@ namespace
 	}
 
 	std::string g_record_dir;
+	int g_click_link = -1; // --click-link
 	std::string g_replay_path;
 	std::vector<std::string> g_moves; // --move
 
@@ -183,6 +186,10 @@ namespace
 						printf("[zone] using door %d\n", click_door);
 						zone.ClickDoor(static_cast<uint8_t>(click_door), 0xffff, 0);
 					}
+					if (g_click_link >= 0) {
+						printf("[zone] clicking link %d\n", g_click_link);
+						zone.ClickItemLink(static_cast<uint16_t>(g_click_link), "link");
+					}
 					if (zone_to != 0) {
 						printf("[zone] asking to zone to %u\n", zone_to);
 						zone.RequestZoneChange(zone_to);
@@ -207,6 +214,14 @@ namespace
 				}
 				case ZoneSession::Event::Type::DoorMoved:
 					printf("[zone] door %u -> state %d\n", event.id, event.value);
+					break;
+				case ZoneSession::Event::Type::ItemLink:
+					printf("[zone] linked item %u '%s' (icon %u, slot %d)\n", zone.LinkedItem().id, zone.LinkedItem().name.c_str(),
+						zone.LinkedItem().icon, zone.LinkedItem().slot);
+					break;
+				case ZoneSession::Event::Type::Message:
+					if (g_click_link >= 0)
+						printf("[zone] message %d: %s\n", event.value, event.text.c_str());
 					break;
 				case ZoneSession::Event::Type::LoggedOut:
 					if (zone.Replaying())
@@ -273,6 +288,8 @@ int main(int argc, char **argv)
 			say_text = next();
 		else if (arg == "--click-door")
 			click_door = atoi(next().c_str());
+		else if (arg == "--click-link")
+			g_click_link = atoi(next().c_str());
 		else if (arg == "--zone-to")
 			zone_to = static_cast<uint32_t>(atoi(next().c_str()));
 		else if (arg == "--move")

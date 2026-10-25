@@ -1451,6 +1451,7 @@ void FrontEnd::BuildZoneWindows()
 	}
 	m_windows.TakeChanged();
 	m_chat.Attach(m_windows.Find("ChatWindow"));
+	m_chat.SetLinkColor(m_chat_colors.Get(ItemTags::ColorType));
 }
 
 void FrontEnd::SaveUiLayout()
@@ -1497,13 +1498,28 @@ void FrontEnd::HandleWindowClicks()
 	for (const auto &click : m_windows.TakeRightClicks())
 		GameWindowRightClick(m_windows, m_window_state, click.window, click.control);
 	for (const auto &hold : m_windows.TakeRightHolds())
-		ShowItemDisplay(m_windows, m_game_values, hold.window, hold.control);
+		ShowItemDisplay(m_windows, m_game_values, m_window_state, hold.window, hold.control);
 	for (const auto &release : m_windows.TakeRightReleases())
 		GameWindowRightRelease(m_windows, release.window, release.control);
 	for (WindowManager::Click click : m_windows.TakeClicks()) {
 		// Alt+click on a slot shows its item and does nothing else (CInvSlot::HandleLButtonUp).
-		if (click.alt && ShowItemDisplay(m_windows, m_game_values, click.window, click.control))
+		if (click.alt && ShowItemDisplay(m_windows, m_game_values, m_window_state, click.window, click.control))
 			continue;
+		// Shift+click on an item while typing in the chat links it there, with nothing on the
+		// cursor (ours; eqgame links from the item display's icon only).
+		if (click.shift && m_chat.Typing() && !m_zone.Items().count(Inventory::Cursor))
+			if (const ZoneItem *item = SlotItem(m_windows, m_game_values, click.window, click.control)) {
+				m_chat.AddItemTag(item->id, item->name);
+				continue;
+			}
+		// The item display's icon links its item in the chat (CItemDisplayWnd::WndNotification).
+		if (click.window == "ItemDisplayWindow" && click.control == "IconButton") {
+			if (m_window_state.display_item.id && m_chat.Attached()) {
+				m_windows.Show("ChatWindow", true);
+				m_chat.AddItemTag(m_window_state.display_item.id, m_window_state.display_item.name);
+			}
+			continue;
+		}
 		// The inventory's slots and character view, and the quantity window's Accept.
 		InventoryClickResult moved;
 		if (InventoryClick(m_windows, m_window_state, m_zone, click.window, click.control, click.shift, click.ctrl, moved)) {
@@ -1658,6 +1674,9 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 		}
 		case Type::Message:
 			ChatOut(event.text, event.value);
+			break;
+		case Type::ItemLink:
+			ShowItemDisplay(m_windows, m_game_values, m_window_state, m_zone.LinkedItem());
 			break;
 		case Type::Emote:
 			ChatOut(event.text, ChatType::Emote);
@@ -1820,6 +1839,11 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 	// window from the editors.
 	SidlWindow *social_editor = m_windows.Find("SocialEditWnd");
 	SidlWindow *quantity = m_windows.Find("QuantityWnd");
+	// The chat's links light under the mouse, and a click on one asks the zone about it.
+	ItemTag link;
+	if (event.IsMouse() && !m_mouse_turn && !m_mouse_pan &&
+	    m_chat.OnMouse(event, m_windows.ScreenAt(event.x, event.y) == "ChatWindow", link))
+		m_zone.ClickItemLink(link.id, link.name);
 	if (event.IsMouse() && !m_mouse_turn && !m_mouse_pan && m_windows.OnMouse(event, m_now_ms)) {
 		if (event.type == InputEvent::Type::MouseDown) {
 			std::string pressed = m_windows.ScreenAt(event.x, event.y);

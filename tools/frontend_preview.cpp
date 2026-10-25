@@ -19,12 +19,15 @@
 // to OUTDIR/UI_*.ini); puts Actions window buttons on the hot
 // buttons by holding them and clicking a hot button, swaps two, uses one, takes one off again by
 // holding it and drops it with Escape (the hot buttons go to OUTDIR/<character>_*.ini); then types
-// into the chat window, targets a spawn and prints the chat.
+// into the chat window, targets a spawn and prints the chat; then links an item into the chat line
+// with Shift+click, sends it, clicks the link in the chat (OP_ItemLinkResponse) and links the item
+// display's item from its icon.
 
 #include "eqstr.h"
 #include "spell_file.h"
 #include "frontend.h"
 #include "inventory.h"
+#include "opcodes.h"
 #include "png_writer.h"
 
 #include <algorithm>
@@ -702,6 +705,104 @@ int main(int argc, char **argv)
 		for (const auto &line : frontend.Chat().Lines())
 			printf("[preview] chat %06x %s\n", line.rgb, line.text.c_str());
 		h.Snapshot("c2-target");
+
+		// Item links: Shift+click an item into the chat line while typing (printed, the tags'
+		// markers as '|'), send it, then light the link in the chat under the mouse and click it
+		// (OP_ItemLinkResponse goes out); and the item display's icon links its item.
+		auto input_text = [&] {
+			const SidlWindow *chat = windows.Find("ChatWindow");
+			const SidlWindow::Control *input = chat ? chat->Find("CWChatInput") : nullptr;
+			std::string text = input ? input->text : "";
+			std::replace(text.begin(), text.end(), ItemTags::Marker, '|');
+			return text;
+		};
+		windows.Show("InventoryWindow", true);
+		windows.Raise("InventoryWindow");
+		const SidlWindow::Control *linked_slot = nullptr;
+		if (SidlWindow *inventory = windows.Find("InventoryWindow")) {
+			h.Key(InputEvent::Key::Enter);
+			h.Type("look at ");
+			for (int slot = 1; slot <= 29 && !linked_slot; ++slot) {
+				const SidlWindow::Control *c = inventory->Find("InvSlot" + std::to_string(slot));
+				if (!c || c->cell < 0)
+					continue;
+				InputEvent event{InputEvent::Type::MouseMove, c->rect.x + c->rect.w / 2, c->rect.y + c->rect.h / 2};
+				frontend.OnEvent(event);
+				event.shift = true;
+				event.type = InputEvent::Type::MouseDown;
+				frontend.OnEvent(event);
+				event.type = InputEvent::Type::MouseUp;
+				frontend.OnEvent(event);
+				frontend.Update(NowMs());
+				linked_slot = c;
+			}
+			h.Type(" ok");
+			printf("[preview] chat input with a link: '%s'\n", input_text().c_str());
+			h.RunUntil([] { return false; }, 300);
+			h.Snapshot("l1-link-input");
+			h.Key(InputEvent::Key::Enter);
+			frontend.Update(NowMs());
+		}
+		windows.Show("InventoryWindow", false);
+		auto link_clicks = [&] {
+			int count = 0;
+			for (const auto &packet : frontend.Zone().RecentPackets())
+				if (packet.outgoing && packet.opcode == ZoneOp::ItemLinkResponse)
+					count += static_cast<int>(packet.count);
+			return count;
+		};
+		if (const SidlWindow *chat = windows.Find("ChatWindow"); chat && linked_slot) {
+			Rect b = chat->Bounds(); // taller first, from its top border: the sizing above left it a title bar
+			drag(b.x + b.w / 2, b.y + 1, b.x + b.w / 2, b.y - 160);
+			where("ChatWindow");
+			const SidlWindow::Control *output = chat->Find("CWChatOutput");
+			Rect area = output ? chat->ContentRect(*output) : Rect{};
+			InputEvent wheel; // back down to the newest line
+			wheel.type = InputEvent::Type::Wheel;
+			wheel.x = area.x + area.w / 2;
+			wheel.y = area.y + area.h / 2;
+			wheel.wheel = -10;
+			frontend.OnEvent(wheel);
+			h.Snapshot("l2-link-chat"); // drawn: the chat's rows laid out for its size
+			int before = link_clicks();
+			bool found = false;
+			for (int y = area.Bottom() - 4; y > area.y && !found; y -= 3)
+				for (int x = area.x + 2; x < area.Right() && !found; x += 3) {
+					click(x, y);
+					if (link_clicks() > before) {
+						found = true;
+						frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+						h.RunUntil([] { return false; }, 300);
+						h.Snapshot("l3-link-hover");
+						printf("[preview] clicked the chat's link at %d,%d: OP_ItemLinkResponse sent\n", x, y);
+					}
+				}
+			if (!found)
+				printf("[preview] no link found to click in the chat\n");
+			frontend.OnEvent({InputEvent::Type::MouseMove, 2, 2});
+		}
+		// The item display's icon: the alt+clicked item's tag in the chat line.
+		windows.Show("InventoryWindow", true);
+		windows.Raise("InventoryWindow");
+		if (linked_slot) {
+			InputEvent event{InputEvent::Type::MouseMove, linked_slot->rect.x + 4, linked_slot->rect.y + 4};
+			frontend.OnEvent(event);
+			event.alt = true;
+			event.type = InputEvent::Type::MouseDown;
+			frontend.OnEvent(event);
+			event.type = InputEvent::Type::MouseUp;
+			frontend.OnEvent(event);
+			frontend.Update(NowMs());
+			if (const SidlWindow *display = windows.Find("ItemDisplayWindow"))
+				if (const SidlWindow::Control *icon = display->Find("IconButton")) {
+					click(icon->rect.x + icon->rect.w / 2, icon->rect.y + icon->rect.h / 2);
+					printf("[preview] chat input after the item display's icon: '%s'\n", input_text().c_str());
+				}
+			h.Key(InputEvent::Key::Escape);
+		}
+		for (const auto &line : frontend.Chat().Lines())
+			if (!line.links.empty())
+				printf("[preview] chat line with %zu link(s): %s\n", line.links.size(), line.text.c_str());
 		return 0;
 	}
 

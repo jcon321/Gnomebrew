@@ -213,8 +213,12 @@ void WindowManager::Show(const std::string &screen, bool shown)
 			w.alpha = w.fade_target = w.settings.alpha;
 			w.fade_ms = 0;
 			BringToTop(i);
+			return;
 		}
-		else if (m_drag_window == i || m_press == i) {
+		// A hidden window's edit box doesn't keep the keys (a closed quantity window's would take
+		// the Enter that opens the chat).
+		w.wnd.Focus("");
+		if (m_drag_window == i || m_press == i) {
 			m_drag = Drag::None;
 			m_drag_window = m_press = -1;
 			m_box_down = SidlWindow::TitleBox::None;
