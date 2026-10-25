@@ -4,11 +4,11 @@
 // fn_GetLabelFromEQ @00436680), from the zone session and our target. The EQTypes so far:
 //   gauges  1 HP (with our name), 2 mana, 3 stamina, 6 the target's HP (with its name), 16 our pet's
 //   labels  1 our name, 2 our level, 3 our class (its title from 51), 4 our deity, 5..11 STR, STA,
-//           DEX, AGI, WIS, INT, CHA (base and worn items), 17 and 18 our HP and max HP, 22 AC,
-//           23 ATK, 24 and 25 our weight and how much we can carry, 28 the target's name, 29 the
-//           target's HP percent, 45..59 our buffs' names (none yet)
-// The resists (12..16) are eqgame's own formulas, not done yet: they show nothing. Others draw an
-// empty gauge and keep a label's own text.
+//           DEX, AGI, WIS, INT, CHA (base and worn items), 12..16 the poison, disease, fire, cold
+//           and magic resists, 17 and 18 our HP and max HP, 22 AC, 23 ATK, 24 and 25 our weight
+//           and how much we can carry, 28 the target's name, 29 the target's HP percent, 45..59
+//           our buffs' names (none yet)
+// Others draw an empty gauge and keep a label's own text.
 // What none of these count yet: spell effects (buffs, and items' worn effects), AAs, being drunk
 // or berserk, and the skill caps (GetSkillLimit: the zone keeps our skills to them).
 
@@ -64,9 +64,19 @@ public:
 	// recommended level, or else by our skill (its SkillUsed) below its recommended skill; never
 	// under 1.
 	int AntiTwinkAdj(const ZoneItem &item, int value) const;
-	// A stat (5..11, as the labels number them) with what worn items add (AntiTwinkAdj), to 255,
-	// and its base. AGI (EQ_Character::Agi @004bb5d8) is first brought down by encum_factor.
+	// A stat (5..11, as the labels number them) with what worn items add (AntiTwinkAdj) and the
+	// food and drink we'd eat next (FoodAndDrink), 1..255, and its base. AGI (EQ_Character::Agi
+	// @004bb5d8) is first brought down by encum_factor.
 	int Stat(int eq_type, int &base) const;
+	// EQ_Character::save_poison, save_disease, save_fire, save_cold and save_magic (@004bae34,
+	// @004bac4f, @004ba8c1, @004baa95, @004ba710): a resist (12..16, as the labels number them),
+	// to 500, and its base (basesave_*: by race, and a monk's disease and poison by level from 51).
+	// What worn items add (AntiTwinkAdj), the food and drink we'd eat next, a warrior's half level
+	// to magic, and the classes' bonuses: a monk's fire, a ranger's fire and cold, a beastlord's
+	// cold and disease, a paladin's and a shadow knight's disease, a rogue's and a shadow knight's
+	// poison, more each level from 50. Not the Resistant Discipline's (an active discipline of 30,
+	// which we don't keep yet).
+	int Resist(int eq_type, int &base) const;
 	// EQ_Character::cur_encumbrance (@004bbb78): what the cursor, worn and general slots and the
 	// bags in them weigh (less a bag's weight reduction), and the coins, a fortieth of a pound
 	// each (less what the best of items 17201..17230 in a general slot takes off them).

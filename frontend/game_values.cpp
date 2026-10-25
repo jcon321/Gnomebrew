@@ -22,6 +22,34 @@ namespace
 		return sum;
 	}
 
+	// EQ_Character::GetAttributeModifierFromItems (@004ba538)'s, for food (14) and drink (15): a
+	// value of the first one of item_type in the general slots, in order, each bag's contents
+	// after it, even a 0; what we'd eat or drink next.
+	int FirstOfType(const std::map<int16_t, ZoneItem> &items, int item_type, int8_t ZoneItem::*field)
+	{
+		for (int16_t slot = Inventory::FirstGeneral; slot <= Inventory::LastGeneral; ++slot) {
+			auto it = items.find(slot);
+			if (it == items.end())
+				continue;
+			const ZoneItem &item = it->second;
+			if (item.item_class == 0 && item.item_type == item_type)
+				return item.*field;
+			if (item.item_class != 1)
+				continue;
+			for (int n = 0; n < item.bag_slots; ++n) {
+				auto in = items.find(Inventory::BagSlot(slot, n));
+				if (in != items.end() && in->second.item_class == 0 && in->second.item_type == item_type)
+					return in->second.*field;
+			}
+		}
+		return 0;
+	}
+
+	int FoodAndDrink(const std::map<int16_t, ZoneItem> &items, int8_t ZoneItem::*field)
+	{
+		return FirstOfType(items, 14, field) + FirstOfType(items, 15, field);
+	}
+
 	// gauge values are 0..1000
 	int Permille(int64_t value, int64_t max)
 	{
@@ -163,10 +191,70 @@ int GameValues::Stat(int eq_type, int &base) const
 	for (const auto &[slot, item] : zone->Items())
 		if (slot >= FirstWornSlot && slot <= LastWornSlot && item.item_class == 0)
 			value += AntiTwinkAdj(item, item.*field);
+	value += FoodAndDrink(zone->Items(), field);
 	if (eq_type == 8)
 		value = static_cast<int>(value * EncumFactor());
-	// CalculateMaxStatAA2 without AAs: no more than 255.
-	return std::min(value, 255);
+	// CalculateMaxStatAA2 without AAs: 1..255.
+	return std::clamp(value, 1, 255);
+}
+
+int GameValues::Resist(int eq_type, int &base) const
+{
+	base = 0;
+	if (!zone)
+		return 0;
+	const ZoneProfile &me = zone->Profile();
+	int level = me.level, c = me.class_id, race = me.race;
+	// how much a class's bonus grows from level 50: one more a level
+	auto from50 = [level](int bonus, int at50) { return level > 49 ? level - 50 + at50 : bonus; };
+	int8_t ZoneItem::*field;
+	int bonus = 0;
+	switch (eq_type) {
+	case 12: // poison
+		base = race == 11 || race == 8 ? 20 : 15;
+		if (c == 7 && level > 50)
+			base += level - 50;
+		field = &ZoneItem::pr;
+		if (c == 9) bonus = from50(8, 9);
+		if (c == 5) bonus = from50(4, 5);
+		break;
+	case 13: // disease
+		base = race == 11 ? 20 : race == 3 ? 10 : 15;
+		if (c == 7 && level > 50)
+			base += level - 50;
+		field = &ZoneItem::dr;
+		if (c == 3) bonus = from50(8, 9);
+		if (c == 15 || c == 5) bonus = from50(4, 5);
+		break;
+	case 14: // fire
+		base = race == 9 ? 5 : 25;
+		if (race == 128)
+			base += 5;
+		field = &ZoneItem::fr;
+		if (c == 7) bonus = from50(8, 9);
+		if (c == 4) bonus = from50(4, 5);
+		break;
+	case 15: // cold
+		base = race == 2 ? 35 : 25;
+		if (race == 128)
+			base -= 10;
+		field = &ZoneItem::cr;
+		if (c == 4 || c == 15) bonus = from50(4, 5);
+		break;
+	case 16: // magic
+		base = race == 3 || race == 8 ? 30 : 25;
+		field = &ZoneItem::mr;
+		if (c == 1) bonus = level / 2;
+		break;
+	default: return 0;
+	}
+	int value = base;
+	for (const auto &[slot, item] : zone->Items())
+		if (slot >= FirstWornSlot && slot <= LastWornSlot && item.item_class == 0)
+			value += AntiTwinkAdj(item, item.*field);
+	value += FoodAndDrink(zone->Items(), field) + bonus;
+	// CalculateMaxStatAA2: no more than 500; unlike the stats, no least
+	return std::min(value, 500);
 }
 
 int GameValues::Weight() const
@@ -489,9 +577,13 @@ bool GameValues::Label(int eq_type, std::string &text, uint32_t &color)
 		text = std::to_string(Stat(5, base));
 		return true;
 	}
-	case 12: case 13: case 14: case 15: case 16:
-		text.clear();
+	case 12: case 13: case 14: case 15: case 16: { // colored against the base, like the stats
+		int base = 0;
+		int value = Resist(eq_type, base);
+		text = std::to_string(value);
+		color = ComparisonColor(value, base);
 		return true;
+	}
 	case 28:
 		text = spawn ? spawn->DisplayName() : "";
 		return true;
