@@ -23,6 +23,7 @@
 #include "name_sprites.h"
 #include "login_client.h"
 #include "sidl.h"
+#include "spell_book.h"
 #include "weather.h"
 #include "window_manager.h"
 #include "world_client.h"
@@ -125,6 +126,7 @@ public:
 	ZoneView *ZoneScene() { return m_zone_view.get(); }
 	WindowManager &Windows() { return m_windows; }
 	const GameWindowState &WindowState() const { return m_window_state; }
+	const SpellBook &SpellBookState() const { return m_spell_book; }
 	const std::string &UiLayoutPath() const { return m_ui_layout_path; }
 	CharacterCreation *Creation() { return m_creation.get(); }
 	// For tools: the window-pixel center of a visible SIDL control on character select or creation.
@@ -197,6 +199,10 @@ private:
 	void InterpretCommand(const std::string &line);
 	// Our target, and the zone told (OP_TargetMouse, or OP_TargetCommand for /target).
 	void SetTarget(uint16_t id, bool command = false);
+	// EQPlayer::ChangeStance for us (100 standing, 110 sitting): the zone told, our model, and the
+	// spellbook closing as we get up (DeacSpellScreen).
+	void ChangeStance(uint8_t stance);
+	void Sit(); // CEverQuest_Sit: /sit and the Actions window's Sit and Stand
 
 	// EqSoundManager::GiveTime's callers (character select and the world display): the listener and
 	// the emitters' surroundings from the zone, then the sound's frame.
@@ -286,6 +292,7 @@ private:
 	HeldKeys m_keys;
 	bool m_run = true;
 	GameWindowState m_window_state; // the socials, the hot buttons, the button on the cursor
+	SpellBook m_spell_book;         // and the spell gems
 	bool m_jump_requested = false;
 	bool m_crouch_sent = false; // the stance last sent for a standing jump's wind-up
 	// Mouse drags in the zone: the right button turns the character and tilts the view, the left

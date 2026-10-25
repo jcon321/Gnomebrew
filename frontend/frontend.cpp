@@ -648,7 +648,12 @@ void FrontEnd::Update(uint64_t now_ms)
 		}
 		m_zone_view->SetMyLight(me.light);
 		m_zone_view->SetDebugDraw(m_debug.Drawing());
-		bool jumped = m_zone_view->Move(ZoneControls(), now_ms, m_mouse_turn || m_mouse_pan);
+		MoveControls controls = ZoneControls();
+		// Moving or jumping while sitting stands us up first.
+		if (m_zone.Self().stance == 110 &&
+		    (controls.forward || controls.back || controls.left || controls.right || controls.jump))
+			ChangeStance(100);
+		bool jumped = m_zone_view->Move(controls, now_ms, m_mouse_turn || m_mouse_pan);
 		if (m_zone_view->Placed())
 			m_zone.SetMovement(m_zone_view->Movement());
 		if (jumped)
@@ -665,6 +670,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		Rect area = ScreenArea();
 		m_windows.Update(now_ms, m_mouse_x - area.x, m_mouse_y - area.y);
 		HandleWindowClicks();
+		m_spell_book.Frame(now_ms);
 		// DoPassageOfTime: the social going's next line.
 		std::string social_line = SocialStep(m_window_state, now_ms);
 		if (!social_line.empty())
@@ -1353,6 +1359,7 @@ void FrontEnd::EnterZoneScreen(bool zoning)
 		m_game_values.target = 0;
 	}
 	m_time_of_day.clear();
+	m_spell_book.Deactivate(); // a new zone starts standing, the book closed
 	m_zone_view.reset();
 	m_weather.Kill(m_sound.get()); // StopWorldDisplay
 	m_zone_error_logged = false;
@@ -1393,7 +1400,8 @@ namespace
 		{"CastSpellWnd", true}, {"HotButtonWnd", true}, {"SelectorWindow", true}, {"ActionsWindow", false},
 		{"InventoryWindow", false}, {"OptionsWindow", false}, {"FriendsWindow", false}, {"PetInfoWindow", false},
 		{"HelpWindow", false}, {"CompassWindow", false}, {"SocialEditWnd", false}, {"ChatWindow", true},
-		{"SkillsWindow", false}, {"ItemDisplayWindow", false}, {"QuantityWnd", false},
+		{"SkillsWindow", false}, {"ItemDisplayWindow", false}, {"QuantityWnd", false}, {"SpellBookWnd", false},
+		{"ConfirmationDialogBox", false},
 	};
 
 	// The selector's buttons (EQUI_SelectorWnd.xml) and the windows they open and close.
@@ -1440,6 +1448,8 @@ void FrontEnd::BuildZoneWindows()
 		if (ini.Load(m_ui_layout_path))
 			m_windows.Load(ini);
 		m_windows.Show("QuantityWnd", false); // only ever up for a stack
+		m_windows.Show("SpellBookWnd", false); // open only while it's activated
+		m_windows.Show("ConfirmationDialogBox", false);
 		Log("UI: " + std::to_string(m_windows.Count()) + " windows, layout " + m_ui_layout_path);
 		// CEverQuest::CreateIniFilenames: the character's own ini is the layout's name without UI_.
 		m_hot_buttons_path = m_config.ui_dir + "/" + suffix;
@@ -1450,6 +1460,13 @@ void FrontEnd::BuildZoneWindows()
 		}
 	}
 	m_windows.TakeChanged();
+	SpellBook::Host host;
+	host.change_stance = [this](uint8_t stance) { ChangeStance(stance); };
+	host.moving_forward = [this] { return m_zone_view && m_zone_view->Movement().speed > 0; };
+	host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
+	m_spell_book.Attach(m_windows, m_window_state, m_zone, m_game_values, m_ui.spells, m_ui.eqstr, std::move(host));
+	m_spell_book.Reset();
+	m_game_values.spell_book = &m_spell_book;
 	m_chat.Attach(m_windows.Find("ChatWindow"));
 	m_chat.SetLinkColor(m_chat_colors.Get(ItemTags::ColorType));
 }
@@ -1496,7 +1513,8 @@ void FrontEnd::HandleWindowClicks()
 		if (!m_zone.Items().count(Inventory::Cursor))
 			GameWindowHold(m_windows, m_window_state, hold.window, hold.control);
 	for (const auto &click : m_windows.TakeRightClicks())
-		GameWindowRightClick(m_windows, m_window_state, click.window, click.control);
+		if (!m_spell_book.RightClick(click.window, click.control))
+			GameWindowRightClick(m_windows, m_window_state, click.window, click.control);
 	for (const auto &hold : m_windows.TakeRightHolds())
 		ShowItemDisplay(m_windows, m_game_values, m_window_state, hold.window, hold.control);
 	for (const auto &release : m_windows.TakeRightReleases())
@@ -1520,6 +1538,9 @@ void FrontEnd::HandleWindowClicks()
 			}
 			continue;
 		}
+		// The spellbook, the gems and the confirmation dialog.
+		if (m_spell_book.Click(click.window, click.control, click.alt, m_now_ms))
+			continue;
 		// The inventory's slots and character view, and the quantity window's Accept.
 		InventoryClickResult moved;
 		if (InventoryClick(m_windows, m_window_state, m_zone, click.window, click.control, click.shift, click.ctrl, moved)) {
@@ -1547,6 +1568,8 @@ void FrontEnd::HandleWindowClicks()
 		if (click.window == "ActionsWindow") {
 			if (click.control == "AMP_CampButton")
 				InterpretCommand("/camp");
+			else if (click.control == "AMP_SitButton" || click.control == "AMP_StandButton")
+				Sit();
 			else if (click.control == "AMP_RunButton" || click.control == "AMP_WalkButton") {
 				m_run = click.control == "AMP_RunButton";
 				AddZoneLog(m_run ? "You are now running." : "You are now walking.", ZoneGrey);
@@ -1578,6 +1601,28 @@ void FrontEnd::SetTarget(uint16_t id, bool command)
 		m_game_values.target = id;
 	m_debug.SelectTarget(id);
 	m_zone.SetTarget(id, command);
+}
+
+void FrontEnd::ChangeStance(uint8_t stance)
+{
+	uint8_t was = m_zone.Self().stance;
+	if (stance == was || m_zone.GetState() != ZoneSession::State::InZone)
+		return;
+	m_zone.SetStance(stance);
+	if (m_zone_view)
+		m_zone_view->SetSitting(stance == 110);
+	if (was == 110)
+		m_spell_book.StoodUp();
+}
+
+void FrontEnd::Sit()
+{
+	// Standing (or crouching) sits; anything else stands.
+	uint8_t stance = m_zone.Self().stance;
+	if (stance == 100 || stance == 111)
+		ChangeStance(110);
+	else
+		ChangeStance(100);
 }
 
 void FrontEnd::StartCamp()
@@ -1680,6 +1725,14 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			break;
 		case Type::Emote:
 			ChatOut(event.text, ChatType::Emote);
+			break;
+		case Type::SpellScribed:
+		case Type::SpellMemorized:
+		case Type::SpellForgotten:
+		case Type::SpellBarUnlocked:
+		case Type::SpellsSwapped:
+		case Type::SpellDeleted:
+			m_spell_book.ZoneEvent(static_cast<int>(event.type), event.id, event.value, m_now_ms);
 			break;
 		case Type::SkillUp: // msg_skillimprove
 			ChatOut(FormatEqString(m_ui.eqstr, 12091, "You have become better at %1! (%2)",
@@ -1982,6 +2035,9 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			return;
 		}
 	}
+	// The open spellbook's page keys (HandleKeys, ahead of the movement keys) and Delete.
+	if (m_spell_book.Key(event.key, m_now_ms))
+		return;
 	if (SetZoneKey(event.key, true, typing))
 		return;
 	switch (event.key) {
@@ -2019,7 +2075,7 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 		break;
 	case InputEvent::Key::Escape: {
 		// A button on the cursor goes, and that's all (CDisplay_NewUIProcessEscape's RemoveAttachment).
-		if (m_window_state.cursor.type != HotButton::Empty) {
+		if (m_window_state.Attached()) {
 			m_window_state.ClearCursor();
 			break;
 		}
@@ -2029,10 +2085,13 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 		SetTarget(0);
 		ChatOut(EqString(12375, "You no longer have a target."), ChatType::Default);
 		for (const char *screen :
-			{"ItemDisplayWindow", "QuantityWnd", "HelpWindow", "SkillsWindow", "OptionsWindow", "SocialEditWnd",
-			 "InventoryWindow"})
+			{"ItemDisplayWindow", "QuantityWnd", "HelpWindow", "SkillsWindow", "OptionsWindow", "SpellBookWnd",
+			 "SocialEditWnd", "InventoryWindow"})
 			if (m_windows.Shown(screen)) {
-				m_windows.Show(screen, false);
+				if (std::string(screen) == "SpellBookWnd")
+					m_spell_book.Deactivate();
+				else
+					m_windows.Show(screen, false);
 				break;
 			}
 		break;

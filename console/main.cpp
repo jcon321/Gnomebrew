@@ -27,6 +27,7 @@ namespace
 			"  --world-port PORT     world port (default 9000)\n"
 			"  --char NAME           enter world with this character and print the zone address\n"
 			"  --create NAME         create a Human Warrior with this name first (for testing)\n"
+			"  --create-class N      with --create, a Human of class N instead (2 cleric, 11 necromancer...)\n"
 			"  --idle SECONDS        without --char, stay at character select this long (default 0)\n"
 			"  --zone SECONDS        with --char, enter the zone, stay this long, then /camp (30s) and log out\n"
 			"  --say TEXT            with --zone, /say this once in the zone\n"
@@ -280,6 +281,8 @@ int main(int argc, char **argv)
 			world.character = next();
 		else if (arg == "--create")
 			world.create = next();
+		else if (arg == "--create-class")
+			world.create_class = static_cast<uint8_t>(atoi(next().c_str()));
 		else if (arg == "--idle")
 			world.idle_seconds = atoi(next().c_str());
 		else if (arg == "--zone")

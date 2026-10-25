@@ -422,6 +422,7 @@ void ZoneSession::Reset(const std::string &character)
 	m_worn_known = false;
 	m_hp = m_max_hp = 0;
 	m_items.clear();
+	m_replay_answers.clear();
 	m_have_profile = m_have_zone_entry = m_sent_req_new_zone = m_sent_exp_zonein = false;
 	m_movement = ZoneMovement{};
 	m_have_movement = m_movement_dirty = false;
@@ -586,6 +587,58 @@ bool ZoneSession::ClickItemLink(uint16_t id, const std::string &text)
 	return Send(ZoneOp::ItemLinkResponse, body, sizeof(body), "OP_ItemLinkResponse " + std::to_string(id));
 }
 
+bool ZoneSession::MemorizeSpell(int slot, int spell, int scribing)
+{
+	if (m_state != State::InZone)
+		return false;
+	uint32_t body[3] = {static_cast<uint32_t>(slot), static_cast<uint32_t>(spell), static_cast<uint32_t>(scribing)};
+	bool sent = Send(ZoneOp::MemorizeSpell, body, sizeof(body),
+		"OP_MemorizeSpell " + std::to_string(slot) + " " + std::to_string(spell) + " " + std::to_string(scribing));
+	if (m_replay) {
+		// The zone's answers: OPMemorizeSpell's Scribe, Mem or UnmemSpell (which sends the gem's
+		// spell after clearing it), and for a scribe, DeleteItemInInventory's OP_MoveItem.
+		if (scribing == 2)
+			body[1] = 0xffff;
+		ReplayAnswer(ZoneOp::MemorizeSpell, body, sizeof(body));
+		if (scribing == 0) {
+			int32_t gone[3] = {Inventory::Cursor, -1, -1};
+			ReplayAnswer(ZoneOp::MoveItem, gone, sizeof(gone));
+		}
+	}
+	return sent;
+}
+
+bool ZoneSession::SwapSpells(int from, int to)
+{
+	if (m_state != State::InZone)
+		return false;
+	uint32_t body[2] = {static_cast<uint32_t>(from), static_cast<uint32_t>(to)};
+	bool sent = Send(ZoneOp::SwapSpell, body, sizeof(body), "OP_SwapSpell " + std::to_string(from) + " " + std::to_string(to));
+	if (m_replay)
+		ReplayAnswer(ZoneOp::SwapSpell, body, sizeof(body)); // Handle_OP_SwapSpell sends it back
+	return sent;
+}
+
+bool ZoneSession::DeleteSpell(int slot)
+{
+	if (m_state != State::InZone)
+		return false;
+	// RequestSpellDeletion: {slot, 0} as two i32s, success in the second's low byte.
+	int32_t body[2] = {slot, 0};
+	bool sent = Send(ZoneOp::DeleteSpell, body, sizeof(body), "OP_DeleteSpell " + std::to_string(slot));
+	if (m_replay) {
+		body[1] = slot >= 0 && slot < ZoneProfile::BookSlots && m_profile.spell_book[slot] != -1;
+		ReplayAnswer(ZoneOp::DeleteSpell, body, sizeof(body));
+	}
+	return sent;
+}
+
+void ZoneSession::ReplayAnswer(uint16_t opcode, const void *body, size_t size)
+{
+	const uint8_t *bytes = static_cast<const uint8_t *>(body);
+	m_replay_answers.emplace_back(opcode, std::vector<uint8_t>(bytes, bytes + size));
+}
+
 bool ZoneSession::MoveItem(int16_t from, int16_t to, int32_t qty)
 {
 	if (m_state != State::InZone)
@@ -747,6 +800,7 @@ void ZoneSession::SetStance(uint8_t stance)
 	memcpy(body + 2, &AppearanceAnimation, 2);
 	memcpy(body + 4, &value, 4);
 	Send(ZoneOp::SpawnAppearance, body, sizeof(body), "OP_SpawnAppearance " + std::to_string(stance));
+	m_self.stance = stance;
 }
 
 void ZoneSession::SendMovement(uint64_t now_ms)
@@ -885,6 +939,10 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		p.deity = Read<uint16_t>(data, 4944);
 		for (int i = 0; i < 100; ++i)
 			p.skills[i] = Read<int16_t>(data, 2988 + i * 2);
+		for (int i = 0; i < ZoneProfile::BookSlots; ++i)
+			p.spell_book[i] = Read<int16_t>(data, 1846 + i * 2);
+		for (int i = 0; i < ZoneProfile::Gems; ++i)
+			p.mem_spells[i] = Read<int16_t>(data, 2870 + i * 2);
 		m_have_profile = true;
 		char line[160];
 		snprintf(line, sizeof(line), "[zone]    profile: %s level %u, zone %u at (%.1f, %.1f, %.1f), hp %d", p.name.c_str(), p.level,
@@ -1114,6 +1172,61 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		else
 			Inventory::Swap(m_items, from, to);
 		UpdateAppearance();
+		break;
+	}
+	case ZoneOp::MemorizeSpell: {
+		// msg_launchspell_info: 0 a spell scribed (FinishScribing), 1 memorized (FinishMemorizing),
+		// 2 forgotten (ForgetMemorizedSpell), -1 neither (the zone turning one down).
+		if (data.size() < 12)
+			break;
+		int32_t slot = Read<int32_t>(data, 0), spell = Read<int32_t>(data, 4), scribing = Read<int32_t>(data, 8);
+		Event e;
+		e.id = static_cast<uint16_t>(slot);
+		e.value = spell;
+		if (scribing == 0 && slot >= 0 && slot < ZoneProfile::BookSlots) {
+			m_profile.spell_book[slot] = static_cast<int16_t>(spell);
+			e.type = Event::Type::SpellScribed;
+		}
+		else if (scribing == 1 && slot >= 0 && slot < ZoneProfile::Gems) {
+			m_profile.mem_spells[slot] = static_cast<int16_t>(spell);
+			e.type = Event::Type::SpellMemorized;
+		}
+		else if (scribing == 2 && slot >= 0 && slot < ZoneProfile::Gems) {
+			e.value = m_profile.mem_spells[slot];
+			m_profile.mem_spells[slot] = -1;
+			e.type = Event::Type::SpellForgotten;
+		}
+		else
+			e.type = Event::Type::SpellBarUnlocked;
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::SwapSpell: {
+		// HandleWorldMessage's 0x41ce: the two book slots trade spells.
+		if (data.size() < 8)
+			break;
+		int32_t from = Read<int32_t>(data, 0), to = Read<int32_t>(data, 4);
+		if (from < 0 || to < 0 || from >= ZoneProfile::BookSlots || to >= ZoneProfile::BookSlots)
+			break;
+		std::swap(m_profile.spell_book[from], m_profile.spell_book[to]);
+		Event e(Event::Type::SpellsSwapped);
+		e.id = static_cast<uint16_t>(from);
+		e.value = to;
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::DeleteSpell: {
+		// CSpellBookWnd::DeleteSpellFromBook: success 1 empties the slot.
+		if (data.size() < 5)
+			break;
+		int16_t slot = Read<int16_t>(data, 0);
+		bool deleted = data[4] == 1 && slot >= 0 && slot < ZoneProfile::BookSlots;
+		if (deleted)
+			m_profile.spell_book[slot] = -1;
+		Event e(Event::Type::SpellDeleted);
+		e.id = static_cast<uint16_t>(slot);
+		e.value = deleted;
+		events.push_back(e);
 		break;
 	}
 	case ZoneOp::Emote: {
@@ -1504,6 +1617,11 @@ void ZoneSession::Pump(int timeout_ms, std::vector<Event> &events)
 
 	if ((m_state == State::InZone || m_state == State::Camping) && m_have_movement)
 		SendMovement(NowMs());
+	while (m_replay && !m_replay_answers.empty() && m_state == State::InZone) {
+		auto answer = std::move(m_replay_answers.front());
+		m_replay_answers.pop_front();
+		HandlePacket(answer.first, answer.second, events);
+	}
 	if (m_replay && m_replay_target) {
 		Event e(Event::Type::TargetChanged);
 		e.id = m_replay_target;

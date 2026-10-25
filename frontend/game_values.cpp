@@ -1,6 +1,7 @@
 #include "game_values.h"
 #include "eqstr.h"
 #include "inventory.h"
+#include "spell_book.h"
 #include "world_client.h"
 #include "zone_session.h"
 
@@ -519,6 +520,10 @@ int GameValues::Gauge(int eq_type, std::string &text)
 		text = pet->DisplayName();
 		return Permille(pet->hp, 100);
 	}
+	case 9: // GetSpellMemTicksLeft
+		return spell_book ? spell_book->MemorizeGauge() : 0;
+	case 10: // GetSpellScribeTicksLeft
+		return spell_book ? spell_book->ScribeGauge() : 0;
 	case 11: case 12: case 13: case 14: case 15: // group members (no group yet)
 		return -1;
 	default:

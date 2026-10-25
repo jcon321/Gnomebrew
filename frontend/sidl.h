@@ -136,9 +136,11 @@ struct SidlPiece
 	// Slider: its SliderDrawTemplate (SliderArt).
 	std::string slider_art;
 
-	// InvSlot: the empty slot's picture (Background). SpellGem: SpellGemDrawTemplate.
+	// InvSlot: the empty slot's picture (Background). SpellGem: SpellGemDrawTemplate, and where
+	// the icon goes in it (SpellIconOffsetX, Y).
 	std::string slot_background;
 	std::string gem_holder, gem_background, gem_highlight;
+	int gem_icon_x = 0, gem_icon_y = 0;
 
 	// Gauge: the text (TextOffset) and the bar (GaugeOffset) from the client area's corner.
 	int text_offset_x = 0, text_offset_y = 0, gauge_offset_x = 0, gauge_offset_y = 0;
@@ -275,6 +277,16 @@ public:
 		// animation (a buff's BuffIcons) shows that decal's cell the same way.
 		std::string cell_animation;
 		int cell = -1;
+		// A Button's pictures as CBuffWindow::SetBuffIcon sets a spellbook slot's: `background` drawn
+		// in place of its template's ("" the template's), none of them with `no_background`, and the
+		// decal's animation in place of NormalDecal (A_SpellIcons) with `cell` its cell.
+		std::string background, decal;
+		bool no_background = false;
+		// SpellGem (CSpellGemWnd): `cell` is the spell's icon in A_SpellGems (-1: an empty gem, the
+		// Holder), `gem_color` its color (setGaugeColor: the Background is tinted by it), and
+		// `gem_fade` how far it's dimmed, 0 ready .. 10 the darkest (the spell not ready to cast).
+		uint32_t gem_color = 0;
+		int gem_fade = 0;
 		// InvSlot: how many of the item are in it, in a dark box at its corner (CInvSlotWnd::Draw);
 		// 0 shows none.
 		int count = 0;
@@ -356,13 +368,13 @@ public:
 	// Minimized (CXWnd::IsMinimized): just the title bar and border, no client area or pieces.
 	void SetMinimized(bool minimized) { m_minimized = minimized; }
 	bool Minimized() const { return m_minimized; }
-	// A control under (x, y) that takes clicks (a shown button, edit box or scrollbar): clicks
+	// A control under (x, y) that takes clicks (a shown button, slot, spell gem, edit box or scrollbar): clicks
 	// there don't drag.
 	bool InteractiveAt(int x, int y) const;
 	// (x, y) is on the control where it's drawn: inside it and its parents' client areas (the
 	// part of a control outside its parent is cut off, so it can't be clicked either).
 	bool HitTest(const Control &control, int x, int y) const;
-	// The ScreenID of the shown, enabled button under (x, y), or "".
+	// The ScreenID of the shown, enabled button (or slot or spell gem) under (x, y), or "".
 	std::string ButtonAt(int x, int y) const;
 	// A held button let go of without being clicked (after CXWndManager's left button hold).
 	void CancelPress();
@@ -375,6 +387,9 @@ private:
 	void DrawFrame(const Control &control, Canvas &canvas, SidlTextures &textures, uint64_t now_ms) const;
 	void LayoutBorder(const Control &control, uint64_t now_ms, Rect (&pieces)[BorderPieceCount]) const;
 	void DrawAnimation(Canvas &canvas, SidlTextures &textures, const std::string &name, const Rect &dest, uint64_t now_ms) const;
+	void DrawAnimation(Canvas &canvas, SidlTextures &textures, const std::string &name, const Rect &dest, uint64_t now_ms,
+		uint32_t tint) const;
+	void DrawSpellGem(const Control &control, Canvas &canvas, SidlTextures &textures, uint64_t now_ms) const;
 	void DrawTitleBox(Canvas &canvas, SidlTextures &textures, TitleBox box, const SidlButtonTemplate &look, uint64_t now_ms) const;
 	Rect AnimationSize(const std::string &name) const; // the first frame's size, at 0, 0
 	// CTAFrameDraw: where each of a border's pieces goes around `rect`, and the inside of it.

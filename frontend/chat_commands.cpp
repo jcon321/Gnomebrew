@@ -14,7 +14,7 @@ namespace
 	enum class Command
 	{
 		None, Say, Tell, Group, Shout, Auction, Ooc, Guild, Reply, Emote, Hail, Location, Target, Camp,
-		ClearChat, ShowNames,
+		ClearChat, ShowNames, Sit, Stand, Book,
 	};
 
 	struct CommandEntry
@@ -89,8 +89,8 @@ namespace
 		{"/voice", 0, Command::None}, {"/microphone", 0, Command::None}, {"/movelog", 0, Command::None},
 		{"/hidecorpses", 0, Command::None}, {"/vrdelay", 0, Command::None}, {"/reverb", 0, Command::None},
 		{"/fastdrop", 0, Command::None}, {"/trackplayers", 0, Command::None}, {"/help", 0, Command::None},
-		{"/lfg", 0, Command::None}, {"/approval", 4, Command::None}, {"/sit", 0, Command::None},
-		{"/stand", 0, Command::None}, {"/book", 0, Command::None}, {"/cast", 0, Command::None},
+		{"/lfg", 0, Command::None}, {"/approval", 4, Command::None}, {"/sit", 0, Command::Sit},
+		{"/stand", 0, Command::Stand}, {"/book", 0, Command::Book}, {"/cast", 0, Command::None},
 		{"/doability", 0, Command::None}, {"/whotarget", 0, Command::None}, {"/language", 0, Command::None},
 		{"/target", 0, Command::Target}, {"/camp", 0, Command::Camp}, {"/attack", 0, Command::None},
 		{"/invite", 0, Command::None}, {"/disband", 0, Command::None}, {"/note", 0, Command::None},
@@ -307,6 +307,22 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 	case Command::ClearChat:
 		m_chat.Clear();
 		break;
+	case Command::Sit:
+		Sit();
+		break;
+	case Command::Stand:
+		ChangeStance(100);
+		break;
+	case Command::Book: {
+		// /book (@004fcfa6): the book opened, and at a page if one's given (the left one of two).
+		if (!m_spell_book.Activated())
+			m_spell_book.Activate(m_now_ms);
+		if (!args.empty() && m_spell_book.Activated()) {
+			int page = std::atoi(args.c_str()) - 1;
+			m_spell_book.TurnToPage(page < 1 ? 0 : page % 2 != 0 ? page - 1 : page);
+		}
+		break;
+	}
 	case Command::ShowNames: {
 		// /shownames (@004ff84f): off, or 1 (first names) .. 4 (everything); anything else is 4.
 		// With Zeal's 5 .. 7 too, and its messages for them.

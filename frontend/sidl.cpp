@@ -359,6 +359,8 @@ void SidlDefinitions::ReadElement(const XmlNode &node)
 		p.gem_holder = t->ChildText("Holder");
 		p.gem_background = t->ChildText("Background");
 		p.gem_highlight = t->ChildText("Highlight");
+		p.gem_icon_x = node.ChildInt("SpellIconOffsetX", 0);
+		p.gem_icon_y = node.ChildInt("SpellIconOffsetY", 0);
 	}
 	p.text_offset_x = node.ChildInt("TextOffsetX", 0);
 	p.text_offset_y = node.ChildInt("TextOffsetY", 0);
@@ -765,7 +767,8 @@ bool SidlWindow::InteractiveAt(int x, int y) const
 		return false;
 	for (const auto &control : m_controls) {
 		const std::string &type = control.def->type;
-		if ((type == "Button" || type == "Editbox" || type == "InvSlot" || type == "Slider" || control.clickable) &&
+		if ((type == "Button" || type == "Editbox" || type == "InvSlot" || type == "SpellGem" || type == "Slider" ||
+		     control.clickable) &&
 		    control.enabled && HitTest(control, x, y))
 			return true;
 		if (HasScrollbar(control) && LayoutScrollbar(control).bar.Contains(x, y) && HitTest(control, x, y))
@@ -817,7 +820,8 @@ std::string SidlWindow::ButtonAt(int x, int y) const
 	if (m_minimized)
 		return "";
 	for (auto it = m_controls.rbegin(); it != m_controls.rend(); ++it)
-		if ((it->def->type == "Button" || it->def->type == "InvSlot") && it->enabled && HitTest(*it, x, y))
+		if ((it->def->type == "Button" || it->def->type == "InvSlot" || it->def->type == "SpellGem") && it->enabled &&
+		    HitTest(*it, x, y))
 			return it->def->screen_id;
 	return "";
 }
@@ -972,6 +976,52 @@ void SidlWindow::DrawCell(Canvas &canvas, SidlTextures &textures, const std::str
 		return;
 	if (const Image *image = textures.Get(frame.texture))
 		canvas.Stretch(*image, frame.source, dest);
+}
+
+void SidlWindow::DrawAnimation(Canvas &canvas, SidlTextures &textures, const std::string &name, const Rect &dest,
+	uint64_t now_ms, uint32_t tint) const
+{
+	const SidlAnimation *animation = m_defs->Animation(name);
+	const SidlFrame *frame = animation ? animation->FrameAt(now_ms) : nullptr;
+	const Image *image = frame ? textures.Get(frame->texture) : nullptr;
+	if (image)
+		canvas.Stretch(*image, frame->source, dest, tint, canvas.Clip());
+}
+
+void SidlWindow::DrawSpellGem(const Control &control, Canvas &canvas, SidlTextures &textures, uint64_t now_ms) const
+{
+	// CSpellGemWnd::Draw (DrawButtonTextures @005a6050): an empty gem is the Holder alone (the
+	// dark, empty socket). One with a spell is the Background ring in the spell's color, a shade
+	// darker for each step of its fade and lighter by 0x20 under the mouse; then the icon at
+	// SpellIconOffset at its own size, as opaque as setGaugeColor's alphas say (0xff ready, then
+	// 0xea down by 0x15 a step); then the Highlight over them.
+	const SidlPiece &def = *control.def;
+	if (control.cell < 0) {
+		DrawAnimation(canvas, textures, def.gem_holder, control.rect, now_ms);
+		return;
+	}
+	int fade = std::clamp(control.gem_fade, 0, 10);
+	uint32_t color = 0;
+	for (int shift = 0; shift <= 16; shift += 8) {
+		int channel = (control.gem_color >> shift) & 0xff;
+		channel -= fade * (channel / 11);
+		if (control.hover)
+			channel = std::min(channel + 0x20, 0xff);
+		color |= static_cast<uint32_t>(channel) << shift;
+	}
+	DrawAnimation(canvas, textures, def.gem_background, control.rect, now_ms, color);
+	if (const SidlAnimation *icons = m_defs->Animation("A_SpellGems")) {
+		Rect icon{control.rect.x + def.gem_icon_x, control.rect.y + def.gem_icon_y, icons->cell_width, icons->cell_height};
+		if (fade == 0)
+			DrawCell(canvas, textures, "A_SpellGems", control.cell, icon);
+		else {
+			std::vector<uint32_t> kept;
+			canvas.Keep(icon, kept);
+			DrawCell(canvas, textures, "A_SpellGems", control.cell, icon);
+			canvas.BlendKept(icon, kept, 0xea - 0x15 * (fade - 1));
+		}
+	}
+	DrawAnimation(canvas, textures, def.gem_highlight, control.rect, now_ms);
 }
 
 void SidlWindow::DrawAnimation(Canvas &canvas, SidlTextures &textures, const std::string &name, const Rect &dest,
@@ -1149,13 +1199,13 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 		bool cell_background = !control.cell_animation.empty();
 		if (cell_background && control.cell >= 0)
 			DrawCell(canvas, textures, control.cell_animation, control.cell, control.rect);
-		else if (!control.blank && !cell_background)
-			DrawAnimation(canvas, textures, name, control.rect, now_ms);
+		else if (!control.blank && !cell_background && !control.no_background)
+			DrawAnimation(canvas, textures, control.background.empty() ? name : control.background, control.rect, now_ms);
 		// The decal at its offset (its own size without DecalSize); the text goes in what's right of it.
 		// A grid decal (a buff's BuffIcons) shows the control's cell, and nothing without one
 		// (CBuffWindow::SetBuffIcon's SetCurCell(-1)).
 		Rect text_rect = control.rect;
-		const std::string &decal_name = t.normal_decal;
+		const std::string &decal_name = control.decal.empty() ? t.normal_decal : control.decal;
 		const SidlAnimation *decal_animation = cell_background ? nullptr : m_defs->Animation(decal_name);
 		bool grid_decal = decal_animation && decal_animation->grid;
 		if (decal_animation && !control.blank && (!grid_decal || control.cell >= 0)) {
@@ -1198,10 +1248,7 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 		DrawSlider(control, canvas, textures, now_ms);
 	}
 	else if (def.type == "SpellGem") {
-		// CSpellGemWnd::Draw (@005a6050): a gem with a spell is the Background ring tinted the
-		// spell's color, the icon, then the Highlight over them; an empty one is the Holder alone
-		// (the dark, empty socket).
-		DrawAnimation(canvas, textures, def.gem_holder, control.rect, now_ms);
+		DrawSpellGem(control, canvas, textures, now_ms);
 	}
 	else if (def.type == "Label" || def.type == "StaticText") {
 		std::string shown = control.text;
@@ -1359,7 +1406,8 @@ std::string SidlWindow::OnMouse(const InputEvent &event)
 			control.hover = HitTest(control, event.x, event.y);
 			continue;
 		}
-		if ((type != "Button" && type != "Editbox" && type != "InvSlot" && !control.clickable) || !Shown(control))
+		if ((type != "Button" && type != "Editbox" && type != "InvSlot" && type != "SpellGem" && !control.clickable) ||
+		    !Shown(control))
 			continue;
 		bool inside = HitTest(control, event.x, event.y);
 		if (type == "Editbox") {

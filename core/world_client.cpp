@@ -1,4 +1,5 @@
 #include "world_client.h"
+#include "creation_rules.h"
 #include "opcodes.h"
 #include "rdp_session.h"
 
@@ -437,6 +438,28 @@ bool RunWorld(const LoginResult &login, const WorldOptions &options, ZoneHandoff
 					created = true;
 					NewCharacter character;
 					character.name = options.create;
+					if (options.create_class != 1) {
+						// The rules' first deity and city for a Human of the class, and the base stats.
+						CreationRules rules;
+						character.class_id = options.create_class;
+						int deity = 0;
+						while (deity < CreationRules::DeityCount && !rules.CanWorship(1, options.create_class, deity))
+							++deity;
+						int city = 0;
+						while (city < CreationRules::CityCount && !rules.CityCanStart(city, 1, deity, options.create_class))
+							++city;
+						character.deity = deity < CreationRules::DeityCount ? CreationRules::Deities[deity] : 396;
+						character.start_zone = rules.StartZone(1, options.create_class, city, character.deity);
+						using S = CreationRules::Stat;
+						auto stat = [&](S s) { return static_cast<int16_t>(rules.RaceBase(1, s) + rules.ClassBonus(options.create_class, s)); };
+						character.str = stat(S::Str);
+						character.sta = stat(S::Sta);
+						character.agi = stat(S::Agi);
+						character.dex = stat(S::Dex);
+						character.wis = stat(S::Wis);
+						character.int_ = stat(S::Int);
+						character.cha = stat(S::Cha);
+					}
 					if (!session.CreateCharacter(character)) {
 						fprintf(stderr, "[world] couldn't start character creation\n");
 						return false;

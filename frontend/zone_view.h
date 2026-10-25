@@ -68,6 +68,9 @@ public:
 	bool Move(const MoveControls &controls, uint64_t now_ms, bool looking);
 	bool Placed() const { return m_placed; }
 	bool Crouching() const { return m_movement.Crouching(); } // a standing jump winding up
+	// Our stance 110 (EQPlayer::ChangeStance): we sit down (P02, held), and stand back up (P02
+	// backwards) when it ends.
+	void SetSitting(bool sitting);
 	ZoneMovement Movement() const; // for OP_ClientUpdate
 
 	// The doors and switches (OP_SpawnDoor), and one's new state (OP_MoveDoor). They move as Move runs.
@@ -286,6 +289,7 @@ private:
 	float m_animation_rate = 1;
 	DebugDraw m_debug_draw;
 	bool m_animation_reversed = false;
+	bool m_sitting = false, m_standing_up = false;
 
 	// Other spawns: models shared by everyone who looks the same, built once they're in range.
 	struct SpawnView

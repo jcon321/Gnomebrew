@@ -803,6 +803,140 @@ int main(int argc, char **argv)
 		for (const auto &line : frontend.Chat().Lines())
 			if (!line.links.empty())
 				printf("[preview] chat line with %zu link(s): %s\n", line.links.size(), line.text.c_str());
+
+		// The spellbook, for a caster (the replay answers what we ask as the zone would): the gems'
+		// book button opens it, sitting; two right clicks swap the first two slots; a click puts the
+		// first spell on the cursor and a click on an empty gem memorizes it; a right click on the
+		// gem forgets it; a scroll from the inventory scribes into the first empty slot; a right
+		// click and Delete ask to delete it, and Yes does; Done closes the book and stands us up.
+		const ZoneProfile &me = frontend.Zone().Profile();
+		auto spell_name = [&](int id) {
+			const SpellInfo *spell = spells.Find(id);
+			return spell ? spell->name : std::string(id == -1 ? "-" : "?");
+		};
+		auto book = [&](const char *when) {
+			printf("[preview] book %s: stance %d, open %d, cursor spell %d;", when, frontend.Zone().Self().stance,
+				frontend.SpellBookState().Activated(), frontend.WindowState().cursor_spell);
+			for (int i = 0; i < 10; ++i)
+				printf(" %d=%s", i, spell_name(me.spell_book[i]).c_str());
+			printf("; gems:");
+			for (int i = 0; i < ZoneProfile::Gems; ++i)
+				printf(" %s", spell_name(me.mem_spells[i]).c_str());
+			printf("\n");
+		};
+		auto run_until = [&](auto done, int ms) { return h.RunUntil(done, ms); };
+		int x, y;
+		book("at first");
+		if (at("CastSpellWnd", "CSPW_SpellBook", x, y)) {
+			click(x, y);
+			h.RunUntil([] { return false; }, 300);
+			book("opened");
+			h.Snapshot("b1-book");
+			int bx, by, cx, cy;
+			if (frontend.SpellBookState().Activated() && at("SpellBookWnd", "SBW_Spell0", bx, by) &&
+			    at("SpellBookWnd", "SBW_Spell1", cx, cy)) {
+				right_click(bx, by);
+				h.RunUntil([] { return false; }, 100);
+				h.Snapshot("b2-selected");
+				right_click(cx, cy);
+				h.RunUntil([] { return false; }, 100);
+				book("swapped 0 and 1");
+				right_click(bx, by);
+				right_click(cx, cy);
+				h.RunUntil([] { return false; }, 100);
+				book("swapped back");
+				// Memorizing: into the first empty gem.
+				int gem = -1;
+				for (int i = 0; i < ZoneProfile::Gems && gem < 0; ++i)
+					if (me.mem_spells[i] == -1)
+						gem = i;
+				click(bx, by);
+				frontend.OnEvent({InputEvent::Type::MouseMove, 600, 400});
+				h.RunUntil([] { return false; }, 100);
+				book("spell picked up");
+				h.Snapshot("b3-spell-on-cursor");
+				int gx, gy;
+				if (gem >= 0 && me.spell_book[0] != -1 && at("CastSpellWnd", "CSPW_Spell" + std::to_string(gem), gx, gy)) {
+					click(gx, gy);
+					h.RunUntil([] { return false; }, 3000);
+					h.Snapshot("b4-memorizing");
+					bool done = run_until([&] { return me.mem_spells[gem] != -1; }, 70000);
+					book(done ? "memorized" : "memorize timed out");
+					// Dim until it can be cast (a second and its recast time after), then bright again.
+					auto fade = [&] {
+						const SidlWindow::Control *c = windows.Find("CastSpellWnd")->Find("CSPW_Spell" + std::to_string(gem));
+						return c ? c->gem_fade : -1;
+					};
+					h.RunUntil([] { return false; }, 400);
+					printf("[preview] gem %d fade just memorized: %d\n", gem, fade());
+					h.Snapshot("b5-memorized");
+					h.RunUntil([] { return false; }, 4000);
+					printf("[preview] gem %d fade 4 s later: %d\n", gem, fade());
+					h.Snapshot("b5-memorized-ready");
+					right_click(gx, gy);
+					h.RunUntil([] { return false; }, 200);
+					book("gem right clicked");
+				}
+				// Scribing: the first scroll in the general slots onto the cursor, then an empty slot.
+				int scroll = -1;
+				for (const auto &[slot, item] : frontend.Zone().Items())
+					if (slot >= Inventory::FirstGeneral && slot <= Inventory::LastGeneral && item.item_type == 20 && scroll < 0)
+						scroll = slot;
+				int empty = -1;
+				for (int i = 0; i < 16 && empty < 0; ++i)
+					if (me.spell_book[i] == -1)
+						empty = i;
+				SidlWindow *inventory = windows.Find("InventoryWindow");
+				if (scroll >= 0 && empty >= 0 && inventory) {
+					windows.Show("InventoryWindow", true);
+					windows.Raise("InventoryWindow");
+					frontend.Update(NowMs());
+					if (const SidlWindow::Control *c = inventory->Find("InvSlot" + std::to_string(scroll)))
+						click(c->rect.x + c->rect.w / 2, c->rect.y + c->rect.h / 2);
+					windows.Show("InventoryWindow", false);
+					windows.Raise("SpellBookWnd");
+					frontend.Update(NowMs());
+					printf("[preview] scroll from slot %d on the cursor: %d\n", scroll,
+						static_cast<int>(frontend.Zone().Items().count(Inventory::Cursor)));
+					int ex, ey;
+					if (at("SpellBookWnd", "SBW_Spell" + std::to_string(empty), ex, ey)) {
+						click(ex, ey);
+						h.RunUntil([] { return false; }, 3000);
+						h.Snapshot("b6-scribing");
+						bool done = run_until([&] { return me.spell_book[empty] != -1; }, 70000);
+						h.RunUntil([] { return false; }, 200);
+						book(done ? "scribed" : "scribe timed out");
+						printf("[preview] the cursor after scribing: %d\n",
+							static_cast<int>(frontend.Zone().Items().count(Inventory::Cursor)));
+						h.Snapshot("b7-scribed");
+						// Deleting it: selected, Delete, Yes.
+						right_click(ex, ey);
+						h.Key(InputEvent::Key::Delete);
+						h.RunUntil([] { return false; }, 200);
+						where("ConfirmationDialogBox");
+						h.Snapshot("b8-confirm-delete");
+						int yx, yy;
+						if (at("ConfirmationDialogBox", "Yes_Button", yx, yy))
+							click(yx, yy);
+						h.RunUntil([] { return false; }, 200);
+						where("ConfirmationDialogBox");
+						book("deleted");
+					}
+				}
+				else
+					printf("[preview] no scroll (%d) or empty slot (%d) to scribe with\n", scroll, empty);
+				int dx, dy;
+				if (at("SpellBookWnd", "DoneButton", dx, dy))
+					click(dx, dy);
+				h.RunUntil([] { return false; }, 1500);
+				book("done");
+				h.Snapshot("b9-closed");
+			}
+		}
+		for (const auto &line : frontend.Chat().Lines())
+			if (line.text.find("pell") != std::string::npos || line.text.find("scrib") != std::string::npos ||
+			    line.text.find("memoriz") != std::string::npos || line.text.find("forget") != std::string::npos)
+				printf("[preview] chat: %s\n", line.text.c_str());
 		return 0;
 	}
 

@@ -148,6 +148,9 @@ struct GameWindowState
 	HotButton hot_buttons[HotButtonPages * HotButtonsPerPage];
 	HotButton cursor;        // Empty: nothing on the cursor
 	std::string cursor_text; // its text when it was picked up
+	// A spell from the book on the cursor (CCursorAttachment type 1): its book slot (-1: none) and
+	// its icon, a cell of A_SpellIcons. A button and a spell are never on it together.
+	int cursor_spell = -1, cursor_spell_icon = -1;
 	bool hot_buttons_changed = false; // since they were last saved
 
 	Social socials[SocialPages * SocialsPerPage];
@@ -159,7 +162,8 @@ struct GameWindowState
 	// The social editor's: the social it's on, and the color picked.
 	int edit_social = 0, edit_color = 0;
 
-	void ClearCursor() { cursor = {}; cursor_text.clear(); } // CCursorAttachment::RemoveAttachment
+	void ClearCursor() { cursor = {}; cursor_text.clear(); cursor_spell = cursor_spell_icon = -1; } // RemoveAttachment
+	bool Attached() const { return cursor.type != HotButton::Empty || cursor_spell >= 0; } // a button or a spell
 
 	// The quantity window's: the slot it takes from (-1: it isn't up), the stack's count, and
 	// the slider's value and the edit box's text as last seen, to tell which one changed.

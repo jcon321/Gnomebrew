@@ -49,6 +49,11 @@ struct ZoneProfile
 	// By skill id (50 is swimming): 255 the class never has it, 254 it does at a later level,
 	// 0 it has it untrained.
 	int16_t skills[100] = {};
+	// The spells scribed in the book's 256 slots (eight to a page) and memorized in the eight gems,
+	// by id; -1 for none (the profile's 0xFFFF). The zone's answers to the spell requests keep them.
+	static constexpr int BookSlots = 256, Gems = 8;
+	int16_t spell_book[BookSlots] = {};
+	int16_t mem_spells[Gems] = {};
 };
 
 // One entry of OP_SendZonepoints: where a zone line with teleport index `index` goes.
@@ -242,6 +247,14 @@ public:
 			DoorsSpawned, // Doors() is set
 			DoorMoved,    // id: the door, value: its new state (OP_MoveDoor)
 			ItemLink,     // LinkedItem() is the item of a link we clicked (OP_ItemLinkResponse)
+			// The zone's answers to the spell requests (msg_launchspell_info, OP_SwapSpell and
+			// OP_DeleteSpell), already in Profile(): id the book slot or gem, value the spell.
+			SpellScribed,
+			SpellMemorized,
+			SpellForgotten, // value: the spell the gem had
+			SpellBarUnlocked, // the zone turned a scribe or memorize down (its -1)
+			SpellsSwapped,  // id and value: the two book slots
+			SpellDeleted,   // id: the book slot; value: 1 done, 0 not
 			LoggedOut,    // camp finished; the zone closes the connection
 			ZoneApproved, // value: the zone we're going to; OP_DeleteSpawn is sent
 			ZoneDenied,   // value: the answer (ZoningMessage: 0 down, -1 not ready, -7 not experienced...)
@@ -291,7 +304,8 @@ public:
 	// (DoPassageOfTime), at most every 150 ms, and not more than 6 identical updates in a row.
 	void SetMovement(const ZoneMovement &movement);
 	void Jump(); // OP_Jump
-	// ChangeStance: OP_SpawnAppearance with our stance (100 standing, 111 crouching...).
+	// ChangeStance: OP_SpawnAppearance with our stance (100 standing, 110 sitting, 111 crouching...),
+	// kept in Self().stance.
 	void SetStance(uint8_t stance);
 	// /camp: OP_Camp, then OP_Logout once the 30 second camp timer has run (Handle_OP_Logout expects that).
 	bool Camp();
@@ -310,6 +324,12 @@ public:
 	// link's phrase for us.
 	bool ClickItemLink(uint16_t id, const std::string &text);
 	const ZoneItem &LinkedItem() const { return m_linked_item; }
+	// OP_MemorizeSpell: what the spellbook asks once its timer runs (scribing 0, a scroll on the
+	// cursor into a book slot; 1, a book spell into a gem) and what a gem's right click asks (2,
+	// forget it). The zone answers with the same; scribing also takes the scroll off the cursor.
+	bool MemorizeSpell(int slot, int spell, int scribing);
+	bool SwapSpells(int from, int to);  // OP_SwapSpell: two book slots; done when the zone answers
+	bool DeleteSpell(int slot);         // OP_DeleteSpell: a book slot; done when the zone answers
 	void Close();
 
 	State GetState() const { return m_state; }
@@ -389,6 +409,9 @@ private:
 	size_t m_replay_next = 0;
 	bool m_replay_finished = false;
 	uint16_t m_replay_target = 0; // a /target to answer
+	// What the zone would answer to what we sent, while replaying (the spell requests).
+	std::deque<std::pair<uint16_t, std::vector<uint8_t>>> m_replay_answers;
+	void ReplayAnswer(uint16_t opcode, const void *body, size_t size);
 	State m_state = State::Idle;
 	std::string m_character;
 	ZoneProfile m_profile;

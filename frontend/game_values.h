@@ -2,7 +2,8 @@
 
 // What the in-game windows' gauges and labels show (eqgame's fn_GetGaugeLabelFromEQ @0043600d and
 // fn_GetLabelFromEQ @00436680), from the zone session and our target. The EQTypes so far:
-//   gauges  1 HP (with our name), 2 mana, 3 stamina, 6 the target's HP (with its name), 16 our pet's
+//   gauges  1 HP (with our name), 2 mana, 3 stamina, 6 the target's HP (with its name), 9 and 10 the
+//           spellbook's memorizing and scribing, 16 our pet's
 //   labels  1 our name, 2 our level, 3 our class (its title from 51), 4 our deity, 5..11 STR, STA,
 //           DEX, AGI, WIS, INT, CHA (base and worn items), 12..16 the poison, disease, fire, cold
 //           and magic resists, 17 and 18 our HP and max HP, 22 AC, 23 ATK, 24 and 25 our weight
@@ -18,6 +19,7 @@
 #include <map>
 
 class EqStr;
+class SpellBook;
 class SpellFile;
 class ZoneSession;
 struct ZoneItem;
@@ -30,6 +32,7 @@ public:
 	const ZoneSession *zone = nullptr;
 	const EqStr *eqstr = nullptr; // for the class and deity names; null: English
 	const SpellFile *spells = nullptr; // for the item display's spells; null: none known
+	const SpellBook *spell_book = nullptr; // for its gauges
 	uint16_t target = 0; // spawn id; 0 none
 	bool running = true; // run mode (eqgame's @0079856d), not walking
 	float heading = 0;   // ours, 0..512 (a compass item points by it)

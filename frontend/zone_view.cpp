@@ -429,6 +429,14 @@ void ZoneView::SpawnSounds(SpawnView &view, const ZoneSpawn &spawn, uint16_t id,
 	view.sound.Follow(*m_sound, actor);
 }
 
+void ZoneView::SetSitting(bool sitting)
+{
+	if (sitting == m_sitting)
+		return;
+	m_sitting = sitting;
+	m_standing_up = !sitting;
+}
+
 void ZoneView::ChooseAnimation(float ms)
 {
 	// What the character is doing picks the animation, as EQPlayer's animation tracks do:
@@ -460,6 +468,16 @@ void ZoneView::ChooseAnimation(float ms)
 		animation = moving ? "P06" : "L09";
 		rate = moving ? across * 0.5f + 1 : 1;
 	}
+	// Sitting: getting down, held; standing up: the same backwards, unless we move off first.
+	bool still = speed == 0 && m_movement.Strafe() == 0;
+	if (animation.empty() && m_sitting)
+		animation = "P02";
+	else if (animation.empty() && m_standing_up && still) {
+		animation = "P02";
+		reversed = true;
+	}
+	else
+		m_standing_up = false;
 	if (animation.empty()) {
 		if (speed > 0)
 			animation = speed >= m_movement.RunSpeed() ? "L02" : "L01";
@@ -476,18 +494,26 @@ void ZoneView::ChooseAnimation(float ms)
 		rate = MoveAnimationRate(across);
 	if (m_model && !m_model->HasAnimation(animation))
 		animation = animation == "L01" || animation == "L02" ? animation : "P01";
-	if (animation != m_animation) {
+	if (animation != m_animation || (animation == "P02" && reversed != m_animation_reversed)) {
 		m_animation = animation;
 		m_animation_ms = 0;
 	}
 	m_animation_reversed = reversed;
 	m_animation_rate = rate;
 	m_animation_ms += ms * rate;
-	// Jumps, falls and the crouch hold their last frame instead of looping.
+	// Jumps, falls, the crouch and sitting down hold their last frame instead of looping.
 	if (m_model && (animation == "L03" || animation == "L04" || animation == "L05" || animation == "L08")) {
 		double length = m_model->AnimationMs(animation);
 		if (length > 0)
 			m_animation_ms = std::min(m_animation_ms, length);
+	}
+	if (m_model && animation == "P02") {
+		double length = m_model->AnimationMs(animation);
+		if (length > 0) {
+			if (reversed && m_animation_ms >= length - 1)
+				m_standing_up = false; // up: P01 from the next frame
+			m_animation_ms = std::min(m_animation_ms, length - 1);
+		}
 	}
 }
 
@@ -718,7 +744,8 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 				time = length - 1 - time % length;
 		}
 		// Jumps, falls and the crouch stop at the end.
-		bool held = m_animation == "L03" || m_animation == "L04" || m_animation == "L05" || m_animation == "L08";
+		bool held = m_animation == "L03" || m_animation == "L04" || m_animation == "L05" || m_animation == "L08" ||
+		            m_animation == "P02";
 		m_model->Draw(*m_renderer, placement, ModelLightingAt(m_feet + render::Vec3{0, 0, m_height / 5 * 3.125f}), time,
 			m_animation, !held);
 		m_held.Draw(*m_renderer, *m_model, placement, time, m_animation, !held, now_ms, light.ambient);

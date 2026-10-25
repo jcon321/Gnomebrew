@@ -136,6 +136,7 @@ struct WorldOptions
 	uint16_t port = 9000;       // the client has no port in the server list; world listens on 9000
 	std::string character;      // if set, send OP_EnterWorld for this character
 	std::string create;         // if set, first create this character (a Human Warrior)
+	uint8_t create_class = 1;   // or a Human of this class: its first deity and city, base stats
 	int idle_seconds = 0;       // stay at character select this long when not entering world
 	bool verbose = false;
 	int timeout_ms = 10000;

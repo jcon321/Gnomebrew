@@ -99,6 +99,11 @@ namespace ZoneOp
 	constexpr uint16_t TargetCommand = 0x41fe; // ClientTarget_Struct: /target asks; the zone answers with the target it set
 	constexpr uint16_t GuildsList = 0x4192;    // GuildsList_Struct, as the world sends it: the guilds changed
 	constexpr uint16_t LFGCommand = 0x41f0;    // LFG_Appearance_Struct {i16 spawn, i16, i32 on}: someone's LFG flag
+	// MemorizeSpell_Struct {u32 slot, u32 spell, u32 scribing}: 0 scribed into a book slot, 1 memorized
+	// into a gem, 2 forgotten from one; both ways. The zone's -1 only unlocks the spell bar.
+	constexpr uint16_t MemorizeSpell = 0x4182;
+	constexpr uint16_t SwapSpell = 0x41ce;   // SwapSpell_Struct {u32 from, to}: two book slots; the zone sends it back
+	constexpr uint16_t DeleteSpell = 0x424a; // DeleteSpell_Struct {i16 slot, u16, u8 success, u8[3]}: both ways
 }
 
 struct OpcodeEntry
@@ -198,5 +203,8 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::TargetCommand, "OP_TargetCommand"},
 	{ZoneOp::GuildsList, "OP_GuildsList"},
 	{ZoneOp::LFGCommand, "OP_LFGCommand"},
+	{ZoneOp::MemorizeSpell, "OP_MemorizeSpell"},
+	{ZoneOp::SwapSpell, "OP_SwapSpell"},
+	{ZoneOp::DeleteSpell, "OP_DeleteSpell"},
 	{0, nullptr},
 };

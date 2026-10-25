@@ -47,7 +47,34 @@ no rules of its own.
    - Skills window: the skills the server says we have (not 254 or 255) and our languages, with
      their ranks, kept up to date by OP_SkillUpdate. Still to do: racial skills the server marks
      255 (eqgame's HasSkill table), selecting rows.
-   - Spell gems and the spellbook (pictures only; the gems are all empty)
+   - Spellbook and spell gems: done (`frontend/spell_book.*`, eqgame's CSpellBookWnd and
+     CCastSpellWnd): the book opens from the gems' book button or /book (casters only, sitting us
+     down), pages and page keys, a scroll on the cursor scribed into an empty slot, a book spell
+     dragged onto an empty gem and memorized, a gem right clicked to forget it, two slots right
+     clicked to swap them, Delete and the confirmation dialog to delete a deletable spell, with the
+     scribe and memorize timers and gauges (EQTypes 9, 10) and the zone's answers
+     (OP_MemorizeSpell, OP_SwapSpell, OP_DeleteSpell; a replay answers them as the zone would).
+     The gems show their icons in their target type's color, dimmed until the spell can be cast.
+     Still to do:
+     - casting: a gem's left click (EQ_Character::CastSpell, OP_CastSpell), the casting bar,
+       fizzles, interrupts, recovery and recast after a cast (the gems already dim by their
+       RecastTimeout), the casting animations, /cast, and a bard's songs;
+     - the spell info display: alt+click (or the right button held) on a book slot or a gem shows
+       the spell in the item display (CItemDisplayWnd::SetSpell @00425957);
+     - tooltips: a gem's "%d: %s" (UpdateSpellGemTooltips), and Alt held showing them all
+       (DrawSpellButtonTooltips);
+     - spell hot buttons: a gem held onto the cursor (CCursorAttachment type 9) and the book button
+       (type 5); a spell on the cursor clicked on a hot button;
+     - what the book doesn't do yet: on a mount, turning auto attack off as it opens ("Auto
+       attack is off."; there's no auto attack yet), a bard's AA 0x7b doubling memorizing, being
+       hit closing it (msg_successful_hit), the spell bar locking other things while it waits
+       (DAT_007d0254 also blocks casting);
+     - spellsets and memorizing a whole page are later eras (the default UI's "Mem. This Page"
+       buttons are zero-sized and eqgame ignores them).
+   - Our own stance: /sit, /stand, the Actions window's Sit and Stand, and moving or jumping
+     standing us up (EQPlayer::ChangeStance), with our model sitting down (P02) and getting up.
+     Still to do: sitting's idle and fidgets (P07, the sitting fidget), kneeling (105), feign death,
+     meditating's regen, and the zone putting us in a stance (stunned, knocked out).
    - Hotbuttons: the Actions window's buttons and socials go on them and come off by holding
      them, and they're kept in `<char>_<server>.ini` (`frontend/game_windows.*`). Still to do:
      items, spells, pet commands and AA abilities on them, whether an ability's ready (checked
@@ -63,7 +90,7 @@ no rules of its own.
    Still to do: more windows and the channel map (eqgame's `CChatManager`: which window each
    channel goes to, set from the right-click menu; there were no tabs in this era), the chat font
    size, hold-to-repeat on the scrollbar's arrows, languages scrambled by skill
-   (`HearBabel`), and the commands that still say they aren't supported (/who, /consider, /sit,
+   (`HearBabel`), and the commands that still say they aren't supported (/who, /consider, /cast,
    socials, /time...).
 4. **Cursor and dragging.** EQ's own cursors and hover tooltips. (An item on the cursor follows it:
    `DrawCursorAttachment`.)
@@ -85,7 +112,8 @@ no rules of its own.
 11. **Ground spawns and dropped objects.** Handle `OP_GroundSpawn` so dropped items and forges
     appear.
 12. **Spell visuals.** Casting particles and effects from `spells.eff` and the spell-effect `.s3d`
-    files, triggered by animation and cast packets.
+    files, triggered by animation and cast packets (OP_BeginCast, OP_Action). Needs casting (2's
+    spellbook items) for our own.
 13. **The other camera modes F9 cycles through:** overhead and the two user-set cameras, plus zoom
     and field of view.
 14. **Graphics options:** fullscreen or windowed, resolution changes, gamma, anisotropic filtering,

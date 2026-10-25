@@ -6,7 +6,8 @@
 
 namespace
 {
-	constexpr size_t NameField = 1, ManaField = 19, SkillField = 88, FirstClassField = 92;
+	constexpr size_t NameField = 1, RecastField = 15, AeDurationField = 18, ManaField = 19, GoodEffectField = 71,
+	                 TargetTypeField = 86, SkillField = 88, FirstClassField = 92, IconField = 131, DeletableField = 136;
 }
 
 bool SpellFile::Load(const std::string &path)
@@ -29,14 +30,21 @@ bool SpellFile::Load(const std::string &path)
 				break;
 			start = end + 1;
 		}
-		if (fields.size() < FirstClassField + 15 || fields[0].empty())
+		if (fields.size() <= DeletableField || fields[0].empty())
 			continue;
+		auto number = [&](size_t field) { return std::atoi(fields[field].c_str()); };
 		SpellInfo spell;
 		spell.name = fields[NameField];
-		spell.mana = std::atoi(fields[ManaField].c_str());
-		spell.skill = std::atoi(fields[SkillField].c_str());
+		spell.recast_ms = number(RecastField);
+		spell.ae_duration = number(AeDurationField);
+		spell.mana = number(ManaField);
+		spell.good_effect = static_cast<uint8_t>(number(GoodEffectField));
+		spell.target_type = static_cast<uint8_t>(number(TargetTypeField));
+		spell.skill = number(SkillField);
 		for (int i = 0; i < 15; ++i)
-			spell.class_levels[i] = static_cast<uint8_t>(std::atoi(fields[FirstClassField + i].c_str()));
+			spell.class_levels[i] = static_cast<uint8_t>(number(FirstClassField + i));
+		spell.icon = number(IconField);
+		spell.deletable = number(DeletableField) != 0;
 		m_spells[std::atoi(fields[0].c_str())] = std::move(spell);
 	}
 	return !m_spells.empty();

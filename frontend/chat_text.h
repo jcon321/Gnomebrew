@@ -27,6 +27,7 @@ namespace ChatType
 	constexpr int Auction = 0x105;
 	constexpr int Shout = 0x106;
 	constexpr int Emote = 0x107;
+	constexpr int Spells = 0x108;   // scribing and memorizing
 	constexpr int Broadcast = 0x10d;
 	constexpr int Skills = 0x10e;   // "You have become better at..."
 	constexpr int Default = 0x111;  // DefaultText

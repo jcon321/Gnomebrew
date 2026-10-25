@@ -154,6 +154,7 @@ namespace
 		case VK_PRIOR: return InputEvent::Key::PageUp;
 		case VK_NEXT: return InputEvent::Key::PageDown;
 		case VK_SPACE: return InputEvent::Key::Space;
+		case VK_DELETE: return InputEvent::Key::Delete;
 		case 'W': return InputEvent::Key::W;
 		case 'A': return InputEvent::Key::A;
 		case 'S': return InputEvent::Key::S;

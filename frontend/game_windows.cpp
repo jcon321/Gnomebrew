@@ -102,8 +102,7 @@ namespace
 		const bool invited = false, in_group = false;
 		Show(wnd, "AMP_InviteButton", !invited);
 		Show(wnd, "AMP_FollowButton", invited);
-		auto me = values.zone->Spawns().find(values.zone->MySpawnId());
-		bool sitting = me != values.zone->Spawns().end() && me->second.stance == 110;
+		bool sitting = values.zone->Self().stance == 110;
 		Show(wnd, "AMP_SitButton", !sitting);
 		Show(wnd, "AMP_StandButton", sitting);
 		Show(wnd, "AMP_RunButton", !values.running);
@@ -497,6 +496,7 @@ namespace
 	// CCursorAttachment::Activate: the button on the cursor, with its text as it is now.
 	void Attach(WindowManager &windows, GameWindowState &state, const HotButton &button)
 	{
+		state.ClearCursor();
 		state.cursor = button;
 		state.cursor_text = HotButtonText(windows, state, button);
 	}
@@ -759,7 +759,7 @@ void DrawCursorAttachment(Canvas &canvas, TextRenderer &text, const WindowManage
 		if (it != values.zone->Items().end())
 			held = &it->second;
 	}
-	if (state.cursor.type == HotButton::Empty && !held)
+	if (!state.Attached() && !held)
 		return;
 	// CCursorAttachment: its screen (50 by 50) a pixel right of and below the mouse, with CA_Anim in it.
 	Rect anim{5, 5, 40, 40}, screen{0, 0, 50, 50};
@@ -784,6 +784,11 @@ void DrawCursorAttachment(Canvas &canvas, TextRenderer &text, const WindowManage
 				number = " " + number;
 			text.Draw(canvas, r - 18, b - 16, number, SidlFontHeight(1), 0xffffff, SidlFontWeight(1));
 		}
+		return;
+	}
+	// A spell from the book: its icon (the book slot's decal, A_SpellIcons).
+	if (state.cursor_spell >= 0) {
+		windows.DrawCell(canvas, "A_SpellIcons", state.cursor_spell_icon, dest);
 		return;
 	}
 	// A button: CA_Anim showing A_SquareBtnNormal, and the text over that in font 2, white
