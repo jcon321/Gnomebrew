@@ -27,7 +27,7 @@ no rules of its own.
      the Resistant Discipline, drunkenness and berserking; the XP and AA gauges (the experience table); coins onto the
      cursor, Destroy, Alt. Advance, bag windows, and icons in the hot button window's weapon slots.
    - Equipping: our model's armor, weapons and light follow what we have on (`ZoneSession::UpdateAppearance`).
-     Still to do: the worn slots' empty pictures' names (`CInvSlot::SetItem`'s tooltip), dual wield
+     Still to do: dual wield
      from the class table rather than the zone's 254/255, the casting check (no moves but from the
      cursor while casting), /showhelm, and a carried light going out underwater (`UpdateLight`'s
      check of the body's environment; it's only not drawn there now).
@@ -61,8 +61,6 @@ no rules of its own.
        RecastTimeout), the casting animations, /cast, and a bard's songs;
      - the spell info display: alt+click (or the right button held) on a book slot or a gem shows
        the spell in the item display (CItemDisplayWnd::SetSpell @00425957);
-     - tooltips: a gem's "%d: %s" (UpdateSpellGemTooltips), and Alt held showing them all
-       (DrawSpellButtonTooltips);
      - spell hot buttons: a gem held onto the cursor (CCursorAttachment type 9) and the book button
        (type 5); a spell on the cursor clicked on a hot button;
      - what the book doesn't do yet: on a mount, turning auto attack off as it opens ("Auto
@@ -97,8 +95,15 @@ no rules of its own.
    size, hold-to-repeat on the scrollbar's arrows, languages scrambled by skill
    (`HearBabel`), and the commands that still say they aren't supported (/who, /consider, /cast,
    socials, /time...).
-4. **Cursor and dragging.** EQ's own cursors and hover tooltips. (An item on the cursor follows it:
-   `DrawCursorAttachment`.)
+4. **Cursor and dragging.** EQ's own cursors. (An item on the cursor follows it:
+   `DrawCursorAttachment`.) Tooltips: done (`WindowManager::DrawTooltip`, eqgame's DrawWindows and
+   DrawTooltipAtPoint): after the mouse rests 500 ms, the control under it shows its tooltip, its
+   TooltipReference or what its window sets: an inventory slot's item name (an empty worn slot's
+   name), a spell gem's "1) Spell", and Alt held shows every gem's (DrawSpellButtonTooltips).
+   Still to do: the buff window's (RefreshBuffDisplay, once there are buffs), the key bound to a
+   button after its text (SetKeyTooltip, UpdateTooltipText; needs the keymap), the help texts
+   FindWnd's other hit codes ask for (GetHelpTextFromStringTable), and the slots of windows we
+   don't have yet (bags, bank, loot, trade, merchants, give: their own DrawTooltips).
 5. **Options / Escape menu.** Graphics, sound and display settings, mouse sensitivity, the keymap.
 6. **A configurable keymap.** `InputEvent::Key` is a hard-coded list of about 18 keys; make it an
    EQ-style keymap with primary and alternate bindings.

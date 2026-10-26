@@ -158,6 +158,18 @@ namespace
 		return eqstr && eqstr->Has(id) ? eqstr->Format(id, {}) : fallback;
 	}
 
+	// CInvSlot::SetItem's tooltip for an empty worn slot (0..21, by its EQType; eqstr ids @005e5988).
+	const struct
+	{
+		uint32_t id;
+		const char *name;
+	} EmptySlotNames[] = {
+		{558, "Held"}, {559, "Ear"}, {560, "Head"}, {561, "Face"}, {559, "Ear"}, {562, "Neck"}, {563, "Shoulders"},
+		{564, "Arms"}, {565, "Back"}, {566, "Wrist"}, {566, "Wrist"}, {567, "Range"}, {568, "Hands"},
+		{569, "Primary"}, {570, "Secondary"}, {571, "Fingers"}, {571, "Fingers"}, {572, "Chest"}, {573, "Legs"},
+		{574, "Feet"}, {575, "Waist"}, {576, "Ammo"},
+	};
+
 	void InventoryWindow(SidlWindow &wnd, const WindowManager &windows, const GameValues &values)
 	{
 		const ZoneProfile &me = values.zone->Profile();
@@ -182,6 +194,12 @@ namespace
 				control->cell_animation = "A_DragItem";
 				control->cell = has && it->second.icon >= 500 ? it->second.icon - 500 : -1;
 				control->count = has ? Inventory::Count(it->second) : 0;
+				// SetItem's tooltip: the item's name; an empty worn slot's name, an empty general slot none.
+				int n = control->def->eq_type;
+				control->tooltip = has                                              ? it->second.name
+				                   : n >= 0 && n < static_cast<int>(std::size(EmptySlotNames)) ? EqText(values.eqstr,
+				                                                                       EmptySlotNames[n].id, EmptySlotNames[n].name)
+				                                                                 : "";
 			}
 		// The character view takes a click only to put away what's on the cursor; otherwise it
 		// moves the window, as the rest of it does.

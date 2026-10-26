@@ -631,6 +631,8 @@ void SpellBook::UpdateGems(uint64_t now_ms)
 			m_gem_shown[gem] = true;
 			control->cell = info ? std::max(info->icon, 0) : -1;
 			control->gem_color = info ? GemColor(*info) : 0;
+			// UpdateSpellGemTooltips: "%d) %s", the gem from 1 and the spell; none for an empty gem.
+			control->tooltip = info ? std::to_string(gem + 1) + ") " + info->name : "";
 		}
 		bool ready = info && now_ms >= m_recast_ms[gem];
 		if (!ready)

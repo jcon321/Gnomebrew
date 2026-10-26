@@ -873,6 +873,25 @@ int main(int argc, char **argv)
 					h.RunUntil([] { return false; }, 4000);
 					printf("[preview] gem %d fade 4 s later: %d\n", gem, fade());
 					h.Snapshot("b5-memorized-ready");
+					// Tooltips: the gem's after the mouse rests on it 500 ms, and every gem's with Alt held.
+					auto tip = [&](const char *screen, int tx, int ty) {
+						const SidlWindow *w = windows.Find(screen);
+						const SidlWindow::Control *c = w ? w->ControlAt(tx, ty) : nullptr;
+						return c ? c->tooltip : std::string("(no control)");
+					};
+					frontend.OnEvent({InputEvent::Type::MouseMove, 700, 500});
+					h.RunUntil([] { return false; }, 100);
+					frontend.OnEvent({InputEvent::Type::MouseMove, gx, gy});
+					h.RunUntil([] { return false; }, 300);
+					h.Snapshot("t1-gem-300ms");
+					h.RunUntil([] { return false; }, 400);
+					printf("[preview] tooltip on gem %d: '%s'\n", gem, tip("CastSpellWnd", gx, gy).c_str());
+					h.Snapshot("t2-gem-700ms");
+					h.Key(InputEvent::Key::Alt);
+					frontend.OnEvent({InputEvent::Type::MouseMove, 700, 500});
+					h.RunUntil([] { return false; }, 100);
+					h.Snapshot("t3-gems-alt");
+					h.KeyUp(InputEvent::Key::Alt);
 					right_click(gx, gy);
 					h.RunUntil([] { return false; }, 200);
 					book("gem right clicked");
@@ -925,6 +944,26 @@ int main(int argc, char **argv)
 				}
 				else
 					printf("[preview] no scroll (%d) or empty slot (%d) to scribe with\n", scroll, empty);
+				// Inventory tooltips: an item's name, an empty worn slot's name.
+				if (inventory) {
+					windows.Show("InventoryWindow", true);
+					windows.Raise("InventoryWindow");
+					frontend.Update(NowMs());
+					for (int slot : {1, 13, 22, 23, 29}) {
+						const SidlWindow::Control *c = inventory->Find("InvSlot" + std::to_string(slot));
+						if (!c)
+							continue;
+						int ix = c->rect.x + c->rect.w / 2, iy = c->rect.y + c->rect.h / 2;
+						const SidlWindow::Control *under = inventory->ControlAt(ix, iy);
+						printf("[preview] tooltip on InvSlot%d: '%s'\n", slot, under ? under->tooltip.c_str() : "(none)");
+						if (slot == 22) {
+							frontend.OnEvent({InputEvent::Type::MouseMove, ix, iy});
+							h.RunUntil([] { return false; }, 700);
+							h.Snapshot("t4-inventory-item");
+						}
+					}
+					windows.Show("InventoryWindow", false);
+				}
 				int dx, dy;
 				if (at("SpellBookWnd", "DoneButton", dx, dy))
 					click(dx, dy);

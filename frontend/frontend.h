@@ -290,6 +290,7 @@ private:
 		bool up = false, down = false, left = false, right = false, w = false, a = false, s = false, d = false;
 	};
 	HeldKeys m_keys;
+	bool m_alt_down = false; // the Alt key (GetKeyboardFlags' 4), for the gems' tooltips
 	bool m_run = true;
 	GameWindowState m_window_state; // the socials, the hot buttons, the button on the cursor
 	SpellBook m_spell_book;         // and the spell gems

@@ -270,11 +270,16 @@ void FrontEnd::OnEvent(const InputEvent &event)
 	}
 
 	// Held movement keys are let go even while a dialog has the input.
+	if (event.key == InputEvent::Key::Alt && (event.type == InputEvent::Type::Key || event.type == InputEvent::Type::KeyUp)) {
+		m_alt_down = event.type == InputEvent::Type::Key;
+		return;
+	}
 	if (event.type == InputEvent::Type::KeyUp) {
 		SetZoneKey(event.key, false, false);
 		return;
 	}
 	if (event.type == InputEvent::Type::FocusLost) {
+		m_alt_down = false;
 		m_keys = HeldKeys{};
 		m_mouse_turn = m_mouse_pan = m_mouse_grabbed = false;
 		return;
@@ -2150,6 +2155,12 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 
 	m_chat.Layout(m_text);
 	m_windows.Draw(canvas, m_text, now_ms);
+	// CCastSpellWnd::DrawSpellButtonTooltips: Alt held shows each gem's tooltip, by its top right.
+	if (m_alt_down && m_windows.Shown("CastSpellWnd"))
+		if (const SidlWindow *gems = m_windows.Find("CastSpellWnd"); gems && !gems->Minimized())
+			for (int gem = 0; gem < ZoneProfile::Gems; ++gem)
+				if (const SidlWindow::Control *c = gems->Find("CSPW_Spell" + std::to_string(gem)); c && gems->Shown(*c))
+					m_windows.DrawTooltip(canvas, m_text, c->tooltip, c->def->font, c->rect.Right() + 2, c->rect.y + 2, false);
 	// Top left and right: the debug menu's stat card and radar, above the windows.
 	m_debug.Draw(canvas, m_text, m_zone, m_zone_view.get(), height - 10);
 	times.ui = since(ui_start);

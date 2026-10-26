@@ -9,6 +9,7 @@ namespace
 	constexpr int BaseWidth = 640, BaseHeight = 480;
 	// ProcessMouseEvent: how long the left button is down before it's a hold (0x2ee).
 	constexpr uint64_t HoldMs = 750;
+	constexpr uint64_t TooltipMs = 500; // DrawWindows: the mouse still longer than this (0x1f5 ticks or more)
 
 	// CSidlScreenWnd_ConvertToRes (@005702a0): a window's position along one axis at another
 	// resolution. Windows on the far half keep their distance from that edge, ones across the
@@ -560,6 +561,11 @@ std::vector<WindowManager::Click> WindowManager::TakeRightReleases()
 
 void WindowManager::Update(uint64_t now_ms, int mouse_x, int mouse_y)
 {
+	if (mouse_x != m_mouse_x || mouse_y != m_mouse_y) {
+		m_mouse_x = mouse_x;
+		m_mouse_y = mouse_y;
+		m_moved_ms = now_ms;
+	}
 	// The left button held: the button under the mouse now (if it's still on one) is held, and
 	// the one pressed comes back up without a click.
 	if (m_press >= 0 && m_box_down == SidlWindow::TitleBox::None && !m_held && now_ms - m_press_ms > HoldMs) {
@@ -634,4 +640,33 @@ void WindowManager::Draw(Canvas &canvas, TextRenderer &text, uint64_t now_ms)
 		if (alpha < 255)
 			canvas.BlendKept(bounds, m_kept, alpha);
 	}
+	// The tooltip of what the mouse rests on (the window itself has none), unless a window's moving.
+	if (m_drag != Drag::None || now_ms - m_moved_ms <= TooltipMs)
+		return;
+	int top = TopAt(m_mouse_x, m_mouse_y);
+	const SidlWindow::Control *control = top >= 0 ? m_windows[top]->wnd.ControlAt(m_mouse_x, m_mouse_y) : nullptr;
+	if (control && !control->tooltip.empty())
+		DrawTooltip(canvas, text, control->tooltip, control->def->font, m_mouse_x, m_mouse_y, true);
+}
+
+void WindowManager::DrawTooltip(Canvas &canvas, TextRenderer &text, const std::string &tip, int font, int x, int y,
+	bool at_mouse) const
+{
+	if (tip.empty())
+		return;
+	int height = SidlFontHeight(font), weight = SidlFontWeight(font);
+	TextSize size = text.Measure(tip, height, weight);
+	Rect box{x, y, size.w + 4, size.h + 2};
+	if (at_mouse)
+		box.x = x + 16 + box.w < m_width ? x + 16 : x - box.w;
+	else if (x + box.w >= m_width)
+		box.x = x - box.w;
+	if (box.Bottom() >= m_height)
+		box.y = m_height - box.h - 1;
+	canvas.ResetClip();
+	std::vector<uint32_t> kept;
+	canvas.Keep(box, kept);
+	canvas.Fill(box, 0x000080);
+	canvas.BlendKept(box, kept, 0xc8);
+	text.Draw(canvas, box.x + 2, box.y + 1, tip, height, 0xffffff, weight);
 }

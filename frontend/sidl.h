@@ -111,6 +111,7 @@ struct SidlPiece
 	bool left_to_left = true, top_to_top = true, right_to_left = true, bottom_to_top = true;
 	int left_offset = 0, top_offset = 0, right_offset = 0, bottom_offset = 0;
 	std::string text;
+	std::string tooltip; // TooltipReference
 	uint32_t text_color = 0xffffff;
 	bool has_text_color = false;
 	bool align_center = false;
@@ -256,6 +257,9 @@ public:
 		int parent = -1;
 		std::vector<int> children;
 		std::string text; // STMLbox: STML (<BR> line breaks, <c "#RRGGBB"> colors; other tags are dropped)
+		// What shows when the mouse rests on it (CXWnd's ToolTipText): its TooltipReference to start
+		// with (CSidlManager_CreateXWndFromTemplate), and whatever the window sets (an item's name).
+		std::string tooltip;
 		uint32_t text_color = 0xffffff;
 		bool visible = true;
 		bool enabled = true;
@@ -376,6 +380,9 @@ public:
 	bool HitTest(const Control &control, int x, int y) const;
 	// The ScreenID of the shown, enabled button (or slot or spell gem) under (x, y), or "".
 	std::string ButtonAt(int x, int y) const;
+	// CXWnd::GetChildWndAt for the tooltip: the shown control on top under (x, y), not the window
+	// itself (a window's own TooltipReference never shows); null for none.
+	const Control *ControlAt(int x, int y) const;
 	// A held button let go of without being clicked (after CXWndManager's left button hold).
 	void CancelPress();
 

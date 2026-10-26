@@ -18,7 +18,11 @@
 //   - HandleRightMouseHold and HandleRButtonUpAfterHeld (@0059ff70, @005a0060): the right button
 //     held 750 ms is a hold, for the button it went down on if the mouse is still over it
 //     (CInvSlotWnd's HandleRButtonHeld, @005a7f30), and letting go after it isn't a right click
-//     but a release, for that button if the mouse is over it then (@005a7fc0).
+//     but a release, for that button if the mouse is over it then (@005a7fc0);
+//   - DrawWindows (@0059e000): once the mouse has been still 500 ms (HandleMouseMove's tick count),
+//     the tooltip of the control under it (FindWnd, GetChildWndAt), over all the windows. In the
+//     control's own font, as DrawTooltipAtPoint draws it: DrawWindows' own path uses the system
+//     font (2), but the TAKP client shows an item's or a gem's in their font 3.
 // Layouts are kept in eqgame's UI_<character>_<server>.ini format, one [section] per window
 // named after its screen (CSidlScreenWnd::LoadIniInfo / StoreIniInfo): XPos<W>x<H> and
 // YPos<W>x<H> per resolution, Width and Height for sizable windows, Show, Locked, Fades, Delay,
@@ -106,6 +110,12 @@ public:
 	// attachment). False when there's no such animation.
 	bool DrawAnimation(Canvas &canvas, const std::string &name, const Rect &dest, uint64_t now_ms) const;
 	bool DrawCell(Canvas &canvas, const std::string &name, int cell, const Rect &dest) const; // a grid's cell
+	// CXWnd::DrawTooltipAtPoint: `tip` in a SIDL font, white, on a box 4 wider and 2 taller than it
+	// filled 0xc8000080 (navy, 200 of 255 opaque). At the mouse (x, y): 16 right of it, or left of
+	// it when that runs off the screen (GetTooltipRect @005746f0); elsewhere its left is x, or its
+	// right when it would run off (@00574750). Either way it's kept above the bottom.
+	void DrawTooltip(Canvas &canvas, TextRenderer &text, const std::string &tip, int font, int x, int y,
+		bool at_mouse) const;
 	const SidlDefinitions *Definitions() const { return m_defs; }
 
 	int Count() const { return static_cast<int>(m_windows.size()); }
@@ -162,4 +172,6 @@ private:
 	bool m_held = false;              // held long enough to be a hold, not a click
 	SidlWindow::TitleBox m_box_down = SidlWindow::TitleBox::None;
 	std::vector<uint32_t> m_kept;     // Canvas::Keep, for drawing faded windows
+	int m_mouse_x = -1, m_mouse_y = -1;
+	uint64_t m_moved_ms = 0;          // when the mouse last moved (for the tooltips)
 };

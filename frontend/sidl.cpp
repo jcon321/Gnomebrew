@@ -317,6 +317,7 @@ void SidlDefinitions::ReadElement(const XmlNode &node)
 	p.rect = ReadRect(node);
 	p.has_size = node.Child("Size") != nullptr;
 	p.text = node.ChildText("Text");
+	p.tooltip = node.ChildText("TooltipReference");
 	if (const XmlNode *color = node.Child("TextColor")) {
 		p.text_color = ReadColor(*color);
 		p.has_text_color = true;
@@ -553,6 +554,7 @@ int SidlWindow::Add(const SidlPiece &piece, int parent)
 	control.def = &piece;
 	control.parent = parent;
 	control.text = piece.text;
+	control.tooltip = piece.tooltip;
 	control.text_color = piece.text_color;
 	if (!piece.draw_template.empty())
 		control.frame = m_defs->WindowTemplate(piece.draw_template);
@@ -813,6 +815,21 @@ void SidlDrawButtonText(TextRenderer &text, Canvas &canvas, const Rect &rect, co
 		text.Draw(canvas, rect.x + (rect.w - size.w) / 2, y, line, height, rgb, weight);
 		y += whole.h;
 	}
+}
+
+const SidlWindow::Control *SidlWindow::ControlAt(int x, int y) const
+{
+	// Children come after their parents, and later pieces are drawn over earlier ones, but static
+	// animations go under the rest (DrawControl).
+	if (m_minimized)
+		return nullptr;
+	for (int pass = 0; pass < 2; ++pass)
+		for (size_t i = m_controls.size(); i-- > 1;) {
+			const Control &control = m_controls[i];
+			if ((control.def->type == "StaticAnimation") == (pass == 1) && Shown(control) && HitTest(control, x, y))
+				return &control;
+		}
+	return nullptr;
 }
 
 std::string SidlWindow::ButtonAt(int x, int y) const

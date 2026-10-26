@@ -253,6 +253,18 @@ namespace
 			Send(event);
 			return 0;
 		}
+		case WM_SYSKEYDOWN:
+		case WM_SYSKEYUP:
+			// Alt alone comes as a system key: ours (the spell gems' tooltips), and it doesn't open the
+			// system menu. Alt with another key (Alt+F4) goes on to Windows.
+			if (wparam == VK_MENU) {
+				InputEvent event = KeyEvent(InputEvent::Key::Alt);
+				if (message == WM_SYSKEYUP)
+					event.type = InputEvent::Type::KeyUp;
+				Send(event);
+				return 0;
+			}
+			break;
 		case WM_KEYDOWN:
 		case WM_KEYUP: {
 			InputEvent::Key key = TranslateKey(wparam);
