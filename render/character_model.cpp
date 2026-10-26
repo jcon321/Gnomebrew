@@ -532,6 +532,8 @@ namespace render
 					CharacterModel::Emitter emitter;
 					if (item.bones[b].particle_cloud >= 0 && CloudDef(from->wld, from->textures, item.bones[b].particle_cloud, emitter.def)) {
 						emitter.bone = static_cast<uint16_t>(point);
+						emitter.item = it;
+						emitter.item_bone = static_cast<uint16_t>(b);
 						emitter.local = pose[b];
 						model->m_emitters.push_back(std::move(emitter));
 					}
@@ -616,11 +618,24 @@ namespace render
 	void HeldParticles::Draw(Renderer &renderer, const CharacterModel &model, const Transform &placement, uint64_t time_ms,
 		const std::string &animation, bool loop, uint64_t now_ms, const Vec3 &ambient)
 	{
-		if (&model != m_model) {
-			m_model = &model;
-			m_clouds.clear();
-			for (const CharacterModel::Emitter &emitter : model.Emitters()) // at CDisplay's highest density
-				m_clouds.push_back(std::make_unique<ParticleCloud>(emitter.def, 1.0f, nullptr, nullptr));
+		const std::vector<CharacterModel::Emitter> &emitters = model.Emitters();
+		bool same = m_keys.size() == emitters.size();
+		for (size_t i = 0; same && i < emitters.size(); ++i)
+			same = m_keys[i] == Key{emitters[i].bone, emitters[i].item, emitters[i].item_bone};
+		if (!same) {
+			std::vector<Key> keys;
+			std::vector<std::unique_ptr<ParticleCloud>> clouds;
+			for (const CharacterModel::Emitter &emitter : emitters) {
+				Key key{emitter.bone, emitter.item, emitter.item_bone};
+				auto old = std::find(m_keys.begin(), m_keys.end(), key);
+				if (old != m_keys.end() && m_clouds[old - m_keys.begin()])
+					clouds.push_back(std::move(m_clouds[old - m_keys.begin()]));
+				else // at CDisplay's highest density
+					clouds.push_back(std::make_unique<ParticleCloud>(emitter.def, 1.0f, nullptr, nullptr));
+				keys.push_back(key);
+			}
+			m_keys = std::move(keys);
+			m_clouds = std::move(clouds);
 		}
 		if (m_clouds.empty())
 			return;
@@ -636,7 +651,7 @@ namespace render
 
 	void HeldParticles::Clear()
 	{
-		m_model = nullptr;
+		m_keys.clear();
 		m_clouds.clear();
 	}
 

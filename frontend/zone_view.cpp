@@ -266,7 +266,6 @@ void ZoneView::PlacePlayer()
 	if (m_model_dirty) {
 		m_model_dirty = false;
 		m_model.reset();
-		m_held.Clear();
 		if (m_appearance) {
 			std::string error;
 			m_model = m_models.Build(*m_appearance, error);

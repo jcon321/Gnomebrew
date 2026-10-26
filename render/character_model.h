@@ -77,6 +77,8 @@ namespace render
 		struct Emitter
 		{
 			uint16_t bone = 0;
+			unsigned item = 0;          // the IT number it came with
+			uint16_t item_bone = 0;     // and that item's bone it's on
 			Transform local;
 			ParticleCloudDef def;
 		};
@@ -124,13 +126,22 @@ namespace render
 	class HeldParticles
 	{
 	public:
-		// After the model's Draw, with its arguments: the clouds move on and are drawn.
+		// After the model's Draw, with its arguments: the clouds move on and are drawn. A model
+		// rebuilt (armor put on) keeps the clouds of the items it still holds where they are; only a
+		// new item's start over, as CDisplay::ChangeDag makes them for that item alone.
 		void Draw(Renderer &renderer, const CharacterModel &model, const Transform &placement, uint64_t time_ms,
 			const std::string &animation, bool loop, uint64_t now_ms, const Vec3 &ambient);
-		void Clear();
+		void Clear(); // another character's: everything starts over
 
 	private:
-		const CharacterModel *m_model = nullptr;
+		struct Key
+		{
+			uint16_t bone;
+			unsigned item;
+			uint16_t item_bone;
+			bool operator==(const Key &o) const { return bone == o.bone && item == o.item && item_bone == o.item_bone; }
+		};
+		std::vector<Key> m_keys; // each cloud's emitter
 		std::vector<std::unique_ptr<ParticleCloud>> m_clouds;
 		std::vector<Transform> m_emitters;
 	};
