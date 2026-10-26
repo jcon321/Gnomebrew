@@ -122,7 +122,7 @@ int SidlFontHeight(int font)
 
 int SidlFontWeight(int font)
 {
-	return font == 5 || font == 6 ? 700 : 0;
+	return font == 5 || font == 6 ? 700 : 100;
 }
 
 // ---------------------------------------------------------------- textures

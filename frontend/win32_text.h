@@ -8,6 +8,8 @@
 // and blended in by hand, since GDI only knows the DIB's own colors; single lines
 // keep that coverage (and every string its size), so name tags and chat lines
 // cost no GDI calls after their first frame.
+// The in-game fonts (a weight other than 0, see text.h) are eqgfx's cached fonts instead: GDI
+// draws each glyph once, alone, and the text is those glyphs put side by side.
 
 #include "text.h"
 
@@ -75,12 +77,33 @@ private:
 	bool ReserveScratch(int width, int height);
 	static std::string TextKey(const std::string &utf8, int height, int weight);
 
+	// eqgfx's glyph cache (createGlyphCacheEntry, updateGlyphTexture): a glyph is ExtTextOutW'd
+	// alone at 0, 0, white on black, and kept only as wide as GetTextExtentPoint32W says, which is
+	// also how far the text moves on (what overhangs that is cut off). Its alpha is the blue
+	// channel's top four bits, so it's grey, not ClearType, and the faintest edges drop out.
+	struct Glyph
+	{
+		int advance = 0;
+		bool ink = false;
+		std::vector<uint32_t> coverage; // advance x the font's height, white on black
+	};
+	struct CachedFont
+	{
+		int height = 0; // tmHeight: every glyph's rows
+		std::unordered_map<wchar_t, Glyph> glyphs;
+	};
+	CachedFont *Cached(int height, int weight);
+	const Glyph &CachedGlyph(CachedFont &font, int height, int weight, wchar_t ch);
+	TextSize MeasureCached(const std::string &utf8, int height, int weight);
+	void DrawCached(Canvas &canvas, int x, int y, const std::string &utf8, int height, uint32_t rgb, int weight);
+
 	std::vector<Surface> m_surfaces;
 	Scratch m_scratch;
 	std::unordered_map<std::string, TextSize> m_sizes; // Measure, by TextKey
 	std::unordered_map<std::string, Mask> m_masks;     // Draw over the view, by TextKey
 	std::vector<uint32_t> m_stretched;                 // DrawScaled's mask, stretched
 	std::map<std::pair<int, int>, HFONT> m_fonts;      // by height and weight (+ 0x10000 antialiased)
+	std::map<std::pair<int, int>, CachedFont> m_cached; // by height and weight
 };
 
 std::wstring Widen(const std::string &utf8);

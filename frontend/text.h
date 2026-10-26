@@ -20,7 +20,9 @@ class TextRenderer
 public:
 	virtual ~TextRenderer() = default;
 
-	// height is CreateFont's lfHeight in pixels; weight 0 means the default (normal).
+	// height is CreateFont's lfHeight in pixels. weight 0 is one of eqmain's fonts (default weight),
+	// drawn by GDI a string at a time. Any other weight is one of eqgfx's cached fonts, the in-game
+	// SIDL fonts (100 or 700, SidlFontWeight), built and drawn glyph by glyph as eqgfx does.
 	virtual TextSize Measure(const std::string &utf8, int height, int weight = 0) = 0;
 	// Top-left aligned, transparent background.
 	virtual void Draw(Canvas &canvas, int x, int y, const std::string &utf8, int height, uint32_t rgb, int weight = 0) = 0;

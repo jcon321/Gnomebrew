@@ -181,6 +181,8 @@ TextSize GdiTextRenderer::Measure(const std::string &utf8, int height, int weigh
 {
 	if (m_surfaces.empty())
 		return {};
+	if (weight != 0)
+		return MeasureCached(utf8, height, weight);
 	std::string key = TextKey(utf8, height, weight);
 	auto it = m_sizes.find(key);
 	if (it != m_sizes.end())
@@ -202,6 +204,10 @@ std::string GdiTextRenderer::TextKey(const std::string &utf8, int height, int we
 
 void GdiTextRenderer::Draw(Canvas &canvas, int x, int y, const std::string &utf8, int height, uint32_t rgb, int weight)
 {
+	if (weight != 0) {
+		DrawCached(canvas, x, y, utf8, height, rgb, weight);
+		return;
+	}
 	RECT clip;
 	const Surface *surface = Target(canvas, x, y, clip);
 	if (!surface)
@@ -227,6 +233,98 @@ void GdiTextRenderer::Draw(Canvas &canvas, int x, int y, const std::string &utf8
 	// every frame), blended in.
 	if (const Mask *mask = TextMask(utf8, height, weight, false))
 		BlendMask(*surface, mask->coverage.data(), mask->width, mask->width, mask->height, box.left, box.top, rgb, clip);
+}
+
+GdiTextRenderer::CachedFont *GdiTextRenderer::Cached(int height, int weight)
+{
+	auto key = std::make_pair(height, weight);
+	auto it = m_cached.find(key);
+	if (it != m_cached.end())
+		return &it->second;
+	if (m_surfaces.empty())
+		return nullptr;
+	// initializeFontResource: the glyphs' rows are the font's tmHeight.
+	HDC dc = m_surfaces.front().dc;
+	SelectObject(dc, Font(height, weight));
+	TEXTMETRICW metrics{};
+	GetTextMetricsW(dc, &metrics);
+	CachedFont &font = m_cached[key];
+	font.height = metrics.tmHeight;
+	return &font;
+}
+
+const GdiTextRenderer::Glyph &GdiTextRenderer::CachedGlyph(CachedFont &font, int height, int weight, wchar_t ch)
+{
+	auto it = font.glyphs.find(ch);
+	if (it != font.glyphs.end())
+		return it->second;
+	Glyph &glyph = font.glyphs[ch];
+	HFONT hfont = Font(height, weight);
+	HDC dc = m_surfaces.front().dc;
+	SelectObject(dc, hfont);
+	SIZE size{};
+	GetTextExtentPoint32W(dc, &ch, 1, &size);
+	glyph.advance = std::max<int>(size.cx, 0);
+	if (glyph.advance == 0 || font.height <= 0 || !ReserveScratch(glyph.advance, font.height))
+		return glyph;
+	for (int row = 0; row < font.height; ++row)
+		std::fill_n(m_scratch.pixels + static_cast<size_t>(row) * m_scratch.width, glyph.advance, 0u);
+	SelectObject(m_scratch.dc, hfont);
+	SetTextColor(m_scratch.dc, RGB(255, 255, 255));
+	SetBkColor(m_scratch.dc, RGB(0, 0, 0));
+	SetBkMode(m_scratch.dc, OPAQUE);
+	SetTextAlign(m_scratch.dc, TA_LEFT | TA_TOP);
+	ExtTextOutW(m_scratch.dc, 0, 0, ETO_OPAQUE, nullptr, &ch, 1, nullptr);
+	GdiFlush();
+	glyph.coverage.resize(static_cast<size_t>(glyph.advance) * font.height);
+	for (int row = 0; row < font.height; ++row) {
+		const uint32_t *source = m_scratch.pixels + static_cast<size_t>(row) * m_scratch.width;
+		uint32_t *out = glyph.coverage.data() + static_cast<size_t>(row) * glyph.advance;
+		for (int x = 0; x < glyph.advance; ++x) {
+			uint32_t alpha = (source[x] >> 4) & 0xf; // ARGB4444's alpha from the blue channel
+			uint32_t c = alpha * 17;
+			out[x] = c << 16 | c << 8 | c;
+			glyph.ink |= alpha != 0;
+		}
+	}
+	return glyph;
+}
+
+TextSize GdiTextRenderer::MeasureCached(const std::string &utf8, int height, int weight)
+{
+	CachedFont *font = Cached(height, weight);
+	if (!font)
+		return {};
+	// calculateTextWidth: the sum of the glyphs' widths, the widest line's.
+	int width = 0, line = 0;
+	for (wchar_t ch : Widen(utf8)) {
+		if (ch == L'\n' || ch == L'\r') {
+			line = 0;
+			continue;
+		}
+		line += CachedGlyph(*font, height, weight, ch).advance;
+		width = std::max(width, line);
+	}
+	return {width, font->height};
+}
+
+void GdiTextRenderer::DrawCached(Canvas &canvas, int x, int y, const std::string &utf8, int height, uint32_t rgb,
+	int weight)
+{
+	RECT clip;
+	const Surface *surface = Target(canvas, x, y, clip);
+	CachedFont *font = surface ? Cached(height, weight) : nullptr;
+	if (!font)
+		return;
+	// renderGlyphWithClipping: each glyph's quad at the pen, a pixel for a texel, blended in by its alpha.
+	for (wchar_t ch : Widen(utf8)) {
+		const Glyph &glyph = CachedGlyph(*font, height, weight, ch);
+		if (x >= clip.right)
+			break;
+		if (glyph.ink && x + glyph.advance > clip.left)
+			BlendMask(*surface, glyph.coverage.data(), glyph.advance, glyph.advance, font->height, x, y, rgb, clip);
+		x += glyph.advance;
+	}
 }
 
 const GdiTextRenderer::Mask *GdiTextRenderer::TextMask(const std::string &utf8, int height, int weight, bool antialiased)
