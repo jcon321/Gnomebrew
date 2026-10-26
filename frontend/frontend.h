@@ -194,6 +194,9 @@ private:
 	void AddZoneLog(const std::string &text, uint32_t color); // a line of chat in this color
 	void ChatOut(const std::string &text, int type);          // in a chat color type (ChatType)
 	void DrawNameSprites(Canvas &canvas, uint64_t now_ms);
+	// One name sprite (eqgfx's renderNameTag) sitting on the point x, y, `depth` in front of the
+	// camera; a '\n' starts its second line.
+	void DrawNameSprite(Canvas &canvas, int x, int y, float depth, float focal, const std::string &text, uint32_t color);
 	void StartCamp();
 	// CEverquest_InterpretCmd (chat_commands.cpp): a line typed into the chat window.
 	void InterpretCommand(const std::string &line);

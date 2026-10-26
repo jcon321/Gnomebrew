@@ -102,6 +102,15 @@ std::string GameValues::ClassTitle(const EqStr *eqstr, int class_id, int level)
 	return EqText(eqstr, 1484, "Unknown");
 }
 
+std::string GameValues::ClassDesc(const EqStr *eqstr, int class_id)
+{
+	if (class_id >= 1 && class_id <= 15)
+		return EqText(eqstr, ClassNameIds[class_id - 1], ClassName(static_cast<uint8_t>(class_id)));
+	if (class_id >= 16 && class_id <= 32)
+		return EqText(eqstr, OtherClassIds[class_id - 16], "Unknown");
+	return EqText(eqstr, 2456, "UNKNOWN CLASS");
+}
+
 std::string GameValues::DeityName(const EqStr *eqstr, int deity)
 {
 	if (deity >= 201 && deity <= 216)

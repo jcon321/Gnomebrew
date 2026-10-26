@@ -4,6 +4,7 @@
 #include "game_windows.h"
 #include "ini_file.h"
 #include "inventory.h"
+#include "zone_names.h"
 
 #include <algorithm>
 #include <chrono>
@@ -1160,13 +1161,17 @@ void FrontEnd::RenderCharacterSelect(Canvas &canvas, uint64_t now_ms)
 	RenderScene(canvas, now_ms);
 	bool scene = m_charselect_view && m_charselect_view->Loaded() && m_charselect_view->Error().empty();
 	if (scene) {
-		// TurnCharacterNameSpritesOn: the name floats over the character's head.
+		// TurnCharacterNameSpritesOn: the name sprite over the character's head. With the
+		// character select window up, CDisplay::SetNameSpriteState writes "%s [%d %s]\n%s" (name,
+		// level, GetClassDesc, GetFullZoneName) and CDisplay_SetNameSpriteTint makes it yellow.
 		int x, y;
-		if (m_selected_slot >= 0 && m_selected_slot < static_cast<int>(slots.size()) && m_charselect_view->NamePosition(x, y)) {
-			const std::string &name = slots[m_selected_slot].name;
-			TextSize size = m_text.Measure(name, 14);
-			m_text.Draw(canvas, x - size.w / 2 + 1, y - size.h + 1, name, 14, 0x000000);
-			m_text.Draw(canvas, x - size.w / 2, y - size.h, name, 14, 0xffffff);
+		float depth, focal;
+		if (m_selected_slot >= 0 && m_selected_slot < static_cast<int>(slots.size()) &&
+			m_charselect_view->NamePosition(x, y, depth, focal)) {
+			const CharacterSlot &c = slots[m_selected_slot];
+			std::string text = c.name + " [" + std::to_string(c.level) + " " + GameValues::ClassDesc(m_ui.eqstr, c.class_id) +
+			                   "]\n" + FullZoneName(c.zone, m_ui.eqstr);
+			DrawNameSprite(canvas, x, y, depth, focal, text, 0xffff00);
 		}
 	}
 	else {
@@ -1331,29 +1336,34 @@ void FrontEnd::DrawNameSprites(Canvas &canvas, uint64_t now_ms)
 		uint32_t color = NameSpriteColor(*spawn, m_world.ServerType());
 		if (targeted)
 			color = NameSpritePulse(color, pulse);
-		// A line is 20 texels of 0.05 units; the guild's 0.85 of that, under it, the lot sitting
-		// on the head.
-		// The 20 pixel bold font stretched to that, as eqgfx stretches its glyphs.
-		float scale = NameSprite::UnitsPerTexel * tag.focal / std::max(tag.depth, NameSprite::NearestDepth);
-		size_t newline = text.find('\n');
-		std::string lines[2] = {text.substr(0, newline), newline == std::string::npos ? "" : text.substr(newline + 1)};
-		float scales[2] = {scale, scale * NameSprite::LineScale};
-		int widths[2] = {}, heights[2] = {};
-		for (int i = 0; i < 2; ++i) {
-			if (lines[i].empty())
-				continue;
-			TextSize size = m_text.Measure(lines[i], NameSprite::FontHeight, NameSprite::FontWeight);
-			widths[i] = static_cast<int>(size.w * scales[i] + 0.5f);
-			heights[i] = static_cast<int>(size.h * scales[i] + 0.5f);
-		}
-		int y = tag.y - heights[0] - heights[1];
-		for (int i = 0; i < 2; ++i) {
-			if (lines[i].empty())
-				continue;
-			m_text.DrawScaled(canvas, tag.x - widths[i] / 2, y, lines[i], NameSprite::FontHeight, scales[i], color,
-				NameSprite::FontWeight);
-			y += heights[i];
-		}
+		DrawNameSprite(canvas, tag.x, tag.y, tag.depth, tag.focal, text, color);
+	}
+}
+
+void FrontEnd::DrawNameSprite(Canvas &canvas, int x, int y, float depth, float focal, const std::string &text, uint32_t color)
+{
+	// A line is 20 texels of 0.05 units; the second (the guild's) 0.85 of that, under it, the lot
+	// sitting on the head.
+	// The 20 pixel bold font stretched to that, as eqgfx stretches its glyphs.
+	float scale = NameSprite::UnitsPerTexel * focal / std::max(depth, NameSprite::NearestDepth);
+	size_t newline = text.find('\n');
+	std::string lines[2] = {text.substr(0, newline), newline == std::string::npos ? "" : text.substr(newline + 1)};
+	float scales[2] = {scale, scale * NameSprite::LineScale};
+	int widths[2] = {}, heights[2] = {};
+	for (int i = 0; i < 2; ++i) {
+		if (lines[i].empty())
+			continue;
+		TextSize size = m_text.Measure(lines[i], NameSprite::FontHeight, NameSprite::FontWeight);
+		widths[i] = static_cast<int>(size.w * scales[i] + 0.5f);
+		heights[i] = static_cast<int>(size.h * scales[i] + 0.5f);
+	}
+	y -= heights[0] + heights[1];
+	for (int i = 0; i < 2; ++i) {
+		if (lines[i].empty())
+			continue;
+		m_text.DrawScaled(canvas, x - widths[i] / 2, y, lines[i], NameSprite::FontHeight, scales[i], color,
+			NameSprite::FontWeight);
+		y += heights[i];
 	}
 }
 

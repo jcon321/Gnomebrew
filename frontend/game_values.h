@@ -104,6 +104,9 @@ public:
 
 	// EQ_Character::KunarkClass (@004bc06a): a class's name, or its title from level 51.
 	static std::string ClassTitle(const EqStr *eqstr, int class_id, int level);
+	// CEverQuest_GetClassDesc (@0052d5f1): a class's name, whatever the level; UNKNOWN CLASS
+	// outside 1..32.
+	static std::string ClassDesc(const EqStr *eqstr, int class_id);
 	// CEverQuest's deity description (@0052ea51): Agnostic for anything but 201..216.
 	static std::string DeityName(const EqStr *eqstr, int deity);
 };

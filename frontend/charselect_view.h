@@ -43,8 +43,9 @@ public:
 	// Pins the camera heading (preview tool); otherwise it follows Rotate.
 	void SetCameraHeading(float heading) { m_camera_override = heading; }
 	void Render(Canvas &canvas, uint64_t now_ms);
-	// Where to draw the name over the character's head, after Render.
-	bool NamePosition(int &x, int &y) const;
+	// Where to draw the name over the character's head, after Render: the point, how far it is in
+	// front of the camera, and the pixels a unit covers at depth 1 (for the name sprite's size).
+	bool NamePosition(int &x, int &y, float &depth, float &focal) const;
 
 	// For the preview tool: the model actually shown and the triangles drawn last frame.
 	const render::CharacterModel *Model() const { return m_model.get(); }

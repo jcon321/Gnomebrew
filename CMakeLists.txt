@@ -27,6 +27,7 @@ add_library(eqcore STATIC
     core/rdp_session.cpp
     core/login_client.cpp
     core/world_client.cpp
+    core/zone_names.cpp
     core/zone_session.cpp
     core/packet_log.cpp
     core/ini_file.cpp

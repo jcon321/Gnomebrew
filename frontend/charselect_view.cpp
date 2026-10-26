@@ -1,5 +1,6 @@
 #include "charselect_view.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 
@@ -35,6 +36,25 @@ namespace
 			return false;
 		spot = spots[class_id];
 		return true;
+	}
+
+	// The horizontal field of view of SetViewAngle(90) (DoCharacterSelection, CDisplay_SetCCreateCamera(0)),
+	// `aspect` the screen's width over its height. ChangeVideoMode passes it to t3dSetCameraLens,
+	// which keeps half; eqgfx (setupCameraTransformations) takes the tangent of that in 512ths of
+	// a turn across the screen's width, the near plane at 1 (CDisplay's constructor). So 90 is
+	// 63.3 degrees.
+	// Zeal's SetCameraLens hook changes the angle in character select (GameState 1, on by default
+	// with [Zeal] MouseSmoothing): it reads it as degrees across a 4:3 screen and widens it to keep
+	// that height on a wider one, more again past 4:3. The same at 4:3; 88 degrees at 16:9.
+	// Character creation (GameState 2) keeps the lens character select left, Zeal's included; the
+	// face pick's SetCCreateCamera(100) doesn't set the angle.
+	float LensFov(float aspect)
+	{
+		constexpr float Classic = 4.0f / 3;
+		float tangent = std::tan(90.0f / 2 * render::Pi / 180) / Classic;
+		float ratio = aspect + std::max(0.0f, (aspect - Classic) * aspect);
+		float angle = 2 * std::atan(tangent * ratio) * 180 / render::Pi;
+		return angle * render::Pi / 256;
 	}
 }
 
@@ -192,7 +212,7 @@ void CharacterSelectView::Render(Canvas &canvas, uint64_t now_ms)
 	render::Camera camera;
 	camera.position = m_position + offset + render::Vec3{0, 0, eye * camera_height};
 	camera.forward = offset * -1.0f;
-	camera.horizontal_fov = render::Pi / 2; // SetViewAngle(90)
+	camera.horizontal_fov = LensFov(static_cast<float>(canvas.Width()) / canvas.Height());
 	camera.near_plane = 0.5f;
 	camera.far_plane = 5000; // CCharacterSelect::SetLoadZoneWeather: SetYon(5000)
 
@@ -221,15 +241,16 @@ void CharacterSelectView::Render(Canvas &canvas, uint64_t now_ms)
 	m_renderer->Finish(canvas.Row(0), canvas.Stride(), sky ? m_sky.HorizonColor() : 0x000000);
 }
 
-bool CharacterSelectView::NamePosition(int &x, int &y) const
+bool CharacterSelectView::NamePosition(int &x, int &y, float &depth, float &focal) const
 {
 	if (!m_model || !m_loaded || !m_error.empty())
 		return false;
 	float sx, sy;
 	render::Vec3 top = m_position + render::Vec3{0, 0, m_model->MaxZ() - m_model->MinZ() + 0.6f};
-	if (!m_renderer->Project(top, sx, sy))
+	if (!m_renderer->Project(top, sx, sy, depth))
 		return false;
 	x = static_cast<int>(sx);
 	y = static_cast<int>(sy);
+	focal = m_renderer->Focal();
 	return true;
 }
