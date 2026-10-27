@@ -97,7 +97,17 @@ void SpellCasting::BeginCast(const ZoneCast &cast, const ZoneSession &zone, std:
 	if (!caster || !spell)
 		return;
 	if (DragonBreath(*spell)) {
+		// The breath goes off a second on (process_physics, the Horse timer), for 1.25 seconds.
 		animations.push_back({cast.caster, spell->casting_anim});
+		SpellEffects::Request effect;
+		effect.stage = 0;
+		effect.effect = spell->new_effect;
+		effect.old_effect = spell->effect;
+		effect.spell = cast.spell;
+		effect.caster = effect.target = cast.caster;
+		effect.duration_ms = 1250;
+		effect.delay_ms = 1000;
+		effects.push_back(effect);
 		return;
 	}
 	bool mine = cast.caster == zone.MySpawnId();
@@ -119,16 +129,15 @@ void SpellCasting::BeginCast(const ZoneCast &cast, const ZoneSession &zone, std:
 		text += " (" + spell->name + ")";
 	if (!text.empty() && !(mine && caster->class_id != ClassBard && IsRoguePoison(cast.spell)))
 		lines.push_back({text, mine ? OwnSpellColor : OtherSpellColor});
-	if (spell->new_effect > 0) {
-		SpellEffects::Request effect;
-		effect.stage = 0;
-		effect.effect = spell->new_effect;
-		effect.spell = cast.spell;
-		effect.caster = effect.target = cast.caster;
-		effect.duration_ms = cast.cast_ms;
-		effect.casting_anim = spell->casting_anim;
-		effects.push_back(effect);
-	}
+	SpellEffects::Request effect;
+	effect.stage = 0;
+	effect.effect = spell->new_effect;
+	effect.old_effect = spell->effect;
+	effect.spell = cast.spell;
+	effect.caster = effect.target = cast.caster;
+	effect.duration_ms = cast.cast_ms;
+	effect.casting_anim = spell->casting_anim;
+	effects.push_back(effect);
 }
 
 void SpellCasting::Action(const ZoneCast &cast, const ZoneSession &zone, std::vector<Animation> &animations,
@@ -142,11 +151,10 @@ void SpellCasting::Action(const ZoneCast &cast, const ZoneSession &zone, std::ve
 	const ZoneSpawn *caster = FindSpawn(zone, cast.caster);
 	if (caster && !DragonBreath(*spell) && (caster->class_id != ClassBard || cast.instrument_mod > 10))
 		animations.push_back({cast.caster, spell->casting_anim});
-	if (spell->new_effect <= 0)
-		return;
 	SpellEffects::Request effect;
 	effect.stage = 2;
 	effect.effect = spell->new_effect;
+	effect.old_effect = spell->effect;
 	effect.spell = cast.spell;
 	effect.caster = caster ? cast.caster : 0;
 	effect.target = cast.target;

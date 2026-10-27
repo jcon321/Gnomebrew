@@ -178,6 +178,9 @@ public:
 	int ActorSkeleton(int actor_index) const;
 	bool ReadSkeleton(int index, WldSkeleton &skeleton) const;
 	bool ReadParticleCloud(int index, WldParticleCloud &cloud) const;
+	// A blit sprite (0x26 -> 0x05 -> 0x04) by name, e.g. "GENA10_SPRITE", or an actor definition's
+	// (0x14 -> 0x27 -> 0x26, "GENA10_ACTORDEF"): its render method and frames.
+	bool FindBlitSprite(const std::string &name, WldMaterial &sprite) const;
 	// First frame of a track instance (0x13) by name, e.g. "P01HUMPE_TRACK".
 	bool ReadTrackPose(const std::string &track, WldBoneTransform &pose) const;
 	// Every frame of a track instance, and its frame time (0 when not given).

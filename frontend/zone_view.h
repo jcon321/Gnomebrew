@@ -101,6 +101,15 @@ public:
 	// loaded. They follow the spawns from then on, drawn with the rest.
 	void StartSpellEffect(const SpellEffects::Request &request);
 	const SpellEffects &Effects() const { return m_spell_effects; }
+	// The spells' stage sounds lately (for the debug menu), newest last: played from the spawn on
+	// the game sounds' switch, as EQPlayer::PlaySoundA plays them.
+	struct SpellSound
+	{
+		uint64_t at_ms = 0; // on Effects().Now()'s clock
+		int slot = 0, spell = 0, stage = 0;
+		uint16_t on = 0;
+	};
+	const std::vector<SpellSound> &SpellSounds() const { return m_spell_sounds; }
 	struct NameTag
 	{
 		uint16_t id;  // 0: us
@@ -205,13 +214,15 @@ public:
 	uint16_t PickSpawn(int x, int y) const;
 	// Debug drawing: triangle outlines instead of the scene, no fog (out to the zone's max clip),
 	// no clip plane (no far plane or fog at all), collision walls near us outlined, a marker on
-	// the floor under our feet, and none of the weather (its sound goes on).
+	// the floor under our feet, none of the weather (its sound goes on), and the spells' old
+	// effects (spells.eff) in place of their Luclin ones (as eqgame without SpellsNew.eff).
 	struct DebugDraw
 	{
 		bool wireframe = false, no_fog = false, walls = false, floor = false;
 		bool no_culling = false; // draw what the zone hides too (no Umbra)
 		bool no_clip = false;
 		bool no_weather = false; // no rain or snow, and the zone's own fog, sky and light
+		bool new_spell_effects = true; // SpellsNew.eff's; off, every spell's spells.eff one
 		int vision = -1; // a Vision, or -1: our own (our race's; spells and items to come)
 	};
 	// What we see in: the debug menu's choice, or our own (our race's; spells and items to come).
@@ -350,6 +361,8 @@ private:
 	bool m_player_loops = true;
 	SpellEffects m_spell_effects;
 	bool FindActor(uint16_t id, SpellEffects::Actor &actor) const;
+	void PlaySpellSound(const SpellEffects::Request &request, uint16_t on, int slot);
+	std::vector<SpellSound> m_spell_sounds;
 	std::vector<render::PointLight> m_carried_lights;
 	std::vector<std::vector<int>> m_carried_light_regions;
 	std::vector<render::PointLight> m_lights_for; // LightsFor's

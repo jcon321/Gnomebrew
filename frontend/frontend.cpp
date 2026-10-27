@@ -76,6 +76,7 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 		m_debug.SetSound(m_sound.get());
 	}
 	m_debug.SetWeather(&m_weather);
+	m_debug.SetSpells(m_ui.spells);
 	if (!m_config.settings_ini.empty()) {
 		m_chat_colors.Load(m_config.settings_ini);
 		IniFile ini;

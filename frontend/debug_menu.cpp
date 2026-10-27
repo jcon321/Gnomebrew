@@ -84,7 +84,7 @@ namespace
 	const char *const SectionKeys[] = {"Performance", "Movement", "ServerSync", "Camera", "Network", "Packets", "Zone",
 		"Sound", "Render", "Target", "Nearby"};
 	const char *const ToggleKeys[] = {"Wireframe", "NoFog", "CollisionWalls", "FloorMarker", "NoOcclusionCulling",
-		"NoClipPlane", "NoWeatherEffects"};
+		"NoClipPlane", "NoWeatherEffects", "LuclinSpellEffects"};
 	const char *const SoundKeys[] = {"AllSound", "Music", "ZoneAmbience", "GameSounds", "WeatherSounds"};
 
 	bool SameText(const std::string &a, const char *b)
@@ -132,7 +132,7 @@ void DebugMenu::Load(const IniFile &ini)
 			start = comma + 1;
 		}
 	}
-	for (int i = 0; i < 7; ++i)
+	for (int i = 0; i < 8; ++i)
 		*Toggle(i) = flag(ToggleKeys[i], *Toggle(i));
 	m_draw.vision = std::clamp(ini.GetInt("Debug", "Vision", m_draw.vision), -1, 2);
 	for (int i = 0; i < 5; ++i)
@@ -150,8 +150,8 @@ void DebugMenu::Store(IniFile &ini) const
 			folded += (folded.empty() ? "" : ",") + std::string(SectionKeys[i]);
 	ini.Set("Debug", "Folded", folded);
 	const bool toggles[] = {m_draw.wireframe, m_draw.no_fog, m_draw.walls, m_draw.floor, m_draw.no_culling,
-		m_draw.no_clip, m_draw.no_weather};
-	for (int i = 0; i < 7; ++i)
+		m_draw.no_clip, m_draw.no_weather, m_draw.new_spell_effects};
+	for (int i = 0; i < 8; ++i)
 		ini.SetInt("Debug", ToggleKeys[i], toggles[i] ? 1 : 0);
 	ini.SetInt("Debug", "Vision", m_draw.vision);
 	audio::EqSound::Switches switches = m_sound ? m_sound->GetSwitches() : m_switches;
@@ -238,7 +238,8 @@ bool *DebugMenu::Toggle(int index)
 	case 4: return &m_draw.no_culling;
 	case 5: return &m_draw.no_clip;
 	case 6: return &m_draw.no_weather;
-	case 7: return m_set_vsync ? &m_vsync : nullptr;
+	case 7: return &m_draw.new_spell_effects;
+	case 8: return m_set_vsync ? &m_vsync : nullptr;
 	default: return nullptr;
 	}
 }
@@ -478,11 +479,37 @@ void DebugMenu::DrawCard(Canvas &canvas, TextRenderer &text, const ZoneSession &
 			row("  " + (sounding.empty() ? std::string("silent") : sounding) +
 				(sound.covered && (sound.raining || sound.wind) ? "   (covered: no rain or wind)" : ""));
 		}
+		if (view) {
+			// The spells' stage sounds (EQPlayer::PlaySoundA's numbered waves) in the last 10 seconds,
+			// newest first: they're game sounds, on that switch.
+			const audio::EqSound::Switches &on = m_sound->GetSwitches();
+			row(std::string("Spell sounds   on the Game sounds switch") + (on.sound && on.game ? "" : " (off: silent)"));
+			const std::vector<ZoneView::SpellSound> &played = view->SpellSounds();
+			uint64_t now = view->Effects().Now();
+			int shown = 0;
+			for (auto it = played.rbegin(); it != played.rend() && shown < 4; ++it, ++shown) {
+				uint64_t ago = now - std::min(now, it->at_ms);
+				if (ago > 10000)
+					break;
+				std::string wave = m_sound->WaveFile(it->slot);
+				if (wave.empty())
+					wave = Format("wave %d", it->slot);
+				const SpellInfo *spell = m_spells ? m_spells->Find(it->spell) : nullptr;
+				std::string name = spell ? spell->name : Format("spell %d", it->spell);
+				std::string who = it->on == zone.MySpawnId() ? std::string("you") : Format("spawn %u", it->on);
+				auto spawn = zone.Spawns().find(it->on);
+				if (it->on != zone.MySpawnId() && spawn != zone.Spawns().end())
+					who = spawn->second.DisplayName();
+				std::string when = m_sound->WavePlaying(it->slot) ? std::string("playing") : Format("%.1fs ago", ago / 1000.0);
+				row(Format("  %s  %s %s, from %s   %s", wave.c_str(), name.c_str(), it->stage == 0 ? "casting" : "landing",
+					who.c_str(), when.c_str()));
+			}
+		}
 		if (!sound.missing.empty())
 			row("Missing " + sound.missing.back() + (sound.missing.size() > 1 ? Format(" +%zu", sound.missing.size() - 1) : ""));
 		const audio::EqSound::Switches &switches = m_sound->GetSwitches();
 		const std::pair<const char *, bool> toggles[] = {{"Sound", switches.sound}, {"Music", switches.music},
-			{"Zone ambience", switches.ambience}, {"Game sounds (doors, steps, creatures)", switches.game},
+			{"Zone ambience", switches.ambience}, {"Game sounds (doors, steps, creatures, spells)", switches.game},
 			{"Weather (rain, wind, thunder)", switches.weather}};
 		for (int i = 0; i < 5; ++i) {
 			bool on = toggles[i].second && (i == 0 || switches.sound);
@@ -494,8 +521,8 @@ void DebugMenu::DrawCard(Canvas &canvas, TextRenderer &text, const ZoneSession &
 
 	if (section(Render, "RENDER")) {
 		static const char *const names[] = {"Wireframe", "No fog", "Collision walls", "Floor marker", "No occlusion culling",
-			"No clip plane", "No weather effects", "VSync"};
-		for (int i = 0; i < 8; ++i) {
+			"No clip plane", "No weather effects", "Luclin spell effects", "VSync"};
+		for (int i = 0; i < 9; ++i) {
 			if (!Toggle(i))
 				continue;
 			Line &line = *row(std::string(*Toggle(i) ? "[x] " : "[  ] ") + names[i], *Toggle(i) ? White : Grey);

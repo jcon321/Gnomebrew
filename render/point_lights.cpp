@@ -42,12 +42,18 @@ namespace render
 		case 15: color = Blue; radius = 150; break;
 		default: return false;
 		}
-		// CEverQuest_GetMaxLightRadius: Crystal Caverns (121) and Vex Thal (158).
-		if (zone && std::strcmp(zone, "crystal") == 0)
-			radius = std::min(radius, 25.0f);
-		else if (zone && std::strcmp(zone, "vexthal") == 0)
-			radius = std::min(radius, 100.0f);
+		radius = std::min(radius, MaxLightRadius(zone));
 		return true;
+	}
+
+	float MaxLightRadius(const char *zone)
+	{
+		// Crystal Caverns (121) and Vex Thal (158).
+		if (zone && std::strcmp(zone, "crystal") == 0)
+			return 25;
+		if (zone && std::strcmp(zone, "vexthal") == 0)
+			return 100;
+		return 10000;
 	}
 
 	bool CarriedLightShinesInWater(uint8_t light_type)

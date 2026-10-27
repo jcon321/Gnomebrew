@@ -90,11 +90,11 @@ namespace
 	};
 	WeatherOption g_weather;
 
-	// --spell-effect STAGE EFFECT CASTER TARGET MS [CAST_MS ANIM]: a SpellsNew.eff record's stage on
-	// the --npc spawns (1 on), run MS in 16 ms frames.
+	// --spell-effect STAGE EFFECT CASTER TARGET MS [CAST_MS ANIM]: a SpellsNew.eff record's stage
+	// (EFFECT oN: spells.eff's record N) on the --npc spawns (1 on), run MS in 16 ms frames.
 	struct EffectOption
 	{
-		int stage = -1, effect = 0, caster = 0, target = 0, ms = 0, cast_ms = 0, anim = 0;
+		int stage = -1, effect = 0, old_effect = -1, caster = 0, target = 0, ms = 0, cast_ms = 0, anim = 0;
 	};
 	EffectOption g_effect;
 
@@ -299,6 +299,7 @@ namespace
 			SpellEffects::Request request;
 			request.stage = g_effect.stage;
 			request.effect = g_effect.effect;
+			request.old_effect = g_effect.old_effect;
 			request.caster = static_cast<uint16_t>(g_effect.caster);
 			request.target = static_cast<uint16_t>(g_effect.target);
 			request.duration_ms = g_effect.cast_ms;
@@ -436,7 +437,10 @@ int main(int argc, char **argv)
 		}
 		else if (arg == "--spell-effect" && i + 5 < argc) {
 			g_effect.stage = atoi(argv[++i]);
-			g_effect.effect = atoi(argv[++i]);
+			if (argv[i + 1][0] == 'o')
+				g_effect.old_effect = atoi(argv[++i] + 1);
+			else
+				g_effect.effect = atoi(argv[++i]);
 			g_effect.caster = atoi(argv[++i]);
 			g_effect.target = atoi(argv[++i]);
 			g_effect.ms = atoi(argv[++i]);

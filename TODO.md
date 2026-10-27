@@ -132,9 +132,12 @@ no rules of its own.
     (CEverQuest_StartCasting), the caster's CastingAnim and the effect on the target from OP_Action
     (EQPlayer::TriggerSpellEffect), the landing text and the target's TargetAnim from OP_Damage
     (CEverQuest_ReportSuccessfulHit), and the Luclin particle effects (SpellsNew.eff stages 0 and 2,
-    spellsnew.edd emitters, eqgfx's CParticleSystem) on the caster's and target's bones. Still to
-    do: the older `spells.eff` effects (sprites and particle clouds) of the spells that have no
-    SpellsNew.eff one, the missiles (stage 1, EQMissile: bolts), the stages' sounds, the options'
+    spellsnew.edd emitters, eqgfx's CParticleSystem) on the caster's and target's bones, or the
+    older `spells.eff` effects (gequip's sprites circling the target and eqgfx particle clouds) for
+    the spells without a SpellsNew.eff record (the debug menu's "Luclin spell effects" off gives every
+    spell its old one, as eqgame without SpellsNew.eff), the old sprite flashes' lights and the
+    stages' sounds (game sounds; the debug menu's Sound section lists them). Still to do: the
+    missiles (stage 1, EQMissile: bolts, their lights and sounds), the options'
     spell particle density and opacity (fixed at eqgame's 1 and 1), the chat filters for PC and NPC
     spells and bard songs, melee's OP_Damage (hit messages, the D02 hit and its sounds), being hit
     standing us up, and OP 0x4265 (destroy a cast's emitters; this server never sends it).

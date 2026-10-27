@@ -459,6 +459,34 @@ bool WldFile::ReadParticleCloud(int index, WldParticleCloud &cloud) const
 	return true;
 }
 
+bool WldFile::FindBlitSprite(const std::string &name, WldMaterial &sprite) const
+{
+	int index = Find(name);
+	if (index < 0)
+		return false;
+	const Fragment *blit = &m_fragments[index];
+	if (blit->type == 0x14) {
+		// An actor definition: its blit sprite instance (0x27), then that's definition.
+		size_t refs = 0;
+		uint32_t count = 0;
+		blit = nullptr;
+		if (ActorReferences(index, refs, count))
+			for (uint32_t i = 0; i < count && !blit; ++i) {
+				const Fragment *ref = Ref(Get<int32_t>(refs + i * 4));
+				if (ref && ref->type == 0x27 && ref->size >= 4)
+					blit = Ref(Get<int32_t>(ref->offset));
+			}
+	}
+	// 0x26: flags, its sprite (0x05), the render method.
+	if (!blit || blit->type != 0x26 || blit->size < 12)
+		return false;
+	sprite = WldMaterial{};
+	sprite.name = blit->name;
+	sprite.render_method = Get<uint32_t>(blit->offset + 8);
+	ReadSpriteFrames(Ref(Get<int32_t>(blit->offset + 4)), sprite);
+	return true;
+}
+
 // 0x15 in objects.wld: actor name ref, flags, sphere ref, x y z, rotation[3], unknown,
 // scale y, scale x, vertex color ref.
 std::vector<WldPlacement> WldFile::Placements() const

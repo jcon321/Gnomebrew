@@ -4,11 +4,13 @@
 //   t3dDefineParticleCloud (@1005a4a0)   a definition: how the particles are made, move and look
 //   t3dCreateParticleCloud (@1005a7b0)   a cloud of them, with the clouds its particles carry on
 //                                        into where they hit (the ground's and the water's)
-//   t3dUpdateParticleCloud (@1005d190)   each frame: the living move on, those whose time is up go
-//                                        (into the ground's or water's cloud where they hit), and new
-//                                        ones are made every interval, at a random point of the box
-//                                        (spawn type 0, the only one done here) around the cloud's
-//                                        place or the camera, already that much of the frame old
+//   t3dUpdateParticleCloud (@1005d190)   each frame: the living move on (updateParticlePhysics
+//                                        @1005ce60: and fall by the gravity), those whose time is up
+//                                        go (into the ground's or water's cloud where they hit), and
+//                                        new ones are made every interval until the duration's out
+//                                        (by the spawn type: in a box around the cloud's place or
+//                                        the camera, on a sphere, a ring, a cone or a disk), already
+//                                        that much of the frame old
 //   updateParticleCollision (@1005c6f0)  a particle's whole path tried against the world as it's
 //                                        made (s3dCollideRaySegmentWithWorld: solid surfaces, and
 //                                        the water, lava and slime regions): it dies where it hits
@@ -19,8 +21,9 @@
 // Held items' clouds (a torch's flame and smoke, IT36_P1_DAG and IT36_P2_DAG) are bound to their
 // bone (getObjectPosition, getParticleEmitterMatrix): made from where it is and the way it
 // points, or with Local carried along in its space, and their sprites animate.
-// The rest (gravity, wrapping, spawn types 1, 2 and 5, the distance level of detail) nothing here
-// uses and isn't done.
+// Spells' old effects (spells.eff, eqgame's MakePCloudInstance) bind theirs to a bone too, or
+// set them down at a spot. The rest (wrapping, gravity toward a point, the distance level of
+// detail) nothing here uses and isn't done.
 
 #include "renderer.h"
 
@@ -42,9 +45,12 @@ namespace render
 		// Where each is made (t3dUpdateParticleCloud's spawn types).
 		enum class Spawn : uint8_t
 		{
-			Box = 0,  // a random point of the box around the cloud's place
-			Cone = 3, // at the emitter, heading along its normal, up to `angle` off it
-			Disk = 4, // a random point within `radius` of the emitter, across its normal, heading along it
+			Box = 0,    // a random point of the box around the cloud's place
+			Sphere = 1, // a random point `radius` out from the emitter, heading straight out
+			Ring = 2,   // a random point `radius` out across the emitter's normal, heading straight out
+			Cone = 3,   // at the emitter, heading along its normal, up to `angle` off it
+			Disk = 4,   // a random point within `radius` of the emitter, across its normal, heading along it
+			Circle = 5, // a random point `radius` out across the emitter's normal, heading along it
 		};
 		enum : uint32_t
 		{
@@ -66,11 +72,17 @@ namespace render
 		float speed = 0;
 		uint32_t lifespan_ms = 0;
 		uint32_t interval_ms = 0xffffffff; // between each one made (over the density); 0xffffffff: none
+		uint32_t duration_ms = 0;          // made for this long from its first Update; 0 until Stop
+		float gravity = 0;                 // t3dSetPCloudGravity: each one sped up along gravity_direction
+		Vec3 gravity_direction;            // at `gravity` a second, every second
 		float size = 1;                    // a sprite's half width; a ring's at the end of its life
 		uint32_t color = 0xffffff;         // sprites'
 		const Texture *sprite = nullptr;   // sprites' and rings'
 		std::vector<const Texture *> frames; // an animated sprite's, in place of `sprite`
 		uint32_t frame_ms = 0;
+		// false: drawn clear of the fog, the sprites' masked texels cut out (a spell's old effect,
+		// as the Luclin ones: fogged additive sprites show the fog's color over their dark squares)
+		bool fog = true;
 	};
 
 	class ParticleCloud
@@ -88,8 +100,12 @@ namespace render
 		// t3dStopPCloudAndAutoDestroy: none made from now on.
 		void Stop(uint64_t now_ms);
 		bool Stopped() const { return m_stop_ms != 0; }
-		// Stopped and all gone: t3dPaintParticleCloud destroys it then.
-		bool Done(uint64_t now_ms) const { return m_stop_ms != 0 && m_stop_ms <= now_ms && m_particles.empty(); }
+		// Stopped (or its duration out) and all gone: t3dPaintParticleCloud destroys it then.
+		bool Done(uint64_t now_ms) const
+		{
+			bool over = (m_stop_ms != 0 && m_stop_ms <= now_ms) || (m_def.duration_ms && m_end_ms && m_end_ms <= now_ms);
+			return over && m_particles.empty();
+		}
 		size_t Count() const { return m_particles.size(); }
 		// A bound cloud's emitter (its bone, in world space), before each Update.
 		void SetEmitter(const Transform &emitter) { m_emitter = emitter; m_bound = true; }
@@ -111,6 +127,7 @@ namespace render
 			int wobble = 0;    // into the wobble's 32 steps
 		};
 		void Make(Particle &p, const Vec3 &position, const Vec3 &velocity, float age_s, uint64_t now_ms, const Collide *collide);
+		void Move(Particle &p, float seconds) const; // updateParticlePhysics
 		// updateParticlePhysics with a parent's particle: one made where it hit, born as it died.
 		void Carry(const Particle &parent, uint64_t now_ms);
 		int Rand(); // the MSVC runtime's rand()
@@ -122,6 +139,7 @@ namespace render
 		ParticleCloud *m_ground, *m_water;
 		std::vector<Particle> m_particles;
 		uint64_t m_last_ms = 0, m_carry_ms = 0, m_stop_ms = 0;
+		uint64_t m_end_ms = 0; // the duration's end
 		Vec3 m_camera;
 		uint32_t m_random;
 		// t3dSetPCloudBaseSpawnNormal: the emitter's axes, two across the normal and the normal.

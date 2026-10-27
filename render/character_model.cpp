@@ -119,10 +119,8 @@ namespace render
 		bool CloudDef(const WldFile &wld, TextureCache &textures, int index, ParticleCloudDef &def)
 		{
 			WldParticleCloud cloud;
-			if (!wld.ReadParticleCloud(index, cloud) || cloud.kind < 1 || cloud.kind > 4)
+			if (!wld.ReadParticleCloud(index, cloud) || cloud.kind < 1 || cloud.kind > 4 || cloud.spawn_type > 5)
 				return false;
-			if (cloud.spawn_type != 0 && cloud.spawn_type != 3 && cloud.spawn_type != 4)
-				return false; // spawn types 1, 2 and 5 aren't done
 			auto vec = [](const WldVec3 &v) { return Vec3{v.x, v.y, v.z}; };
 			def.kind = static_cast<ParticleCloudDef::Kind>(cloud.kind);
 			def.spawn = static_cast<ParticleCloudDef::Spawn>(cloud.spawn_type);
@@ -136,6 +134,8 @@ namespace render
 			def.speed = cloud.speed;
 			def.lifespan_ms = cloud.lifespan_ms;
 			def.interval_ms = cloud.interval_ms;
+			def.gravity = cloud.gravity;
+			def.gravity_direction = vec(cloud.gravity_direction);
 			def.size = cloud.size;
 			def.color = cloud.color & 0xffffff;
 			MaterialInfo info = DescribeRenderMethod(cloud.sprite.render_method);

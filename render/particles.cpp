@@ -45,7 +45,7 @@ namespace render
 		m_particles.reserve(m_max);
 		// t3dSetPCloudBaseSpawnNormal: one axis square to the normal on the ground (or, for a
 		// normal straight up or down, square to it on x), the second square to both.
-		if (def.spawn != ParticleCloudDef::Spawn::Box) {
+		if (def.spawn != ParticleCloudDef::Spawn::Box && def.spawn != ParticleCloudDef::Spawn::Sphere) {
 			const Vec3 &n = def.normal;
 			Vec3 v{n.y, -n.x, 0};
 			if (std::fabs(v.x) < 0.0001f && std::fabs(v.y) < 0.0001f)
@@ -96,7 +96,19 @@ namespace render
 			}
 		}
 		p.wobble = Rand() & 31;
-		p.position = p.position + p.velocity * age_s; // updateParticlePhysics: as old as it is
+		Move(p, age_s); // as old as it is
+	}
+
+	void ParticleCloud::Move(Particle &p, float seconds) const
+	{
+		// On along its velocity, then the gravity's pull: half its square taken back off the place
+		// (as eqgfx has it) and the speed it adds on.
+		p.position = p.position + p.velocity * seconds;
+		if (m_def.gravity != 0) {
+			Vec3 pull = m_def.gravity_direction * m_def.gravity;
+			p.position = p.position - pull * (seconds * seconds * 0.5f);
+			p.velocity = p.velocity + pull * seconds;
+		}
 	}
 
 	void ParticleCloud::Carry(const Particle &parent, uint64_t now_ms)
@@ -110,8 +122,11 @@ namespace render
 
 	void ParticleCloud::Update(uint64_t now_ms, const Vec3 &camera, const Collide &collide)
 	{
-		if (m_last_ms == 0)
+		if (m_last_ms == 0) {
 			m_last_ms = now_ms;
+			if (m_def.duration_ms)
+				m_end_ms = now_ms + m_def.duration_ms; // t3dSetPCloudDuration
+		}
 		uint64_t elapsed = now_ms - std::min(now_ms, m_last_ms);
 		m_last_ms = now_ms;
 		float elapsed_s = static_cast<float>(elapsed) * 0.001f;
@@ -122,7 +137,7 @@ namespace render
 		for (size_t i = 0; i < m_particles.size();) {
 			Particle &p = m_particles[i];
 			if (p.death_ms > now_ms) {
-				p.position = p.position + p.velocity * elapsed_s;
+				Move(p, elapsed_s);
 				++i;
 				continue;
 			}
@@ -136,7 +151,7 @@ namespace render
 		}
 
 		// New ones, each a random part of the frame old, until Stop.
-		if (!m_makes || (m_stop_ms && now_ms >= m_stop_ms))
+		if (!m_makes || (m_stop_ms && now_ms >= m_stop_ms) || (m_end_ms && now_ms >= m_end_ms))
 			return;
 		uint64_t count = 1; // an interval of 0: one a frame
 		if (m_interval) {
@@ -161,6 +176,26 @@ namespace render
 				at = at + Vec3{span.x * Rand() * 3.051851e-05f + m_def.low.x, span.y * Rand() * 3.051851e-05f + m_def.low.y,
 					span.z * Rand() * 3.051851e-05f + m_def.low.z};
 				break;
+			case ParticleCloudDef::Spawn::Sphere: {
+				// Straight out from the emitter, in the world's axes.
+				float around = static_cast<float>(Rand() & 0x1ff) * TurnStep;
+				float up = static_cast<float>(Rand() & 0x1ff) * TurnStep;
+				Vec3 out{std::cos(around) * std::sin(up), std::sin(around) * std::sin(up), std::cos(up)};
+				at = at + out * m_def.radius;
+				velocity = out * m_def.speed;
+				break;
+			}
+			case ParticleCloudDef::Spawn::Ring:
+			case ParticleCloudDef::Spawn::Circle: {
+				// `radius` out across the normal; a ring's head straight out, a circle's along the
+				// (unturned) normal.
+				float around = static_cast<float>(Rand() & 0x1ff) * TurnStep;
+				Vec3 out = axes[0] * std::cos(around) + axes[1] * std::sin(around);
+				at = at + out * m_def.radius;
+				if (m_def.spawn == ParticleCloudDef::Spawn::Ring)
+					velocity = out * m_def.speed;
+				break;
+			}
 			case ParticleCloudDef::Spawn::Cone: {
 				float spread = std::sin(static_cast<float>(Rand()) * m_def.angle * 3.051851e-05f * TurnStep);
 				float around = static_cast<float>(Rand() & 0x1ff) * TurnStep;
@@ -223,6 +258,10 @@ namespace render
 		Material material;
 		material.blend = Blend::Additive;
 		material.two_sided = true;
+		if (!m_def.fog) {
+			material.fog = false;
+			material.texel_alpha = true;
+		}
 
 		switch (m_def.kind) {
 		case ParticleCloudDef::Kind::Points:

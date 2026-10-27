@@ -35,6 +35,8 @@ namespace render
 	// The light a LightType carries at `now_ms` (the torches flicker through 10 colors, 200 ms
 	// each), its radius capped as CEverQuest_GetMaxLightRadius caps it in `zone`; false for none.
 	bool CarriedLight(uint8_t light_type, const char *zone, uint64_t now_ms, Vec3 &color, float &radius);
+	// CEverQuest_GetMaxLightRadius: Crystal Caverns 25, Vex Thal 100, elsewhere no cap (10000).
+	float MaxLightRadius(const char *zone);
 	// ChangeLight: in water only the magic lights shine (types 3, 5, 7 and over 8).
 	bool CarriedLightShinesInWater(uint8_t light_type);
 

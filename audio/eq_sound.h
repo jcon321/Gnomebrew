@@ -128,6 +128,8 @@ namespace audio
 		void PlayActorSound(int slot, const Vec3 &position, float height, bool ours);
 		// SoundManager::IsSoundPlaying.
 		bool WavePlaying(int slot);
+		// The file a numbered wave plays (for the debug menu); empty for none.
+		std::string WaveFile(int slot) const;
 		// WavePlay with no control: right where we are (full volume within 1000), once.
 		void PlayWave(int slot);
 		// The same for the weather's thunder (CDisplay::LightningStrike): on the weather's switch.

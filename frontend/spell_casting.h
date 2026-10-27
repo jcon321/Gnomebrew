@@ -6,8 +6,9 @@
 //                 bard's song by its texts instead ("%1%2", 12207, with other_casts); our rogue's
 //                 poisons say nothing. A GM sees the spell's name after it, and the cast time after
 //                 their own. A dragon breath (spells.eff effects 61..64) plays the caster's animation
-//                 at once and says nothing. Then the casting effect (DoSpellEffect stage 0, for the
-//                 cast time and the casting animation's length).
+//                 at once and says nothing, and its effect goes off a second later (for 1.25
+//                 seconds). Then the casting effect (DoSpellEffect stage 0, for the cast time and
+//                 the casting animation's length), the SpellsNew.eff one or the spells.eff one.
 //   OP_Action     EQPlayer::IWasHit -> TriggerSpellEffect (@0050b27c), on the target: a spell with a
 //                 target type plays the caster's CastingAnim (not a bard's song without an
 //                 instrument, instrument_mod 10 or less, nor a dragon breath), then its effect on
@@ -21,8 +22,7 @@
 //                 and 102) and not a corpse; a detrimental spell's damage without one plays 13 (D02).
 // The chat filters for spells (PC spells, NPC spells, bard songs) aren't there yet: everything shows.
 // Not done: being hit standing us up, the hit's sounds, a tap's amount (target type 13), HitBySpell
-// (our buffs: flag 4), the fishing line (spell 0xffff), and the spells.eff effects (spells without a
-// SpellsNew.eff one).
+// (our buffs: flag 4) and the fishing line (spell 0xffff).
 
 #include "spell_effects.h"
 #include "zone_session.h"

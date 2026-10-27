@@ -187,6 +187,12 @@ void ZoneView::Load()
 	std::string effects_error;
 	if (m_error.empty() && !m_spell_effects.Load(m_eq_dir, effects_error))
 		fprintf(stderr, "[zone view] spell effects: %s\n", effects_error.c_str());
+	m_spell_effects.SetFloor([this](const render::Vec3 &at) {
+		float floor_z;
+		return m_zone.FloorBelow(at + render::Vec3{0, 0, 1}, 1000, floor_z) ? floor_z : at.z;
+	});
+	m_spell_effects.SetSound(
+		[this](const SpellEffects::Request &request, uint16_t on, int slot) { PlaySpellSound(request, on, slot); });
 	// The weather's sprites, I_RAINRINGSPRITE and I_SNOWFLAKESPRITE (user method 0x17).
 	if (m_equipment.Open(m_eq_dir + "/gequip.s3d", true)) {
 		m_effect_textures.AddArchive(&m_equipment);
@@ -1056,8 +1062,30 @@ std::shared_ptr<render::CharacterModel> ZoneView::SpawnModel(const ZoneSpawn &sp
 
 void ZoneView::StartSpellEffect(const SpellEffects::Request &request)
 {
-	if (m_loaded && m_error.empty())
-		m_spell_effects.Start(request, [this](uint16_t id, SpellEffects::Actor &actor) { return FindActor(id, actor); });
+	if (!m_loaded || !m_error.empty())
+		return;
+	m_spell_effects.SetNewEffects(m_debug_draw.new_spell_effects);
+	m_spell_effects.Start(request, [this](uint16_t id, SpellEffects::Actor &actor) { return FindActor(id, actor); });
+}
+
+void ZoneView::PlaySpellSound(const SpellEffects::Request &request, uint16_t on, int slot)
+{
+	// EQPlayer::PlaySoundA from the spawn's center: ours on our own channel.
+	ActorSound::Actor actor;
+	if (on == m_my_id)
+		actor = MyActor();
+	else {
+		auto it = m_actors.find(on);
+		if (it == m_actors.end())
+			return;
+		actor.height = it->second.size;
+		actor.center = it->second.Feet() + render::Vec3{0, 0, it->second.center_height};
+	}
+	if (m_sound)
+		m_sound->PlayActorSound(slot, {actor.center.x, actor.center.y, actor.center.z}, actor.height, actor.ours);
+	if (m_spell_sounds.size() >= 8)
+		m_spell_sounds.erase(m_spell_sounds.begin());
+	m_spell_sounds.push_back({m_spell_effects.Now(), slot, request.spell, request.stage, on});
 }
 
 bool ZoneView::FindActor(uint16_t id, SpellEffects::Actor &actor) const
@@ -1144,6 +1172,19 @@ void ZoneView::PlaceCarriedLights(uint64_t now_ms)
 		add(m_my_light, m_feet, m_height / 5 * 3.125f, m_heading, m_movement.BodyEnvironment());
 	for (const auto &[id, view] : m_actors)
 		add(view.light, view.Feet(), view.center_height, view.actor.Heading(), view.actor.BodyEnvironment());
+	// The spells' sprite flashes: EQEffect's CreateLight (type 6, the lglantern's color, out to 250)
+	// where the sprite is, while it lasts.
+	std::vector<render::Vec3> flashes;
+	m_spell_effects.FlashLights(flashes);
+	for (const render::Vec3 &at : flashes) {
+		render::PointLight light;
+		float radius;
+		render::CarriedLight(6, m_info.short_name.c_str(), now_ms, light.color, radius);
+		light.radius = std::min(250.0f, render::MaxLightRadius(m_info.short_name.c_str()));
+		light.position = at;
+		m_carried_lights.push_back(light);
+		m_carried_light_regions.push_back(m_zone.Regions().RegionsTouched(light.position, light.radius));
+	}
 }
 
 ZoneView::Hearing ZoneView::SoundListener(bool surroundings) const

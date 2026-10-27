@@ -803,6 +803,16 @@ namespace audio
 			m_wave_log("wave " + std::to_string(slot) + " " + asset->name + (instance ? "" : " (no voice, or out of earshot)"));
 	}
 
+	std::string EqSound::WaveFile(int slot) const
+	{
+		if (slot < 0 || slot >= WaveSlots)
+			return {};
+		if (!m_waves[slot].name.empty())
+			return m_waves[slot].name;
+		auto known = m_actor_waves.find(slot);
+		return known != m_actor_waves.end() ? known->second : std::string();
+	}
+
 	bool EqSound::WavePlaying(int slot)
 	{
 		auto asset = slot >= 0 && slot < WaveSlots ? m_waves[slot].asset : nullptr;
