@@ -17,8 +17,10 @@ namespace render
 			return shift;
 		}
 
-		// Nearest-neighbour resample to a power of two, then box-filtered mips down to 1x1.
-		std::unique_ptr<Texture> Build(const Image &image)
+		// Nearest-neighbour resample to a power of two, then box-filtered mips down to 1x1: the color
+		// averaged over the opaque texels (masked edges don't darken), or with `soft` weighted by
+		// alpha (blended sprites, whose edges are mostly under half).
+		std::unique_ptr<Texture> Build(const Image &image, bool soft = false)
 		{
 			auto texture = std::make_unique<Texture>();
 			texture->width_shift = CeilShift(image.width);
@@ -49,7 +51,14 @@ namespace render
 								uint32_t p = src[static_cast<size_t>(y * (h > 1 ? 2 : 1) + dy) * w + x * (w > 1 ? 2 : 1) + dx];
 								++samples;
 								sum[3] += p >> 24;
-								if ((p >> 24) >= 0x80) {
+								if (soft) {
+									uint32_t a = p >> 24;
+									opaque += a;
+									sum[0] += ((p >> 16) & 0xff) * a;
+									sum[1] += ((p >> 8) & 0xff) * a;
+									sum[2] += (p & 0xff) * a;
+								}
+								else if ((p >> 24) >= 0x80) {
 									// Average color over the opaque texels so masked edges don't darken.
 									++opaque;
 									sum[0] += (p >> 16) & 0xff;
@@ -69,6 +78,11 @@ namespace render
 			}
 			return texture;
 		}
+	}
+
+	std::unique_ptr<Texture> MakeTexture(const Image &image, bool soft)
+	{
+		return Build(image, soft);
 	}
 
 	const Texture *TextureCache::Get(const std::string &name, bool masked)

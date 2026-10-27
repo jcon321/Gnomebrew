@@ -29,7 +29,8 @@ core/       portable: RDP session, login/world protocol, packet logs (record/rep
             character creation rules
 console/    eqclient
 audio/      portable sound: the mix (WAV, MP3, positional voices), XMI music and its synths, the client's sound manager
-render/     portable 3D: renderer interface, software rasterizer, textures, zone scenes, sky, skeletons, race models
+render/     portable 3D: renderer interface, software rasterizer, textures, zone scenes, sky, skeletons, race models,
+            particle clouds and the spell particle system
 frontend/   the front end: canvas, widgets, screens, SIDL UI engine, character select scene, character creation (portable)
             + win32_main.cpp / win32_text.cpp / win32_d3d11.cpp / win32_audio.cpp (Windows host, Direct3D 11
             renderer, waveOut and MIDI out)

@@ -72,6 +72,13 @@ namespace render
 		float Scale() const { return m_scale; } // model units -> world
 		size_t TriangleCount() const;
 
+		// A bone by its name ("HUMCH_DAG", any case); -1 when the model has none.
+		int FindBone(const std::string &name) const;
+		// Where bones are (world space, turned the way they point) at time_ms of an animation, as
+		// PlaceEmitters places its emitters; -1 is the model's root.
+		void PlaceBones(const Transform &placement, uint64_t time_ms, const std::string &animation, bool loop,
+			const std::vector<int> &bones, std::vector<Transform> &out) const;
+
 		// A held item's particle cloud (a torch's flame and smoke): on the model's bone the item
 		// hangs from, `local` its own bone's place there (IT36_P1_DAG in the item's base pose).
 		struct Emitter

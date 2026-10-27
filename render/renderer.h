@@ -42,6 +42,10 @@ namespace render
 		uint8_t opacity = 255;
 		bool two_sided = false;
 		bool fog = true; // false: drawn clear of the fog (eqgfx's particle points and lines)
+		// Translucent and additive only: the texture's alpha blends too, as eqgfx's particle system
+		// draws (SRCALPHA over INVSRCALPHA, or ONE for additive), and texels whose alpha comes to
+		// under 8 are dropped (its alpha test).
+		bool texel_alpha = false;
 	};
 
 	struct Vertex

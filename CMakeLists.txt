@@ -88,6 +88,7 @@ add_library(eqrender STATIC
     render/actor_tags.cpp
     render/sky.cpp
     render/particles.cpp
+    render/spell_particles.cpp
 )
 target_include_directories(eqrender PUBLIC render)
 target_link_libraries(eqrender PUBLIC eqcore Threads::Threads)
@@ -118,6 +119,8 @@ add_library(eqfrontend STATIC
     frontend/game_values.cpp
     frontend/game_windows.cpp
     frontend/spell_book.cpp
+    frontend/spell_casting.cpp
+    frontend/spell_effects.cpp
     frontend/item_display.cpp
     frontend/name_sprites.cpp
     frontend/settings_file.cpp

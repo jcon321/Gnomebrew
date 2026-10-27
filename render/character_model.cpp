@@ -5,6 +5,7 @@
 #include "skeleton.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <map>
@@ -597,6 +598,31 @@ namespace render
 			return m_head_z;
 		std::vector<Transform> bones = PoseSkeleton(m_skeleton, &it->second, time_ms, loop);
 		return static_cast<size_t>(m_head_bone) < bones.size() ? bones[m_head_bone].translation.z * m_scale : m_head_z;
+	}
+
+	int CharacterModel::FindBone(const std::string &name) const
+	{
+		for (size_t i = 0; i < m_skeleton.bones.size(); ++i) {
+			const std::string &bone = m_skeleton.bones[i].name;
+			if (bone.size() == name.size() &&
+				std::equal(bone.begin(), bone.end(), name.begin(), [](char a, char b) { return std::toupper(a) == std::toupper(b); }))
+				return static_cast<int>(i);
+		}
+		return -1;
+	}
+
+	void CharacterModel::PlaceBones(const Transform &placement, uint64_t time_ms, const std::string &animation, bool loop,
+		const std::vector<int> &bones, std::vector<Transform> &out) const
+	{
+		out.clear();
+		auto it = m_animations->find(animation);
+		if (it == m_animations->end())
+			it = m_animations->find("P01");
+		std::vector<Transform> posed = PoseSkeleton(m_skeleton, it == m_animations->end() ? nullptr : &it->second, time_ms, loop);
+		Transform scaled = placement;
+		scaled.scale *= m_scale;
+		for (int bone : bones)
+			out.push_back(scaled * (bone >= 0 && static_cast<size_t>(bone) < posed.size() ? posed[bone] : Transform{}));
 	}
 
 	void CharacterModel::PlaceEmitters(const Transform &placement, uint64_t time_ms, const std::string &animation, bool loop,

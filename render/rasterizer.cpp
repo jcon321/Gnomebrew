@@ -261,6 +261,7 @@ namespace render
 		tri.texture = material.texture;
 		tri.blend = material.blend;
 		tri.opacity = material.opacity;
+		tri.texel_alpha = material.texel_alpha && material.texture && (material.blend == Blend::Translucent || material.blend == Blend::Additive);
 		tri.row_start = row_start;
 		tri.row_end = row_end;
 		tri.depth = far_depth;
@@ -297,6 +298,15 @@ namespace render
 			g += ((static_cast<int>((src >> 8) & 0xff) - g) * alpha) >> 8;
 			b += ((static_cast<int>(src & 0xff) - b) * alpha) >> 8;
 			return (static_cast<uint32_t>(r) << 16) | (static_cast<uint32_t>(g) << 8) | static_cast<uint32_t>(b);
+		}
+
+		// DrawSpan's opacity (1..256) with this set: Material::texel_alpha.
+		constexpr int TexelAlpha = 0x1000;
+
+		inline uint32_t Scale(uint32_t c, int f) // f 0..256
+		{
+			uint32_t r = (((c >> 16) & 0xff) * f) >> 8, g = (((c >> 8) & 0xff) * f) >> 8, b = ((c & 0xff) * f) >> 8;
+			return (r << 16) | (g << 8) | b;
 		}
 
 		inline uint32_t Add(uint32_t src, uint32_t dst)
@@ -359,6 +369,15 @@ namespace render
 						if (Mode == Blend::Masked && (texel >> 24) < 0x80)
 							goto next;
 						c = Shade(texel, static_cast<int>(s.r) + 1, static_cast<int>(s.g) + 1, static_cast<int>(s.b) + 1);
+						if ((Mode == Blend::Translucent || Mode == Blend::Additive) && (opacity & TexelAlpha)) {
+							// Material::texel_alpha: the texel's alpha times the opacity, tested against 8.
+							int alpha = static_cast<int>((texel >> 24) * (opacity & ~TexelAlpha)) >> 8;
+							if (alpha < 8)
+								goto next;
+							c = Fog(c, fog_color, static_cast<int>(s.fog * 256));
+							pixels[i] = Mode == Blend::Translucent ? Over(c, pixels[i], alpha + 1) : Add(Scale(c, alpha + 1), pixels[i]);
+							goto next;
+						}
 					}
 					else
 						c = (static_cast<uint32_t>(s.r) << 16) | (static_cast<uint32_t>(s.g) << 8) | static_cast<uint32_t>(s.b);
@@ -510,7 +529,7 @@ namespace render
 				uint32_t *row = pixels + static_cast<size_t>(y) * stride + xs;
 				float *depth = m_depth.data() + static_cast<size_t>(y) * m_width + xs;
 				PickSpan(t.blend, texture != nullptr, filtered, t.background)(s, xe - xs, row, depth, texels, level, width_mask, height_mask, row_shift, bias_u, bias_v,
-					m_camera.fog_color, t.opacity + 1);
+					m_camera.fog_color, (t.opacity + 1) | (t.texel_alpha ? TexelAlpha : 0));
 			}
 		}
 	}

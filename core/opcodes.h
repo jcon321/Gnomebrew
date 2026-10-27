@@ -104,6 +104,13 @@ namespace ZoneOp
 	constexpr uint16_t MemorizeSpell = 0x4182;
 	constexpr uint16_t SwapSpell = 0x41ce;   // SwapSpell_Struct {u32 from, to}: two book slots; the zone sends it back
 	constexpr uint16_t DeleteSpell = 0x424a; // DeleteSpell_Struct {i16 slot, u16, u8 success, u8[3]}: both ways
+	constexpr uint16_t BeginCast = 0x40a9;   // BeginCast_Struct {u16 caster, u16 spell, u32 cast time ms}: CEverQuest_StartCasting
+	// Action_Struct (36 bytes): {u16 target, u16 source, u16 level, u16, i32 instrument_mod, float force,
+	// heading, pitch, u8 type (231 a spell), ..., u16 spell @30, u8, u8 flags @33 (4: it landed)}: EQPlayer::IWasHit
+	constexpr uint16_t Action = 0x4046;
+	// Damage_Struct (24 bytes): {u16 target, u16 source, u8 type @4 (231 a spell), u8, i16 spell @6,
+	// i32 damage @8, float force, heading, pitch}: msg_successful_hit's messages
+	constexpr uint16_t Damage = 0x4058;
 }
 
 struct OpcodeEntry
@@ -206,5 +213,8 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::MemorizeSpell, "OP_MemorizeSpell"},
 	{ZoneOp::SwapSpell, "OP_SwapSpell"},
 	{ZoneOp::DeleteSpell, "OP_DeleteSpell"},
+	{ZoneOp::BeginCast, "OP_BeginCast"},
+	{ZoneOp::Action, "OP_Action"},
+	{ZoneOp::Damage, "OP_Damage"},
 	{0, nullptr},
 };

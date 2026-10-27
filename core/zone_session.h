@@ -130,6 +130,21 @@ struct ZoneSpawn
 	std::string DisplayName() const; // "a rat", like the client's CleanName
 };
 
+// A spell's packets as the zone sends them, about anyone: OP_BeginCast (the caster starts),
+// OP_Action of type 231 (it goes off: the caster's animation and its effect on the target; sent
+// again with flag 4 to the caster and the target when it lands) and OP_Damage (what the chat says
+// of it, and the target's animation; melee hits too, any other type).
+struct ZoneCast
+{
+	uint16_t caster = 0, target = 0; // BeginCast has no target
+	int spell = 0;
+	int32_t cast_ms = 0;         // BeginCast: how long it takes
+	int32_t damage = 0;          // Damage
+	int32_t instrument_mod = 10; // Action: a bard's song's
+	uint8_t type = 0;            // Action and Damage: 231 a spell
+	uint8_t flags = 0;           // Action: 4 it landed
+};
+
 // The guilds' names by id: OP_GuildsList (GuildsList_Struct: 4 bytes, then 96-byte entries
 // {u32 id, char name[64], ..., u16 exists @72}), from the world as we enter it and from the zone
 // when they change.
@@ -255,6 +270,9 @@ public:
 			SpellBarUnlocked, // the zone turned a scribe or memorize down (its -1)
 			SpellsSwapped,  // id and value: the two book slots
 			SpellDeleted,   // id: the book slot; value: 1 done, 0 not
+			CastBegan,      // cast: OP_BeginCast
+			SpellAction,    // cast: OP_Action
+			Damaged,        // cast: OP_Damage
 			LoggedOut,    // camp finished; the zone closes the connection
 			ZoneApproved, // value: the zone we're going to; OP_DeleteSpawn is sent
 			ZoneDenied,   // value: the answer (ZoningMessage: 0 down, -1 not ready, -7 not experienced...)
@@ -269,6 +287,7 @@ public:
 		int32_t value = 0;
 		std::string text;
 		ZoneChat chat;
+		ZoneCast cast;
 	};
 
 	ZoneSession();
@@ -331,6 +350,10 @@ public:
 	bool SwapSpells(int from, int to);  // OP_SwapSpell: two book slots; done when the zone answers
 	bool DeleteSpell(int slot);         // OP_DeleteSpell: a book slot; done when the zone answers
 	void Close();
+
+	// One of the client's own one-shot animations on a spawn (a spell's caster and target, as
+	// PlayAnimationTrack plays them), the way OP_Animation's are played.
+	void PlayAnimation(uint16_t spawn, int animation, float speed = 1);
 
 	State GetState() const { return m_state; }
 	const ZoneProfile &Profile() const { return m_profile; }

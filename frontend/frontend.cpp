@@ -4,6 +4,7 @@
 #include "game_windows.h"
 #include "ini_file.h"
 #include "inventory.h"
+#include "spell_casting.h"
 #include "zone_names.h"
 
 #include <algorithm>
@@ -653,6 +654,7 @@ void FrontEnd::Update(uint64_t now_ms)
 			m_zone_view->SetPlayer(PlayerAppearance(m_zone), me.walk_speed, me.run_speed);
 		}
 		m_zone_view->SetMyLight(me.light);
+		m_zone_view->SetMyLevel(m_zone.Profile().level);
 		m_zone_view->SetDebugDraw(m_debug.Drawing());
 		MoveControls controls = ZoneControls();
 		// Sitting nothing moves us, a jump included (ProcessControls takes the keys only standing or
@@ -1751,6 +1753,26 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 		case Type::SpellDeleted:
 			m_spell_book.ZoneEvent(static_cast<int>(event.type), event.id, event.value, m_now_ms);
 			break;
+		case Type::CastBegan:
+		case Type::SpellAction:
+		case Type::Damaged: {
+			std::vector<SpellCasting::Line> lines;
+			std::vector<SpellCasting::Animation> animations;
+			std::vector<SpellEffects::Request> effects;
+			SpellCasting(m_ui.spells, m_ui.eqstr).Handle(event, m_zone, lines, animations, effects);
+			for (const SpellCasting::Line &line : lines)
+				ChatOut(line.text, line.type);
+			for (const SpellCasting::Animation &animation : animations) {
+				if (animation.spawn != m_zone.MySpawnId())
+					m_zone.PlayAnimation(animation.spawn, animation.id);
+				else if (m_zone_view)
+					m_zone_view->PlayAnimation(animation.id);
+			}
+			if (m_zone_view)
+				for (const SpellEffects::Request &effect : effects)
+					m_zone_view->StartSpellEffect(effect);
+			break;
+		}
 		case Type::SkillUp: // msg_skillimprove
 			ChatOut(FormatEqString(m_ui.eqstr, 12091, "You have become better at %1! (%2)",
 				{SkillName(m_ui.eqstr, event.id), std::to_string(event.value)}), ChatType::Skills);

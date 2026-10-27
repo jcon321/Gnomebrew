@@ -90,6 +90,14 @@ namespace
 	};
 	WeatherOption g_weather;
 
+	// --spell-effect STAGE EFFECT CASTER TARGET MS [CAST_MS ANIM]: a SpellsNew.eff record's stage on
+	// the --npc spawns (1 on), run MS in 16 ms frames.
+	struct EffectOption
+	{
+		int stage = -1, effect = 0, caster = 0, target = 0, ms = 0, cast_ms = 0, anim = 0;
+	};
+	EffectOption g_effect;
+
 	void WriteWav(const std::string &path, const std::vector<float> &stereo)
 	{
 		FILE *file = fopen(path.c_str(), "wb");
@@ -285,6 +293,30 @@ namespace
 					counts.ground, counts.water);
 			}
 		}
+		if (g_effect.stage >= 0) {
+			view.UpdateSpawns(spawns, 0, spawn_clock);
+			view.Render(canvas, spawn_clock);
+			SpellEffects::Request request;
+			request.stage = g_effect.stage;
+			request.effect = g_effect.effect;
+			request.caster = static_cast<uint16_t>(g_effect.caster);
+			request.target = static_cast<uint16_t>(g_effect.target);
+			request.duration_ms = g_effect.cast_ms;
+			request.casting_anim = g_effect.anim;
+			view.StartSpellEffect(request);
+			double effect_total = 0;
+			int effect_frames = 0;
+			for (int ms = 0; ms <= g_effect.ms; ms += 16, ++effect_frames) {
+				spawn_clock += 16;
+				view.UpdateSpawns(spawns, 0, spawn_clock);
+				auto start = std::chrono::steady_clock::now();
+				view.Render(canvas, spawn_clock);
+				effect_total += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+				if (ms % 500 < 16)
+					printf("  %5d ms: %zu emitters, %zu particles\n", ms, view.Effects().EmitterCount(), view.Effects().ParticleCount());
+			}
+			printf("%.1f ms per frame with the effect\n", effect_total / std::max(1, effect_frames));
+		}
 		double total = 0;
 		for (int f = 0; f < frames; ++f) {
 			view.UpdateSpawns(spawns, 0, spawn_clock + f);
@@ -401,6 +433,17 @@ int main(int argc, char **argv)
 			debug_draw.no_culling = list.find("noculling") != std::string::npos;
 			debug_draw.no_clip = list.find("noclip") != std::string::npos;
 			debug_draw.no_weather = list.find("noweather") != std::string::npos;
+		}
+		else if (arg == "--spell-effect" && i + 5 < argc) {
+			g_effect.stage = atoi(argv[++i]);
+			g_effect.effect = atoi(argv[++i]);
+			g_effect.caster = atoi(argv[++i]);
+			g_effect.target = atoi(argv[++i]);
+			g_effect.ms = atoi(argv[++i]);
+			if (i + 2 < argc && argv[i + 1][0] != '-') {
+				g_effect.cast_ms = atoi(argv[++i]);
+				g_effect.anim = atoi(argv[++i]);
+			}
 		}
 		else if (arg == "--weather" && i + 2 < argc) {
 			g_weather.type = std::string(argv[++i]) == "snow" ? 1 : 0;

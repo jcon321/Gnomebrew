@@ -246,6 +246,16 @@ namespace
 	}
 }
 
+void ZoneSession::PlayAnimation(uint16_t spawn, int animation, float speed)
+{
+	auto it = m_spawns.find(spawn);
+	if (it == m_spawns.end())
+		return;
+	it->second.action = animation;
+	it->second.action_speed = speed;
+	++it->second.action_serial;
+}
+
 std::string ZoneSpawn::DisplayName() const
 {
 	// The client's CleanName (CEverQuest::trimName): underscores become spaces, and the digits
@@ -1330,6 +1340,44 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 			it->second.action_speed = Read<float>(data, 8);
 			++it->second.action_serial;
 		}
+		break;
+	}
+	case ZoneOp::BeginCast: {
+		if (data.size() < 8)
+			break;
+		Event e;
+		e.type = Event::Type::CastBegan;
+		e.cast.caster = Read<uint16_t>(data, 0);
+		e.cast.spell = Read<uint16_t>(data, 2);
+		e.cast.cast_ms = Read<int32_t>(data, 4);
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::Action: {
+		if (data.size() < 34)
+			break;
+		Event e;
+		e.type = Event::Type::SpellAction;
+		e.cast.target = Read<uint16_t>(data, 0);
+		e.cast.caster = Read<uint16_t>(data, 2);
+		e.cast.instrument_mod = Read<int32_t>(data, 8);
+		e.cast.type = data[24];
+		e.cast.spell = Read<int16_t>(data, 30);
+		e.cast.flags = data[33];
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::Damage: {
+		if (data.size() < 12)
+			break;
+		Event e;
+		e.type = Event::Type::Damaged;
+		e.cast.target = Read<uint16_t>(data, 0);
+		e.cast.caster = Read<uint16_t>(data, 2);
+		e.cast.type = data[4];
+		e.cast.spell = Read<int16_t>(data, 6);
+		e.cast.damage = Read<int32_t>(data, 8);
+		events.push_back(e);
 		break;
 	}
 	case ZoneOp::Death: {

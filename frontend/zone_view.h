@@ -18,6 +18,7 @@
 #include "rasterizer.h"
 #include "sky.h"
 #include "spawn_actor.h"
+#include "spell_effects.h"
 #include "weather.h"
 #include "zone_doors.h"
 #include "zone_scene.h"
@@ -73,6 +74,10 @@ public:
 	// and up with our head.
 	void SetSitting(bool sitting);
 	bool StandingUp() const { return m_standing_up; } // getting up: P02 backwards hasn't finished
+	// One of the client's own one-shot animations on us (a spell's casting or its hit,
+	// PlayAnimationTrack's id), played once while we stand or move on the ground; a jump, a fall,
+	// the water, crouching or sitting cut it short.
+	void PlayAnimation(int id);
 	float EyeDrop() const { return m_eye_drop; }
 	ZoneMovement Movement() const; // for OP_ClientUpdate
 
@@ -89,6 +94,11 @@ public:
 	void UpdateSpawns(const std::map<uint16_t, ZoneSpawn> &spawns, uint16_t my_id, uint64_t now_ms);
 	// The light we carry (our ZoneSpawn::light; we're not among the spawns).
 	void SetMyLight(uint8_t light) { m_my_light = light; }
+	void SetMyLevel(uint8_t level) { m_my_level = level; } // which of a spell effect's emitters our casts get
+	// A spell's effect (DoSpellEffect's stage) on the spawns it names, our own id for us; once
+	// loaded. They follow the spawns from then on, drawn with the rest.
+	void StartSpellEffect(const SpellEffects::Request &request);
+	const SpellEffects &Effects() const { return m_spell_effects; }
 	struct NameTag
 	{
 		uint16_t id;  // 0: us
@@ -292,6 +302,7 @@ private:
 	float m_animation_rate = 1;
 	DebugDraw m_debug_draw;
 	bool m_animation_reversed = false;
+	std::string m_action; // PlayAnimation's, while it plays
 	bool m_sitting = false, m_standing_up = false;
 	float m_eye_drop = 0; // how far below standing our head is now (sitting down, getting up)
 
@@ -313,6 +324,9 @@ private:
 		ActorSound sound;
 		render::HeldParticles held; // a torch's flame and smoke
 		render::Environment sound_feet = render::Environment::Dry; // the feet's, as the sound last saw them
+		uint16_t race = 0;   // for the spell effects
+		bool player = false;
+		uint8_t level = 1;
 		const render::Vec3 &Feet() const { return actor.Feet(); }
 	};
 	std::map<uint16_t, SpawnView> m_actors;
@@ -327,6 +341,13 @@ private:
 	bool m_infravision_glow = false;
 	uint64_t m_vision_ms = 0;
 	uint8_t m_my_light = 0; // our ZoneSpawn::light
+	uint16_t m_my_id = 0;
+	uint8_t m_my_level = 1;
+	// Our model as Render last posed it, for the spell effects on us.
+	uint64_t m_player_time_ms = 0;
+	bool m_player_loops = true;
+	SpellEffects m_spell_effects;
+	bool FindActor(uint16_t id, SpellEffects::Actor &actor) const;
 	std::vector<render::PointLight> m_carried_lights;
 	std::vector<std::vector<int>> m_carried_light_regions;
 	std::vector<render::PointLight> m_lights_for; // LightsFor's

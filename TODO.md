@@ -58,7 +58,7 @@ no rules of its own.
      Still to do:
      - casting: a gem's left click (EQ_Character::CastSpell, OP_CastSpell), the casting bar,
        fizzles, interrupts, recovery and recast after a cast (the gems already dim by their
-       RecastTimeout), the casting animations, /cast, and a bard's songs;
+       RecastTimeout), /cast, and a bard's songs (what the zone sends back already shows: 12);
      - the spell info display: alt+click (or the right button held) on a book slot or a gem shows
        the spell in the item display (CItemDisplayWnd::SetSpell @00425957);
      - spell hot buttons: a gem held onto the cursor (CCursorAttachment type 9) and the book button
@@ -121,9 +121,18 @@ no rules of its own.
    to its color. The client of this era had no target ring and no hover highlighting.
 11. **Ground spawns and dropped objects.** Handle `OP_GroundSpawn` so dropped items and forges
     appear.
-12. **Spell visuals.** Casting particles and effects from `spells.eff` and the spell-effect `.s3d`
-    files, triggered by animation and cast packets (OP_BeginCast, OP_Action). Needs casting (2's
-    spellbook items) for our own.
+12. **Spell visuals.** Done for anyone's casting as the zone shows it (`frontend/spell_casting.*`,
+    `frontend/spell_effects.*`, `render/spell_particles.*`): OP_BeginCast's "begins to cast a spell"
+    (CEverQuest_StartCasting), the caster's CastingAnim and the effect on the target from OP_Action
+    (EQPlayer::TriggerSpellEffect), the landing text and the target's TargetAnim from OP_Damage
+    (CEverQuest_ReportSuccessfulHit), and the Luclin particle effects (SpellsNew.eff stages 0 and 2,
+    spellsnew.edd emitters, eqgfx's CParticleSystem) on the caster's and target's bones. Still to
+    do: the older `spells.eff` effects (sprites and particle clouds) of the spells that have no
+    SpellsNew.eff one, the missiles (stage 1, EQMissile: bolts), the stages' sounds, the options'
+    spell particle density and opacity (fixed at eqgame's 1 and 1), the chat filters for PC and NPC
+    spells and bard songs, melee's OP_Damage (hit messages, the D02 hit and its sounds), being hit
+    standing us up, and OP 0x4265 (destroy a cast's emitters; this server never sends it). Needs
+    casting (2's spellbook items) for our own.
 13. **The other camera modes F9 cycles through:** overhead and the two user-set cameras, plus zoom
     and field of view.
 14. **Graphics options:** fullscreen or windowed, resolution changes, gamma, anisotropic filtering,

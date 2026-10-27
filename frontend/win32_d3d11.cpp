@@ -46,7 +46,7 @@ cbuffer Batch : register(b1)
 {
 	float4 light_scale; // rgb, and the material's opacity in a
 	float4 light_add;   // rgb
-	float4 dynamic_lights; // x: the sun on, y: the carried lights' mask, z: not fogged
+	float4 dynamic_lights; // x: the sun on, y: the carried lights' mask, z: not fogged, w: texel alpha (1 translucent, 2 additive)
 	float4 light_base;     // rgb: added to every vertex
 };
 
@@ -67,6 +67,7 @@ struct PixelIn
 	float2 uv : TEXCOORD0;
 	float4 color : COLOR0;
 	float depth : TEXCOORD1;
+	float texel_alpha : TEXCOORD2; // Material::texel_alpha: 1 translucent, 2 additive
 };
 
 PixelIn SceneVS(VertexIn input)
@@ -92,6 +93,7 @@ PixelIn SceneVS(VertexIn input)
 	}
 	output.color = float4(min(shade, 1), light_scale.a);
 	output.depth = dynamic_lights.z > 0 ? -1e6 : z; // clear of the fog's start
+	output.texel_alpha = dynamic_lights.w;
 	return output;
 }
 
@@ -104,7 +106,16 @@ float4 Shade(PixelIn input, float4 texel)
 
 float4 ScenePS(PixelIn input) : SV_Target
 {
-	return Shade(input, image.Sample(linear_wrap, input.uv));
+	float4 texel = image.Sample(linear_wrap, input.uv);
+	float4 color = Shade(input, texel);
+	if (input.texel_alpha > 0) {
+		// The texel's alpha blends too, and under 8 it's dropped (eqgfx's particle system).
+		color.a *= texel.a;
+		clip(color.a - 8.0 / 255);
+		if (input.texel_alpha > 1.5)
+			color.rgb *= color.a; // additive: ONE, ONE
+	}
+	return color;
 }
 
 float4 MaskedPS(PixelIn input) : SV_Target
@@ -482,9 +493,13 @@ namespace
 		uint32_t count = static_cast<uint32_t>(m_indices.size()) - first;
 		if (count == 0)
 			return;
+		float texel_alpha = !material.texel_alpha || !material.texture ? 0.0f
+		                    : material.blend == render::Blend::Translucent ? 1.0f
+		                    : material.blend == render::Blend::Additive    ? 2.0f
+		                                                                   : 0.0f;
 		Light light = {m_light_scale.x, m_light_scale.y, m_light_scale.z, material.opacity / 255.0f,
 			m_light_add.x / 255.0f, m_light_add.y / 255.0f, m_light_add.z / 255.0f, 0, m_dynamic_sun ? 1.0f : 0.0f,
-			static_cast<float>(m_point_mask), material.fog ? 0.0f : 1.0f, 0, m_light_base.x / 255.0f, m_light_base.y / 255.0f,
+			static_cast<float>(m_point_mask), material.fog ? 0.0f : 1.0f, texel_alpha, m_light_base.x / 255.0f, m_light_base.y / 255.0f,
 			m_light_base.z / 255.0f, 0};
 		m_batches.push_back(
 			{first, count, m.TextureView(material.texture), material.blend, material.two_sided, m_background, light, pool, buffer});

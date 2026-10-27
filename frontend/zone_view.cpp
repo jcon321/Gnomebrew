@@ -184,6 +184,9 @@ void ZoneView::Load()
 		fprintf(stderr, "[zone view] %s\n", error.c_str()); // the zone still draws, over the fog color
 	if (m_error.empty())
 		m_models.AddZone(m_eq_dir, m_info.short_name);
+	std::string effects_error;
+	if (m_error.empty() && !m_spell_effects.Load(m_eq_dir, effects_error))
+		fprintf(stderr, "[zone view] spell effects: %s\n", effects_error.c_str());
 	// The weather's sprites, I_RAINRINGSPRITE and I_SNOWFLAKESPRITE (user method 0x17).
 	if (m_equipment.Open(m_eq_dir + "/gequip.s3d", true)) {
 		m_effect_textures.AddArchive(&m_equipment);
@@ -437,8 +440,34 @@ void ZoneView::SetSitting(bool sitting)
 	m_standing_up = !sitting && m_model && m_model->HasAnimation("P02");
 }
 
+void ZoneView::PlayAnimation(int id)
+{
+	if (!m_model || !m_appearance)
+		return;
+	std::string code = render::AnimationCode(id);
+	if (!m_model->HasAnimation(code))
+		code = render::AnimationCode(render::FallbackAnimation(id, m_appearance->race));
+	if (code.empty() || !m_model->HasAnimation(code))
+		return;
+	m_action = code;
+	m_animation = code;
+	m_animation_ms = 0;
+}
+
 void ZoneView::ChooseAnimation(float ms)
 {
+	if (!m_action.empty()) {
+		bool cut = !m_movement.OnGround() || m_movement.Swimming() || m_movement.Crouching() || m_sitting || m_standing_up;
+		if (!cut && m_model && m_animation == m_action && m_animation_ms + ms < m_model->AnimationMs(m_action)) {
+			m_animation_reversed = false;
+			m_animation_rate = 1;
+			m_animation_ms += ms;
+			m_eye_drop = 0;
+			return;
+		}
+		m_action.clear(); // over, or cut short: the usual pick from here
+	}
+
 	// What the character is doing picks the animation, as EQPlayer's animation tracks do:
 	// L01 walk (backwards for back), L02 run, L03/L04 jump running/standing, L05 falling, L08
 	// crouching (a standing jump winding up), P01 idle.
@@ -738,10 +767,7 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 	start = Clock::now();
 	// Our own model isn't drawn in first person, or with the camera pushed into our head.
 	m_model_shown = m_model && m_view == CameraView::Chase && distance >= 1.5f;
-	if (m_model_shown) {
-		render::Transform placement;
-		placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(m_heading));
-		placement.translation = m_feet + render::Vec3{0, 0, m_model->OriginOverFeet()};
+	if (m_model) {
 		// The animation's own clock once we're moving (the preview tool never moves: real time).
 		uint64_t time = m_last_move_ms ? static_cast<uint64_t>(m_animation_ms) : now_ms;
 		if (m_animation_reversed) {
@@ -749,9 +775,17 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 			if (length > 0)
 				time = length - 1 - time % length;
 		}
+		m_player_time_ms = time;
 		// Jumps, falls and the crouch stop at the end.
-		bool held = m_animation == "L03" || m_animation == "L04" || m_animation == "L05" || m_animation == "L08" ||
-		            m_animation == "P02";
+		m_player_loops = !(m_animation == "L03" || m_animation == "L04" || m_animation == "L05" || m_animation == "L08" ||
+		                   m_animation == "P02");
+	}
+	if (m_model_shown) {
+		render::Transform placement;
+		placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(m_heading));
+		placement.translation = m_feet + render::Vec3{0, 0, m_model->OriginOverFeet()};
+		uint64_t time = m_player_time_ms;
+		bool held = !m_player_loops;
 		m_model->Draw(*m_renderer, placement, ModelLightingAt(m_feet + render::Vec3{0, 0, m_height / 5 * 3.125f}), time,
 			m_animation, !held);
 		m_held.Draw(*m_renderer, *m_model, placement, time, m_animation, !held, now_ms, light.ambient);
@@ -759,6 +793,9 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 	m_camera_position = camera.position;
 	DrawSpawns(now_ms);
 	DrawWeather(now_ms);
+	m_spell_effects.Update(now_ms, camera.position,
+		[this](uint16_t id, SpellEffects::Actor &actor) { return FindActor(id, actor); });
+	m_spell_effects.Draw(*m_renderer);
 	m_times.models = since(start);
 	start = Clock::now();
 	// The sky dims with the day period, toward a deep blue at night. RealRender_World draws none
@@ -1011,8 +1048,50 @@ std::shared_ptr<render::CharacterModel> ZoneView::SpawnModel(const ZoneSpawn &sp
 	return model;
 }
 
+void ZoneView::StartSpellEffect(const SpellEffects::Request &request)
+{
+	if (m_loaded && m_error.empty())
+		m_spell_effects.Start(request, [this](uint16_t id, SpellEffects::Actor &actor) { return FindActor(id, actor); });
+}
+
+bool ZoneView::FindActor(uint16_t id, SpellEffects::Actor &actor) const
+{
+	if (id == 0)
+		return false;
+	if (id == m_my_id) {
+		if (!m_model || !m_appearance)
+			return false;
+		actor.model = m_model.get();
+		actor.placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(m_heading));
+		actor.placement.translation = m_feet + render::Vec3{0, 0, m_model->OriginOverFeet()};
+		actor.time_ms = m_player_time_ms;
+		actor.animation = m_animation;
+		actor.loop = m_player_loops;
+		actor.race = m_appearance->race;
+		actor.player = true;
+		actor.level = m_my_level;
+		return true;
+	}
+	auto it = m_actors.find(id);
+	if (it == m_actors.end() || !it->second.model)
+		return false;
+	const SpawnView &view = it->second;
+	const render::CharacterModel &model = *view.model;
+	actor.model = &model;
+	actor.placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(view.actor.Heading()));
+	actor.placement.translation = view.Feet() + render::Vec3{0, 0, model.OriginOverFeet()};
+	actor.time_ms = view.actor.AnimationTime(model);
+	actor.animation = render::AnimationCode(view.actor.Animation());
+	actor.loop = view.actor.AnimationLoops();
+	actor.race = view.race;
+	actor.player = view.player;
+	actor.level = view.level;
+	return true;
+}
+
 void ZoneView::UpdateSpawns(const std::map<uint16_t, ZoneSpawn> &spawns, uint16_t my_id, uint64_t now_ms)
 {
+	m_my_id = my_id;
 	if (!m_loaded || !m_error.empty())
 		return;
 	if (m_loader.joinable())
@@ -1030,6 +1109,9 @@ void ZoneView::UpdateSpawns(const std::map<uint16_t, ZoneSpawn> &spawns, uint16_
 		if (id == my_id || id == 0)
 			continue;
 		SpawnView &view = m_actors[id];
+		view.race = spawn.race;
+		view.player = spawn.npc == 0;
+		view.level = spawn.level;
 		PoseSpawn(view, spawn, now_ms);
 		if (m_sound)
 			SpawnSounds(view, spawn, id, now_ms);

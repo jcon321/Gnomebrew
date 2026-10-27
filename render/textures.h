@@ -4,6 +4,7 @@
 // into power-of-two mip chains, plus the mapping from WLD render methods to
 // rasterizer materials.
 
+#include "bitmap.h"
 #include "pfs.h"
 #include "renderer.h"
 #include "wld.h"
@@ -31,6 +32,9 @@ namespace render
 		std::map<std::string, std::unique_ptr<Texture>> m_cache; // lowercase name + mask flag
 		std::vector<std::string> m_missing;
 	};
+
+	// A texture of a decoded picture (rows top first, as v = 0); `soft` as Build's.
+	std::unique_ptr<Texture> MakeTexture(const Image &image, bool soft = false);
 
 	struct MaterialInfo
 	{

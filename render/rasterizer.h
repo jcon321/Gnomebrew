@@ -50,6 +50,7 @@ namespace render
 			const Texture *texture;
 			Blend blend;
 			uint8_t opacity;
+			bool texel_alpha;
 			int row_start, row_end;
 			float depth; // farthest view depth, for sorting translucent triangles
 			bool background;
