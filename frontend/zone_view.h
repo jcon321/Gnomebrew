@@ -89,6 +89,8 @@ public:
 	// A left click on the window at (x, y), after Render: the door it's on, if any, and whether we
 	// can use it (EQSwitch::UseSwitch). `disarm` is our disarm traps skill; `id` and `skill` are for OP_ClickDoor.
 	ZoneDoors::Use ClickDoor(int x, int y, int16_t disarm, uint8_t &id, int16_t &skill) const;
+	// CastRay: nothing of the zone's between two points (render space); true until it's loaded.
+	bool CanSee(const render::Vec3 &from, const render::Vec3 &to) const;
 
 	// Everyone else, every frame: their models, carried on from their last update.
 	void UpdateSpawns(const std::map<uint16_t, ZoneSpawn> &spawns, uint16_t my_id, uint64_t now_ms);

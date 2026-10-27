@@ -14,7 +14,7 @@ namespace
 	enum class Command
 	{
 		None, Say, Tell, Group, Shout, Auction, Ooc, Guild, Reply, Emote, Hail, Location, Target, Camp,
-		ClearChat, ShowNames, Sit, Stand, Book,
+		ClearChat, ShowNames, Sit, Stand, Book, Cast,
 	};
 
 	struct CommandEntry
@@ -90,7 +90,7 @@ namespace
 		{"/hidecorpses", 0, Command::None}, {"/vrdelay", 0, Command::None}, {"/reverb", 0, Command::None},
 		{"/fastdrop", 0, Command::None}, {"/trackplayers", 0, Command::None}, {"/help", 0, Command::None},
 		{"/lfg", 0, Command::None}, {"/approval", 4, Command::None}, {"/sit", 0, Command::Sit},
-		{"/stand", 0, Command::Stand}, {"/book", 0, Command::Book}, {"/cast", 0, Command::None},
+		{"/stand", 0, Command::Stand}, {"/book", 0, Command::Book}, {"/cast", 0, Command::Cast},
 		{"/doability", 0, Command::None}, {"/whotarget", 0, Command::None}, {"/language", 0, Command::None},
 		{"/target", 0, Command::Target}, {"/camp", 0, Command::Camp}, {"/attack", 0, Command::None},
 		{"/invite", 0, Command::None}, {"/disband", 0, Command::None}, {"/note", 0, Command::None},
@@ -321,6 +321,15 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 			int page = std::atoi(args.c_str()) - 1;
 			m_spell_book.TurnToPage(page < 1 ? 0 : page % 2 != 0 ? page - 1 : page);
 		}
+		break;
+	}
+	case Command::Cast: {
+		// /cast (@004fd12c): a gem from 1 to 8, as a click on it (HandleSpellLeftClick).
+		int gem = std::atoi(args.c_str()) - 1;
+		if (gem < 0 || gem > 7)
+			ChatOut(format(13255, "Format: /cast 1 - 8", {}), ChatType::Default);
+		else
+			m_spell_book.GemLeftClick(gem, m_now_ms);
 		break;
 	}
 	case Command::ShowNames: {

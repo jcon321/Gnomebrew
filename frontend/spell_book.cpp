@@ -3,6 +3,7 @@
 #include "game_values.h"
 #include "game_windows.h"
 #include "inventory.h"
+#include "spell_cast.h"
 #include "spell_file.h"
 #include "window_manager.h"
 #include "zone_session.h"
@@ -56,12 +57,13 @@ namespace
 }
 
 void SpellBook::Attach(WindowManager &windows, GameWindowState &state, ZoneSession &zone, const GameValues &values,
-	const SpellFile *spells, const EqStr *eqstr, Host host)
+	SpellCast &cast, const SpellFile *spells, const EqStr *eqstr, Host host)
 {
 	m_windows = &windows;
 	m_state = &state;
 	m_zone = &zone;
 	m_values = &values;
+	m_cast = &cast;
 	m_spells = spells;
 	m_eqstr = eqstr;
 	m_host = std::move(host);
@@ -74,6 +76,7 @@ void SpellBook::Reset()
 	GameWindowState *state = m_state;
 	ZoneSession *zone = m_zone;
 	const GameValues *values = m_values;
+	SpellCast *cast = m_cast;
 	const SpellFile *spells = m_spells;
 	const EqStr *eqstr = m_eqstr;
 	*this = SpellBook{};
@@ -81,6 +84,7 @@ void SpellBook::Reset()
 	m_state = state;
 	m_zone = zone;
 	m_values = values;
+	m_cast = cast;
 	m_spells = spells;
 	m_eqstr = eqstr;
 	m_host = std::move(host);
@@ -230,15 +234,23 @@ bool SpellBook::Click(const std::string &window, const std::string &control, boo
 		}
 		for (int gem = 0; gem < GemCount; ++gem)
 			if (control == SlotId("CSPW_Spell", gem)) {
-				// HandleSpellLeftClick: a book spell on the cursor memorizes; otherwise the gem's spell
-				// would be cast (CastSpell), which we don't do yet.
-				if (m_state->cursor_spell >= 0)
-					BeginMemorize(m_state->cursor_spell, gem);
+				GemLeftClick(gem, now_ms);
 				break;
 			}
 		return true;
 	}
 	return false;
+}
+
+void SpellBook::GemLeftClick(int gem, uint64_t now_ms)
+{
+	// A book spell on the cursor memorizes; otherwise the gem's spell is cast.
+	if (!m_zone || gem < 0 || gem >= GemCount)
+		return;
+	if (m_state->cursor_spell >= 0)
+		BeginMemorize(m_state->cursor_spell, gem);
+	else
+		m_cast->GemClicked(gem, now_ms);
 }
 
 bool SpellBook::RightClick(const std::string &window, const std::string &control)
@@ -256,8 +268,8 @@ bool SpellBook::RightClick(const std::string &window, const std::string &control
 		for (int gem = 0; gem < GemCount; ++gem)
 			if (control == SlotId("CSPW_Spell", gem)) {
 				int spell = m_zone->Profile().mem_spells[gem];
-				if (Valid(spell) && m_waiting == 0 && m_zone->MemorizeSpell(gem, spell, 2))
-					m_waiting = 1;
+				if (Valid(spell) && !m_cast->Waiting() && m_zone->MemorizeSpell(gem, spell, 2))
+					m_cast->Wait();
 			}
 		return true;
 	}
@@ -299,7 +311,7 @@ void SpellBook::ClickSlot(int slot)
 void SpellBook::StartMemorizationDrag(int slot)
 {
 	// IsOkToActivate: not over an item, nor with the quantity window up.
-	if (m_waiting != 0 || m_state->quantity_slot >= 0 || m_mem_gem >= 0 || m_scribe_slot >= 0)
+	if (m_cast->Waiting() || m_state->quantity_slot >= 0 || m_mem_gem >= 0 || m_scribe_slot >= 0)
 		return;
 	int spell = m_zone->Profile().spell_book[slot];
 	if (!Valid(spell))
@@ -323,7 +335,7 @@ void SpellBook::StartMemorizationDrag(int slot)
 
 void SpellBook::StartScribe(int slot, uint64_t now_ms)
 {
-	if (m_waiting != 0 || m_mem_gem >= 0 || m_scribe_slot >= 0)
+	if (m_cast->Waiting() || m_mem_gem >= 0 || m_scribe_slot >= 0)
 		return;
 	auto held = m_zone->Items().find(Inventory::Cursor);
 	if (held == m_zone->Items().end() || held->second.item_class != 0)
@@ -363,7 +375,7 @@ void SpellBook::StartScribe(int slot, uint64_t now_ms)
 
 bool SpellBook::BeginMemorize(int slot, int gem)
 {
-	if (m_waiting != 0 || m_mem_gem >= 0 || m_scribe_slot >= 0 || slot < 0 || slot >= ZoneProfile::BookSlots)
+	if (m_cast->Waiting() || m_mem_gem >= 0 || m_scribe_slot >= 0 || slot < 0 || slot >= ZoneProfile::BookSlots)
 		return false;
 	const ZoneProfile &me = m_zone->Profile();
 	if (Valid(me.mem_spells[gem])) // a gem with a spell takes none: forget it first
@@ -460,7 +472,7 @@ void SpellBook::MemorizeTicks(uint64_t now_ms)
 	m_mem_ticks = std::max(m_mem_ticks - step, 0);
 	if (m_mem_ticks > 0)
 		return;
-	++m_waiting;
+	m_cast->Wait();
 	m_zone->MemorizeSpell(m_mem_gem, m_mem_spell, 1);
 	m_mem_tick_ms = 0;
 	if (m_state->cursor_spell >= 0)
@@ -478,7 +490,7 @@ void SpellBook::ScribeTicks(uint64_t now_ms)
 	}
 	if (m_scribe_ticks > 0)
 		return;
-	++m_waiting;
+	m_cast->Wait();
 	m_zone->MemorizeSpell(m_scribe_slot, m_scribe_spell, 0);
 	m_scribe_slot = m_scribe_spell = -1;
 	m_scribe_ticks = 0;
@@ -495,35 +507,33 @@ int SpellBook::ScribeGauge() const
 	return m_scribe_slot >= 0 ? m_scribe_ticks * 1000 / Ticks : 0;
 }
 
-void SpellBook::ZoneEvent(int type, int id, int value, uint64_t now_ms)
+void SpellBook::ZoneEvent(int type, int id, int value)
 {
 	using Type = ZoneSession::Event::Type;
 	const SpellInfo *info = Spell(value);
 	std::string name = info ? info->name : "";
 	switch (static_cast<Type>(type)) {
 	case Type::SpellScribed:
-		m_waiting = std::max(m_waiting - 1, 0);
+		m_cast->Answered();
 		Say(12006, "You have finished scribing %1.", ChatType::Spells, {name});
 		if (m_state && m_state->cursor_spell >= 0) // FinishScribing's RemoveAttachment
 			m_state->ClearCursor();
 		break;
-	case Type::SpellMemorized:
-		m_waiting = std::max(m_waiting - 1, 0);
+	case Type::SpellMemorized: // SpellCast starts its recast
+		m_cast->Answered();
 		Say(12007, "You have finished memorizing %1.", ChatType::Spells, {name});
-		if (id < GemCount) {
-			m_recast_ms[id] = now_ms + 1000 + (info ? info->recast_ms : 0);
+		if (id < GemCount)
 			m_gem_shown[id] = false;
-		}
 		break;
 	case Type::SpellForgotten:
-		m_waiting = std::max(m_waiting - 1, 0);
+		m_cast->Answered();
 		if (!name.empty())
 			Say(12496, "You forget %1.", ChatType::Spells, {name});
 		if (id < GemCount)
 			m_gem_shown[id] = false;
 		break;
 	case Type::SpellBarUnlocked:
-		m_waiting = std::max(m_waiting - 1, 0);
+		m_cast->Answered();
 		break;
 	case Type::SpellsSwapped:
 		Say(1388, "Swapping Spell Book Scribe slots.", ChatType::Yellow);
@@ -634,7 +644,7 @@ void SpellBook::UpdateGems(uint64_t now_ms)
 			// UpdateSpellGemTooltips: "%d) %s", the gem from 1 and the spell; none for an empty gem.
 			control->tooltip = info ? std::to_string(gem + 1) + ") " + info->name : "";
 		}
-		bool ready = info && now_ms >= m_recast_ms[gem];
+		bool ready = info && m_cast->GemReady(gem, now_ms);
 		if (!ready)
 			m_gem_state[gem] = 1;
 		else if ((fresh || m_gem_state[gem] == 1) && m_gem_state[gem] != 2) {

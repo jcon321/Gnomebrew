@@ -5,6 +5,7 @@
 #include "opcodes.h"
 #include "packet_log.h"
 #include "rdp_session.h"
+#include "spell_file.h"
 
 #include <algorithm>
 #include <cctype>
@@ -643,10 +644,57 @@ bool ZoneSession::DeleteSpell(int slot)
 	return sent;
 }
 
-void ZoneSession::ReplayAnswer(uint16_t opcode, const void *body, size_t size)
+void ZoneSession::ReplayAnswer(uint16_t opcode, const void *body, size_t size, uint64_t delay_ms)
 {
 	const uint8_t *bytes = static_cast<const uint8_t *>(body);
-	m_replay_answers.emplace_back(opcode, std::vector<uint8_t>(bytes, bytes + size));
+	if (delay_ms > 0)
+		m_replay_later.push_back({NowMs() + delay_ms, opcode, std::vector<uint8_t>(bytes, bytes + size)});
+	else
+		m_replay_answers.emplace_back(opcode, std::vector<uint8_t>(bytes, bytes + size));
+}
+
+bool ZoneSession::StopCasting()
+{
+	if (m_state != State::InZone)
+		return false;
+	return Send(ZoneOp::ManaChange, nullptr, 0, "OP_ManaChange (stop casting)");
+}
+
+bool ZoneSession::CastSpell(int gem, int spell, uint16_t target)
+{
+	if (m_state != State::InZone)
+		return false;
+	uint16_t body[6] = {static_cast<uint16_t>(gem), static_cast<uint16_t>(spell), 0xffff, target, 0, 0};
+	bool sent = Send(ZoneOp::CastSpell, body, sizeof(body),
+		"OP_CastSpell " + std::to_string(gem) + " " + std::to_string(spell) + " at " + std::to_string(target));
+	if (m_replay) {
+		// Mob::CastSpell's answers when it goes off: OP_BeginCast, then at the end CastedSpellFinished's
+		// OP_Action on the target, OP_MemorizeSpell 3 (memSpellSpellbar) and SendSpellBarEnable.
+		const SpellInfo *info = m_spells ? m_spells->Find(spell) : nullptr;
+		int32_t cast_ms = info ? info->cast_ms : 0;
+		uint8_t begin[8] = {};
+		memcpy(begin, &m_my_id, 2);
+		memcpy(begin + 2, &body[1], 2);
+		memcpy(begin + 4, &cast_ms, 4);
+		ReplayAnswer(ZoneOp::BeginCast, begin, sizeof(begin));
+		uint64_t end_ms = std::max(cast_ms, 1);
+		uint8_t action[36] = {};
+		uint16_t on = target != 0 ? target : m_my_id;
+		int32_t instrument_mod = 10;
+		memcpy(action, &on, 2);
+		memcpy(action + 2, &m_my_id, 2);
+		action[4] = m_profile.level;
+		memcpy(action + 8, &instrument_mod, 4);
+		action[24] = 231;
+		memcpy(action + 30, &body[1], 2);
+		action[33] = 4;
+		ReplayAnswer(ZoneOp::Action, action, sizeof(action), end_ms);
+		uint32_t recast[3] = {static_cast<uint32_t>(gem), static_cast<uint32_t>(spell), 3};
+		ReplayAnswer(ZoneOp::MemorizeSpell, recast, sizeof(recast), end_ms);
+		uint16_t mana[2] = {static_cast<uint16_t>(std::max(m_profile.mana - (info ? info->mana : 0), 0)), body[1]};
+		ReplayAnswer(ZoneOp::ManaChange, mana, sizeof(mana), end_ms);
+	}
+	return sent;
 }
 
 bool ZoneSession::MoveItem(int16_t from, int16_t to, int32_t qty)
@@ -1084,11 +1132,17 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 			it->second.hp = static_cast<int16_t>(max > 0 && max != 100 ? cur * 100 / max : cur);
 		break;
 	}
-	case ZoneOp::ManaChange:
-		// ManaChange_Struct: {u16 new mana, u16 the spell that used it}.
-		if (data.size() >= 2)
-			m_profile.mana = Read<int16_t>(data, 0);
+	case ZoneOp::ManaChange: {
+		// ManaChange_Struct: {u16 new mana, u16 the spell that used it}. The spell is there in the
+		// zone's (SendSpellBarEnable's) 4 bytes; eqgame stops the cast it has without it.
+		if (data.size() < 2)
+			break;
+		m_profile.mana = Read<int16_t>(data, 0);
+		Event e(Event::Type::ManaChanged);
+		e.value = data.size() == 4 ? Read<int16_t>(data, 2) : -1;
+		events.push_back(e);
 		break;
+	}
 	case ZoneOp::Stamina:
 		// Stamina_Struct: {i16 food, i16 water, i8 fatigue}.
 		if (data.size() >= 5)
@@ -1186,7 +1240,8 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 	}
 	case ZoneOp::MemorizeSpell: {
 		// msg_launchspell_info: 0 a spell scribed (FinishScribing), 1 memorized (FinishMemorizing),
-		// 2 forgotten (ForgetMemorizedSpell), -1 neither (the zone turning one down).
+		// 2 forgotten (ForgetMemorizedSpell), 3 a gem's spell gone off (its recast and recovery
+		// times start), -1 neither (the zone turning one down).
 		if (data.size() < 12)
 			break;
 		int32_t slot = Read<int32_t>(data, 0), spell = Read<int32_t>(data, 4), scribing = Read<int32_t>(data, 8);
@@ -1205,6 +1260,11 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 			e.value = m_profile.mem_spells[slot];
 			m_profile.mem_spells[slot] = -1;
 			e.type = Event::Type::SpellForgotten;
+		}
+		else if (scribing == 3) {
+			if (slot >= ZoneProfile::Gems && slot != 9) // a gem, or 9 (an ability's)
+				break;
+			e.type = Event::Type::SpellRecast;
 		}
 		else
 			e.type = Event::Type::SpellBarUnlocked;
@@ -1455,6 +1515,18 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		events.push_back(e);
 		break;
 	}
+	case ZoneOp::TokenText: {
+		// HandleWorldMessage's 0x4235: an eqstr string as it is, in its color (InterruptSpell's).
+		if (data.size() < 4)
+			break;
+		int16_t id = Read<int16_t>(data, 0);
+		Event e(Event::Type::Message);
+		e.value = Read<int16_t>(data, 2);
+		e.text = m_eqstr ? m_eqstr->Format(id, {}) : "[string " + std::to_string(id) + "]";
+		Log("[zone]    message: " + e.text);
+		events.push_back(e);
+		break;
+	}
 	case ZoneOp::FormattedMessage: {
 		// FormattedMessage_Struct: u16 unknown, u16 string_id, u16 type, then NUL-separated arguments.
 		uint16_t id = Read<uint16_t>(data, 2);
@@ -1665,6 +1737,10 @@ void ZoneSession::Pump(int timeout_ms, std::vector<Event> &events)
 
 	if ((m_state == State::InZone || m_state == State::Camping) && m_have_movement)
 		SendMovement(NowMs());
+	while (m_replay && !m_replay_later.empty() && NowMs() >= m_replay_later.front().due_ms) {
+		m_replay_answers.emplace_back(m_replay_later.front().opcode, std::move(m_replay_later.front().body));
+		m_replay_later.pop_front();
+	}
 	while (m_replay && !m_replay_answers.empty() && m_state == State::InZone) {
 		auto answer = std::move(m_replay_answers.front());
 		m_replay_answers.pop_front();

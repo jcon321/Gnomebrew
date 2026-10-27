@@ -7,10 +7,10 @@
 namespace
 {
 	constexpr size_t NameField = 1, YouCastField = 4, OtherCastsField = 5, CastOnYouField = 6, CastOnOtherField = 7,
-	                 FadesField = 8, RangeField = 9, CastTimeField = 13, RecastField = 15, AeDurationField = 18, ManaField = 19,
+	                 FadesField = 8, RangeField = 9, CastTimeField = 13, RecoveryField = 14, RecastField = 15, AeDurationField = 18, ManaField = 19,
 	                 GoodEffectField = 71, FirstSpaField = 74, TargetTypeField = 86, SkillField = 88, FirstClassField = 92,
 	                 CastingAnimField = 107, TargetAnimField = 108, EffectField = 110, IconField = 131,
-	                 NewEffectField = 132, DeletableField = 136;
+	                 NewEffectField = 132, DeletableField = 136, RecourseField = 137;
 }
 
 bool SpellFile::Load(const std::string &path)
@@ -45,11 +45,14 @@ bool SpellFile::Load(const std::string &path)
 		spell.fades = fields[FadesField];
 		spell.range = static_cast<float>(std::atof(fields[RangeField].c_str()));
 		spell.cast_ms = number(CastTimeField);
+		spell.recovery_ms = number(RecoveryField);
 		spell.recast_ms = number(RecastField);
 		spell.ae_duration = number(AeDurationField);
 		spell.mana = number(ManaField);
 		spell.good_effect = static_cast<uint8_t>(number(GoodEffectField));
-		spell.first_spa = static_cast<uint8_t>(number(FirstSpaField));
+		for (int i = 0; i < 12; ++i)
+			spell.spas[i] = static_cast<uint8_t>(number(FirstSpaField + i));
+		spell.first_spa = spell.spas[0];
 		spell.target_type = static_cast<uint8_t>(number(TargetTypeField));
 		spell.skill = number(SkillField);
 		for (int i = 0; i < 15; ++i)
@@ -61,9 +64,18 @@ bool SpellFile::Load(const std::string &path)
 		spell.new_effect = number(NewEffectField);
 		spell.icon = number(IconField);
 		spell.deletable = number(DeletableField) != 0;
+		spell.recourse = fields.size() > RecourseField ? number(RecourseField) : 0;
 		m_spells[std::atoi(fields[0].c_str())] = std::move(spell);
 	}
 	return !m_spells.empty();
+}
+
+bool SpellInfo::HasSpa(int spa) const
+{
+	for (uint8_t effect : spas)
+		if (effect == spa)
+			return true;
+	return false;
 }
 
 const SpellInfo *SpellFile::Find(int id) const

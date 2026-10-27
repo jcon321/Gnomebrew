@@ -645,6 +645,12 @@ ZoneDoors::Use ZoneView::ClickDoor(int x, int y, int16_t disarm, uint8_t &id, in
 	return m_doors.Click(door, center, m_height, disarm, id, skill);
 }
 
+bool ZoneView::CanSee(const render::Vec3 &from, const render::Vec3 &to) const
+{
+	float fraction;
+	return !m_loaded || !m_error.empty() || !m_zone.SegmentHit(from, to, fraction, nullptr, false);
+}
+
 ZoneMovement ZoneView::Movement() const
 {
 	ZoneMovement m;

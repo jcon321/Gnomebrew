@@ -25,6 +25,7 @@
 class EqStr;
 class PacketLogWriter;
 class RdpSession;
+class SpellFile;
 struct PacketLog;
 struct RdpStats;
 
@@ -268,6 +269,10 @@ public:
 			SpellMemorized,
 			SpellForgotten, // value: the spell the gem had
 			SpellBarUnlocked, // the zone turned a scribe or memorize down (its -1)
+			SpellRecast,    // msg_launchspell_info's 3: a gem's cast went off; id the gem, value the spell
+			// OP_ManaChange (SendSpellBarEnable): our mana (in Profile() already), and our cast is
+			// over, gone off or not; value the spell, -1 when the packet doesn't say.
+			ManaChanged,
 			SpellsSwapped,  // id and value: the two book slots
 			SpellDeleted,   // id: the book slot; value: 1 done, 0 not
 			CastBegan,      // cast: OP_BeginCast
@@ -297,6 +302,8 @@ public:
 	void SetVerbose(bool verbose) { m_verbose = verbose; }
 	// eqstr_en.txt, for OP_FormattedMessage. Optional; without it the ids are shown raw.
 	void SetStringTable(const EqStr *strings) { m_eqstr = strings; }
+	// spells_en.txt: how long a replay's zone takes to cast and what it costs. Optional.
+	void SetSpellFile(const SpellFile *spells) { m_spells = spells; }
 
 	bool Begin(const std::string &host, uint16_t port, const std::string &character);
 	// Every zone session from Begin on is written to a packet log (.eqr) in `dir`; empty: none.
@@ -349,6 +356,10 @@ public:
 	bool MemorizeSpell(int slot, int spell, int scribing);
 	bool SwapSpells(int from, int to);  // OP_SwapSpell: two book slots; done when the zone answers
 	bool DeleteSpell(int slot);         // OP_DeleteSpell: a book slot; done when the zone answers
+	// OP_CastSpell: a gem's spell at a spawn (0 none). The zone answers with OP_BeginCast, and once
+	// it's over, gone off or not, OP_ManaChange; gone off, OP_MemorizeSpell 3 before that.
+	bool CastSpell(int gem, int spell, uint16_t target);
+	bool StopCasting(); // an empty OP_ManaChange: a bard's song stops (StopSpellCast)
 	void Close();
 
 	// One of the client's own one-shot animations on a spawn (a spell's caster and target, as
@@ -434,7 +445,14 @@ private:
 	uint16_t m_replay_target = 0; // a /target to answer
 	// What the zone would answer to what we sent, while replaying (the spell requests).
 	std::deque<std::pair<uint16_t, std::vector<uint8_t>>> m_replay_answers;
-	void ReplayAnswer(uint16_t opcode, const void *body, size_t size);
+	struct LaterAnswer
+	{
+		uint64_t due_ms;
+		uint16_t opcode;
+		std::vector<uint8_t> body;
+	};
+	std::deque<LaterAnswer> m_replay_later; // answers that take their time (a cast's end), in order
+	void ReplayAnswer(uint16_t opcode, const void *body, size_t size, uint64_t delay_ms = 0);
 	State m_state = State::Idle;
 	std::string m_character;
 	ZoneProfile m_profile;
@@ -476,6 +494,7 @@ private:
 	std::function<void(const std::string &)> m_log;
 	bool m_verbose = false;
 	const EqStr *m_eqstr = nullptr;
+	const SpellFile *m_spells = nullptr;
 };
 
 namespace ZoneCrypto

@@ -55,10 +55,16 @@ no rules of its own.
      scribe and memorize timers and gauges (EQTypes 9, 10) and the zone's answers
      (OP_MemorizeSpell, OP_SwapSpell, OP_DeleteSpell; a replay answers them as the zone would).
      The gems show their icons in their target type's color, dimmed until the spell can be cast.
-     Still to do:
-     - casting: a gem's left click (EQ_Character::CastSpell, OP_CastSpell), the casting bar,
-       fizzles, interrupts, recovery and recast after a cast (the gems already dim by their
-       RecastTimeout), /cast, and a bard's songs (what the zone sends back already shows: 12);
+     Casting from the gems is done (`frontend/spell_cast.*`, EQ_Character::CastSpell): a gem's left
+     click or /cast n, CastSpell's checks and their messages (standing, already casting, level,
+     line of sight, mana, the target, its range and body type), OP_CastSpell, the casting window
+     (EQType 7) and the zone's answers (OP_MemorizeSpell 3's recast and recovery, OP_ManaChange
+     ending the cast, OP_TokenText's fizzles and interrupts), with the gems dim while anything's
+     cast or recovering; a bard's song stops on a gem click (an empty OP_ManaChange). Still to do:
+     - casting: targeting ourselves (F1, our name on the target window), the hotkeys for the gems,
+       stuns and divine aura (OP_Stun), the AA and focus cast time and range modifiers, items'
+       click effects (OP_CastSpell's inventory slot) and abilities (gem 9), and a bard being hit
+       (StopSpellCast 1);
      - the spell info display: alt+click (or the right button held) on a book slot or a gem shows
        the spell in the item display (CItemDisplayWnd::SetSpell @00425957);
      - spell hot buttons: a gem held onto the cursor (CCursorAttachment type 9) and the book button
@@ -131,8 +137,7 @@ no rules of its own.
     SpellsNew.eff one, the missiles (stage 1, EQMissile: bolts), the stages' sounds, the options'
     spell particle density and opacity (fixed at eqgame's 1 and 1), the chat filters for PC and NPC
     spells and bard songs, melee's OP_Damage (hit messages, the D02 hit and its sounds), being hit
-    standing us up, and OP 0x4265 (destroy a cast's emitters; this server never sends it). Needs
-    casting (2's spellbook items) for our own.
+    standing us up, and OP 0x4265 (destroy a cast's emitters; this server never sends it).
 13. **The other camera modes F9 cycles through:** overhead and the two user-set cameras, plus zoom
     and field of view.
 14. **Graphics options:** fullscreen or windowed, resolution changes, gamma, anisotropic filtering,

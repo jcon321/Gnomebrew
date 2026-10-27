@@ -31,6 +31,7 @@ namespace ChatType
 	constexpr int Broadcast = 0x10d;
 	constexpr int Skills = 0x10e;   // "You have become better at..."
 	constexpr int Default = 0x111;  // DefaultText
+	constexpr int SpellFailure = 0x121; // a spell that can't be cast, or was interrupted
 	constexpr int EchoSay = 0x133;
 	constexpr int EchoTell = 0x134;
 	constexpr int EchoGroup = 0x135;

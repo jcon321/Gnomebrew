@@ -60,6 +60,7 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 	m_world.SetLogger([this](const std::string &line) { Log(line); });
 	m_zone.SetLogger([this](const std::string &line) { Log(line); });
 	m_zone.SetStringTable(m_ui.eqstr);
+	m_zone.SetSpellFile(m_ui.spells);
 	m_zone.SetRecordDir(config.record_dir);
 	m_debug.SetVSync(m_ui.vsync, m_ui.set_vsync);
 	m_user.text = config.username;
@@ -681,6 +682,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		m_windows.Update(now_ms, m_mouse_x - area.x, m_mouse_y - area.y);
 		HandleWindowClicks();
 		m_spell_book.Frame(now_ms);
+		m_spell_cast.Frame(now_ms);
 		// DoPassageOfTime: the social going's next line.
 		std::string social_line = SocialStep(m_window_state, now_ms);
 		if (!social_line.empty())
@@ -1379,6 +1381,7 @@ void FrontEnd::EnterZoneScreen(bool zoning)
 	}
 	m_time_of_day.clear();
 	m_spell_book.Deactivate(); // a new zone starts standing, the book closed
+	m_spell_cast.Reset();
 	m_zone_view.reset();
 	m_weather.Kill(m_sound.get()); // StopWorldDisplay
 	m_zone_error_logged = false;
@@ -1420,7 +1423,7 @@ namespace
 		{"InventoryWindow", false}, {"OptionsWindow", false}, {"FriendsWindow", false}, {"PetInfoWindow", false},
 		{"HelpWindow", false}, {"CompassWindow", false}, {"SocialEditWnd", false}, {"ChatWindow", true},
 		{"SkillsWindow", false}, {"ItemDisplayWindow", false}, {"QuantityWnd", false}, {"SpellBookWnd", false},
-		{"ConfirmationDialogBox", false},
+		{"ConfirmationDialogBox", false}, {"CastingWindow", false},
 	};
 
 	// The selector's buttons (EQUI_SelectorWnd.xml) and the windows they open and close.
@@ -1469,6 +1472,7 @@ void FrontEnd::BuildZoneWindows()
 		m_windows.Show("QuantityWnd", false); // only ever up for a stack
 		m_windows.Show("SpellBookWnd", false); // open only while it's activated
 		m_windows.Show("ConfirmationDialogBox", false);
+		m_windows.Show("CastingWindow", false); // up only while we cast
 		Log("UI: " + std::to_string(m_windows.Count()) + " windows, layout " + m_ui_layout_path);
 		// CEverQuest::CreateIniFilenames: the character's own ini is the layout's name without UI_.
 		m_hot_buttons_path = m_config.ui_dir + "/" + suffix;
@@ -1483,9 +1487,17 @@ void FrontEnd::BuildZoneWindows()
 	host.change_stance = [this](uint8_t stance) { ChangeStance(stance); };
 	host.moving_forward = [this] { return m_zone_view && m_zone_view->Movement().speed > 0; };
 	host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
-	m_spell_book.Attach(m_windows, m_window_state, m_zone, m_game_values, m_ui.spells, m_ui.eqstr, std::move(host));
+	SpellCast::Host cast_host;
+	cast_host.target = [this] { return m_game_values.target; };
+	cast_host.set_target = [this](uint16_t id) { m_game_values.target = id; };
+	cast_host.can_see = [this](uint16_t id) { return CanSee(id); };
+	cast_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
+	m_spell_cast.Attach(m_windows, m_zone, m_ui.spells, m_ui.eqstr, std::move(cast_host));
+	m_spell_book.Attach(m_windows, m_window_state, m_zone, m_game_values, m_spell_cast, m_ui.spells, m_ui.eqstr,
+		std::move(host));
 	m_spell_book.Reset();
 	m_game_values.spell_book = &m_spell_book;
+	m_game_values.spell_cast = &m_spell_cast;
 	m_chat.Attach(m_windows.Find("ChatWindow"));
 	m_chat.SetLinkColor(m_chat_colors.Get(ItemTags::ColorType));
 }
@@ -1622,6 +1634,15 @@ void FrontEnd::SetTarget(uint16_t id, bool command)
 	m_zone.SetTarget(id, command);
 }
 
+bool FrontEnd::CanSee(uint16_t spawn) const
+{
+	auto it = m_zone.Spawns().find(spawn);
+	if (!m_zone_view || it == m_zone.Spawns().end())
+		return true; // ourselves, or nothing to look through yet
+	const ZoneProfile &me = m_zone.Profile();
+	return m_zone_view->CanSee({me.y, me.x, me.z}, {it->second.y, it->second.x, it->second.z});
+}
+
 void FrontEnd::ChangeStance(uint8_t stance)
 {
 	uint8_t was = m_zone.Self().stance;
@@ -1745,15 +1766,23 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 		case Type::Emote:
 			ChatOut(event.text, ChatType::Emote);
 			break;
-		case Type::SpellScribed:
 		case Type::SpellMemorized:
 		case Type::SpellForgotten:
+			m_spell_cast.ZoneEvent(static_cast<int>(event.type), event.id, event.value, m_now_ms);
+			[[fallthrough]];
+		case Type::SpellScribed:
 		case Type::SpellBarUnlocked:
 		case Type::SpellsSwapped:
 		case Type::SpellDeleted:
-			m_spell_book.ZoneEvent(static_cast<int>(event.type), event.id, event.value, m_now_ms);
+			m_spell_book.ZoneEvent(static_cast<int>(event.type), event.id, event.value);
+			break;
+		case Type::SpellRecast:
+		case Type::ManaChanged:
+			m_spell_cast.ZoneEvent(static_cast<int>(event.type), event.id, event.value, m_now_ms);
 			break;
 		case Type::CastBegan:
+			m_spell_cast.CastBegan(event.cast, m_now_ms);
+			[[fallthrough]];
 		case Type::SpellAction:
 		case Type::Damaged: {
 			std::vector<SpellCasting::Line> lines;

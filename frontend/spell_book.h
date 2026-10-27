@@ -40,13 +40,14 @@
 //     or the scroll it's scribing left the cursor.
 // The gems (CastSpellWnd):
 //   - a click with a book spell on the cursor memorizes it into an empty gem (HandleSpellLeftClick
-//     @0040a4f5, BeginMemorize @00434a05: a gem with a spell takes none); without one it would cast
-//     (not yet);
+//     @0040a4f5, BeginMemorize @00434a05: a gem with a spell takes none); without one it casts the
+//     gem's spell (SpellCast), and so does /cast n;
 //   - a right click forgets the gem's spell (OP_MemorizeSpell 2; ForgetMemorizedSpell @0040a662);
 //   - CSPW_SpellBook opens and closes the book, and is down while it's open;
 //   - each gem shows its spell's icon (A_SpellGems' cell new_icon) on a ring in the color of the
 //     spell's target type (UpdateSpellGems @0040a8b7), dimming while it can't be cast and
-//     brightening back once it can (RefreshSpellGemButtons @0040a7d3, ProcessFrameAnimation).
+//     brightening back once it can (RefreshSpellGemButtons @0040a7d3, ProcessFrameAnimation): its
+//     recast and the last cast's recovery past, and nothing being cast (SpellCast::GemReady).
 
 #include "widgets.h"
 
@@ -57,6 +58,7 @@
 
 class EqStr;
 class GameValues;
+class SpellCast;
 class SpellFile;
 class WindowManager;
 class ZoneSession;
@@ -74,7 +76,7 @@ public:
 	};
 
 	void Attach(WindowManager &windows, GameWindowState &state, ZoneSession &zone, const GameValues &values,
-		const SpellFile *spells, const EqStr *eqstr, Host host);
+		SpellCast &cast, const SpellFile *spells, const EqStr *eqstr, Host host);
 	void Reset(); // a new character: closed, at the first page, nothing going
 
 	bool Activated() const { return m_activated; }
@@ -86,12 +88,14 @@ public:
 	// A click in the book, the gems or the confirmation dialog; false if it wasn't one of theirs.
 	bool Click(const std::string &window, const std::string &control, bool alt, uint64_t now_ms);
 	bool RightClick(const std::string &window, const std::string &control);
+	// CCastSpellWnd::HandleSpellLeftClick: a gem's left click, or /cast's (0..7).
+	void GemLeftClick(int gem, uint64_t now_ms);
 	// HandleKeys: Left and Right turn the pages (true: the key's taken), Delete asks to delete the
 	// selected spell.
 	bool Key(InputEvent::Key key, uint64_t now_ms);
 	// What happens every frame: OnProcessFrame, the timers, and what the windows show.
 	void Frame(uint64_t now_ms);
-	void ZoneEvent(int type, int id, int value, uint64_t now_ms); // a ZoneSession::Event's
+	void ZoneEvent(int type, int id, int value); // a ZoneSession::Event's
 
 	// The gauges: 0..1000, how much of the memorizing (EQType 9) or scribing (10) is left.
 	int MemorizeGauge() const;
@@ -125,6 +129,7 @@ private:
 	GameWindowState *m_state = nullptr;
 	ZoneSession *m_zone = nullptr;
 	const GameValues *m_values = nullptr;
+	SpellCast *m_cast = nullptr; // the spell bar's waiting (DAT_007d0254) and the gems' readiness
 	const SpellFile *m_spells = nullptr;
 	const EqStr *m_eqstr = nullptr;
 	Host m_host;
@@ -138,14 +143,12 @@ private:
 	int m_mem_gem = -1, m_mem_spell = -1, m_mem_ticks = 0;          // MemorizingSpellIndex, Id, MemTicksLeft
 	int m_scribe_slot = -1, m_scribe_spell = -1, m_scribe_ticks = 0; // ScribeIndex, its spell, ScribeTicksLeft
 	uint64_t m_mem_tick_ms = 0, m_scribe_tick_ms = 0;              // @006306dc, @006306e0
-	int m_waiting = 0;          // answers the spell bar waits for (DAT_007d0254)
 	uint64_t m_checked_ms = 0;  // OnProcessFrame's Timestamp
 	// The confirmation dialog: the slot it asks about (-1: it isn't up) and when it gives up.
 	int m_confirm_slot = -1;
 	uint64_t m_confirm_until_ms = 0;
-	// The gems: when each can be cast (ActorInfo's RecastTimeout), the state RefreshSpellGemButtons
-	// gives it (1 dimming, 2 brightening, 0 neither) and the step it's at, 0..10.
-	uint64_t m_recast_ms[8] = {};
+	// The gems: the state RefreshSpellGemButtons gives each (1 dimming, 2 brightening, 0 neither)
+	// and the step it's at, 0..10.
 	int m_gem_state[8] = {}, m_gem_fade[8] = {};
 	bool m_gem_shown[8] = {};   // its icon set since the spell changed (spellicon != -1)
 	uint64_t m_fade_ms = 0;

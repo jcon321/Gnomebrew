@@ -39,6 +39,8 @@ namespace
 			"  --move FROM:TO[:N]    with --zone, once in, move what's in slot FROM to TO as the inventory window\n"
 			"                        does (0 the cursor; N takes N of a stack onto the cursor); \"auto\" puts the\n"
 			"                        cursor's item away. Repeatable, done in order; the items print before and after\n"
+			"  --cast GEM            with --zone, once in, cast the spell in gem GEM (1..8) on ourselves and print\n"
+			"                        the zone's answers. Repeatable: each 3 s after the zone ends the one before\n"
 			"  --record DIR          with --zone, write each zone session's packets to DIR/<char>-<time>.eqr\n"
 			"  --replay FILE         play a recorded zone session back (no server): stay --zone seconds\n"
 			"                        (default 10), print what's around, then camp out\n"
@@ -116,6 +118,7 @@ namespace
 	int g_click_link = -1; // --click-link
 	std::string g_replay_path;
 	std::vector<std::string> g_moves; // --move
+	std::vector<int> g_casts;         // --cast, gems from 1
 
 	void PrintItems(const ZoneSession &zone)
 	{
@@ -169,6 +172,8 @@ namespace
 
 		uint64_t leave_at = 0;
 		bool camping = false;
+		size_t next_cast = 0;
+		uint64_t cast_at = 0; // when the next --cast goes; 0 not yet
 		for (;;) {
 			std::vector<ZoneSession::Event> events;
 			zone.Pump(100, events);
@@ -190,6 +195,27 @@ namespace
 					if (g_click_link >= 0) {
 						printf("[zone] clicking link %d\n", g_click_link);
 						zone.ClickItemLink(static_cast<uint16_t>(g_click_link), "link");
+					}
+					if (!g_casts.empty()) {
+						printf("[cast] mana %d, gems:", zone.Profile().mana);
+						for (int16_t spell : zone.Profile().mem_spells)
+							printf(" %d", spell);
+						printf("\n");
+						// An empty gem gets the book's next spell first, as the book would memorize it.
+						int slot = 0;
+						for (int cast : g_casts) {
+							int gem = cast - 1;
+							if (gem < 0 || gem >= ZoneProfile::Gems || zone.Profile().mem_spells[gem] != -1)
+								continue;
+							while (slot < ZoneProfile::BookSlots && zone.Profile().spell_book[slot] == -1)
+								++slot;
+							if (slot == ZoneProfile::BookSlots)
+								break;
+							printf("[cast] memorizing book slot %d (spell %d) into gem %d\n", slot, zone.Profile().spell_book[slot],
+								gem + 1);
+							zone.MemorizeSpell(gem, zone.Profile().spell_book[slot++], 1);
+						}
+						cast_at = NowMs() + 3000;
 					}
 					if (zone_to != 0) {
 						printf("[zone] asking to zone to %u\n", zone_to);
@@ -221,8 +247,22 @@ namespace
 						zone.LinkedItem().icon, zone.LinkedItem().slot);
 					break;
 				case ZoneSession::Event::Type::Message:
-					if (g_click_link >= 0)
+					if (g_click_link >= 0 || !g_casts.empty())
 						printf("[zone] message %d: %s\n", event.value, event.text.c_str());
+					break;
+				case ZoneSession::Event::Type::CastBegan:
+					if (!g_casts.empty())
+						printf("[cast] %u begins casting %d, %d ms\n", event.cast.caster, event.cast.spell, event.cast.cast_ms);
+					break;
+				case ZoneSession::Event::Type::SpellRecast:
+					printf("[cast] gem %u went off (spell %d): recast starts\n", event.id, event.value);
+					break;
+				case ZoneSession::Event::Type::ManaChanged:
+					if (!g_casts.empty()) {
+						printf("[cast] mana %d, cast over (spell %d)\n", zone.Profile().mana, event.value);
+						if (next_cast < g_casts.size())
+							cast_at = NowMs() + 3000;
+					}
 					break;
 				case ZoneSession::Event::Type::LoggedOut:
 					if (zone.Replaying())
@@ -235,6 +275,13 @@ namespace
 				default:
 					break;
 				}
+			}
+			if (cast_at && NowMs() >= cast_at && next_cast < g_casts.size()) {
+				cast_at = 0;
+				int gem = g_casts[next_cast++] - 1;
+				int spell = gem >= 0 && gem < ZoneProfile::Gems ? zone.Profile().mem_spells[gem] : -1;
+				printf("[cast] casting gem %d (spell %d) on ourselves\n", gem + 1, spell);
+				zone.CastSpell(gem, spell, zone.MySpawnId());
 			}
 			if (leave_at && !camping && NowMs() >= leave_at) {
 				camping = true;
@@ -291,6 +338,8 @@ int main(int argc, char **argv)
 			say_text = next();
 		else if (arg == "--click-door")
 			click_door = atoi(next().c_str());
+		else if (arg == "--cast")
+			g_casts.push_back(atoi(next().c_str()));
 		else if (arg == "--click-link")
 			g_click_link = atoi(next().c_str());
 		else if (arg == "--zone-to")

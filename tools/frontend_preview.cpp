@@ -972,6 +972,85 @@ int main(int argc, char **argv)
 				h.Snapshot("b9-closed");
 			}
 		}
+		// Casting from the gems (a caster with spells memorized; the replay answers as the zone
+		// would): with the nearest NPC targeted the gem casts, the casting window up and emptying;
+		// once it's gone off the window goes and the gems dim for the recovery, and a click then
+		// hasn't recovered; /cast 9 shows the format. On the Qeynos dock, so there's a floor to
+		// stand on and see from (a new character falls through South Qeynos at 0, 0, 0).
+		{
+			if (ZoneView *view = frontend.ZoneScene(); view && frontend.Zone().Info().short_name == "qeynos") {
+				view->SetPlayerPosition(0, 10, 5, 0);
+				h.RunUntil([] { return false; }, 1500);
+			}
+			const ZoneProfile &self = frontend.Zone().Profile();
+			int gem = -1;
+			for (int i = 0; i < ZoneProfile::Gems && gem < 0; ++i)
+				if (spells.Find(self.mem_spells[i]))
+					gem = i;
+			int gx, gy;
+			if (gem >= 0 && at("CastSpellWnd", "CSPW_Spell" + std::to_string(gem), gx, gy)) {
+				auto last_line = [&] {
+					const auto &lines = frontend.Chat().Lines();
+					return lines.empty() ? std::string() : lines.back().text;
+				};
+				auto cast_report = [&](const char *when) {
+					const SidlWindow *bar = windows.Find("CastingWindow");
+					const SidlWindow *gems = windows.Find("CastSpellWnd");
+					printf("[preview] cast %s: casting window %d, mana %d, gem fades", when,
+						bar && windows.Shown("CastingWindow"), self.mana);
+					for (int i = 0; gems && i < ZoneProfile::Gems; ++i)
+						if (const SidlWindow::Control *c = gems->Find("CSPW_Spell" + std::to_string(i)))
+							printf(" %d", c->gem_fade);
+					printf("; chat: '%s'\n", last_line().c_str());
+				};
+				const SpellInfo *spell = spells.Find(self.mem_spells[gem]);
+				printf("[preview] casting gem %d: %s (%d ms, %d mana, recovery %d ms)\n", gem + 1, spell->name.c_str(),
+					spell->cast_ms, spell->mana, spell->recovery_ms);
+				// The nearest NPC (no invisible markers), and us standing 8 away from it where we can see it.
+				const ZoneSpawn *nearest = nullptr;
+				float best = 0;
+				for (const auto &[id, spawn] : frontend.Zone().Spawns()) {
+					float d = std::hypot(spawn.x - self.x, spawn.y - self.y);
+					if (spawn.npc == 1 && spawn.race != 127 && (!nearest || d < best)) {
+						nearest = &spawn;
+						best = d;
+					}
+				}
+				if (nearest && frontend.ZoneScene()) {
+					frontend.ZoneScene()->SetPlayerPosition(nearest->x + 8, nearest->y, nearest->z + 2, 0);
+					h.RunUntil([] { return false; }, 1500);
+					best = std::hypot(nearest->x - self.x, nearest->y - self.y);
+					printf("[preview] standing by it, can see it: %d\n",
+						frontend.ZoneScene()->CanSee({self.y, self.x, self.z}, {nearest->y, nearest->x, nearest->z}));
+				}
+				if (nearest) {
+					printf("[preview] targeting %s, %.0f away\n", nearest->name.c_str(), best);
+					h.Key(InputEvent::Key::Enter);
+					h.Type("/target " + nearest->name);
+					h.Key(InputEvent::Key::Enter);
+					h.RunUntil([] { return false; }, 300);
+					click(gx, gy);
+					h.RunUntil([] { return false; }, spell->cast_ms / 3);
+					cast_report("a third in");
+					h.Snapshot("c1-casting");
+					h.RunUntil([&] { return !windows.Shown("CastingWindow"); }, spell->cast_ms + 2000);
+					h.RunUntil([] { return false; }, 300);
+					cast_report("gone off");
+					h.Snapshot("c2-gone-off");
+					click(gx, gy);
+					h.RunUntil([] { return false; }, 100);
+					cast_report("clicked again");
+					h.RunUntil([] { return false; }, spell->recovery_ms + 1000);
+					cast_report("recovered");
+					h.Snapshot("c3-recovered");
+				}
+				h.Key(InputEvent::Key::Enter);
+				h.Type("/cast 9");
+				h.Key(InputEvent::Key::Enter);
+				h.RunUntil([] { return false; }, 100);
+				cast_report("/cast 9");
+			}
+		}
 		// Sitting: /sit lowers the first person view with our head; Space, the back key and turning
 		// with the right button do nothing; W stands us up and we run at once, getting up playing out.
 		if (ZoneView *view = frontend.ZoneScene()) {

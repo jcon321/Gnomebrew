@@ -24,6 +24,7 @@
 #include "login_client.h"
 #include "sidl.h"
 #include "spell_book.h"
+#include "spell_cast.h"
 #include "weather.h"
 #include "window_manager.h"
 #include "world_client.h"
@@ -205,6 +206,7 @@ private:
 	// EQPlayer::ChangeStance for us (100 standing, 110 sitting): the zone told, our model, and the
 	// spellbook closing as we get up (DeacSpellScreen).
 	void ChangeStance(uint8_t stance);
+	bool CanSee(uint16_t spawn) const; // CastRay from us to a spawn, through the zone
 	void Sit(); // CEverQuest_Sit: /sit and the Actions window's Sit and Stand
 
 	// EqSoundManager::GiveTime's callers (character select and the world display): the listener and
@@ -297,6 +299,7 @@ private:
 	bool m_run = true;
 	GameWindowState m_window_state; // the socials, the hot buttons, the button on the cursor
 	SpellBook m_spell_book;         // and the spell gems
+	SpellCast m_spell_cast;         // our casting from them
 	bool m_jump_requested = false;
 	bool m_crouch_sent = false; // the stance last sent for a standing jump's wind-up
 	// Mouse drags in the zone: the right button turns the character and tilts the view, the left

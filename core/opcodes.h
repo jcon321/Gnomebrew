@@ -111,6 +111,11 @@ namespace ZoneOp
 	// Damage_Struct (24 bytes): {u16 target, u16 source, u8 type @4 (231 a spell), u8, i16 spell @6,
 	// i32 damage @8, float force, heading, pitch}: msg_successful_hit's messages
 	constexpr uint16_t Damage = 0x4058;
+	// CastSpell_Struct (12 bytes): {u16 gem (or 10, an item), u16 spell, u16 inventory slot (0xffff
+	// none), u16 target, u32 spell_crc (the zone doesn't look at it)}: EQ_Character::CastSpell. Empty,
+	// to the zone: stop the cast (StopSpellCast).
+	constexpr uint16_t CastSpell = 0x417e;
+	constexpr uint16_t TokenText = 0x4235; // TokenText_Struct {i16 eqstr id, i16 color, i16 from world}
 }
 
 struct OpcodeEntry
@@ -216,5 +221,7 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::BeginCast, "OP_BeginCast"},
 	{ZoneOp::Action, "OP_Action"},
 	{ZoneOp::Damage, "OP_Damage"},
+	{ZoneOp::CastSpell, "OP_CastSpell"},
+	{ZoneOp::TokenText, "OP_TokenText"},
 	{0, nullptr},
 };
