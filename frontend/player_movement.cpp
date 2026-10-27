@@ -75,10 +75,16 @@ bool PlayerMovement::Step(const MoveControls &controls, float ms, const render::
 	m_clock_ms += ms;
 	m_pitch = controls.pitch;
 	bool swimming = Swimming();
-	if (controls.forward && !controls.back)
-		m_speed = (controls.run ? m_run_speed : m_walk_speed) + (swimming ? m_swim_skill * 0.01f : 0);
-	else if (controls.back && !controls.forward)
-		m_speed = swimming ? 0 : -m_walk_speed;
+	// What our buffs add (MovementSpeedModifier): a snare slows us to a crawl at most; rooted, nothing.
+	bool rooted = m_speed_modifier < -1000;
+	if (controls.forward && !controls.back) {
+		m_speed = (controls.run ? m_run_speed : m_walk_speed) + (swimming ? m_swim_skill * 0.01f : 0) + m_speed_modifier;
+		m_speed = rooted ? 0 : m_speed < 0 ? 0.01f : m_speed;
+	}
+	else if (controls.back && !controls.forward) {
+		m_speed = (swimming ? 0 : -m_walk_speed) - m_speed_modifier;
+		m_speed = rooted ? 0 : m_speed > 0 ? -0.01f : m_speed;
+	}
 	else
 		m_speed = 0;
 
@@ -91,6 +97,8 @@ bool PlayerMovement::Step(const MoveControls &controls, float ms, const render::
 		m_strafe = direction * (controls.run ? m_run_speed : m_walk_speed) * 0.5f;
 		if (m_speed == 0)
 			m_strafe *= 2;
+		if (rooted)
+			m_strafe = 0;
 		direction = 0;
 	}
 	if (direction != 0) {

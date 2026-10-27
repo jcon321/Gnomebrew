@@ -115,6 +115,11 @@ namespace ZoneOp
 	// none), u16 target, u32 spell_crc (the zone doesn't look at it)}: EQ_Character::CastSpell. Empty,
 	// to the zone: stop the cast (StopSpellCast).
 	constexpr uint16_t CastSpell = 0x417e;
+	// SpellBuffFade_Struct (20 bytes): {u16 spawn, SpellBuff_Struct (10), u16 slot, u16 0, u32 how}.
+	// The zone's: a buff of ours changed (how 0: the one with its spell and type takes it; 3: the
+	// one in its slot does) or gone (1: the one with its spell and type, as if it wore off). Ours:
+	// one we took off (RemovePCAffectex, NotifyPCAffectChange); the zone takes off its spell.
+	constexpr uint16_t Buff = 0x4132;
 	constexpr uint16_t TokenText = 0x4235; // TokenText_Struct {i16 eqstr id, i16 color, i16 from world}
 }
 
@@ -222,6 +227,7 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::Action, "OP_Action"},
 	{ZoneOp::Damage, "OP_Damage"},
 	{ZoneOp::CastSpell, "OP_CastSpell"},
+	{ZoneOp::Buff, "OP_Buff"},
 	{ZoneOp::TokenText, "OP_TokenText"},
 	{0, nullptr},
 };

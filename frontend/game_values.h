@@ -8,16 +8,19 @@
 //           DEX, AGI, WIS, INT, CHA (base and worn items), 12..16 the poison, disease, fire, cold
 //           and magic resists, 17 and 18 our HP and max HP, 22 AC, 23 ATK, 24 and 25 our weight
 //           and how much we can carry, 28 the target's name, 29 the target's HP percent, 45..59
-//           our buffs' names (none yet)
+//           our buffs' names
 // Others draw an empty gauge and keep a label's own text.
-// What none of these count yet: spell effects (buffs, and items' worn effects), AAs, being drunk
-// or berserk, and the skill caps (GetSkillLimit: the zone keeps our skills to them).
+// Our buffs count (TotalSpellAffects) in the stats, the resists, AC and max mana, as eqgame adds
+// them. What none of these count yet: items' worn effects, AAs, being drunk or berserk, and the
+// skill caps (GetSkillLimit: the zone keeps our skills to them).
 
 #include "sidl.h"
+#include "zone_session.h"
 
 #include <cstdint>
 #include <map>
 
+class Buffs;
 class EqStr;
 class SpellBook;
 class SpellCast;
@@ -35,6 +38,8 @@ public:
 	const SpellFile *spells = nullptr; // for the item display's spells; null: none known
 	const SpellBook *spell_book = nullptr; // for its gauges
 	const SpellCast *spell_cast = nullptr; // for the casting gauge
+	const Buffs *buffs = nullptr; // the spells on us; null: none
+	uint64_t now_ms = 0;          // the frame's (pinstCDisplay->GameTimeMs: a buff blinks by it)
 	uint16_t target = 0; // spawn id; 0 none
 	bool running = true; // run mode (eqgame's @0079856d), not walking
 	float heading = 0;   // ours, 0..512 (a compass item points by it)
@@ -43,15 +48,25 @@ public:
 	int Gauge(int eq_type, std::string &text) override;
 	bool Label(int eq_type, std::string &text, uint32_t &color) override;
 
-	const ZoneSpawn *Target() const; // null without one
+	// Null without one. Ourselves (F1) as the target window shows us: our name, and our HP in percent.
+	const ZoneSpawn *Target() const;
 	const ZoneSpawn *Pet() const;    // our pet: a living spawn we own
 
-	// EQ_Character::Max_Mana (@004b9483): level and INT or WIS (worn items' included), plus the
-	// worn items' mana. Spell effects (buffs) aren't counted yet.
-	static int MaxMana(const ZoneProfile &profile, const std::map<int16_t, ZoneItem> &items);
+	// EQ_Character::Max_Mana (@004b9483): level and INT or WIS (worn items' and buffs' included,
+	// to 255), plus the worn items' mana and the buffs' (97, to 500).
+	static int MaxMana(const ZoneProfile &profile, const std::map<int16_t, ZoneItem> &items, const Buffs *buffs = nullptr);
 	// The hit points worn items add (slots 1..20, Client::CalcItemBonuses), which the zone leaves
 	// out of our current hit points.
 	static int WornHp(const std::map<int16_t, ZoneItem> &items);
+	// EQ_Character::Max_HP (@004b92ec), worked out as eqgame does rather than the zone's (which it
+	// sends only when our HP changes, so not when a buff fades at full health): our level times
+	// the class's HP a level (by level), STA's bonus on that (CalculateStaminaHPBonus @004b92bf:
+	// STA over 255 counts half, / 300), the worn items' HP (CalculateBaseHP @004b917d,
+	// AntiTwinkAdj), our buffs' (69) and 5, to 32767. Without `buffs`, as it would be without them.
+	// Not the AAs' (CalculateMaxHPAA), nor the HP of the food we'd eat next (CalculateBaseHP's).
+	int MaxHp(bool buffs = true) const;
+	// EQ_Character::Cur_HP (@004b912f): the zone's, with the worn items', no more than MaxHp.
+	int CurHp() const;
 
 	// EQPlayer_SkillUsed (@0050ba7e): the skill an ItemType is used with; 28 (hand to hand) for
 	// what isn't a weapon.
@@ -69,14 +84,16 @@ public:
 	// recommended level, or else by our skill (its SkillUsed) below its recommended skill; never
 	// under 1.
 	int AntiTwinkAdj(const ZoneItem &item, int value) const;
-	// A stat (5..11, as the labels number them) with what worn items add (AntiTwinkAdj) and the
-	// food and drink we'd eat next (FoodAndDrink), 1..255, and its base. AGI (EQ_Character::Agi
-	// @004bb5d8) is first brought down by encum_factor.
+	// A stat (5..11, as the labels number them) with what worn items add (AntiTwinkAdj), the
+	// food and drink we'd eat next (FoodAndDrink) and our buffs (EQ_Character::Str @004bafcb...:
+	// TotalSpellAffects 4..10), 1..255, and its base. AGI (EQ_Character::Agi @004bb5d8) is then
+	// brought down by encum_factor.
 	int Stat(int eq_type, int &base) const;
 	// EQ_Character::save_poison, save_disease, save_fire, save_cold and save_magic (@004bae34,
 	// @004bac4f, @004ba8c1, @004baa95, @004ba710): a resist (12..16, as the labels number them),
 	// to 500, and its base (basesave_*: by race, and a monk's disease and poison by level from 51).
-	// What worn items add (AntiTwinkAdj), the food and drink we'd eat next, a warrior's half level
+	// What worn items add (AntiTwinkAdj), the food and drink we'd eat next, our buffs (that
+	// resist's effect, 46..50, and 111 all of them), a warrior's half level
 	// to magic, and the classes' bonuses: a monk's fire, a ranger's fire and cold, a beastlord's
 	// cold and disease, a paladin's and a shadow knight's disease, a rogue's and a shadow knight's
 	// poison, more each level from 50. Not the Resistant Discipline's (an active discipline of 30,
@@ -94,9 +111,10 @@ public:
 	// * 1000 / 847. ac (old_ac @004b98a7, without the soft caps): the worn items' AC (AntiTwinkAdj),
 	// four thirds of it for all but the casters (11..14), with the class's bonus (GetClassACBonus
 	// @004b961b: a monk's by weight, a rogue's and a beastlord's by AGI, an iksar's by level), a
-	// third of defense (half for the casters) and AGI over 70 / 20. compute_defense (@004b9d19):
-	// defense * 400 / 225 and AGI's bonus (defense_agility_bonus @004b9c7d), at least 1.
-	int Ac() const;
+	// third of defense (half for the casters), our buffs' AC (1) over 4 (3 for the casters) and AGI
+	// over 70 / 20. compute_defense (@004b9d19): defense * 400 / 225 and AGI's bonus
+	// (defense_agility_bonus @004b9c7d), at least 1. Without `buffs`, as it would be without them.
+	int Ac(bool buffs = true) const;
 	// CalcATKValue (@0043655a): the inventory window's ATK, (offense + compute_tohit) * 1000 / 744,
 	// with the primary's skill (hand to hand without a weapon there). compute_tohit (@004b9b96):
 	// offense (the skill) + 7 and the weapon's skill. offense (@004b9dda): the weapon's skill,
@@ -111,4 +129,7 @@ public:
 	static std::string ClassDesc(const EqStr *eqstr, int class_id);
 	// CEverQuest's deity description (@0052ea51): Agnostic for anything but 201..216.
 	static std::string DeityName(const EqStr *eqstr, int deity);
+
+private:
+	mutable ZoneSpawn m_me; // Target()'s when it's us
 };

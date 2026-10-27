@@ -286,6 +286,9 @@ public:
 		// decal's animation in place of NormalDecal (A_SpellIcons) with `cell` its cell.
 		std::string background, decal;
 		bool no_background = false;
+		// A Button's own opacity, 0..255 (CBuffWindow::RefreshBuffDisplay sets a buff's UnfadedAlpha
+		// as it blinks out).
+		int alpha = 255;
 		// SpellGem (CSpellGemWnd): `cell` is the spell's icon in A_SpellGems (-1: an empty gem, the
 		// Holder), `gem_color` its color (setGaugeColor: the Background is tinted by it), and
 		// `gem_fade` how far it's dimmed, 0 ready .. 10 the darkest (the spell not ready to cast).

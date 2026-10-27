@@ -12,18 +12,24 @@ no rules of its own.
    rather than `A_DefaultCursor`.
 2. **Display-only windows**, showing what the server already sends:
    - ~~Player window~~ and ~~target window~~: done (`frontend/game_values.*`, gauges in `sidl.cpp`).
-     Still to do: max mana leaves out spell effects (buffs) and `AntiTwinkAdj` for items with a
-     recommended level; the XP gauge (EQType 4) needs the experience table.
+     Targeting ourselves: F1 and clicking our model in the chase view. Still to do: max mana leaves
+     out items' worn effects and `AntiTwinkAdj` for items with a recommended level; the XP gauge (EQType 4) needs the experience table.
    - Group window: laid out as `CGroupWnd::UpdateButtons` does (`frontend/game_windows.*`), but
      there's no group state yet (invites, members, leader).
-   - Buff window: the buttons are arranged as `CBuffWindow` does and empty slots draw nothing;
-     still to do: our buffs from the player profile and `OP_Buff`, their icons (`BuffIcons`
-     decals, from the spell file) and names (label EQTypes 45..59).
+   - Buff window: done (`frontend/buffs.*`, `game_windows.cpp`): our buffs from the profile, those
+     landing on us (HitBySpell's FindAffectSlot stacking and overwriting), `OP_Buff`, the 6 s tick
+     and its expiry, clicking a beneficial one off, their icons on red or blue, names (tooltips and
+     EQTypes 45..59) and the blink in their last ticks. Their effects count in the stats, resists,
+     AC, max HP (worked out as `Max_HP` does, not the zone's), max mana and our speed (SoW,
+     snares, roots). Still to do: the effects that act as a buff
+     lands or fades (levitation, invisibility, see invisible, infravision, illusions, Eye of Zomm,
+     mounts), a bard's instrument mastery, alt+click's spell display, and Alt showing every
+     buff's tooltip (CBuffWindow::PostDraw).
    - Inventory: name, level, class (its title from 51), deity, HP, stats and resists (base, worn
      items, the next food and drink; `GameValues::Stat`, `Resist`), AC, ATK and weight (`GameValues::Ac`, `Atk`, `Weight`), money, the class picture, item icons in the slots, the Alt. Adv. row from 51, Done, and the
      Skills button opening the skills window (`frontend/game_windows.*`), and items picked up, put
      down, split through the quantity window and put away on the character view (`core/inventory.*`).
-     Still to do: for stats, resists, AC and ATK, spells (buffs and items' worn effects), AAs,
+     Still to do: for stats, resists, AC and ATK, items' worn effects, ATK's buffs, AAs,
      the Resistant Discipline, drunkenness and berserking; the XP and AA gauges (the experience table); coins onto the
      cursor, Destroy, Alt. Advance, bag windows, and icons in the hot button window's weapon slots.
    - Equipping: our model's armor, weapons and light follow what we have on (`ZoneSession::UpdateAppearance`).
@@ -61,8 +67,7 @@ no rules of its own.
      (EQType 7) and the zone's answers (OP_MemorizeSpell 3's recast and recovery, OP_ManaChange
      ending the cast, OP_TokenText's fizzles and interrupts), with the gems dim while anything's
      cast or recovering; a bard's song stops on a gem click (an empty OP_ManaChange). Still to do:
-     - casting: targeting ourselves (F1, our name on the target window), the hotkeys for the gems,
-       stuns and divine aura (OP_Stun), the AA and focus cast time and range modifiers, items'
+     - casting: the hotkeys for the gems, stuns and divine aura (OP_Stun), the AA and focus cast time and range modifiers, items'
        click effects (OP_CastSpell's inventory slot) and abilities (gem 9), and a bard being hit
        (StopSpellCast 1);
      - the spell info display: alt+click (or the right button held) on a book slot or a gem shows
@@ -106,7 +111,7 @@ no rules of its own.
    DrawTooltipAtPoint): after the mouse rests 500 ms, the control under it shows its tooltip, its
    TooltipReference or what its window sets: an inventory slot's item name (an empty worn slot's
    name), a spell gem's "1) Spell", and Alt held shows every gem's (DrawSpellButtonTooltips).
-   Still to do: the buff window's (RefreshBuffDisplay, once there are buffs), the key bound to a
+   The buff window's: the spell's name. Still to do: the key bound to a
    button after its text (SetKeyTooltip, UpdateTooltipText; needs the keymap), the help texts
    FindWnd's other hit codes ask for (GetHelpTextFromStringTable), and the slots of windows we
    don't have yet (bags, bank, loot, trade, merchants, give: their own DrawTooltips).

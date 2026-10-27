@@ -7,8 +7,9 @@
 namespace
 {
 	constexpr size_t NameField = 1, YouCastField = 4, OtherCastsField = 5, CastOnYouField = 6, CastOnOtherField = 7,
-	                 FadesField = 8, RangeField = 9, CastTimeField = 13, RecoveryField = 14, RecastField = 15, AeDurationField = 18, ManaField = 19,
-	                 GoodEffectField = 71, FirstSpaField = 74, TargetTypeField = 86, SkillField = 88, FirstClassField = 92,
+	                 FadesField = 8, RangeField = 9, CastTimeField = 13, RecoveryField = 14, RecastField = 15, DurationFormulaField = 16, DurationField = 17,
+	                 AeDurationField = 18, ManaField = 19, FirstBaseField = 20, FirstMaxField = 32, FirstFormulaField = 58,
+	                 GoodEffectField = 71, ActivatedField = 72, FirstSpaField = 74, TargetTypeField = 86, SkillField = 88, FirstClassField = 92,
 	                 CastingAnimField = 107, TargetAnimField = 108, EffectField = 110, IconField = 131,
 	                 NewEffectField = 132, DeletableField = 136, RecourseField = 137;
 }
@@ -49,7 +50,15 @@ bool SpellFile::Load(const std::string &path)
 		spell.recast_ms = number(RecastField);
 		spell.ae_duration = number(AeDurationField);
 		spell.mana = number(ManaField);
+		spell.duration_formula = number(DurationFormulaField);
+		spell.duration = number(DurationField);
+		for (int i = 0; i < 12; ++i) {
+			spell.base[i] = static_cast<int16_t>(number(FirstBaseField + i));
+			spell.max[i] = static_cast<int16_t>(number(FirstMaxField + i));
+			spell.formula[i] = static_cast<uint8_t>(number(FirstFormulaField + i));
+		}
 		spell.good_effect = static_cast<uint8_t>(number(GoodEffectField));
+		spell.activated = static_cast<uint8_t>(number(ActivatedField));
 		for (int i = 0; i < 12; ++i)
 			spell.spas[i] = static_cast<uint8_t>(number(FirstSpaField + i));
 		spell.first_spa = spell.spas[0];

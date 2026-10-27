@@ -1,8 +1,10 @@
 #include "game_values.h"
+#include "buffs.h"
 #include "eqstr.h"
 #include "inventory.h"
 #include "spell_book.h"
 #include "spell_cast.h"
+#include "spell_file.h"
 #include "world_client.h"
 #include "zone_session.h"
 
@@ -188,14 +190,15 @@ int GameValues::Stat(int eq_type, int &base) const
 		return 0;
 	const ZoneProfile &p = zone->Profile();
 	int8_t ZoneItem::*field;
+	int spa = 0;
 	switch (eq_type) {
-	case 5: base = p.str; field = &ZoneItem::str; break;
-	case 6: base = p.sta; field = &ZoneItem::sta; break;
-	case 7: base = p.dex; field = &ZoneItem::dex; break;
-	case 8: base = p.agi; field = &ZoneItem::agi; break;
-	case 9: base = p.wis; field = &ZoneItem::wis; break;
-	case 10: base = p.int_; field = &ZoneItem::int_; break;
-	case 11: base = p.cha; field = &ZoneItem::cha; break;
+	case 5: base = p.str; field = &ZoneItem::str; spa = 4; break;
+	case 6: base = p.sta; field = &ZoneItem::sta; spa = 7; break;
+	case 7: base = p.dex; field = &ZoneItem::dex; spa = 5; break;
+	case 8: base = p.agi; field = &ZoneItem::agi; spa = 6; break;
+	case 9: base = p.wis; field = &ZoneItem::wis; spa = 9; break;
+	case 10: base = p.int_; field = &ZoneItem::int_; spa = 8; break;
+	case 11: base = p.cha; field = &ZoneItem::cha; spa = 10; break;
 	default: return 0;
 	}
 	int value = base;
@@ -203,6 +206,8 @@ int GameValues::Stat(int eq_type, int &base) const
 		if (slot >= FirstWornSlot && slot <= LastWornSlot && item.item_class == 0)
 			value += AntiTwinkAdj(item, item.*field);
 	value += FoodAndDrink(zone->Items(), field);
+	if (buffs)
+		value += static_cast<int16_t>(buffs->Total(spa));
 	if (eq_type == 8)
 		value = static_cast<int>(value * EncumFactor());
 	// CalculateMaxStatAA2 without AAs: 1..255.
@@ -263,7 +268,12 @@ int GameValues::Resist(int eq_type, int &base) const
 	for (const auto &[slot, item] : zone->Items())
 		if (slot >= FirstWornSlot && slot <= LastWornSlot && item.item_class == 0)
 			value += AntiTwinkAdj(item, item.*field);
-	value += FoodAndDrink(zone->Items(), field) + bonus;
+	value += FoodAndDrink(zone->Items(), field);
+	if (buffs) {
+		int spa = eq_type == 12 ? 48 : eq_type == 13 ? 49 : eq_type == 14 ? 46 : eq_type == 15 ? 47 : 50;
+		value += static_cast<int16_t>(buffs->Total(spa) + buffs->Total(111));
+	}
+	value += bonus;
 	// CalculateMaxStatAA2: no more than 500; unlike the stats, no least
 	return std::min(value, 500);
 }
@@ -315,8 +325,8 @@ double GameValues::EncumFactor() const
 		return 1;
 	const ZoneProfile &me = zone->Profile();
 	float factor = 1;
-	float hp = static_cast<float>(zone->BaseHp() + WornHp(zone->Items()));
-	float max = static_cast<float>(zone->MaxHp());
+	float hp = static_cast<float>(CurHp());
+	float max = static_cast<float>(MaxHp());
 	if (hp < max && me.level > 3) {
 		float part = hp / max;
 		if (part < 0.2 && hp < 50.0)
@@ -342,7 +352,7 @@ namespace
 	}
 }
 
-int GameValues::Ac() const
+int GameValues::Ac(bool with_buffs) const
 {
 	if (!zone)
 		return 0;
@@ -399,6 +409,8 @@ int GameValues::Ac() const
 	ac = std::max(ac + static_cast<int16_t>(bonus), 0);
 	int defense = Skill(15);
 	ac += caster ? defense / 2 : defense / 3;
+	if (with_buffs && buffs)
+		ac += static_cast<int16_t>(buffs->Total(1)) / (caster ? 3 : 4);
 	if (agi > 70)
 		ac += agi / 20;
 	ac = static_cast<int16_t>(std::max(ac, 0));
@@ -447,7 +459,7 @@ int GameValues::WornHp(const std::map<int16_t, ZoneItem> &items)
 	return WornSum(items, &ZoneItem::hp);
 }
 
-int GameValues::MaxMana(const ZoneProfile &p, const std::map<int16_t, ZoneItem> &items)
+int GameValues::MaxMana(const ZoneProfile &p, const std::map<int16_t, ZoneItem> &items, const Buffs *buffs)
 {
 	// Warriors, monks, rogues, berserkers and merchants have none; paladins, rangers, shadow
 	// knights and beastlords none of their own before level 9.
@@ -465,19 +477,82 @@ int GameValues::MaxMana(const ZoneProfile &p, const std::map<int16_t, ZoneItem> 
 	// Clerics, paladins, rangers, druids, shamans and beastlords cast from WIS; the rest from INT.
 	bool wisdom = p.class_id == 2 || p.class_id == 3 || p.class_id == 4 || p.class_id == 6 || p.class_id == 10 || p.class_id == 15;
 	int stat = wisdom ? p.wis + WornSum(items, &ZoneItem::wis) : p.int_ + WornSum(items, &ZoneItem::int_);
+	if (buffs)
+		stat += static_cast<int16_t>(buffs->Total(wisdom ? 9 : 8));
 	stat = std::clamp(stat, 0, 255);
 	if (stat > 200)
 		stat = (stat - 200) / 2 + 200;
 	if (stat - 100 > 0)
 		stat += (stat - 100) * 3 / 2;
-	int mana = level * 15 + static_cast<int16_t>(level * 15) * stat / 200 + WornSum(items, &ZoneItem::mana);
+	int spell_mana = buffs ? std::min<int>(static_cast<int16_t>(buffs->Total(97)), 500) : 0;
+	int mana = level * 15 + static_cast<int16_t>(level * 15) * stat / 200 + spell_mana + WornSum(items, &ZoneItem::mana);
 	return std::max(static_cast<int16_t>(mana), static_cast<int16_t>(0));
+}
+
+int GameValues::MaxHp(bool with_buffs) const
+{
+	if (!zone)
+		return 0;
+	const ZoneProfile &me = zone->Profile();
+	int level = me.level;
+	int per_level = 20;
+	switch (me.class_id) {
+	case 1: // warrior
+		per_level = level < 20 ? 22 : level < 30 ? 23 : level < 40 ? 25 : level < 53 ? 27 : level < 57 ? 28 : level < 60 ? 29 : 30;
+		break;
+	case 2: case 6: case 10: // cleric, druid, shaman
+		per_level = 15;
+		break;
+	case 3: case 5: // paladin, shadow knight
+		per_level = level < 35 ? 21 : level < 45 ? 22 : level < 51 ? 23 : level < 56 ? 24 : level < 60 ? 25 : 26;
+		break;
+	case 4: // ranger
+		per_level = level < 58 ? 20 : 21;
+		break;
+	case 7: case 8: case 9: case 15: // monk, bard, rogue, beastlord
+		per_level = level < 51 ? 18 : level < 58 ? 19 : 20;
+		break;
+	case 11: case 12: case 13: case 14: // the casters
+		per_level = 12;
+		break;
+	}
+	int levels = level * per_level;
+	int base = 0;
+	int sta = Stat(6, base);
+	if (!with_buffs && buffs) // Stat counts them
+		sta = std::clamp(sta - static_cast<int16_t>(buffs->Total(7)), 1, 255);
+	if (sta > 255)
+		sta = (sta - 255) / 2 + 255;
+	int items = 0;
+	for (const auto &[slot, item] : zone->Items())
+		if (slot >= FirstWornSlot && slot <= LastWornSlot && item.item_class == 0)
+			items += AntiTwinkAdj(item, item.hp);
+	int hp = levels + sta * levels / 300 + std::max(items, 0);
+	if (with_buffs && buffs)
+		hp += static_cast<int16_t>(buffs->Total(69));
+	hp += 5;
+	return std::min(hp, 0x7fff);
+}
+
+int GameValues::CurHp() const
+{
+	if (!zone)
+		return 0;
+	return std::min(zone->BaseHp() + WornHp(zone->Items()), MaxHp());
 }
 
 const ZoneSpawn *GameValues::Target() const
 {
 	if (!zone || !target)
 		return nullptr;
+	if (target == zone->MySpawnId()) {
+		m_me = zone->Self();
+		m_me.id = target;
+		m_me.name = zone->Profile().name;
+		int max = MaxHp();
+		m_me.hp = static_cast<int16_t>(max > 0 ? std::clamp(CurHp() * 100 / max, 0, 100) : 100);
+		return &m_me;
+	}
 	auto it = zone->Spawns().find(target);
 	return it != zone->Spawns().end() ? &it->second : nullptr;
 }
@@ -501,13 +576,12 @@ int GameValues::Gauge(int eq_type, std::string &text)
 	switch (eq_type) {
 	case 1: { // HP, "Name Surname" on it
 		text = me.last_name.empty() ? me.name : me.name + " " + me.last_name;
-		int max = zone->MaxHp();
-		if (max <= 0)
+		if (zone->MaxHp() <= 0)
 			return 1000; // not heard yet
-		return Permille(zone->BaseHp() + WornHp(zone->Items()), max);
+		return Permille(CurHp(), MaxHp());
 	}
 	case 2: { // mana; none for those who never have any
-		int max = MaxMana(me, zone->Items());
+		int max = MaxMana(me, zone->Items(), buffs);
 		if (max > 0)
 			return Permille(std::clamp<int>(me.mana, 0, max), max);
 		uint16_t c = me.class_id;
@@ -570,16 +644,18 @@ bool GameValues::Label(int eq_type, std::string &text, uint32_t &color)
 		return true;
 	}
 	case 17: // our HP, with what worn items add (the zone leaves that out)
-		text = std::to_string(zone->BaseHp() + WornHp(zone->Items()));
+		text = std::to_string(CurHp());
 		return true;
-	case 18: // our max HP, against itself less spell effects (none yet): grey
-		text = std::to_string(zone->MaxHp());
-		color = ComparisonColor(0, 0);
+	case 18: { // our max HP, against itself less our buffs
+		int max = MaxHp();
+		text = std::to_string(max);
+		color = ComparisonColor(max, MaxHp(false));
 		return true;
-	case 22: case 23: { // AC and ATK, against themselves less spell effects (none yet): grey
+	}
+	case 22: case 23: { // AC and ATK, against themselves less our buffs (ATK counts none yet)
 		int value = eq_type == 22 ? Ac() : Atk();
 		text = std::to_string(value);
-		color = ComparisonColor(value, value);
+		color = ComparisonColor(value, eq_type == 22 ? Ac(false) : value);
 		return true;
 	}
 	case 24: { // what we carry, grey, red over our STR
@@ -608,8 +684,9 @@ bool GameValues::Label(int eq_type, std::string &text, uint32_t &color)
 		text = std::to_string(spawn && spawn->npc < 2 ? std::clamp<int>(spawn->hp, 0, 100) : 0);
 		return true;
 	default:
-		if (eq_type >= 45 && eq_type <= 59) { // the buff in that slot's spell name: no buffs yet
-			text.clear();
+		if (eq_type >= 45 && eq_type <= 59) { // the buff in that slot's spell name
+			const SpellInfo *spell = buffs ? buffs->SlotSpell(eq_type - 45) : nullptr;
+			text = spell ? spell->name : "";
 			return true;
 		}
 		return false;

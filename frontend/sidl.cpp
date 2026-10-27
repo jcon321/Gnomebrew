@@ -1214,6 +1214,9 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 		// display's icon: CItemDisplayWnd::SetItem makes A_DragItem the Normal and clears the decal, so
 		// the window's RedIconBackground doesn't show).
 		bool cell_background = !control.cell_animation.empty();
+		std::vector<uint32_t> kept;
+		if (control.alpha < 255)
+			canvas.Keep(control.rect, kept);
 		if (cell_background && control.cell >= 0)
 			DrawCell(canvas, textures, control.cell_animation, control.cell, control.rect);
 		else if (!control.blank && !cell_background && !control.no_background)
@@ -1243,6 +1246,8 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 			                                                    : control.text_color;
 			SidlDrawButtonText(text, canvas, text_rect, control.text, height, color, weight);
 		}
+		if (control.alpha < 255)
+			canvas.BlendKept(control.rect, kept, control.alpha);
 	}
 	else if (def.type == "InvSlot") {
 		// CInvSlotWnd: the slot's own picture, and what's in it over that.

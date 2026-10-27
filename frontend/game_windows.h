@@ -7,8 +7,11 @@
 //     invitation) hidden where they overlap them; Invite only with another player targeted, Disband
 //     only in a group; a member's pet gauge only while that member has a pet. We have no group yet.
 //   - CBuffWindow::RefreshIconArrangement and RefreshBuffDisplay (@004090e9, @00409334): the buff
-//     buttons stacked in columns from the top right, as many as fit (the rest hidden), and an empty
-//     slot drawing nothing (SetBuffIcon clears its picture). We don't know our buffs yet.
+//     buttons stacked in columns from the top right, as many as fit (the rest hidden); a buff's
+//     icon (the spell's, a cell of A_SpellIcons: the window's BuffIcons aren't used) on RedIconBackground for a detrimental spell or
+//     BlueIconBackground (SetBuffIcon), its name the tooltip, and under 4 ticks left (but for a
+//     bard's own short songs) blinking, fading out over each second of GameTimeMs; an empty slot
+//     drawing nothing (SetBuffIcon clears its picture).
 //   - CHotButtonWnd::OnProcessFrame (@0041fae9): a hot button shows the text of the button it
 //     holds (the Actions window's, or a social's name); an empty one has no text and is checked,
 //     and the item slots and spell gems are hidden (we have no item or spell hot buttons yet).

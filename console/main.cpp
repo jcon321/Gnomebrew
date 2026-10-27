@@ -39,7 +39,8 @@ namespace
 			"  --move FROM:TO[:N]    with --zone, once in, move what's in slot FROM to TO as the inventory window\n"
 			"                        does (0 the cursor; N takes N of a stack onto the cursor); \"auto\" puts the\n"
 			"                        cursor's item away. Repeatable, done in order; the items print before and after\n"
-			"  --cast GEM            with --zone, once in, cast the spell in gem GEM (1..8) on ourselves and print\n"
+			"  --cast GEM[:SPELL]    with --zone, once in, cast the spell in gem GEM (1..8; SPELL memorized there first)\n"
+			"                        on ourselves and print\n"
 			"                        the zone's answers. Repeatable: each 3 s after the zone ends the one before\n"
 			"  --record DIR          with --zone, write each zone session's packets to DIR/<char>-<time>.eqr\n"
 			"  --replay FILE         play a recorded zone session back (no server): stay --zone seconds\n"
@@ -119,6 +120,7 @@ namespace
 	std::string g_replay_path;
 	std::vector<std::string> g_moves; // --move
 	std::vector<int> g_casts;         // --cast, gems from 1
+	std::vector<int> g_cast_spells;   // --cast GEM:SPELL's spell (0 the gem's)
 
 	void PrintItems(const ZoneSession &zone)
 	{
@@ -200,12 +202,30 @@ namespace
 						printf("[cast] mana %d, gems:", zone.Profile().mana);
 						for (int16_t spell : zone.Profile().mem_spells)
 							printf(" %d", spell);
+						printf(", book:");
+						for (int16_t spell : zone.Profile().spell_book)
+							if (spell != -1)
+								printf(" %d", spell);
+						printf(", buffs:");
+						for (const ZoneBuff &buff : zone.Profile().buffs)
+							if (buff.type != 0)
+								printf(" %d (%d ticks)", buff.spell, buff.duration);
 						printf("\n");
-						// An empty gem gets the book's next spell first, as the book would memorize it.
+						// A gem given a spell gets it; an empty gem gets the book's next spell first, as the book
+						// would memorize it.
 						int slot = 0;
-						for (int cast : g_casts) {
-							int gem = cast - 1;
-							if (gem < 0 || gem >= ZoneProfile::Gems || zone.Profile().mem_spells[gem] != -1)
+						for (size_t i = 0; i < g_casts.size(); ++i) {
+							int gem = g_casts[i] - 1;
+							if (gem < 0 || gem >= ZoneProfile::Gems)
+								continue;
+							if (g_cast_spells[i] > 0) {
+								if (zone.Profile().mem_spells[gem] != g_cast_spells[i]) {
+									printf("[cast] memorizing spell %d into gem %d\n", g_cast_spells[i], gem + 1);
+									zone.MemorizeSpell(gem, g_cast_spells[i], 1);
+								}
+								continue;
+							}
+							if (zone.Profile().mem_spells[gem] != -1)
 								continue;
 							while (slot < ZoneProfile::BookSlots && zone.Profile().spell_book[slot] == -1)
 								++slot;
@@ -256,6 +276,15 @@ namespace
 					break;
 				case ZoneSession::Event::Type::SpellRecast:
 					printf("[cast] gem %u went off (spell %d): recast starts\n", event.id, event.value);
+					break;
+				case ZoneSession::Event::Type::SpellAction:
+					if (!g_casts.empty())
+						printf("[cast] action: %u's spell %d on %u, flags %u\n", event.cast.caster, event.cast.spell, event.cast.target,
+							event.cast.flags);
+					break;
+				case ZoneSession::Event::Type::BuffChanged:
+					printf("[buff] OP_Buff slot %u how %d: type %u spell %d level %u duration %d\n", event.id, event.value,
+						event.buff.type, event.buff.spell, event.buff.level, event.buff.duration);
 					break;
 				case ZoneSession::Event::Type::ManaChanged:
 					if (!g_casts.empty()) {
@@ -338,8 +367,12 @@ int main(int argc, char **argv)
 			say_text = next();
 		else if (arg == "--click-door")
 			click_door = atoi(next().c_str());
-		else if (arg == "--cast")
-			g_casts.push_back(atoi(next().c_str()));
+		else if (arg == "--cast") {
+			std::string value = next();
+			size_t colon = value.find(':');
+			g_casts.push_back(atoi(value.c_str()));
+			g_cast_spells.push_back(colon == std::string::npos ? 0 : atoi(value.c_str() + colon + 1));
+		}
 		else if (arg == "--click-link")
 			g_click_link = atoi(next().c_str());
 		else if (arg == "--zone-to")

@@ -684,11 +684,15 @@ void FrontEnd::Update(uint64_t now_ms)
 		HandleWindowClicks();
 		m_spell_book.Frame(now_ms);
 		m_spell_cast.Frame(now_ms);
+		m_buffs.Frame(now_ms);
+		if (m_zone_view)
+			m_zone_view->SetSpeedModifier(m_buffs.SpeedModifier(m_zone.Self().run_speed));
 		// DoPassageOfTime: the social going's next line.
 		std::string social_line = SocialStep(m_window_state, now_ms);
 		if (!social_line.empty())
 			InterpretCommand(social_line);
 		m_game_values.running = m_run;
+		m_game_values.now_ms = now_ms;
 		if (m_zone_view)
 			m_game_values.heading = m_zone_view->Movement().heading;
 		UpdateGameWindows(m_windows, m_game_values, m_window_state);
@@ -1494,6 +1498,8 @@ void FrontEnd::BuildZoneWindows()
 	cast_host.can_see = [this](uint16_t id) { return CanSee(id); };
 	cast_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
 	m_spell_cast.Attach(m_windows, m_zone, m_ui.spells, m_ui.eqstr, std::move(cast_host));
+	m_buffs.Attach(m_zone, m_ui.spells, m_ui.eqstr, [this](const std::string &text, int type) { ChatOut(text, type); });
+	m_game_values.buffs = &m_buffs;
 	m_spell_book.Attach(m_windows, m_window_state, m_zone, m_game_values, m_spell_cast, m_ui.spells, m_ui.eqstr,
 		std::move(host));
 	m_spell_book.Reset();
@@ -1586,6 +1592,12 @@ void FrontEnd::HandleWindowClicks()
 				if (SidlWindow *social_editor = m_windows.Find("SocialEditWnd"))
 					social_editor->Focus("");
 			}
+			continue;
+		}
+		// CBuffWindow::WndNotification: a buff clicked comes off (with Alt it would show the spell).
+		if (click.window == "BuffWindow" && click.control.rfind("Buff", 0) == 0) {
+			if (!m_alt_down)
+				m_buffs.ClickOff(std::atoi(click.control.c_str() + 4));
 			continue;
 		}
 		// A hot button holding one of the Actions window's buttons does what that button does.
@@ -1683,6 +1695,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			AddZoneLog("You have entered " + m_zone.Info().long_name + ".", ZoneYellow);
 			if (!m_windows_built)
 				BuildZoneWindows();
+			m_buffs.Reset(m_now_ms); // the profile's, which came first
 			// CEverQuest_EnterZone -> CDisplay::StartWorldDisplay: load the zone, and put our
 			// character (OP_ZoneEntry came first) in it.
 			if (m_ui.eq_dir.empty())
@@ -1786,6 +1799,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			[[fallthrough]];
 		case Type::SpellAction:
 		case Type::Damaged: {
+			m_buffs.ZoneEvent(event); // IWasHit: one landing on us
 			std::vector<SpellCasting::Line> lines;
 			std::vector<SpellCasting::Animation> animations;
 			std::vector<SpellEffects::Request> effects;
@@ -1803,6 +1817,9 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 					m_zone_view->StartSpellEffect(effect);
 			break;
 		}
+		case Type::BuffChanged:
+			m_buffs.ZoneEvent(event);
+			break;
 		case Type::SkillUp: // msg_skillimprove
 			ChatOut(FormatEqString(m_ui.eqstr, 12091, "You have become better at %1! (%2)",
 				{SkillName(m_ui.eqstr, event.id), std::to_string(event.value)}), ChatType::Skills);
@@ -2031,7 +2048,7 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 				AddZoneLog(EqString(1462, "You can't reach that, get closer."), ZoneYellow);
 				break;
 			case ZoneDoors::Use::Nothing:
-				if (uint16_t id = m_zone_view->PickSpawn(event.x, event.y))
+				if (uint16_t id = m_zone_view->PickSpawn(event.x, event.y, m_zone.MySpawnId()))
 					SetTarget(id);
 				break;
 			}
@@ -2137,6 +2154,10 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 	case InputEvent::Key::F9:
 		if (m_zone_view)
 			m_zone_view->CycleCamera();
+		break;
+	// setTargetBasedOnIndex(16): F1 targets ourselves (F2..F6 the group, which we haven't yet).
+	case InputEvent::Key::F1:
+		SetTarget(m_zone.MySpawnId());
 		break;
 	case InputEvent::Key::F11:
 		m_debug.open = !m_debug.open;

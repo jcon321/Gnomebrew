@@ -45,6 +45,20 @@ namespace
 		return value;
 	}
 
+	// SpellBuff_Struct (10 bytes).
+	ZoneBuff ReadBuff(const std::vector<uint8_t> &data, size_t offset)
+	{
+		ZoneBuff buff;
+		buff.type = Read<uint8_t>(data, offset);
+		buff.level = Read<uint8_t>(data, offset + 1);
+		buff.bard_modifier = Read<uint8_t>(data, offset + 2);
+		buff.activated = Read<uint8_t>(data, offset + 3);
+		buff.spell = Read<int16_t>(data, offset + 4);
+		buff.duration = Read<int16_t>(data, offset + 6);
+		buff.counters = Read<uint16_t>(data, offset + 8);
+		return buff;
+	}
+
 	std::string CString(const std::vector<uint8_t> &data, size_t offset, size_t max)
 	{
 		std::string s;
@@ -660,6 +674,26 @@ bool ZoneSession::StopCasting()
 	return Send(ZoneOp::ManaChange, nullptr, 0, "OP_ManaChange (stop casting)");
 }
 
+bool ZoneSession::SendBuff(int slot, const ZoneBuff &buff, uint32_t how)
+{
+	if (m_state != State::InZone)
+		return false;
+	uint8_t body[20] = {};
+	memcpy(body, &m_my_id, 2);
+	body[2] = buff.type;
+	body[3] = buff.level;
+	body[4] = buff.bard_modifier;
+	body[5] = buff.activated;
+	memcpy(body + 6, &buff.spell, 2);
+	memcpy(body + 8, &buff.duration, 2);
+	memcpy(body + 10, &buff.counters, 2);
+	uint16_t slot16 = static_cast<uint16_t>(slot);
+	memcpy(body + 12, &slot16, 2);
+	memcpy(body + 16, &how, 4);
+	return Send(ZoneOp::Buff, body, sizeof(body),
+		"OP_Buff slot " + std::to_string(slot) + " spell " + std::to_string(buff.spell) + " how " + std::to_string(how));
+}
+
 bool ZoneSession::CastSpell(int gem, int spell, uint16_t target)
 {
 	if (m_state != State::InZone)
@@ -1001,6 +1035,8 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 			p.spell_book[i] = Read<int16_t>(data, 1846 + i * 2);
 		for (int i = 0; i < ZoneProfile::Gems; ++i)
 			p.mem_spells[i] = Read<int16_t>(data, 2870 + i * 2);
+		for (int i = 0; i < ZoneProfile::BuffSlots; ++i)
+			p.buffs[i] = ReadBuff(data, 616 + i * 10);
 		m_have_profile = true;
 		char line[160];
 		snprintf(line, sizeof(line), "[zone]    profile: %s level %u, zone %u at (%.1f, %.1f, %.1f), hp %d", p.name.c_str(), p.level,
@@ -1420,10 +1456,21 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		e.type = Event::Type::SpellAction;
 		e.cast.target = Read<uint16_t>(data, 0);
 		e.cast.caster = Read<uint16_t>(data, 2);
+		e.cast.level = Read<uint16_t>(data, 4);
 		e.cast.instrument_mod = Read<int32_t>(data, 8);
 		e.cast.type = data[24];
 		e.cast.spell = Read<int16_t>(data, 30);
 		e.cast.flags = data[33];
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::Buff: {
+		if (data.size() < 20)
+			break;
+		Event e(Event::Type::BuffChanged);
+		e.buff = ReadBuff(data, 2);
+		e.id = Read<uint16_t>(data, 12);
+		e.value = static_cast<int32_t>(Read<uint32_t>(data, 16));
 		events.push_back(e);
 		break;
 	}

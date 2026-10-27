@@ -4,7 +4,9 @@
 // first. Of its 147 fields (EQ_Spell::EQ_Spell @004d6b40 reads them in order) we keep what the
 // item display (CItemDisplayWnd::SetItem), the spellbook, the spell gems and casting use: the name (1),
 // the casting texts (4..8), the range (9), the cast time (13, ms), the recovery time (14, ms), the recast
-// time (15, ms), AEDuration (18), the mana (19), goodEffect (71), the effects' SPAs (74..85), the target
+// time (15, ms), the buff's duration formula and most ticks (16, 17), AEDuration (18), the mana (19), the
+// effects' base values (20..31), their maximums (32..43) and their formulas (58..69), goodEffect (71),
+// Activated (72), the effects' SPAs (74..85), the target
 // type (86), the skill (88), the level each class gets it at (92..106, WAR first; 255 they don't), the
 // caster's and the target's animations (107, 108), the spells.eff effect (110, SpellAffectIndex), the
 // icon the book and the gems show (131, new_icon), the SpellsNew.eff effect (132), whether it can be
@@ -27,6 +29,14 @@ struct SpellInfo
 	int recast_ms = 0;
 	int ae_duration = 0;
 	int mana = 0;
+	// A buff's (EQ_Spell +0x20, +0x24: EQ_Character::CalculateSpellDuration): the formula, 0 not a
+	// buff, and the most ticks it lasts (0 no limit).
+	int duration_formula = 0, duration = 0;
+	// Each effect's value (EQ_Spell +0x2e, +0x46, +0x7a: EQ_Character::CalcAffectChange): the base,
+	// the most it gets to (0 no limit) and how it grows with the caster's level.
+	int16_t base[12] = {}, max[12] = {};
+	uint8_t formula[12] = {};
+	uint8_t activated = 0; // copied into its buffs
 	uint8_t good_effect = 0; // 0 detrimental; the book's slot is red for those, blue for the rest
 	uint8_t first_spa = 0;   // the first of its 12 effects (EQ_Spell +0x8a)
 	uint8_t spas[12] = {};   // all of them

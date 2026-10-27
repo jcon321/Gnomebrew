@@ -611,28 +611,30 @@ bool ZoneView::SpawnStats(uint16_t id, SpawnDebug &out) const
 	return true;
 }
 
-uint16_t ZoneView::PickSpawn(int x, int y) const
+uint16_t ZoneView::PickSpawn(int x, int y, uint16_t me) const
 {
 	// A box over each drawn model on screen, from its feet to the top of its head and a third of
 	// its height either side.
 	uint16_t best = 0;
 	float best_distance = 0;
-	for (const auto &[id, actor] : m_actors) {
-		if (!actor.drawn || !actor.model)
-			continue;
-		float height = actor.model->MaxZ() - actor.model->MinZ();
+	auto consider = [&](uint16_t id, const render::Vec3 &feet, float height, float distance) {
 		float fx, fy, tx, ty;
-		if (!m_renderer->Project(actor.Feet(), fx, fy) || !m_renderer->Project(actor.Feet() + render::Vec3{0, 0, height}, tx, ty))
-			continue;
+		if (!m_renderer->Project(feet, fx, fy) || !m_renderer->Project(feet + render::Vec3{0, 0, height}, tx, ty))
+			return;
 		float half = std::max(6.0f, (fy - ty) / 3);
 		float center = (fx + tx) / 2;
 		if (x < center - half || x > center + half || y < ty - 4 || y > fy + 4)
-			continue;
-		if (best == 0 || actor.distance < best_distance) {
+			return;
+		if (best == 0 || distance < best_distance) {
 			best = id;
-			best_distance = actor.distance;
+			best_distance = distance;
 		}
-	}
+	};
+	for (const auto &[id, actor] : m_actors)
+		if (actor.drawn && actor.model)
+			consider(id, actor.Feet(), actor.model->MaxZ() - actor.model->MinZ(), actor.distance);
+	if (me != 0 && m_view == CameraView::Chase && m_model)
+		consider(me, m_feet, m_height, render::Length(m_feet - m_renderer->CurrentCamera().position));
 	return best;
 }
 

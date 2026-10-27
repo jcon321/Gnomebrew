@@ -29,6 +29,18 @@ class SpellFile;
 struct PacketLog;
 struct RdpStats;
 
+// SpellBuff_Struct (10 bytes): a buff as eqgame keeps it (EQ_Character's Buff[15]).
+struct ZoneBuff
+{
+	uint8_t type = 0;          // 0 none; 1 shown, for ever; 2 shown, counting down; 4 its effects turned round (a tap's, on its caster)
+	uint8_t level = 0;         // the caster's
+	uint8_t bard_modifier = 0; // a song's instrument (10 none)
+	uint8_t activated = 0;     // the spell's Activated
+	int16_t spell = -1;
+	int16_t duration = 0;      // ticks left (6 s each); -1 for ever
+	uint16_t counters = 0;     // a rune's left, or a poison's or disease's counters
+};
+
 struct ZoneProfile
 {
 	std::string name;
@@ -55,6 +67,9 @@ struct ZoneProfile
 	static constexpr int BookSlots = 256, Gems = 8;
 	int16_t spell_book[BookSlots] = {};
 	int16_t mem_spells[Gems] = {};
+	// The buffs on us as we come into the zone (frontend/buffs.h keeps them from there).
+	static constexpr int BuffSlots = 15;
+	ZoneBuff buffs[BuffSlots];
 };
 
 // One entry of OP_SendZonepoints: where a zone line with teleport index `index` goes.
@@ -142,6 +157,7 @@ struct ZoneCast
 	int32_t cast_ms = 0;         // BeginCast: how long it takes
 	int32_t damage = 0;          // Damage
 	int32_t instrument_mod = 10; // Action: a bard's song's
+	int level = 0;               // Action: the caster's level for a potion's (spells 1252..1266, 1..60)
 	uint8_t type = 0;            // Action and Damage: 231 a spell
 	uint8_t flags = 0;           // Action: 4 it landed
 };
@@ -278,6 +294,7 @@ public:
 			CastBegan,      // cast: OP_BeginCast
 			SpellAction,    // cast: OP_Action
 			Damaged,        // cast: OP_Damage
+			BuffChanged,    // OP_Buff: buff, id its slot, value how (ZoneOp::Buff)
 			LoggedOut,    // camp finished; the zone closes the connection
 			ZoneApproved, // value: the zone we're going to; OP_DeleteSpawn is sent
 			ZoneDenied,   // value: the answer (ZoningMessage: 0 down, -1 not ready, -7 not experienced...)
@@ -293,6 +310,7 @@ public:
 		std::string text;
 		ZoneChat chat;
 		ZoneCast cast;
+		ZoneBuff buff;
 	};
 
 	ZoneSession();
@@ -360,6 +378,8 @@ public:
 	// it's over, gone off or not, OP_ManaChange; gone off, OP_MemorizeSpell 3 before that.
 	bool CastSpell(int gem, int spell, uint16_t target);
 	bool StopCasting(); // an empty OP_ManaChange: a bard's song stops (StopSpellCast)
+	// OP_Buff about a buff slot of ours: what's there, and how (ZoneOp::Buff).
+	bool SendBuff(int slot, const ZoneBuff &buff, uint32_t how);
 	void Close();
 
 	// One of the client's own one-shot animations on a spawn (a spell's caster and target, as

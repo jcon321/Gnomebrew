@@ -60,6 +60,8 @@ public:
 	void SetPlayerPosition(float x, float y, float z, float heading);
 	void SetSwimSkill(int skill) { m_movement.SetSwimSkill(skill); } // the profile's swimming skill
 	void SetSafeFallSkill(int skill) { m_safe_fall = skill; }        // for the landing sounds
+	// What our buffs add to our speed (eqspa_movement_rate's MovementSpeedModifier).
+	void SetSpeedModifier(float modifier) { m_movement.SetSpeedModifier(modifier); }
 	// The sound the doors, we and the spawns make (none when unset).
 	void SetSound(audio::EqSound *sound) { m_sound = sound; }
 	// The zone line (a "DRNTP..." region type) our feet stepped into since the last call, once.
@@ -210,8 +212,9 @@ public:
 		render::Environment body_environment = render::Environment::Dry;
 	};
 	bool SpawnStats(uint16_t id, SpawnDebug &out) const;
-	// The spawn drawn under a window pixel, nearest first (after Render); 0 for none.
-	uint16_t PickSpawn(int x, int y) const;
+	// The spawn drawn under a window pixel, nearest first (after Render); 0 for none. In the chase
+	// view our own model is one of them, as `me`.
+	uint16_t PickSpawn(int x, int y, uint16_t me) const;
 	// Debug drawing: triangle outlines instead of the scene, no fog (out to the zone's max clip),
 	// no clip plane (no far plane or fog at all), collision walls near us outlined, a marker on
 	// the floor under our feet, none of the weather (its sound goes on), and the spells' old

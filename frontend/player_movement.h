@@ -59,6 +59,9 @@ public:
 	void Place(const render::Vec3 &feet, float heading, float height, float walk_speed, float run_speed, float gravity);
 	void SetEyeHeight(float eye) { m_eye = eye; } // above the feet (CameraHeightOffset)
 	void SetSwimSkill(int skill) { m_swim_skill = skill; }
+	// ActorInfo's MovementSpeedModifier (our buffs'): added to the speed forward, taken from it
+	// back; below -1000 we're rooted.
+	void SetSpeedModifier(float modifier) { m_speed_modifier = modifier; }
 	// Advances `ms` milliseconds. Returns true when a jump started.
 	bool Step(const MoveControls &controls, float ms, const render::ZoneScene &scene);
 	// Turns by `delta` 512ths at once (mouse look).
@@ -105,6 +108,7 @@ private:
 
 	float m_eye = 5.4f;
 	int m_swim_skill = 0;
+	float m_speed_modifier = 0;
 	float m_pitch = 0;
 	float m_clock_ms = 0, m_swim_jump_ms = 0; // DoSwimJump's 1.5 s
 	float m_last_jump_ms = 0;  // when the last jump went up

@@ -1,10 +1,12 @@
 #include "game_windows.h"
+#include "buffs.h"
 #include "chat_text.h"
 #include "eqstr.h"
 #include "game_values.h"
 #include "ini_file.h"
 #include "inventory.h"
 #include "item_display.h"
+#include "spell_file.h"
 #include "window_manager.h"
 #include "zone_session.h"
 
@@ -75,7 +77,7 @@ namespace
 			Show(wnd, "PetGauge" + std::to_string(i), false);
 	}
 
-	void BuffWindow(SidlWindow &wnd)
+	void BuffWindow(SidlWindow &wnd, const GameValues &values)
 	{
 		const SidlWindow::Control *first = wnd.Find("Buff0");
 		if (!first)
@@ -91,7 +93,20 @@ namespace
 				continue;
 			int column = rows > 0 ? i / rows : columns;
 			button->visible = column < columns;
-			button->blank = true;
+			const SpellInfo *spell = values.buffs ? values.buffs->SlotSpell(i) : nullptr;
+			button->blank = !spell;
+			button->tooltip = spell ? spell->name : "";
+			button->decal = "A_SpellIcons"; // CBuffWindow's copy of it for each button's BuffIcon
+			button->cell = spell ? std::max(spell->icon, 0) : -1;
+			button->background = !spell ? "" : spell->good_effect == 0 ? "RedIconBackground" : "BlueIconBackground";
+			button->alpha = 255;
+			if (spell) {
+				const ZoneBuff &buff = values.buffs->Slot(i);
+				bool short_song = Buffs::Duration(*spell, buff.level) < 4 && values.zone->Profile().class_id == 8 &&
+				                  spell->ClassLevel(8) != 0 && spell->ClassLevel(8) != 255;
+				if (buff.duration < 4 && buff.duration != -1 && !short_song)
+					button->alpha = static_cast<int>((100 - values.now_ms % 1000 / 10) * 255 / 100);
+			}
 			if (button->visible)
 				wnd.Move(id, {c.Right() - (w + 1) * (column + 1), c.y + (h + 1) * (i % rows), w, h});
 		}
@@ -744,7 +759,7 @@ void UpdateGameWindows(WindowManager &windows, const GameValues &values, GameWin
 	if (SidlWindow *wnd = windows.Find("GroupWindow"))
 		GroupWindow(*wnd, values);
 	if (SidlWindow *wnd = windows.Find("BuffWindow"))
-		BuffWindow(*wnd);
+		BuffWindow(*wnd, values);
 	// The Actions window first: the hot buttons show its buttons as they are this frame.
 	if (SidlWindow *wnd = windows.Find("ActionsWindow")) {
 		ActionsWindow(*wnd, values);
