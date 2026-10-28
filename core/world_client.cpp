@@ -247,7 +247,18 @@ namespace
 		put(170, &c.agi, 2);
 		put(172, &c.wis, 2);
 		put(174, &c.face, 1);       // oldface
-		put(3440, &c.start_zone, 4); // zone_id
+		// EQ_PC::InitPlayerStart's spot and bind; world keeps them when the zones are on its lists.
+		put(2900, &c.start.y, 4);
+		put(2904, &c.start.x, 4);
+		put(2908, &c.start.z, 4);
+		put(2912, &c.start.heading, 4);
+		put(3440, &c.start.zone, 4); // zone_id
+		for (int i = 0; i < 5; ++i) {
+			put(3780 + i * 4, &c.start.bind_zone, 4); // bind_point_zone[5], bind_y, bind_x, bind_z
+			put(3800 + i * 4, &c.start.bind_y, 4);
+			put(3820 + i * 4, &c.start.bind_x, 4);
+			put(3840 + i * 4, &c.start.bind_z, 4);
+		}
 		put(4940, &c.deity, 2);
 		put(5428, &c.face, 1);      // luclinface
 		return out;
@@ -449,7 +460,7 @@ bool RunWorld(const LoginResult &login, const WorldOptions &options, ZoneHandoff
 						while (city < CreationRules::CityCount && !rules.CityCanStart(city, 1, deity, options.create_class))
 							++city;
 						character.deity = deity < CreationRules::DeityCount ? CreationRules::Deities[deity] : 396;
-						character.start_zone = rules.StartZone(1, options.create_class, city, character.deity);
+						character.start = CreationRules::Start(1, options.create_class, city, character.deity);
 						using S = CreationRules::Stat;
 						auto stat = [&](S s) { return static_cast<int16_t>(rules.RaceBase(1, s) + rules.ClassBonus(options.create_class, s)); };
 						character.str = stat(S::Str);

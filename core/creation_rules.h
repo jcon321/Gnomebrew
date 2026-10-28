@@ -13,6 +13,16 @@
 #include <string>
 #include <vector>
 
+// Where a new character appears and is bound (EQ_PC::InitPlayerStart). Coordinates in
+// /loc order; the bind goes in all five bind slots.
+struct StartPoint
+{
+	uint32_t zone = 1; // qeynos, a Human Warrior's spot
+	float y = 58, x = -544, z = 32, heading = 0;
+	uint32_t bind_zone = 2; // qeynos2
+	float bind_y = 646, bind_x = -131, bind_z = 5;
+};
+
 class CreationRules
 {
 public:
@@ -38,7 +48,7 @@ public:
 	int ClassBonus(uint8_t class_id, Stat stat) const; // points the class adds (taken from the 50 to spend)
 	bool CanWorship(uint16_t race, uint8_t class_id, int deity_button) const;
 	bool CityCanStart(int city, uint16_t race, int deity_button, uint8_t class_id) const;
-	uint32_t StartZone(uint16_t race, uint8_t class_id, int city, uint16_t deity) const;
+	static StartPoint Start(uint16_t race, uint8_t class_id, int city, uint16_t deity);
 	std::string RandomName(uint16_t race, uint8_t gender, std::mt19937 &random) const;
 	// CCharacterCreation_GetCharCreateText @0040ccf2: the eqstr_en.txt strings that make up the
 	// last screen's welcome text, joined in order (the first '@' becomes "<BR><BR>").

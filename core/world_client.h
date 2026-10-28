@@ -1,5 +1,6 @@
 #pragma once
 
+#include "creation_rules.h"
 #include "login_client.h"
 #include "zone_session.h"
 
@@ -37,7 +38,7 @@ struct NewCharacter
 	uint16_t class_id = 1;
 	uint8_t gender = 0;
 	uint16_t deity = 201;
-	uint32_t start_zone = 1;
+	StartPoint start;
 	int16_t str = 85, sta = 110, cha = 75, dex = 75, int_ = 75, agi = 80, wis = 75;
 	uint8_t face = 0;
 };

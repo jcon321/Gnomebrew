@@ -687,83 +687,303 @@ bool CreationRules::CityCanStart(int city, uint16_t race, int deity, uint8_t cla
 	return RaceCities[r][city] == '1';
 }
 
-uint32_t CreationRules::StartZone(uint16_t race, uint8_t c, int city, uint16_t deity) const
+StartPoint CreationRules::Start(uint16_t race, uint8_t c, int city, uint16_t deity)
 {
-	// EQ_PC::InitPlayerStart's zone choice (the server places the character in it).
+	// EQ_PC::InitPlayerStart: the spot by race and class (a few by deity or city), then the bind
+	// by start zone. The server takes both from OP_CharacterCreate if the zones are on its lists.
+	StartPoint s;
+	s.zone = 1;
+	s.y = 0, s.x = 0, s.z = 9;
+	auto at = [&s](uint32_t zone, float y, float x, float z, float heading = 0) {
+		s.zone = zone;
+		s.y = y, s.x = x, s.z = z, s.heading = heading;
+	};
+	auto spot = [&s](float y, float x, float z, float heading = 0) { s.y = y, s.x = x, s.z = z, s.heading = heading; };
+
 	switch (race) {
-	case 130: return 155; // sharvahl
-	case 11: return 19;   // rivervale
-	case 12: return 55;   // akanon
-	case 4: return 54;    // gfaydark
-	case 8: return c == 1 ? 60 : 67; // kaladimb : kaladima
-	case 10: return 49;   // oggok
-	case 9: return 52;    // grobb
-	case 6: return c == 2 || c == 5 || c == 9 || c == 11 ? 42 : 41; // neriakb : neriaka
-	case 2: return 29;    // halas
-	case 5:
-		if (c == 2 || c == 3)
-			return 61; // felwithea
-		return c >= 12 && c <= 14 ? 62 : 1; // felwitheb
-	case 3:
+	case 330: // Froglok
+		s.zone = 2;
+		break;
+	case 130: // Vah Shir: sharvahl
+		s.zone = 155;
+		if (c == 1)
+			spot(-143, -535, -260, 128);
+		else if (c == 8)
+			spot(0, 550, -104, 385);
+		else if (c == 9)
+			spot(190, -300, -248, 128);
+		else if (c == 10)
+			spot(55, 100, -260, 256);
+		else if (c == 15)
+			spot(275, 90, -260);
+		break;
+	case 11: // Halfling: rivervale
+		s.zone = 19;
+		if (c == 1)
+			spot(125, -157, 28);
+		else if (c == 2)
+			spot(-227, -381, -18);
+		else if (c == 3)
+			spot(-228, -309, -9, 384);
+		else if (c == 4)
+			spot(-125, -320, -5, 430);
+		else if (c == 6)
+			spot(-104, -347, -10);
+		else if (c == 9)
+			spot(-34, -192, 2);
+		break;
+	case 12: // Gnome: akanon
+		s.zone = 55;
+		if (c == 1)
+			spot(900, -461, -30);
+		else if (c == 2)
+			spot(1190, -550, -39);
+		else if (c == 3)
+			spot(1281, -559, -40, 292);
+		else if (c == 9)
+			spot(1203, -599, -53);
+		else if (c >= 12 && c <= 14)
+			spot(1124, -1008, 32);
+		if (deity == 201) // Bertoxxulous
+			spot(2060, -588, -181, s.heading);
+		break;
+	case 4: // Wood Elf: gfaydark
+		s.zone = 54;
+		if (c == 1)
+			spot(370, 304, 76);
+		else if (c == 4)
+			spot(-437, 501, 117);
+		else if (c == 6)
+			spot(-698, 224, 76);
+		else if (c == 8)
+			spot(-231, 244, 76);
+		else if (c == 9)
+			spot(-501, -210, 160);
+		break;
+	case 8: // Dwarf: kaladima, warriors in kaladimb
+		s.zone = 67;
+		if (c == 1)
+			at(60, 41, 304, 14);
+		else if (c == 2)
+			spot(771, 132, 2);
+		else if (c == 3)
+			spot(1338, 113, 48);
+		else if (c == 9)
+			spot(546, 218, -33);
+		break;
+	case 10: // Ogre: oggok
+		s.zone = 49;
+		if (c == 1)
+			spot(-2, 71, -27);
+		else if (c == 5)
+			spot(333, 9, 5);
+		else if (c == 10)
+			spot(656, 1006, 80);
+		else if (c == 15)
+			spot(288, 1074, 80);
+		break;
+	case 9: // Troll: grobb
+		s.zone = 52;
+		if (c == 1)
+			spot(299, -94, 4);
+		else if (c == 5)
+			spot(674, -436, -6);
+		else if (c == 10)
+			spot(57, -459, 54);
+		else if (c == 15)
+			spot(-49, -454, 74);
+		break;
+	case 6: // Dark Elf: neriaka, neriakb
+		s.zone = 41;
+		if (c == 1)
+			spot(-28, -1124, -52);
+		else if (c == 2)
+			at(42, 539, -811, -49);
+		else if (c == 5 || c == 11)
+			at(42, 1255, -1253, -80);
+		else if (c == 9)
+			at(42, 667, -1358, -108);
+		else if (c == 12)
+			spot(165, -885, -38);
+		else if (c == 13)
+			spot(131, -915, -38);
+		else if (c == 14)
+			spot(148, -951, -38);
+		break;
+	case 2: // Barbarian: halas
+		s.zone = 29;
+		if (c == 1)
+			spot(487, -448, 4);
+		else if (c == 9)
+			spot(186, 171, 29);
+		else if (c == 10)
+			spot(334, 448, -20);
+		else if (c == 15)
+			spot(585, 208, 4);
+		break;
+	case 5: // High Elf: felwithea, felwitheb
 		if (c == 2)
-			return deity == 203 ? 75 : deity == 209 || deity == 210 ? 24 : 1; // paineel, erudnext
-		if (c == 3)
-			return 24;
-		if (c == 5 || c == 11)
-			return 75;
-		return c >= 12 && c <= 14 ? 23 : 1; // erudnint
-	case 1:
-	case 7: {
+			at(61, 14, -459, -1);
+		else if (c == 3)
+			at(61, 0, -284, 3);
+		else if (c >= 12 && c <= 14)
+			at(62, 425, -601, 29);
+		break;
+	case 3: // Erudite: erudnext, erudnint, paineel
+		if (c == 2) {
+			if (deity == 203) // Cazic Thule
+				at(75, 1147, 504, -39);
+			else if (deity == 209) // Prexus
+				at(24, -1099, -433, 66, 128);
+			else if (deity == 210) // Quellious
+				at(24, -712, -68, 66);
+		} else if (c == 3)
+			at(24, -654, -69, 66);
+		else if (c == 5)
+			at(75, 880, 456, -121);
+		else if (c == 11)
+			at(75, 739, 840, -25);
+		else if (c == 12)
+			at(23, 868, 744, 51);
+		else if (c == 13)
+			at(23, 716, 920, 82);
+		else if (c == 14)
+			at(23, 552, 745, 51);
+		break;
+	case 1:   // Human
+	case 7: { // Half Elf: Qeynos or Freeport (city 4), Half Elves also Kelethin (9) or Felwithe (10)
 		bool kelethin = city == 9 && race == 7;
-		uint32_t zone = 1; // qeynos
 		switch (c) {
 		case 1:
-			zone = city == 4 ? 9 : kelethin ? 54 : 1;
+			at(1, 58, -544, 32);
+			if (city == 4)
+				at(9, -279, -42, -10);
+			if (kelethin)
+				at(54, 370, 304, 76);
 			break;
 		case 2:
-			zone = city == 4 ? 9 : deity == 212 ? 2 : 1;
+			if (deity == 212) // Rodcet Nife
+				at(2, -162, -259, 4);
+			else
+				at(1, -186, -441, 4);
+			if (city == 4)
+				at(9, -1, 349, -9);
 			break;
 		case 3:
-			zone = deity == 212 ? 2 : 1;
+			if (deity == 212)
+				at(2, -162, -259, 4);
+			else if (deity == 207) // Karana
+				at(1, -186, -441, 4);
 			if (city == 4)
-				zone = 8;
+				at(8, -1, 349, -9);
 			if (city == 10)
-				zone = 61;
+				at(61, 0, -248, 3);
 			break;
 		case 4:
-		case 6:
-			zone = kelethin ? 54 : 3; // qrg
+			at(3, 146, -36, 4);
+			if (kelethin)
+				at(54, -437, 501, 117);
 			break;
 		case 5:
 		case 11:
-			zone = city == 4 ? 10 : 1;
+			at(1, -22, -433, -24);
+			if (city == 4)
+				at(10, -141, -290, -80);
+			break;
+		case 6:
+			at(3, -207, -301, 4);
+			if (kelethin)
+				at(54, -698, 224, 76);
 			break;
 		case 7:
-			zone = city == 4 ? 9 : 2;
+			at(2, 342, 384, 4);
+			if (city == 4)
+				at(9, -196, -790, -24);
 			break;
 		case 8:
-			zone = kelethin ? 54 : city == 4 ? 8 : 1;
+			at(1, 537, -110, 4);
+			if (city == 4)
+				at(8, -92, 507, 4);
+			if (kelethin)
+				at(54, -231, 244, 76);
 			break;
 		case 9:
-			zone = kelethin ? 54 : city == 4 ? 10 : 2;
+			at(2, 54, 358, 4);
+			if (city == 4)
+				at(10, -318, -789, -109);
+			if (kelethin)
+				at(54, -501, -210, 160);
 			break;
 		case 12:
 		case 13:
 		case 14:
-			zone = city == 4 ? 9 : 1;
+			if (deity == 201)
+				at(1, -22, -433, -24);
+			else
+				at(1, 351, -587, 4);
+			if (city == 4)
+				at(9, 97, -631, -38);
 			break;
 		default:
 			break;
 		}
-		return deity == 206 ? 10 : zone; // followers of Innoruuk start in North Freeport
+		if (deity == 206) // followers of Innoruuk start in North Freeport
+			at(10, -141, -290, -80);
+		break;
 	}
-	case 128:
-		if (c == 1 || c == 5 || c == 7 || c == 10 || c == 15)
-			return 106; // cabeast
-		return c == 11 ? 82 : 78; // cabwest : fieldofbone
+	case 128: // Iksar: cabeast, wizards in cabwest, the rest fieldofbone
+		if (c == 1)
+			at(106, -531, -125, 3);
+		else if (c == 5)
+			at(106, 1029, -188, 72);
+		else if (c == 7)
+			at(106, 426, -96, 5);
+		else if (c == 10)
+			at(106, 1017, -189, 17);
+		else if (c == 11)
+			at(82, 311, 767, 46);
+		else if (c == 15)
+			at(106, 1032, -189, 44);
+		else
+			at(78, 0, 0, -7);
+		break;
 	default:
-		return 1;
+		break;
 	}
+
+	auto bind = [&s](uint32_t zone, float y, float x, float z) {
+		s.bind_zone = zone;
+		s.bind_y = y, s.bind_x = x, s.bind_z = z;
+	};
+	switch (s.zone) {
+	case 1:
+	case 2: bind(2, 646, -131, 5); break;           // qeynos2
+	case 8:
+	case 9:
+	case 10: bind(9, 247, 359, -22); break;         // freportw
+	case 19: bind(33, 271, -2126, -3); break;       // misty
+	case 23:
+	case 24: bind(38, 2230, 67, -44); break;        // tox
+	case 29: bind(30, 3139, 629, -57); break;       // everfrost
+	case 40:
+	case 41:
+	case 42: bind(25, 2048, -775, 44); break;       // nektulos
+	case 49: bind(47, 1103, 948, 31); break;        // feerrott
+	case 52: bind(46, -2408, -339, -14); break;     // innothule
+	case 54: bind(54, 192, 64, 35); break;          // gfaydark
+	case 55: bind(56, -1668, 636, -106); break;     // steamfont
+	case 60:
+	case 67: bind(68, 2610, -251, 84); break;       // butcher
+	case 61:
+	case 62: bind(54, -2040, -2194, 55); break;     // gfaydark
+	case 75: bind(75, 800, 200, 0); break;          // paineel
+	default: bind(4, 4850, -46, 4); break;          // qeytoqrg
+	}
+	if (race == 128)
+		bind(78, -2394, 3244, 12); // fieldofbone
+	else if (race == 130)
+		bind(155, -1132, 86, -187); // sharvahl
+	return s;
 }
 
 std::string CreationRules::RandomName(uint16_t race, uint8_t gender, std::mt19937 &random) const

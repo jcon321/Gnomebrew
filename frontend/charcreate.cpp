@@ -319,7 +319,7 @@ NewCharacter CharacterCreation::Character() const
 	c.class_id = m_class;
 	c.gender = m_gender;
 	c.deity = CreationRules::Deities[m_deity];
-	c.start_zone = m_rules.StartZone(m_race, m_class, m_city, c.deity);
+	c.start = CreationRules::Start(m_race, m_class, m_city, c.deity);
 	c.str = static_cast<int16_t>(m_stats[CreationRules::Str]);
 	c.sta = static_cast<int16_t>(m_stats[CreationRules::Sta]);
 	c.agi = static_cast<int16_t>(m_stats[CreationRules::Agi]);

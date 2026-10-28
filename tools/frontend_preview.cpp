@@ -1195,7 +1195,9 @@ int main(int argc, char **argv)
 				h.ClickId("CC_Next_Button");
 				h.Snapshot("c3-welcome");
 				std::string name = frontend.Creation()->Character().name;
-				printf("[preview] creating %s, start zone %u\n", name.c_str(), frontend.Creation()->Character().start_zone);
+				const StartPoint start = frontend.Creation()->Character().start;
+				printf("[preview] creating %s, start zone %u at %.0f, %.0f, %.0f\n", name.c_str(), start.zone, start.y, start.x,
+					start.z);
 				h.ClickId("CC_Next_Button");
 				h.RunUntil([&] { return frontend.CurrentScreen() == Screen::CharacterSelect; }, 10000);
 				if (frontend.CurrentScreen() == Screen::CharacterSelect)
