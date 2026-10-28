@@ -202,6 +202,9 @@ class SidlDefinitions
 public:
 	// ui_dir is e.g. <EQ>/uifiles/default. Loads EQUI.xml and every include.
 	bool Load(const std::string &ui_dir, std::string &error);
+	// Our own windows' definitions, after Load: an XML document as the UI files have, its pieces
+	// drawn with the loaded templates and animations. `name` is for the warnings.
+	void LoadText(const std::string &xml, const std::string &name);
 
 	const SidlAnimation *Animation(const std::string &name) const;
 	const SidlWindowTemplate *WindowTemplate(const std::string &name) const;
@@ -307,6 +310,9 @@ public:
 		std::vector<int> justification;
 		int row_height = 0;
 		uint32_t row_color = 0xffffff, header_color = 0xffffff;
+		// The row clicked last, drawn highlighted; -1 none. A click on a row reports the list's
+		// ScreenID as a button's would.
+		int selected_row = -1;
 		// Style_VScroll: the content's scroll position in rows, how far it goes, and a page of it.
 		// Whoever fills the control sets max and page (an STML box its own, as it wraps its text to
 		// draw it); the scrollbar, the wheel and the owner move pos.

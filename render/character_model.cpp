@@ -199,8 +199,11 @@ namespace render
 			error = "Couldn't read global_chr.s3d in " + eq_dir;
 			return false;
 		}
+		// Without the creatures, still the player races' own: global3_chr's the old models' socials
+		// (S05..S28) and later idles, global4_chr the Iksar, global7_chr the Vah Shir.
 		for (const char *name : {"global2_chr", "global3_chr", "global4_chr", "global5_chr", "global6_chr", "global7_chr"}) {
-			if (creatures || std::string(name) == "global4_chr" || std::string(name) == "global7_chr")
+			if (creatures || std::string(name) == "global3_chr" || std::string(name) == "global4_chr" ||
+				std::string(name) == "global7_chr")
 				AddSource(m_sources, eq_dir, name);
 		}
 		// CDisplay::InitWorld's order (GEquip6 goes with the low-poly Vah Shir we use).

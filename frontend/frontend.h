@@ -11,6 +11,7 @@
 
 #include "art.h"
 #include "charcreate.h"
+#include "charselect_anim_window.h"
 #include "charselect_view.h"
 #include "chat_text.h"
 #include "chat_window.h"
@@ -52,6 +53,8 @@ struct FrontEndConfig
 	int show_names = 4;       // /shownames: 0 (off) .. 7 (ShowNamesLevel)
 	bool extended_nameplates = true; // names as far out as the zone is drawn, not eqgame's 70 units
 	bool velious_textures = true;    // the Velious armor (materials 17..23), else the older armor they stand in for
+	bool char_select_anim_window = true; // our Animations window at character select (CharSelectAnimWindow)
+	bool char_select_emotes = false;     // character select's random animations include socials' (CharSelectEmotes)
 };
 
 class EqStr;
@@ -119,10 +122,12 @@ public:
 	int SelectedCharacter() const { return m_selected_slot; }
 	int LastCharacter() const { return m_config.last_character; } // the slot to remember (LastCharSel)
 	int ShowNames() const { return m_config.show_names; }         // /shownames, to remember (ShowNamesLevel)
+	bool CharSelectEmotes() const { return m_config.char_select_emotes; } // the Animations window's choice
 	const ZoneSession &Zone() const { return m_zone; }
 	const ChatWindow &Chat() const { return m_chat; }
 	uint16_t Target() const { return m_game_values.target; } // spawn id, 0 none
 	const CharacterSelectView *CharacterScene() const { return m_charselect_view.get(); }
+	const CharSelectAnimWindow *AnimationsWindow() const { return m_anim_window.get(); }
 	const audio::EqSound *Sound() const { return m_sound.get(); }
 	const ZoneView *ZoneScene() const { return m_zone_view.get(); }
 	ZoneView *ZoneScene() { return m_zone_view.get(); }
@@ -270,6 +275,8 @@ private:
 	bool m_entering_world = false;
 	std::unique_ptr<CharacterSelectView> m_charselect_view;
 	bool m_scene_error_logged = false;
+	std::unique_ptr<CharSelectAnimWindow> m_anim_window; // CharSelectAnimWindow; null when it's off
+	uint32_t m_anim_serial = 0;                          // the model its list was filled for, + 1
 
 	// character creation
 	CreationRules m_rules;

@@ -23,6 +23,7 @@
 // with Shift+click, sends it, clicks the link in the chat (OP_ItemLinkResponse) and links the item
 // display's item from its icon.
 
+#include "animations.h"
 #include "eqstr.h"
 #include "spell_file.h"
 #include "frontend.h"
@@ -1231,6 +1232,40 @@ int main(int argc, char **argv)
 		if (stop_at_charselect) {
 			h.RunUntil([] { return false; }, 2000);
 			h.Snapshot("7-character-select-turned");
+			if (const CharSelectAnimWindow *anims = frontend.AnimationsWindow()) {
+				// The Animations window: the second row double clicked plays it; then Play on the
+				// third, and All + emotes.
+				const SidlWindow &window = anims->Window();
+				const SidlWindow::Control *list = window.Find("AnimList");
+				const SidlWindow::Control *play = window.Find("PlayButton");
+				const SidlWindow::Control *all = window.Find("AllButton");
+				if (list && play && all) {
+					printf("[preview] animations window: %zu animations\n", list->rows.size());
+					Rect content = window.ContentRect(*list);
+					int font = SidlFontHeight(list->def->font);
+					int y = content.y + font + 4 + (font + 2) + (font + 2) / 2;
+					Rect area = frontend.ScreenArea();
+					frontend.OnEvent({InputEvent::Type::MouseMove, area.x + content.x + 20, area.y + y});
+					frontend.OnEvent({InputEvent::Type::MouseDown, area.x + content.x + 20, area.y + y});
+					frontend.OnEvent({InputEvent::Type::MouseUp, area.x + content.x + 20, area.y + y});
+					frontend.OnEvent({InputEvent::Type::DoubleClick, area.x + content.x + 20, area.y + y});
+					frontend.OnEvent({InputEvent::Type::MouseUp, area.x + content.x + 20, area.y + y});
+					// The scene takes the request as it next draws.
+					h.RunUntil([] { return false; }, 300);
+					h.Snapshot("7-character-select-animation");
+					printf("[preview] double clicked %s: playing %s\n", render::AnimationCode(anims->Selected()),
+						render::AnimationCode(frontend.CharacterScene()->Animation()));
+					// Play on the next row down.
+					y += font + 2;
+					h.Click(content.x + 20, y);
+					h.Click(play->rect.x + play->rect.w / 2, play->rect.y + play->rect.h / 2);
+					h.Snapshot("7-character-select-play");
+					printf("[preview] Play %s: playing %s\n", render::AnimationCode(anims->Selected()),
+						render::AnimationCode(frontend.CharacterScene()->Animation()));
+					h.Click(all->rect.x + all->rect.w / 2, all->rect.y + all->rect.h / 2);
+					printf("[preview] All + emotes: %d (CharSelectEmotes %d)\n", anims->AllAnimations(), frontend.CharSelectEmotes());
+				}
+			}
 			h.Key(InputEvent::Key::Escape); // Quit back to the start screen
 			return 0;
 		}

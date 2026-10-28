@@ -207,10 +207,15 @@ void SidlDefinitions::LoadFile(const std::string &file)
 		m_warnings.push_back("missing " + file);
 		return;
 	}
+	LoadText(text, file);
+}
+
+void SidlDefinitions::LoadText(const std::string &xml, const std::string &name)
+{
 	std::string error;
-	auto root = ParseXml(text, error);
+	auto root = ParseXml(xml, error);
 	if (!root) {
-		m_warnings.push_back(file + ": " + error);
+		m_warnings.push_back(name + ": " + error);
 		return;
 	}
 	for (const auto &child : root->children)
@@ -1420,6 +1425,23 @@ std::string SidlWindow::OnMouse(const InputEvent &event)
 			}
 		}
 
+	// A press on a list's row selects it.
+	if (event.type == InputEvent::Type::MouseDown || event.type == InputEvent::Type::DoubleClick)
+		for (int i = static_cast<int>(m_controls.size()) - 1; i >= 0; --i) {
+			Control &control = m_controls[i];
+			if (control.def->type != "Listbox" || !control.enabled || !HitTest(control, event.x, event.y))
+				continue;
+			Rect content = ContentRect(control);
+			int top = content.y + ListHeaderHeight(control);
+			if (event.x < content.x || event.x >= content.Right() || event.y < top || event.y >= content.Bottom())
+				return "";
+			int row = std::max(control.scroll_pos, 0) + (event.y - top) / ListRowHeight(control);
+			if (row >= static_cast<int>(control.rows.size()))
+				return "";
+			control.selected_row = row;
+			return control.def->screen_id;
+		}
+
 	std::string clicked;
 	for (int i = 0; i < static_cast<int>(m_controls.size()); ++i) {
 		Control &control = m_controls[i];
@@ -1707,6 +1729,11 @@ void SidlWindow::DrawListbox(const Control &control, Canvas &canvas, TextRendere
 	int y = content.y + header;
 	for (size_t r = static_cast<size_t>(std::max(control.scroll_pos, 0)); r < control.rows.size() && y < content.Bottom(); ++r) {
 		const std::vector<std::string> &row = control.rows[r];
+		if (static_cast<int>(r) == control.selected_row) {
+			// Ours: a dark blue bar behind the selected row.
+			canvas.SetClip(clip);
+			canvas.Fill(Intersect({content.x, y, content.w, row_height}, content), 0x203c6c);
+		}
 		x = content.x;
 		for (size_t i = 0; i < row.size(); ++i) {
 			int width = i < def.columns.size() ? def.columns[i].width : content.Right() - x;

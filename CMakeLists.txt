@@ -103,6 +103,7 @@ add_library(eqfrontend STATIC
     frontend/frontend.cpp
     frontend/sidl.cpp
     frontend/charselect_view.cpp
+    frontend/charselect_anim_window.cpp
     frontend/charcreate.cpp
     frontend/zone_view.cpp
     frontend/player_movement.cpp

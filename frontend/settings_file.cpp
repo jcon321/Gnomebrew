@@ -58,6 +58,15 @@ namespace
 		{"Defaults", "VeliousTextures", "1",
 			"1: the Velious armor's own textures (global17..23_amr.s3d, eqclient.ini's LoadArmor17..23).\n"
 			"0: that armor shows as the leather, chain or plate it stands in for."},
+		{"Defaults", "CharSelectAnimWindow", "1",
+			"1: our Animations window at character select (not eqgame's): Combat only or All + emotes\n"
+			"for the animations the character plays now and then (CharSelectEmotes below), and a list of\n"
+			"every animation its model has, to play one. 0: no window."},
+		{"Defaults", "CharSelectEmotes", "0",
+			"0: at character select, the character now and then plays one of eqgame's own picks for its\n"
+			"class (its combat moves, casting and the fidget). 1: half of them are a social's instead\n"
+			"(/dance, /wave and the rest: S01..S29, of those its model has). The Animations window's\n"
+			"Combat only and All + emotes set it, kept on exit."},
 
 		{"Debug", "RecordPackets", "0",
 			"1: each zone session's packets go to replays\\<character>-<time>.eqr next to the exe, to\n"

@@ -68,7 +68,10 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 		// Character select's zone takes a moment to load; start while the player logs in.
 		m_charselect_view = std::make_unique<CharacterSelectView>(m_ui.eq_dir, MakeRenderer());
 		m_charselect_view->SetVeliousTextures(config.velious_textures);
+		m_charselect_view->SetEmotes(config.char_select_emotes);
 		m_charselect_view->StartLoading();
+		if (config.char_select_anim_window)
+			CharSelectAnimWindow::AddDefinitions(*m_ui.definitions);
 	}
 	m_rules.CheckInstall(m_ui.eq_dir);
 	if (m_ui.mixer && !m_ui.eq_dir.empty()) {
@@ -992,6 +995,15 @@ void FrontEnd::EnterCharacterSelect()
 	m_screen = Screen::CharacterSelect;
 	m_submitting = false;
 	m_entering_world = false;
+	if (m_config.char_select_anim_window && m_charselect_view && !m_anim_window) {
+		auto window = std::make_unique<CharSelectAnimWindow>();
+		window->SetAllAnimations(m_config.char_select_emotes);
+		if (window->Build(*m_ui.definitions, error))
+			m_anim_window = std::move(window);
+		else
+			Log("animations window: " + error);
+	}
+	m_anim_serial = 0;
 	// CDisplay::InitDDraw starts the opening music when eqgame starts, and initializeNetworkGame
 	// character select's whenever it's entered (the same eqtheme.mp3).
 	if (m_sound) {
@@ -1129,6 +1141,22 @@ void FrontEnd::CharacterSelectEvent(const InputEvent &event)
 		return;
 	}
 
+	if (m_anim_window && event.IsMouse() && m_charselect_view && m_charselect_view->Loaded()) {
+		switch (m_anim_window->OnMouse(event)) {
+		case CharSelectAnimWindow::Action::ModeChanged:
+			m_config.char_select_emotes = m_anim_window->AllAnimations(); // kept on exit (CharSelectEmotes)
+			if (m_charselect_view)
+				m_charselect_view->SetEmotes(m_config.char_select_emotes);
+			return;
+		case CharSelectAnimWindow::Action::Play:
+			if (m_charselect_view)
+				m_charselect_view->PlayAnimation(m_anim_window->Selected());
+			return;
+		case CharSelectAnimWindow::Action::None:
+			break;
+		}
+	}
+
 	std::string clicked = m_charselect.OnMouse(event);
 	if (clicked.empty())
 		return;
@@ -1203,6 +1231,15 @@ void FrontEnd::RenderCharacterSelect(Canvas &canvas, uint64_t now_ms)
 		m_text.Draw(canvas, m_charselect.Bounds().Right() + 20, 20, "Entering world...", 14, 0xffffff);
 
 	m_charselect.Draw(canvas, m_text, *m_ui.textures, now_ms);
+	if (m_anim_window && scene) {
+		// The list follows the model shown: another character, or the same one rebuilt.
+		if (m_anim_serial != m_charselect_view->ModelSerial() + 1) {
+			m_anim_window->SetAnimations(m_charselect_view->Animations());
+			m_anim_serial = m_charselect_view->ModelSerial() + 1;
+		}
+		m_anim_window->Place(canvas.Width(), canvas.Height());
+		m_anim_window->Draw(canvas, m_text, *m_ui.textures, now_ms);
+	}
 }
 
 // ---------------------------------------------------------------- character creation (eqgame)
