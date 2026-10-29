@@ -463,6 +463,29 @@ namespace Inventory
 		return false;
 	}
 
+	std::string MoneyText(int32_t platinum, int32_t gold, int32_t silver, int32_t copper)
+	{
+		std::string out;
+		if (platinum > 0)
+			out = std::to_string(platinum) + " platinum";
+		if (gold > 0) {
+			if (platinum != 0)
+				out += silver == 0 && copper == 0 ? " and " : ", ";
+			out += std::to_string(gold) + " gold";
+		}
+		if (silver > 0) {
+			if (platinum != 0 || gold != 0)
+				out += copper == 0 ? " and " : ", ";
+			out += std::to_string(silver) + " silver";
+		}
+		if (copper > 0) {
+			if (platinum != 0 || gold != 0 || silver != 0)
+				out += " and ";
+			out += std::to_string(copper) + " copper";
+		}
+		return out;
+	}
+
 	bool AutoInventory(ZoneSession &zone)
 	{
 		auto &items = zone.EditItems();

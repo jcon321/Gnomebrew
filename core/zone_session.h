@@ -179,6 +179,15 @@ struct ZoneMerchant
 	int32_t quantity = 0, price = 0;
 };
 
+// A corpse's answer to our OP_LootRequest (moneyOnCorpseStruct): 1 (or 3) we may loot it, with its
+// coins; 0 someone else is; 2 not now.
+struct ZoneLoot
+{
+	uint8_t response = 0;
+	int32_t platinum = 0, gold = 0, silver = 0, copper = 0;
+	int16_t slot = 0; // LootItem's answer: the corpse slot looted (-1 not)
+};
+
 // OP_Consider's answer (Consider_Struct): what the zone thinks of us for a spawn we considered.
 struct ZoneConsider
 {
@@ -333,6 +342,12 @@ public:
 			MerchantBought,
 			MerchantSold,
 			MerchantItemGone,
+			// A corpse (loot): OP_MoneyOnCorpse's answer to OP_LootRequest, a slot looted (OP_LootItem's
+			// answer), and the looting over (OP_EndLootRequest or OP_LootComplete from the zone). Its
+			// items are in Items() at 5000 + the order they came in (OP_LootItemPacket).
+			LootOpened,
+			LootTaken,
+			LootEnded,
 			LoggedOut,    // camp finished; the zone closes the connection
 			ZoneApproved, // value: the zone we're going to; OP_DeleteSpawn is sent
 			ZoneDenied,   // value: the answer (ZoningMessage: 0 down, -1 not ready, -7 not experienced...)
@@ -351,6 +366,7 @@ public:
 		ZoneBuff buff;
 		ZoneConsider consider;
 		ZoneMerchant merchant;
+		ZoneLoot loot;
 	};
 
 	ZoneSession();
@@ -438,6 +454,15 @@ public:
 	bool ShopBuy(uint16_t npc, int16_t slot, int32_t quantity);
 	bool ShopSell(uint16_t npc, int16_t slot, int32_t quantity);
 	bool ShopEnd(uint16_t npc);
+	// Looting (CEverQuest_LootCorpse, CLootWnd): OP_LootRequest (the corpse's id), OP_LootItem
+	// for what's in a loot slot (0..29; `auto_loot` the right button's, into the inventory), and
+	// OP_EndLootRequest when we're done (the zone answers with its own, LootEnded).
+	bool LootRequest(uint16_t corpse);
+	bool LootItem(uint16_t corpse, int index, bool auto_loot);
+	bool EndLoot(uint16_t corpse);
+	// The corpse slot of what's in loot slot `index` (AddEquipmentToLootArray's ItemSlotIndex); -1 none.
+	int16_t LootSlot(int index) const { return index >= 0 && index < 30 ? m_loot_slots[index] : int16_t(-1); }
+	void ClearLoot(); // fn_releaseloot: the loot slots empty
 	// CContainerWnd::HandleCombine: OP_TradeSkillCombine for the bag in a general slot (`slot`;
 	// 1000 a world container) with its type and id and the ids in its ten slots (-1 none). The
 	// zone answers with an empty one (CombineAnswered).
@@ -561,6 +586,7 @@ private:
 	int32_t m_hp = 0, m_max_hp = 0;
 	std::map<int16_t, ZoneItem> m_items;
 	ZoneItem m_linked_item;
+	int16_t m_loot_slots[30] = {}; // -1 empty (ClearLoot, from Reset on)
 	GuildNames m_guilds;
 	bool m_have_profile = false;
 	bool m_have_zone_entry = false;

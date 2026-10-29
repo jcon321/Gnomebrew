@@ -23,6 +23,7 @@
 
 #include <cstdint>
 #include <map>
+#include <string>
 
 namespace Inventory
 {
@@ -98,6 +99,9 @@ namespace Inventory
 	// HasLoreItem (@004f1469): a lore item ('*') we already have one of, anywhere: worn, carried,
 	// in a bag, in the bank.
 	bool HasLoreItem(const std::map<int16_t, ZoneItem> &items, const ZoneItem &item);
+
+	// BuildMoneyText (@004f8ee3), in English: "1 platinum, 2 gold and 3 copper", the coins there are.
+	std::string MoneyText(int32_t platinum, int32_t gold, int32_t silver, int32_t copper);
 
 	// AutoInventory: the cursor's item where it goes. False when there's no room for it: eqgame
 	// drops it on the ground then ("There was no place to put that!"), and we leave it on the cursor.

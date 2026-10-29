@@ -59,9 +59,21 @@ no rules of its own.
      (Type 0: OP_TraderShop, OP_TraderBuy), MakeMeVisible, auto attack off on the request and
      SetMusicSelection(6), and the item display of a merchant's item (the slots' alt+click goes
      through the selection now).
+   - Loot window: done (`frontend/loot_window.*`, eqgame's CLootWnd): the right button on a corpse
+     in reach asks to loot it (CEverQuest_LootCorpse, OP_LootRequest); OP_MoneyOnCorpse's answer
+     says why not, or gives its coins and opens the window kneeling, its items
+     (OP_LootItemPacket) in LW_LootSlot0..29; a click on one onto the cursor, the right button into
+     the inventory (OP_LootItem, a NO DROP item from another's corpse asking first), the slots
+     locked until the zone answers; Done, the close box, Escape and walking away end it
+     (OP_EndLootRequest), and the zone's answer, or the corpse gone, closes it. Not checked
+     against a server yet (no corpse to loot: there's no auto attack). Still to do: /lootnodrop
+     (`LootWindow::loot_no_drop`, DAT_00799674) and /autosplit's "as your split" (12071), the
+     items in a corpse's bags (shown only to GMs and on player corpses past the eighth), the
+     PvP item (Loot_Request_Type 5), MakeMeVisible, and the dead or mounted checks.
    - The right button on a spawn (CEverQuest::RMouseUp within 500 ms, RightClickedOnPlayer): a
-     banker's bank, a merchant's shop, else /consider of our target. Still to do: a corpse (CEverQuest_LootCorpse), our class's guildmaster (OP_GMTraining) and the message for
-     another's (eqstr 1467), a trader in the Bazaar (OP_TraderShop), a horse (race 141), and the
+     corpse's loot, a banker's bank, a merchant's shop, else /consider of our target. A
+     despawning merchant, banker or corpse closes its window. Still to do: our class's guildmaster
+     (OP_GMTraining) and the message for another's (eqstr 1467), a trader in the Bazaar (OP_TraderShop), a horse (race 141), and the
      inspect of a player (doInspect).
    - Bag windows: done (`frontend/containers.*`, eqgame's CContainerMgr and CContainerWnd): the right
      button on a bag opens or closes its window, laid out for its slots with Combine and Done
@@ -164,7 +176,7 @@ no rules of its own.
    The buff window's: the spell's name. Still to do: the key bound to a
    button after its text (SetKeyTooltip, UpdateTooltipText; needs the keymap), the help texts
    FindWnd's other hit codes ask for (GetHelpTextFromStringTable), and the slots of windows we
-   don't have yet (loot, trade, give: their own DrawTooltips).
+   don't have yet (trade, give: their own DrawTooltips).
 5. **Options / Escape menu.** Graphics, sound and display settings, mouse sensitivity, the keymap.
 6. **A configurable keymap.** `InputEvent::Key` is a hard-coded list of about 18 keys; make it an
    EQ-style keymap with primary and alternate bindings.

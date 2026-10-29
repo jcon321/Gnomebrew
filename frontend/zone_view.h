@@ -217,6 +217,8 @@ public:
 	// The spawn drawn under a window pixel, nearest first (after Render); 0 for none. In the chase
 	// view our own model is one of them, as `me`.
 	uint16_t PickSpawn(int x, int y, uint16_t me) const;
+	// A spawn's ModelHeightOffset (its center over its feet, server units); 0 before its model's in.
+	float CenterHeight(uint16_t id) const;
 	// Debug drawing: triangle outlines instead of the scene, no fog (out to the zone's max clip),
 	// no clip plane (no far plane or fog at all), collision walls near us outlined, a marker on
 	// the floor under our feet, none of the weather (its sound goes on), and the spells' old

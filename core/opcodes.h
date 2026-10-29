@@ -94,6 +94,13 @@ namespace ZoneOp
 	constexpr uint16_t ContainerPacket = 0x4166; // Item_Struct: a bag
 	constexpr uint16_t SummonedItem = 0x4178;    // Item_Struct: an item on the cursor
 	constexpr uint16_t MoveItem = 0x412c;        // MoveItem_Struct {i32 from, to, qty}: to -1 deletes it
+	// Looting: see ZoneSession::LootRequest.
+	constexpr uint16_t LootRequest = 0x404e;    // ours: {u16 corpse}
+	constexpr uint16_t MoneyOnCorpse = 0x4050;  // moneyOnCorpseStruct {u8 response, u8[3], u32 platinum, gold, silver, copper}
+	constexpr uint16_t LootItemPacket = 0x4052; // Item_Struct: one of the corpse's, its equipSlot the corpse slot
+	constexpr uint16_t LootItem = 0x40a0;       // LootingItem_Struct {u16 corpse, u16 us, u16 slot, u16, u32 auto}: both ways
+	constexpr uint16_t EndLootRequest = 0x404f; // {u16 corpse}: ours, done; the zone's, the looting's over
+	constexpr uint16_t LootComplete = 0x4145;   // empty: the looting's over
 	// Merchants (Merchant_Click_Struct, Merchant_Sell_Struct, Merchant_Purchase_Struct): see ZoneSession::ShopRequest.
 	constexpr uint16_t ShopRequest = 0x400b;
 	constexpr uint16_t ShopInventoryPacket = 0x400c; // a count, a byte, deflated {u16 item class, Item_Struct} records
@@ -234,6 +241,12 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::MoveItem, "OP_MoveItem"},
 	{ZoneOp::TradeSkillCombine, "OP_TradeSkillCombine"},
 	{ZoneOp::MoveCoin, "OP_MoveCoin"},
+	{ZoneOp::LootRequest, "OP_LootRequest"},
+	{ZoneOp::MoneyOnCorpse, "OP_MoneyOnCorpse"},
+	{ZoneOp::LootItemPacket, "OP_LootItemPacket"},
+	{ZoneOp::LootItem, "OP_LootItem"},
+	{ZoneOp::EndLootRequest, "OP_EndLootRequest"},
+	{ZoneOp::LootComplete, "OP_LootComplete"},
 	{ZoneOp::ShopRequest, "OP_ShopRequest"},
 	{ZoneOp::ShopInventoryPacket, "OP_ShopInventoryPacket"},
 	{ZoneOp::MerchantItemPacket, "OP_MerchantItemPacket"},

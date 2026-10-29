@@ -64,6 +64,7 @@ public:
 	bool Active() const { return m_active; }       // the window's up (Activated)
 	bool Waiting() const { return m_merchant != 0 && !m_active; } // asked, no answer yet
 	bool Busy() const { return m_busy > 0; }        // DAT_007d0254: a buy or sell the zone hasn't answered
+	uint16_t Merchant() const { return m_merchant; } // pinstActiveMerchant; 0 none
 	void Request(uint16_t merchant);                // OP_ShopRequest
 	void ZoneEvent(const ZoneSession::Event &event);
 	void Deactivate();

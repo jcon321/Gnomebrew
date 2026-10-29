@@ -611,6 +611,12 @@ bool ZoneView::SpawnStats(uint16_t id, SpawnDebug &out) const
 	return true;
 }
 
+float ZoneView::CenterHeight(uint16_t id) const
+{
+	auto it = m_actors.find(id);
+	return it != m_actors.end() ? it->second.center_height : 0;
+}
+
 uint16_t ZoneView::PickSpawn(int x, int y, uint16_t me) const
 {
 	// A box over each drawn model on screen, from its feet to the top of its head and a third of

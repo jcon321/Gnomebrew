@@ -445,6 +445,7 @@ void ZoneSession::Reset(const std::string &character)
 	m_profile = ZoneProfile{};
 	m_info = ZoneInfo{};
 	m_spawns.clear();
+	ClearLoot();
 	m_self = ZoneSpawn{};
 	m_my_id = 0;
 	m_worn_known = false;
@@ -753,6 +754,53 @@ float ZoneSession::SpawnDistance(uint16_t id) const
 		return -1e27f;
 	float dx = it->second.x - m_profile.x, dy = it->second.y - m_profile.y, dz = it->second.z - m_profile.z;
 	return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+bool ZoneSession::LootRequest(uint16_t corpse)
+{
+	ClearLoot();
+	if (m_state != State::InZone)
+		return false;
+	bool sent = Send(ZoneOp::LootRequest, &corpse, sizeof(corpse), "OP_LootRequest " + std::to_string(corpse));
+	if (sent && m_replay) { // the replay's corpse: "You may not loot this corpse at this time."
+		uint8_t answer[20] = {2};
+		ReplayAnswer(ZoneOp::MoneyOnCorpse, answer, sizeof(answer));
+	}
+	return sent;
+}
+
+bool ZoneSession::LootItem(uint16_t corpse, int index, bool auto_loot)
+{
+	int16_t slot = LootSlot(index);
+	if (m_state != State::InZone || slot < 0)
+		return false;
+	// LootingItem_Struct (12 bytes): {u16 corpse, u16 us, u16 slot, u16, u32 auto loot}.
+	uint8_t body[12] = {};
+	uint32_t automatic = auto_loot ? 1 : 0;
+	std::memcpy(body, &corpse, 2);
+	std::memcpy(body + 2, &m_my_id, 2);
+	std::memcpy(body + 4, &slot, 2);
+	std::memcpy(body + 8, &automatic, 4);
+	return Send(ZoneOp::LootItem, body, sizeof(body),
+		"OP_LootItem " + std::to_string(slot) + (auto_loot ? " (auto)" : ""));
+}
+
+bool ZoneSession::EndLoot(uint16_t corpse)
+{
+	if (m_state != State::InZone)
+		return false;
+	bool sent = Send(ZoneOp::EndLootRequest, &corpse, sizeof(corpse), "OP_EndLootRequest " + std::to_string(corpse));
+	if (sent && m_replay)
+		ReplayAnswer(ZoneOp::LootComplete, nullptr, 0);
+	return sent;
+}
+
+void ZoneSession::ClearLoot()
+{
+	for (int i = 0; i < 30; ++i) {
+		m_items.erase(static_cast<int16_t>(5000 + i));
+		m_loot_slots[i] = -1;
+	}
 }
 
 bool ZoneSession::ShopRequest(uint16_t npc)
@@ -1439,6 +1487,58 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 			m_items[item.slot] = item;
 			UpdateAppearance(); // msg_snd_ieq
 		}
+		break;
+	case ZoneOp::MoneyOnCorpse: {
+		// moneyOnCorpseStruct {u8 response, u8[3], u32 platinum, gold, silver, copper}.
+		if (data.size() < 20)
+			break;
+		Event e{Event::Type::LootOpened};
+		e.loot.response = data[0];
+		e.loot.platinum = Read<int32_t>(data, 4);
+		e.loot.gold = Read<int32_t>(data, 8);
+		e.loot.silver = Read<int32_t>(data, 12);
+		e.loot.copper = Read<int32_t>(data, 16);
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::LootItemPacket:
+		// One of the corpse's (TAKP's eqgame.dll hands each to msg_send_corpse_eq_equip):
+		// AddEquipmentToLootArray puts it in the first free loot slot, keeping its corpse slot
+		// (its equipSlot) to ask for it by. Item 0 is a bogus one; what's in its bags isn't shown.
+		if (data.size() >= ItemSize) {
+			ZoneItem item = ParseItem(data, 0);
+			if (item.id == 0 || (item.item_class == 0 && item.item_type == 13)) {
+				Log("[zone]    a bogus loot item");
+				break;
+			}
+			if (item.slot < 0 || item.slot >= 30)
+				break;
+			for (int i = 0; i < 30; ++i)
+				if (m_loot_slots[i] < 0) {
+					m_loot_slots[i] = item.slot;
+					item.slot = static_cast<int16_t>(5000 + i);
+					m_items[item.slot] = item;
+					break;
+				}
+		}
+		break;
+	case ZoneOp::LootItem: {
+		// msg_loot_slot (SlotLooted): the corpse slot taken (-1: "You may not loot that item").
+		if (data.size() < 6)
+			break;
+		Event e{Event::Type::LootTaken};
+		e.loot.slot = Read<int16_t>(data, 4);
+		for (int i = 0; i < 30 && e.loot.slot >= 0; ++i)
+			if (m_loot_slots[i] == e.loot.slot) {
+				m_items.erase(static_cast<int16_t>(5000 + i));
+				break;
+			}
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::EndLootRequest:
+	case ZoneOp::LootComplete:
+		events.push_back({Event::Type::LootEnded});
 		break;
 	case ZoneOp::ShopRequest: {
 		// msg_req_merchantitems: {u16 npc, u16, u8 command, u8[3], float rate}.
