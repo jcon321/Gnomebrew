@@ -66,6 +66,19 @@ namespace Inventory
 	bool Move(ZoneSession &zone, int16_t from, int16_t to, uint32_t &message);
 	// SliderComplete: `count` of the stack in `from` onto the (empty) cursor; all of it moves it.
 	void TakeFromStack(ZoneSession &zone, int16_t from, int count);
+	// Coins (CEverQuest_MoveMoney @00530fd3): where they are, and which (0 platinum .. 3 copper).
+	enum Place { CursorCoins, Purse, Bank, TradeCoins };
+	int32_t &Coins(ZoneProfile &me, int place, int coin);
+	int32_t Coins(const ZoneProfile &me, int place, int coin);
+	// CDisplay's CursorMoneyType: 1 platinum .. 4 copper, the biggest coin on the cursor; 0 none.
+	int CursorMoneyType(const ZoneProfile &me);
+	// MoveMoney: `amount` of a coin from one place to another, as another coin only while the bank's
+	// open (ten of one for one of the next up, the rest staying; one for ten of the next down), then
+	// OP_MoveCoin. Onto the cursor only when it's free (IsOkToActivate) or `force`. False when it
+	// can't (not that many there, the same place and coin).
+	bool MoveMoney(ZoneSession &zone, int from, int to, int from_coin, int to_coin, int32_t amount, bool bank_open,
+		bool force = false);
+
 	// AutoInventory: the cursor's item where it goes. False when there's no room for it: eqgame
 	// drops it on the ground then ("There was no place to put that!"), and we leave it on the cursor.
 	bool AutoInventory(ZoneSession &zone);

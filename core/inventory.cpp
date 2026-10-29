@@ -1,6 +1,7 @@
 #include "inventory.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <vector>
 
 namespace Inventory
@@ -324,6 +325,62 @@ namespace Inventory
 		it->second.charges = static_cast<int8_t>(Charges(it->second) - Charges(taken));
 		items[Cursor] = taken;
 		zone.MoveItem(from, Cursor, count);
+	}
+
+	int32_t &Coins(ZoneProfile &me, int place, int coin)
+	{
+		int32_t *coins[4][4] = {
+			{&me.cursor_platinum, &me.cursor_gold, &me.cursor_silver, &me.cursor_copper},
+			{&me.platinum, &me.gold, &me.silver, &me.copper},
+			{&me.bank_platinum, &me.bank_gold, &me.bank_silver, &me.bank_copper},
+			{&me.trade_coins[0], &me.trade_coins[1], &me.trade_coins[2], &me.trade_coins[3]},
+		};
+		return *coins[place & 3][coin & 3];
+	}
+
+	int32_t Coins(const ZoneProfile &me, int place, int coin)
+	{
+		return Coins(const_cast<ZoneProfile &>(me), place, coin);
+	}
+
+	int CursorMoneyType(const ZoneProfile &me)
+	{
+		for (int coin = 0; coin < 4; ++coin)
+			if (Coins(me, CursorCoins, coin) > 0)
+				return coin + 1;
+		return 0;
+	}
+
+	bool MoveMoney(ZoneSession &zone, int from, int to, int from_coin, int to_coin, int32_t amount, bool bank_open,
+		bool force)
+	{
+		if (amount <= 0 || from < CursorCoins || from > TradeCoins || to < CursorCoins || to > TradeCoins ||
+		    from_coin < 0 || from_coin > 3 || to_coin < 0 || to_coin > 3)
+			return false;
+		int steps = to_coin - from_coin;
+		int factor = 1;
+		for (int i = 0; i < std::abs(steps); ++i)
+			factor *= 10;
+		if (factor != 1 && !bank_open)
+			return false;
+		ZoneProfile &me = zone.EditProfile();
+		if (to == CursorCoins && !force && (zone.Items().count(Cursor) || CursorMoneyType(me) != 0))
+			return false;
+		int32_t &source = Coins(me, from, from_coin), &dest = Coins(me, to, to_coin);
+		if (&source == &dest || source < amount)
+			return false;
+		if (steps < 0) { // to a bigger coin: what doesn't make a whole one stays
+			int32_t moved = amount - amount % factor;
+			source -= moved;
+			dest += moved / factor;
+		}
+		else {
+			source -= amount;
+			dest += amount * factor;
+		}
+		// MoveCoin_Struct's coins run the other way: 0 copper .. 3 platinum.
+		zone.MoveCoin(from, to, 3 - from_coin, 3 - to_coin, amount);
+		return true;
 	}
 
 	bool AutoInventory(ZoneSession &zone)

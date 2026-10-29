@@ -779,6 +779,104 @@ int main(int argc, char **argv)
 			printf("[preview] chat %06x %s\n", line.rgb, line.text.c_str());
 		h.Snapshot("c2-target");
 
+		// The bank: stand by a banker, find it on the screen and right click it; its window, its
+		// coins and the inventory come up; an item goes into a bank slot and back; coins (some put
+		// in our purse, as the replay's zone hears nothing) go into the bank as gold, changed at
+		// the bank; then walking away closes it.
+		{
+			const ZoneSpawn *banker = nullptr;
+			for (const auto &[id, spawn] : frontend.Zone().Spawns())
+				if (spawn.npc == 1 && spawn.class_id == 16 && !banker)
+					banker = &spawn;
+			ZoneView *view = frontend.ZoneScene();
+			if (banker && view) {
+				uint16_t banker_id = banker->id;
+				windows.Show("InventoryWindow", false);
+				view->SetPlayerPosition(banker->x, banker->y - 12, banker->z, 0);
+				h.RunUntil([] { return false; }, 1500);
+				h.Snapshot("k0-at-banker"); // rendered: PickSpawn looks at the last frame
+				int bx = -1, by = -1;
+				for (int y = 8; y < frontend.ScreenHeight() && bx < 0; y += 8)
+					for (int x = 8; x < frontend.ScreenWidth() && bx < 0; x += 8)
+						if (view->PickSpawn(x, y, frontend.Zone().MySpawnId()) == banker_id && !windows.Over(x, y))
+							bx = x, by = y;
+				printf("[preview] banker %s (%d) on the screen at %d,%d, %.1f away\n", banker->name.c_str(), banker_id, bx, by,
+					frontend.Zone().SpawnDistance(banker_id));
+				size_t chat_before = frontend.Chat().Lines().size();
+				if (bx >= 0) {
+					frontend.OnEvent({InputEvent::Type::MouseMove, bx, by});
+					frontend.OnEvent({InputEvent::Type::RightDown, bx, by});
+					frontend.OnEvent({InputEvent::Type::RightUp, bx, by});
+					frontend.Update(NowMs());
+					if (const SidlWindow *bank = where("BankWnd")) {
+						where("InventoryWindow");
+						auto text_of = [&](const char *id) {
+							const SidlWindow::Control *c = bank->Find(id);
+							return c ? c->text : std::string("(none)");
+						};
+						h.RunUntil([] { return false; }, 200);
+						printf("[preview] bank: '%s', coins %s %s %s %s\n", text_of("BW_BankerName").c_str(),
+							text_of("BW_Money0").c_str(), text_of("BW_Money1").c_str(), text_of("BW_Money2").c_str(),
+							text_of("BW_Money3").c_str());
+						h.Snapshot("k1-bank");
+						auto control_click = [&](const char *window, const std::string &id) {
+							const SidlWindow *wnd = windows.Find(window);
+							if (const SidlWindow::Control *c = wnd ? wnd->Find(id) : nullptr)
+								click(c->rect.x + c->rect.w / 2, c->rect.y + c->rect.h / 2);
+						};
+						int lone = -1;
+						for (const auto &[slot, item] : frontend.Zone().Items())
+							if (slot >= Inventory::FirstGeneral && slot <= Inventory::LastGeneral && item.item_class == 0 &&
+							    !Inventory::Stacks(item) && lone < 0)
+								lone = slot;
+						auto bank_items = [&](const char *when) {
+							printf("[preview] bank %s:", when);
+							for (const auto &[slot, item] : frontend.Zone().Items())
+								if (slot >= Inventory::FirstBank)
+									printf(" %d=%s", slot, item.name.c_str());
+							printf("\n");
+						};
+						if (lone >= 0) {
+							control_click("InventoryWindow", "InvSlot" + std::to_string(lone));
+							control_click("BankWnd", "BW_BankSlot0");
+							bank_items("an item in");
+							control_click("BankWnd", "BW_BankSlot0");
+							control_click("InventoryWindow", "InvSlot" + std::to_string(lone));
+							bank_items("and out");
+						}
+						ZoneProfile &me = const_cast<ZoneSession &>(frontend.Zone()).EditProfile();
+						me.copper += 250;
+						auto coins = [&](const char *when) {
+							printf("[preview] coins %s: purse %d %d %d %d, bank %d %d %d %d, cursor %d %d %d %d\n", when, me.platinum,
+								me.gold, me.silver, me.copper, me.bank_platinum, me.bank_gold, me.bank_silver, me.bank_copper,
+								me.cursor_platinum, me.cursor_gold, me.cursor_silver, me.cursor_copper);
+						};
+						coins("before");
+						control_click("InventoryWindow", "IW_Money3");
+						if (where("QuantityWnd")) {
+							h.Snapshot("k2-coin-quantity");
+							h.Key(InputEvent::Key::Enter);
+						}
+						coins("all the copper on the cursor");
+						frontend.OnEvent({InputEvent::Type::MouseMove, 600, 400});
+						h.RunUntil([] { return false; }, 200);
+						h.Snapshot("k3-coins-on-cursor");
+						control_click("BankWnd", "BW_Money1");
+						coins("into the bank as gold");
+						frontend.Update(NowMs());
+						printf("[preview] bank coins %s %s %s %s\n", text_of("BW_Money0").c_str(), text_of("BW_Money1").c_str(),
+							text_of("BW_Money2").c_str(), text_of("BW_Money3").c_str());
+						view->SetPlayerPosition(banker->x, banker->y - 60, banker->z, 0);
+						h.RunUntil([] { return false; }, 800);
+						where("BankWnd");
+						where("InventoryWindow");
+					}
+				}
+				for (size_t i = chat_before; i < frontend.Chat().Lines().size(); ++i)
+					printf("[preview] bank chat: %s\n", frontend.Chat().Lines()[i].text.c_str());
+			}
+		}
+
 		// Item links: Shift+click an item into the chat line while typing (printed, the tags'
 		// markers as '|'), send it, then light the link in the chat under the mouse and click it
 		// (OP_ItemLinkResponse goes out); and the item display's icon links its item.

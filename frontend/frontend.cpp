@@ -686,6 +686,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		m_windows.Update(now_ms, m_mouse_x - area.x, m_mouse_y - area.y);
 		m_window_state.busy = m_containers.Combining();
 		HandleWindowClicks();
+		m_bank.Frame(now_ms);
 		m_spell_book.Frame(now_ms);
 		m_spell_cast.Frame(now_ms);
 		m_buffs.Frame(now_ms);
@@ -1469,7 +1470,7 @@ namespace
 		{"InventoryWindow", false}, {"OptionsWindow", false}, {"FriendsWindow", false}, {"PetInfoWindow", false},
 		{"HelpWindow", false}, {"CompassWindow", false}, {"SocialEditWnd", false}, {"ChatWindow", true},
 		{"SkillsWindow", false}, {"ItemDisplayWindow", false}, {"QuantityWnd", false}, {"SpellBookWnd", false},
-		{"ConfirmationDialogBox", false}, {"CastingWindow", false},
+		{"ConfirmationDialogBox", false}, {"CastingWindow", false}, {"BankWnd", false},
 	};
 
 	// The selector's buttons (EQUI_SelectorWnd.xml) and the windows they open and close.
@@ -1556,6 +1557,10 @@ void FrontEnd::BuildZoneWindows()
 	};
 	bag_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
 	m_containers.Attach(m_windows, m_zone, m_game_values, std::move(bag_host)); // the bag windows hidden
+	BankWindow::Host bank_host;
+	bank_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
+	bank_host.close_bags = [this] { m_containers.CloseAll(); };
+	m_bank.Attach(m_windows, m_zone, m_window_state, m_ui.eqstr, std::move(bank_host)); // hidden too
 	m_windows.TakeChanged();
 }
 
@@ -1596,9 +1601,9 @@ void FrontEnd::SaveDebugSettings()
 
 void FrontEnd::HandleWindowClicks()
 {
-	// Nothing goes on the cursor over an item (CCursorAttachment::IsOkToActivate).
+	// Nothing goes on the cursor over an item or coins (CCursorAttachment::IsOkToActivate).
 	for (const auto &hold : m_windows.TakeHolds())
-		if (!m_zone.Items().count(Inventory::Cursor))
+		if (!m_zone.Items().count(Inventory::Cursor) && !Inventory::CursorMoneyType(m_zone.Profile()))
 			GameWindowHold(m_windows, m_window_state, hold.window, hold.control);
 	for (const auto &click : m_windows.TakeRightClicks()) {
 		if (m_spell_book.RightClick(click.window, click.control))
@@ -1641,14 +1646,17 @@ void FrontEnd::HandleWindowClicks()
 		// The spellbook, the gems and the confirmation dialog.
 		if (m_spell_book.Click(click.window, click.control, click.alt, m_now_ms))
 			continue;
-		// A bag window's Done and Combine.
-		if (m_containers.Click(click.window, click.control))
+		// A bag window's Done and Combine, and the bank's Done.
+		if (m_containers.Click(click.window, click.control) || m_bank.Click(click.window, click.control))
 			continue;
-		// The inventory's slots and character view, and the quantity window's Accept.
+		// The inventory's slots and character view, the money buttons, and the quantity window's Accept.
 		InventoryClickResult moved;
-		if (InventoryClick(m_windows, m_window_state, m_zone, click.window, click.control, click.shift, click.ctrl, moved)) {
+		if (MoneyClick(m_windows, m_window_state, m_zone, click.window, click.control, click.shift, click.ctrl, moved) ||
+		    InventoryClick(m_windows, m_window_state, m_zone, click.window, click.control, click.shift, click.ctrl, moved)) {
 			if (moved.sound && m_sound)
 				m_sound->PlayWave(0x92);
+			if (moved.coin_sound && m_sound)
+				m_sound->PlayWave(0x8a);
 			if (moved.message)
 				ChatOut(EqString(moved.message, Inventory::MessageText(moved.message)), ChatType::Red);
 			if (moved.close_bag >= 0)
@@ -1733,6 +1741,30 @@ void FrontEnd::ChangeStance(uint8_t stance)
 		m_zone_view->SetSitting(stance == 110);
 	if (was == 110)
 		m_spell_book.StoodUp();
+}
+
+bool FrontEnd::IsOkToTransact() const
+{
+	// Not camping, no combine waiting, no world container, spellbook, bank (the merchant, loot,
+	// trade, trainer and bazaar windows when we have them).
+	return m_zone.CampRemainingMs() == 0 && !m_containers.Combining() && !m_spell_book.Activated() && !m_bank.Active();
+}
+
+void FrontEnd::RightClickedOnPlayer(uint16_t spawn)
+{
+	if (!IsOkToTransact() || spawn == m_zone.MySpawnId())
+		return;
+	auto it = m_zone.Spawns().find(spawn);
+	if (it == m_zone.Spawns().end())
+		return;
+	const ZoneSpawn &who = it->second;
+	constexpr int Banker = 16;
+	if (who.npc < 2 && who.class_id == Banker && m_zone.SpawnDistance(spawn) <= 20) {
+		m_bank.Activate(spawn);
+		return;
+	}
+	// Anything else: _consider with nothing typed, which considers our target (not who was clicked).
+	InterpretCommand("/consider");
 }
 
 void FrontEnd::Sit()
@@ -2089,7 +2121,16 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 		if (m_zone_view)
 			m_zone_view->Zoom(event.wheel);
 		return;
+	case InputEvent::Type::RightUp:
+		// EQ_3DView_MouseUp's right button, let go within 500 ms of going down on the world: the
+		// spawn under the cursor (CEverQuest::RMouseUp, RightClickedOnPlayer).
+		if (m_right_world_ms && m_now_ms - m_right_world_ms <= 500 && m_zone_view)
+			if (uint16_t id = m_zone_view->PickSpawn(event.x, event.y, m_zone.MySpawnId()))
+				RightClickedOnPlayer(id);
+		m_right_world_ms = 0;
+		return;
 	case InputEvent::Type::RightDown:
+		m_right_world_ms = m_now_ms ? m_now_ms : 1;
 		// Mouse look: the character turns to where the camera looks, then turns with the mouse.
 		if (!m_mouse_pan) {
 			m_look_x = event.x;
@@ -2186,7 +2227,10 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 	// Typing into the social editor: Enter does nothing, Escape closes it (below). Into the
 	// quantity window's box, Enter is its Accept.
 	if (editing && event.key == InputEvent::Key::Enter && editor == quantity) {
-		QuantityEnter(m_windows, m_window_state, m_zone);
+		InventoryClickResult moved;
+		QuantityEnter(m_windows, m_window_state, m_zone, moved);
+		if (moved.coin_sound && m_sound)
+			m_sound->PlayWave(0x8a);
 		return;
 	}
 	if (editing && (editor->OnKey(event) || event.key == InputEvent::Key::Enter))
@@ -2254,16 +2298,23 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			break;
 		}
 		// ExecuteCmd's escape: no target, then CDisplay_NewUIProcessEscape closes the first of its
-		// windows that's open (of the ones we have: the item display, quantity, help, skills, then
-		// every bag window at once, options, the spellbook, the social editor, inventory).
+		// windows that's open (of the ones we have: the item display, quantity, the bank, help,
+		// skills, then every bag window at once, options, the spellbook, the social editor, inventory).
 		SetTarget(0);
 		ChatOut(EqString(12375, "You no longer have a target."), ChatType::Default);
 		for (const char *screen :
-			{"ItemDisplayWindow", "QuantityWnd", "HelpWindow", "SkillsWindow", "", "OptionsWindow", "SpellBookWnd",
-			 "SocialEditWnd", "InventoryWindow"}) {
+			{"ItemDisplayWindow", "QuantityWnd", "BankWnd", "HelpWindow", "SkillsWindow", "", "OptionsWindow",
+			 "SpellBookWnd", "SocialEditWnd", "InventoryWindow"}) {
 			if (!*screen) {
 				if (m_containers.CloseAll())
 					break;
+				continue;
+			}
+			if (std::string(screen) == "BankWnd") {
+				if (m_bank.Active()) {
+					m_bank.Deactivate(true);
+					break;
+				}
 				continue;
 			}
 			if (m_windows.Shown(screen)) {
@@ -2329,10 +2380,11 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 			for (int gem = 0; gem < ZoneProfile::Gems; ++gem)
 				if (const SidlWindow::Control *c = gems->Find("CSPW_Spell" + std::to_string(gem)); c && gems->Shown(*c))
 					m_windows.DrawTooltip(canvas, m_text, c->tooltip, c->def->font, c->rect.Right() + 2, c->rect.y + 2, false);
-	// CContainerWnd::PostDraw: Alt held over a bag window shows each slot's tooltip.
+	// CContainerWnd::PostDraw and CBankWnd's: Alt held over a bag or the bank shows each slot's tooltip.
 	if (m_alt_down) {
 		Rect area = ScreenArea();
 		m_containers.DrawTooltips(canvas, m_text, m_mouse_x - area.x, m_mouse_y - area.y);
+		m_bank.DrawTooltips(canvas, m_text, m_mouse_x - area.x, m_mouse_y - area.y);
 	}
 	// Top left and right: the debug menu's stat card and radar, above the windows.
 	m_debug.Draw(canvas, m_text, m_zone, m_zone_view.get(), height - 10);

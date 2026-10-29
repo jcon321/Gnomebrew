@@ -172,6 +172,10 @@ struct GameWindowState
 	// The quantity window's: the slot it takes from (-1: it isn't up), the stack's count, and
 	// the slider's value and the edit box's text as last seen, to tell which one changed.
 	int quantity_slot = -1, quantity_max = 0;
+	// Or the coin a money button opened it for (0 platinum .. 3 copper; -1 none) and where the
+	// coins are (Inventory::Place: the purse, the bank): CQuantityWnd's window to notify.
+	int quantity_coin = -1, quantity_place = 0;
+	bool QuantityUp() const { return quantity_slot >= 0 || quantity_coin >= 0; }
 	int quantity_value = 0;
 	std::string quantity_text;
 
@@ -179,6 +183,8 @@ struct GameWindowState
 
 	// DAT_007d0254: a request the zone has yet to answer (a combine); the slots take no clicks.
 	bool busy = false;
+	// The bank window's up: coins change into others (CEverQuest_MoveMoney).
+	bool bank_open = false;
 };
 
 // A button clicked in one of the windows: the page arrows and the hot buttons. A hot button that
@@ -210,11 +216,18 @@ struct InventoryClickResult
 	bool sound = false;
 	uint32_t message = 0;
 	int16_t close_bag = -1; // a bag picked up or swapped out: its window closes (CloseContainer)
+	bool coin_sound = false; // WavePlay 0x8a: coins onto the cursor
 };
+// A money button (the inventory's IW_Money0..3, the bank's BW_Money0..3), or the inventory's
+// character view with coins on the cursor: CInventoryWnd and CBankWnd::ClickedMoneyButton. Coins on
+// the cursor go onto its pile; without, the quantity window asks how many come off it onto the
+// cursor. False when it isn't one.
+bool MoneyClick(WindowManager &windows, GameWindowState &state, ZoneSession &zone, const std::string &window,
+	const std::string &control, bool shift, bool ctrl, InventoryClickResult &result);
 bool InventoryClick(WindowManager &windows, GameWindowState &state, ZoneSession &zone, const std::string &window,
 	const std::string &control, bool shift, bool ctrl, InventoryClickResult &result);
 // Enter in the quantity window's edit box: as Accept.
-bool QuantityEnter(WindowManager &windows, GameWindowState &state, ZoneSession &zone);
+bool QuantityEnter(WindowManager &windows, GameWindowState &state, ZoneSession &zone, InventoryClickResult &result);
 void UpdateGameWindows(WindowManager &windows, const GameValues &values, GameWindowState &state);
 
 // A skill's name (eqgame's __SkillDict, from InitializeSkillData), from eqstr (null: English).

@@ -825,6 +825,30 @@ details and the nearest spawns at the top left and the radar at the top right.
   12011..12023), a cursor with anything on it (12024) and an empty bag (12025), then sends
   `OP_TradeSkillCombine` (0x4105, 32 bytes: type, slot, the ten item ids, the bag's id @30) and
   locks the slots (`DAT_007d0254`) until the zone's empty answer.
+- **Coins** (`Inventory::MoveMoney`, `CEverQuest_MoveMoney` @00530fd3): coins live in four places,
+  0 the cursor, 1 the purse, 2 the bank, 3 the trade window, each platinum (0) to copper (3). A
+  money button (`CInventoryWnd`/`CBankWnd::ClickedMoneyButton`) with nothing on the cursor opens the
+  quantity window for that pile (`CQuantityWnd::Activate`: none does nothing; Shift all, Ctrl one)
+  and its notification 0x1d moves that many onto the cursor (wave 0x8a); with coins on the cursor
+  it takes them all onto its own pile. The inventory's character view takes them as their own
+  button would. Another coin only while the bank's up: to a bigger coin `amount - amount % 10^n`
+  goes and `amount / 10^n` comes, to a smaller one `amount * 10^n`. `OP_MoveCoin` (0x412d, 20
+  bytes: from, to, from coin, to coin, amount) numbers the coins the other way, 0 copper .. 3
+  platinum, and carries the amount asked even when none moved. On the cursor (`CCursorAttachment`
+  type 3) they show as `A_DragItem` cell 143 + `CursorMoneyType` (1 platinum .. 4 copper, the
+  biggest coin there), the count centered in font 1 over a dark box across the bottom, 4 up. The
+  profile has the bank's coins at 2940 and the cursor's at 2956.
+- **Bank** (`frontend/bank_window.*`, `CBankWnd`): `CEverQuest::RightClickedOnPlayer` (the right
+  button let go within 500 ms of going down on the world, `CEverQuest::RMouseUp`) opens it on a
+  banker (class 16) within 20 (`CDisplay::PlayerDistance`, 3D) when `CEverQuest_IsOkToTransact`
+  (no camp, combine, world container, spellbook, trainer, bazaar, trade, bank, merchant or loot
+  window). Anything else it doesn't handle is `_consider` with nothing typed, which considers our
+  target, not who was clicked. `Activate` says eqstr 1465 ("%1 tells you, 'Welcome to my bank!'"),
+  puts the banker's name on `BW_BankerName` and opens the inventory too if it was closed.
+  `OnProcessFrame` leaves the bank when the banker is over 20 away, checked every 500 ms.
+  `Deactivate` (Done, Escape right after the item display and quantity windows, walking away)
+  says 12143 ("Come back soon!"), closes the inventory if the bank opened it and closes every bag
+  window.
 - **Item display** (`frontend/item_display.*`, `CItemDisplayWnd`): alt+click (`CInvSlot::HandleLButtonUp`)
   or the right button held 750 ms (`HandleRButtonHeld`) shows it; letting go over a slot after the
   hold closes it. `SetItem`'s text shows the following:

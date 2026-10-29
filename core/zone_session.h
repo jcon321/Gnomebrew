@@ -61,6 +61,7 @@ struct ZoneProfile
 	int32_t platinum = 0, gold = 0, silver = 0, copper = 0;
 	int32_t bank_platinum = 0, bank_gold = 0, bank_silver = 0, bank_copper = 0;
 	int32_t cursor_platinum = 0, cursor_gold = 0, cursor_silver = 0, cursor_copper = 0; // coins on the cursor
+	int32_t trade_coins[4] = {}; // ours in the trade window, platinum first (CTradeWnd's, not the profile's)
 	uint32_t birthday = 0;       // when the character was made (a time_t)
 	uint32_t minutes_played = 0; // as of the profile (ZoneSession::MinutesPlayed carries it on)
 	// By skill id (50 is swimming): 255 the class never has it, 254 it does at a later level,
@@ -405,6 +406,10 @@ public:
 	// it's over, gone off or not, OP_ManaChange; gone off, OP_MemorizeSpell 3 before that.
 	bool CastSpell(int gem, int spell, uint16_t target);
 	bool StopCasting(); // an empty OP_ManaChange: a bard's song stops (StopSpellCast)
+	// OP_MoveCoin (MoveCoin_Struct, 20 bytes: i32 from, to, from coin, to coin, amount): coins moved
+	// between the cursor (0), our purse (1), the bank (2) and the trade window (3), the coins 0
+	// copper .. 3 platinum. The zone doesn't answer one it agrees with.
+	bool MoveCoin(int from, int to, int from_coin, int to_coin, int32_t amount);
 	// CContainerWnd::HandleCombine: OP_TradeSkillCombine for the bag in a general slot (`slot`;
 	// 1000 a world container) with its type and id and the ids in its ten slots (-1 none). The
 	// zone answers with an empty one (CombineAnswered).
@@ -419,12 +424,17 @@ public:
 
 	State GetState() const { return m_state; }
 	const ZoneProfile &Profile() const { return m_profile; }
+	// Our coins, to change as eqgame does before it tells the zone (CEverQuest_MoveMoney).
+	ZoneProfile &EditProfile() { return m_profile; }
 	const ZoneInfo &Info() const { return m_info; }
 	const std::map<uint16_t, ZoneSpawn> &Spawns() const { return m_spawns; }
 	// Our own spawn from OP_ZoneEntry (ServerZoneEntry_Struct): appearance, size, position.
 	// Set before the ZoneInfo event.
 	const ZoneSpawn &Self() const { return m_self; }
 	uint16_t MySpawnId() const { return m_my_id; }
+	// CDisplay::PlayerDistance(spawn, us, 1): how far a spawn is from where we last moved, up and
+	// down too; a big negative number for a spawn that isn't there (as eqgame's -1e27).
+	float SpawnDistance(uint16_t id) const;
 	// Our hit points as OP_HPUpdate gives them: `hp` leaves out what worn items add (the client
 	// adds that), `max_hp` is the total. Both 0 until the zone has sent them.
 	int32_t BaseHp() const { return m_hp; }

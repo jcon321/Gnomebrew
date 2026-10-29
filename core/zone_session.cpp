@@ -744,6 +744,25 @@ bool ZoneSession::MoveItem(int16_t from, int16_t to, int32_t qty)
 	return sent;
 }
 
+float ZoneSession::SpawnDistance(uint16_t id) const
+{
+	auto it = m_spawns.find(id);
+	if (it == m_spawns.end())
+		return -1e27f;
+	float dx = it->second.x - m_profile.x, dy = it->second.y - m_profile.y, dz = it->second.z - m_profile.z;
+	return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+bool ZoneSession::MoveCoin(int from, int to, int from_coin, int to_coin, int32_t amount)
+{
+	if (m_state != State::InZone)
+		return false;
+	int32_t body[5] = {from, to, from_coin, to_coin, amount};
+	return Send(ZoneOp::MoveCoin, body, sizeof(body),
+		"OP_MoveCoin " + std::to_string(from) + ":" + std::to_string(from_coin) + " -> " + std::to_string(to) + ":" +
+			std::to_string(to_coin) + " x" + std::to_string(amount));
+}
+
 bool ZoneSession::TradeSkillCombine(uint8_t bag_type, int16_t slot, const int16_t ids[10], uint16_t bag_id)
 {
 	if (m_state != State::InZone)

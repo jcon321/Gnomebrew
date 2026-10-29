@@ -210,7 +210,7 @@ namespace
 		// The character view takes a click only to put away what's on the cursor; otherwise it
 		// moves the window, as the rest of it does.
 		if (SidlWindow::Control *view = wnd.Find("IW_CharacterView"))
-			view->clickable = items.count(Inventory::Cursor) != 0;
+			view->clickable = items.count(Inventory::Cursor) != 0 || Inventory::CursorMoneyType(me) != 0;
 	}
 
 	// CQuantityWnd's notifications as the slider and the edit box change: the box shows the
@@ -219,7 +219,7 @@ namespace
 	void QuantityWindow(SidlWindow &wnd, const WindowManager &windows, GameWindowState &state)
 	{
 		if (!windows.Shown("QuantityWnd")) {
-			state.quantity_slot = -1;
+			state.quantity_slot = state.quantity_coin = -1;
 			return;
 		}
 		SidlWindow::Control *slider = wnd.Find("QTYW_Slider"), *edit = wnd.Find("QTYW_SliderInput");
@@ -235,13 +235,15 @@ namespace
 		state.quantity_text = edit->text;
 	}
 
-	// CQuantityWnd::Activate for the stack in `slot`: all of it with Shift down, one with Ctrl,
-	// and a stack of one, go onto the cursor without the window. Otherwise the window comes up with
-	// the slider from 0 to the count at the count, its top left at (x, y) unless that puts it off
-	// the screen, and the edit box taking the keys.
-	void OpenQuantity(WindowManager &windows, GameWindowState &state, ZoneSession &zone, int16_t slot, int count,
-		int x, int y, bool shift, bool ctrl)
+	// CQuantityWnd::Activate for `count` of something: all of it with Shift down, one with Ctrl,
+	// and the one of a single one, are taken without the window (the value returned). Otherwise
+	// the window comes up with the slider from 0 to the count at the count, its top left at (x,
+	// y) unless that puts it off the screen, and the edit box taking the keys (0 returned); its
+	// target is the state's quantity_slot or quantity_coin. None at all: nothing.
+	int ActivateQuantity(WindowManager &windows, GameWindowState &state, int count, int x, int y, bool shift, bool ctrl)
 	{
+		if (count <= 0)
+			return 0;
 		int value = count < 2 ? count : 0;
 		if (shift)
 			value = count;
@@ -252,14 +254,11 @@ namespace
 		SidlWindow::Control *edit = wnd ? wnd->Find("QTYW_SliderInput") : nullptr;
 		if (!slider || !edit) // no quantity window in the UI files: all of it
 			value = count;
-		if (value != 0) {
-			Inventory::TakeFromStack(zone, slot, value);
-			return;
-		}
+		if (value != 0)
+			return value;
 		slider->slider_ticks = std::max(count + 1, 2); // SetNumTicks
 		wnd->SetSlider(*slider, count);
 		edit->text = std::to_string(count);
-		state.quantity_slot = slot;
 		state.quantity_max = count;
 		state.quantity_value = slider->slider_value;
 		state.quantity_text = edit->text;
@@ -272,23 +271,48 @@ namespace
 		wnd->Focus("QTYW_SliderInput");
 		windows.Show("QuantityWnd", true);
 		windows.Raise("QuantityWnd");
+		return 0;
+	}
+
+	// The stack in `slot`: CInvSlot::HandleLButtonUp's quantity window, then SliderComplete.
+	void OpenQuantity(WindowManager &windows, GameWindowState &state, ZoneSession &zone, int16_t slot, int count,
+		int x, int y, bool shift, bool ctrl)
+	{
+		state.quantity_slot = -1;
+		state.quantity_coin = -1;
+		if (int value = ActivateQuantity(windows, state, count, x, y, shift, ctrl)) {
+			Inventory::TakeFromStack(zone, slot, value);
+			return;
+		}
+		if (windows.Shown("QuantityWnd"))
+			state.quantity_slot = slot;
+	}
+
+	// ClickedMoneyButton's second half: `amount` of the coin onto the cursor.
+	bool CoinsToCursor(GameWindowState &state, ZoneSession &zone, int place, int coin, int amount)
+	{
+		state.ClearCursor(); // a button on the cursor goes (Activate)
+		return Inventory::MoveMoney(zone, place, Inventory::CursorCoins, coin, coin, amount, state.bank_open);
 	}
 
 	// Accept, or Enter in the box: the slider takes the box's number (UpdateSliderFromEditWnd), the
-	// window goes and the slot gets the value (CSliderWnd::GetValue's notification 0x1d, through
-	// the slot's window to CInvSlot::SliderComplete).
-	void FinishQuantity(WindowManager &windows, GameWindowState &state, ZoneSession &zone)
+	// window goes and its target gets the value (CSliderWnd::GetValue's notification 0x1d, to the
+	// slot's window, CInvSlot::SliderComplete; or to the money button's, ClickedMoneyButton).
+	void FinishQuantity(WindowManager &windows, GameWindowState &state, ZoneSession &zone, InventoryClickResult &result)
 	{
 		SidlWindow *wnd = windows.Find("QuantityWnd");
 		SidlWindow::Control *slider = wnd ? wnd->Find("QTYW_Slider") : nullptr;
 		SidlWindow::Control *edit = wnd ? wnd->Find("QTYW_SliderInput") : nullptr;
-		int slot = state.quantity_slot;
+		int slot = state.quantity_slot, coin = state.quantity_coin;
 		windows.Show("QuantityWnd", false);
-		state.quantity_slot = -1;
-		if (!slider || !edit || slot < 0)
+		state.quantity_slot = state.quantity_coin = -1;
+		if (!slider || !edit)
 			return;
 		wnd->SetSlider(*slider, std::atoi(edit->text.c_str()));
-		Inventory::TakeFromStack(zone, static_cast<int16_t>(slot), slider->slider_value);
+		if (slot >= 0)
+			Inventory::TakeFromStack(zone, static_cast<int16_t>(slot), slider->slider_value);
+		else if (coin >= 0)
+			result.coin_sound = CoinsToCursor(state, zone, state.quantity_place, coin, slider->slider_value);
 	}
 
 	void SkillsWindow(SidlWindow &wnd, const GameValues &values)
@@ -699,10 +723,14 @@ bool InventoryClick(WindowManager &windows, GameWindowState &state, ZoneSession 
 	if (window == "QuantityWnd") {
 		if (control != "QTYW_Accept_Button")
 			return false;
-		FinishQuantity(windows, state, zone);
+		FinishQuantity(windows, state, zone, result);
 		return true;
 	}
 	const std::map<int16_t, ZoneItem> &items = zone.Items();
+	// Coins on the cursor: a slot does nothing with them (HandleLButtonUp); the character view and
+	// the money buttons take them (MoneyClick).
+	if (CursorMoneyType(zone.Profile()) != 0 && !(window == "InventoryWindow" && control == "IW_CharacterView"))
+		return InvSlotAt(windows, window, control) >= 0;
 	if (window == "InventoryWindow" && control == "IW_CharacterView") {
 		if (items.count(Cursor)) {
 			result.sound = true;
@@ -715,7 +743,7 @@ bool InventoryClick(WindowManager &windows, GameWindowState &state, ZoneSession 
 	if (!slot_control || slot_control->def->type != "InvSlot")
 		return false;
 	// Nothing while the quantity window's up, or while the zone has a combine to answer.
-	if (state.quantity_slot >= 0 || state.busy)
+	if (state.QuantityUp() || state.busy)
 		return true;
 	// A button on the cursor goes; then the slot does what it does with an item or none.
 	state.ClearCursor();
@@ -759,12 +787,58 @@ bool InventoryClick(WindowManager &windows, GameWindowState &state, ZoneSession 
 	return true;
 }
 
-bool QuantityEnter(WindowManager &windows, GameWindowState &state, ZoneSession &zone)
+bool MoneyClick(WindowManager &windows, GameWindowState &state, ZoneSession &zone, const std::string &window,
+	const std::string &control, bool shift, bool ctrl, InventoryClickResult &result)
 {
+	using namespace Inventory;
+	result = {};
+	int place = -1;
+	const char *prefix = nullptr;
+	if (window == "InventoryWindow")
+		place = Purse, prefix = "IW_Money";
+	else if (window == "BankWnd" && state.bank_open)
+		place = Bank, prefix = "BW_Money";
+	if (place < 0)
+		return false;
+	ZoneProfile &me = zone.EditProfile();
+	int coin = -1;
+	if (control.size() == std::string(prefix).size() + 1 && control.rfind(prefix, 0) == 0)
+		coin = control.back() - '0';
+	// CInventoryWnd::HandleLButtonUp: the character view takes coins on the cursor as their own button would.
+	if (place == Purse && control == "IW_CharacterView" && CursorMoneyType(me) != 0)
+		coin = CursorMoneyType(me) - 1;
+	if (coin < 0 || coin > 3)
+		return false;
+	if (state.QuantityUp())
+		return true;
+	if (int held = CursorMoneyType(me)) {
+		MoveMoney(zone, CursorCoins, place, held - 1, coin, Coins(me, CursorCoins, held - 1), state.bank_open);
+		return true;
+	}
+	SidlWindow *wnd = windows.Find(window);
+	const SidlWindow::Control *button = wnd ? wnd->Find(control) : nullptr;
+	int x = -1, y = -1;
+	if (button)
+		x = button->rect.x + button->rect.w / 2, y = button->rect.y + button->rect.h / 2;
+	state.quantity_slot = state.quantity_coin = -1;
+	if (int value = ActivateQuantity(windows, state, Coins(me, place, coin), x, y, shift, ctrl)) {
+		result.coin_sound = CoinsToCursor(state, zone, place, coin, value);
+		return true;
+	}
+	if (windows.Shown("QuantityWnd")) {
+		state.quantity_coin = coin;
+		state.quantity_place = place;
+	}
+	return true;
+}
+
+bool QuantityEnter(WindowManager &windows, GameWindowState &state, ZoneSession &zone, InventoryClickResult &result)
+{
+	result = {};
 	SidlWindow *wnd = windows.Find("QuantityWnd");
 	if (!wnd || !windows.Shown("QuantityWnd") || !wnd->Focused("QTYW_SliderInput"))
 		return false;
-	FinishQuantity(windows, state, zone);
+	FinishQuantity(windows, state, zone, result);
 	return true;
 }
 
@@ -816,7 +890,8 @@ void DrawCursorAttachment(Canvas &canvas, TextRenderer &text, const WindowManage
 		if (it != values.zone->Items().end())
 			held = &it->second;
 	}
-	if (!state.Attached() && !held)
+	int money = values.zone ? Inventory::CursorMoneyType(values.zone->Profile()) : 0;
+	if (!state.Attached() && !held && !money)
 		return;
 	// CCursorAttachment: its screen (50 by 50) a pixel right of and below the mouse, with CA_Anim in it.
 	Rect anim{5, 5, 40, 40}, screen{0, 0, 50, 50};
@@ -827,6 +902,19 @@ void DrawCursorAttachment(Canvas &canvas, TextRenderer &text, const WindowManage
 			screen = piece->rect;
 	}
 	Rect dest{x + 1 + anim.x, y + 1 + anim.y, anim.w, anim.h};
+	if (money && !held) {
+		// Coins (type 3): A_DragItem's cell 143 + CursorMoneyType, and how many in font 1 centered
+		// over a dark box across the bottom, 4 up from it (DrawCursorAttachmentText).
+		windows.DrawCell(canvas, "A_DragItem", 143 + money, dest);
+		int amount = Inventory::Coins(values.zone->Profile(), Inventory::CursorCoins, money - 1);
+		std::string number = std::to_string(amount);
+		int h = SidlFontHeight(1);
+		int left = x + 1, right = x + 1 + screen.w, top = y + 1 + screen.h - 4;
+		canvas.Fill({left, top, right - left, h}, 0x404040);
+		TextSize size = text.Measure(number, h, SidlFontWeight(1));
+		text.Draw(canvas, left + (right - left - size.w) / 2, top, number, h, 0xffffff, SidlFontWeight(1));
+		return;
+	}
 	if (held) {
 		// The item's icon, and a stack's count in font 1 over a dark box 12 by 10, 6 in from the
 		// screen's bottom right (DrawCursorAttachmentText), padded to two places.

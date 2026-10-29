@@ -24,6 +24,7 @@
 #include "name_sprites.h"
 #include "login_client.h"
 #include "sidl.h"
+#include "bank_window.h"
 #include "buffs.h"
 #include "containers.h"
 #include "spell_book.h"
@@ -202,6 +203,9 @@ private:
 	void SaveCustom(); // CEverQuest_saveCustom: the hot buttons and the socials changed
 	void SaveDebugSettings(); // the debug menu's, to my-client.ini's [Debug]
 	void HandleWindowClicks();
+	// CEverQuest::RightClickedOnPlayer: a banker's bank, or else /consider (of our target).
+	void RightClickedOnPlayer(uint16_t spawn);
+	bool IsOkToTransact() const; // CEverQuest_IsOkToTransact: no window that deals with someone up
 	void AddZoneLog(const std::string &text, uint32_t color); // a line of chat in this color
 	void ChatOut(const std::string &text, int type);          // in a chat color type (ChatType)
 	void DrawNameSprites(Canvas &canvas, uint64_t now_ms);
@@ -318,6 +322,8 @@ private:
 	SpellCast m_spell_cast;         // our casting from them
 	Buffs m_buffs;                  // the spells on us
 	Containers m_containers;        // the bag windows
+	BankWindow m_bank;
+	uint64_t m_right_world_ms = 0;  // when the right button went down on the world (0: it didn't)
 	bool m_jump_requested = false;
 	bool m_crouch_sent = false; // the stance last sent for a standing jump's wind-up
 	// Mouse drags in the zone: the right button turns the character and tilts the view, the left

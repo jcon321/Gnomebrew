@@ -311,7 +311,7 @@ void SpellBook::ClickSlot(int slot)
 void SpellBook::StartMemorizationDrag(int slot)
 {
 	// IsOkToActivate: not over an item, nor with the quantity window up.
-	if (m_cast->Waiting() || m_state->quantity_slot >= 0 || m_mem_gem >= 0 || m_scribe_slot >= 0)
+	if (m_cast->Waiting() || m_state->QuantityUp() || m_mem_gem >= 0 || m_scribe_slot >= 0)
 		return;
 	int spell = m_zone->Profile().spell_book[slot];
 	if (!Valid(spell))

@@ -31,8 +31,27 @@ no rules of its own.
      Skills button opening the skills window (`frontend/game_windows.*`), and items picked up, put
      down, split through the quantity window and put away on the character view (`core/inventory.*`).
      Still to do: for stats, resists, AC and ATK, items' worn effects, ATK's buffs, AAs,
-     the Resistant Discipline, drunkenness and berserking; the XP and AA gauges (the experience table); coins onto the
-     cursor, Destroy, Alt. Advance, and icons in the hot button window's weapon slots.
+     the Resistant Discipline, drunkenness and berserking; the XP and AA gauges (the experience table); Destroy,
+     Alt. Advance, and icons in the hot button window's weapon slots.
+   - Coins: done (`Inventory::MoveMoney`, CEverQuest_MoveMoney, OP_MoveCoin): a money button with
+     nothing on the cursor asks how many through the quantity window and puts them on the cursor
+     (A_DragItem's cell 143 + CursorMoneyType, the count across its bottom), with coins on it takes
+     them onto its pile, as the character view does; changed into other coins only at the bank.
+     Still to do: coins clicked onto the world or a spawn (DropItemOrMoneyOnPlayer: given to the
+     target, or a trade), and Escape leaving them on the cursor as it does an item.
+   - Bank window: done (`frontend/bank_window.*`, eqgame's CBankWnd): the right button on a banker
+     within 20 (RightClickedOnPlayer, IsOkToTransact) opens it with the banker's welcome, the bank
+     slots (2000..2007, their bags as BagBank1..8), the bank's coins on its money buttons (coins
+     change into others there) and the inventory with it; Done, Escape, the close box and walking
+     more than 20 away (checked every 500 ms) close it with "Come back soon!", the inventory if it
+     opened it, the quantity window if it was the bank's, and every bag window. Alt shows every
+     slot's tooltip. Still to do: Activate's MakeMeVisible, auto attack off (none yet) and
+     SetMusicSelection(3); Deactivate's SavePC.
+   - The right button on a spawn (CEverQuest::RMouseUp within 500 ms, RightClickedOnPlayer): a
+     banker's bank, else /consider of our target. Still to do: a merchant (class 32, OP_ShopRequest),
+     a corpse (CEverQuest_LootCorpse), our class's guildmaster (OP_GMTraining) and the message for
+     another's (eqstr 1467), a trader in the Bazaar (OP_TraderShop), a horse (race 141), and the
+     inspect of a player (doInspect).
    - Bag windows: done (`frontend/containers.*`, eqgame's CContainerMgr and CContainerWnd): the right
      button on a bag opens or closes its window, laid out for its slots with Combine and Done
      under them, kept in the layout as BagInv1..8 (BagBank, BagTrade), picking up or swapping out
@@ -134,7 +153,7 @@ no rules of its own.
    The buff window's: the spell's name. Still to do: the key bound to a
    button after its text (SetKeyTooltip, UpdateTooltipText; needs the keymap), the help texts
    FindWnd's other hit codes ask for (GetHelpTextFromStringTable), and the slots of windows we
-   don't have yet (bank, loot, trade, merchants, give: their own DrawTooltips).
+   don't have yet (loot, trade, merchants, give: their own DrawTooltips).
 5. **Options / Escape menu.** Graphics, sound and display settings, mouse sensitivity, the keymap.
 6. **A configurable keymap.** `InputEvent::Key` is a hard-coded list of about 18 keys; make it an
    EQ-style keymap with primary and alternate bindings.
