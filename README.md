@@ -189,7 +189,12 @@ In the zone, the game's own SIDL windows come up as eqgame's do on a first login
 group, buffs, spell gems, hotbuttons, chat and the selector, whose buttons open and close the
 others). You drag them (by the title bar, or anywhere on one that isn't sizable), resize sizable
 ones (`Style_Sizable`, such as chat and target) from their border's pieces as eqgame does, the
-corners both ways, with eqgame's resize cursors over them, and close and minimize them from their title bars. They fade when the
+corners both ways, with eqgame's resize cursors over them, and close and minimize them from their title bars.
+Which sides and corners size a window is `CXWnd`'s 0x78, set in code rather than the SIDL: all
+(0xff) by default; `CMerchantWnd`, `CLootWnd` and `COptionsWnd` set 0x11, the top and bottom only,
+and `CSocialEditWnd` 0x44, the sides (bits: 1 top, 2 top right, 8 bottom right, 0x10 bottom, 0x20
+bottom left, 0x40 left and right, 0x80 top left; `CXWndManager::HandleLeftMouseDown`). A border
+piece that doesn't size the window moves it. They fade when the
 mouse has been off them a while. Their layout is kept in eqgame's own format, in
 `UI_<character>_<server>.ini` next to the exe (the server part is the login server's address cut
 to 7 characters, as eqgame names it).
@@ -814,11 +819,16 @@ details and the nearest spawns at the top left and the radar at the top right.
   same (`ServerToMacSlot` passes them through). Nothing comes back out of the trade window, a
   corpse's or a world container's stack takes no quantity window, and an item goes into a trade
   slot only while trading, an empty one, and no-drop only to an NPC.
+- **Item buttons:** the bag window's `Container_Icon` and the merchant's `MW_SelectedItem` show
+  their item as the button's decal (`A_DragItem`'s cell: `SetContainer`, `SelectBuySellSlot`) over
+  its Normal, `A_RecessedBox`. The item display's `IconButton` is different: `SetItem` makes
+  `A_DragItem` its Normal.
 - **Bag windows** (`frontend/containers.*`, `CContainerMgr`, `CContainerWnd`): the right button on
   a bag (`CInvSlot::HandleRButtonUp`, no Shift, Ctrl or Alt) opens its window or closes it; at
   most 17 are up. `SetContainer` keeps it in the layout as `BagInv1..8`, `BagBank1..8`,
   `BagTrade1..16` or `BagWorld1`, first placed at the screen's spot moved 5 right and 2 down per
-  general slot after the first (a bank slot 5 left and 2 down, a trade slot 5 left and 2 up). It
+  general slot after the first (a bank slot 5 left and 2 down, a trade slot 5 left and 2 up). The
+  bag's name goes on `Container_Label`; the title stays the screen's "Container". It
   shows `bag_slots` of its ten slots, then `Container_Combine` (bag types over 8 but not 51) and
   Done, each 4 under what's above and centered, and sizes the window 14 wider and 36 taller than
   they take. Opening and closing play wave 0x91, or 0x86 and 0x85 for bag types 6, 7, 10, 15,

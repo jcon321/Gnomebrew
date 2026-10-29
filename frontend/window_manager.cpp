@@ -383,8 +383,8 @@ bool WindowManager::OnMouse(const InputEvent &event, uint64_t now_ms)
 		Drag drag = Drag::None;
 		if (sizable && ResizeEdges(w, event.x, event.y, m_edge_left, m_edge_top, m_edge_right, m_edge_bottom))
 			drag = Drag::Resize;
-		else if (!sizable || w.wnd.Root().title.Contains(event.x, event.y))
-			drag = Drag::Move;
+		else if (!sizable || w.wnd.Root().title.Contains(event.x, event.y) || w.wnd.BorderPieceAt(event.x, event.y) >= 0)
+			drag = Drag::Move; // a border piece that doesn't size this window moves it
 		if (drag != Drag::None) {
 			m_drag = drag;
 			m_drag_window = top;
@@ -466,19 +466,32 @@ bool WindowManager::ResizeEdges(const Window &w, int x, int y, bool &left, bool 
 {
 	// CXWnd::HitTestUIElement: on a Style_Sizable window, each of the border's pieces, as drawn,
 	// sizes the sides it's on; the corner pieces (and the side pieces next to them) two at once.
+	// Each side or corner only if the window's CXWnd 0x78 lets it (CXWndManager::HandleLeftMouseDown).
 	left = top = right = bottom = false;
+	uint8_t needs = 0;
 	switch (w.wnd.BorderPieceAt(x, y)) {
-	case TopLeft: case LeftTop: left = top = true; break;
-	case Top: top = true; break;
-	case TopRight: case RightTop: right = top = true; break;
-	case Right: right = true; break;
-	case RightBottom: case BottomRight: right = bottom = true; break;
-	case Bottom: bottom = true; break;
-	case BottomLeft: case LeftBottom: left = bottom = true; break;
-	case Left: left = true; break;
+	case TopLeft: case LeftTop: left = top = true; needs = ResizeTopLeft; break;
+	case Top: top = true; needs = ResizeTop; break;
+	case TopRight: case RightTop: right = top = true; needs = ResizeTopRight; break;
+	case Right: right = true; needs = ResizeSides; break;
+	case RightBottom: case BottomRight: right = bottom = true; needs = ResizeBottomRight; break;
+	case Bottom: bottom = true; needs = ResizeBottom; break;
+	case BottomLeft: case LeftBottom: left = bottom = true; needs = ResizeBottomLeft; break;
+	case Left: left = true; needs = ResizeSides; break;
 	default: return false;
 	}
+	if ((w.resize_edges & needs) == 0) {
+		left = top = right = bottom = false;
+		return false;
+	}
 	return true;
+}
+
+void WindowManager::SetResizeEdges(const std::string &screen, uint8_t edges)
+{
+	for (auto &w : m_windows)
+		if (w->screen == screen)
+			w->resize_edges = edges;
 }
 
 const char *WindowManager::Cursor(int x, int y) const

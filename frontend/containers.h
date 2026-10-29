@@ -12,8 +12,8 @@
 //     slot (EnableIniStorage: BagInv1..8 for the general slots, BagBank1..8, BagTrade1..16,
 //     BagWorld1), first shown where its screen says, moved over by the bag's place (a general
 //     slot's 5 right and 2 down for each one after the first, a bank slot's 5 left and 2 down, a
-//     trade slot's 5 left and 2 up); the bag's name on Container_Label and its icon on
-//     Container_Icon; its first bag_slots slots shown, holding what's in it, the rest hidden;
+//     trade slot's 5 left and 2 up); the bag's name on Container_Label (the title stays
+//     "Container") and its icon as Container_Icon's decal; its first bag_slots slots shown, holding what's in it, the rest hidden;
 //     Container_Combine under them for a tradeskill container (a type over 8 but not 51), the
 //     Done button under that, each 4 below what's above it and centered; and the window sized
 //     around them all, 14 wider and 36 taller than they take;

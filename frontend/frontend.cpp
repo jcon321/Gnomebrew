@@ -1508,6 +1508,11 @@ void FrontEnd::BuildZoneWindows()
 			Log("UI: " + error);
 	}
 	Containers::AddWindows(m_windows);
+	// The sides their constructors let size them (CXWnd's 0x78).
+	m_windows.SetResizeEdges("MerchantWnd", WindowManager::ResizeTop | WindowManager::ResizeBottom);
+	m_windows.SetResizeEdges("LootWnd", WindowManager::ResizeTop | WindowManager::ResizeBottom);
+	m_windows.SetResizeEdges("OptionsWindow", WindowManager::ResizeTop | WindowManager::ResizeBottom);
+	m_windows.SetResizeEdges("SocialEditWnd", 0x44); // the sides (0x04 sizes nothing)
 	// eqgame names the file after the character and the first 7 characters of the login
 	// server's address (UI_Name_loginse.ini for loginserver.takproject.net).
 	m_ui_layout_path.clear();

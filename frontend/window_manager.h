@@ -86,6 +86,14 @@ public:
 	void Raise(const std::string &screen); // on top of the others (CXWnd::Show's bring to front)
 	void MoveTo(const std::string &screen, int x, int y); // CXWnd::Move: its top left, the same size
 	void Resize(const std::string &screen, int w, int h); // CXWnd::Resize: the same top left
+	// CXWnd's 0x78: which of a sizable window's sides and corners size it (all by default; the
+	// merchant, loot and options windows set top and bottom, the social editor the sides).
+	enum ResizeEdge : uint8_t
+	{
+		ResizeTop = 0x01, ResizeTopRight = 0x02, ResizeBottomRight = 0x08, ResizeBottom = 0x10,
+		ResizeBottomLeft = 0x20, ResizeSides = 0x40, ResizeTopLeft = 0x80, ResizeAll = 0xff,
+	};
+	void SetResizeEdges(const std::string &screen, uint8_t edges);
 	Rect WindowRect(const std::string &screen) const;      // where it is unminimized; empty if there's none
 	int ScreenWidth() const { return m_width; }
 	int ScreenHeight() const { return m_height; }
@@ -133,6 +141,7 @@ private:
 		bool shown = false;
 		Rect rect;           // where it is unminimized
 		Settings settings;
+		uint8_t resize_edges = ResizeAll;
 		// The fade: alpha (AlphaTransparency) moving from fade_from to fade_target.
 		bool unfaded = true;
 		uint64_t hover_ms = 0; // when the mouse was last over it; 0 until its first frame

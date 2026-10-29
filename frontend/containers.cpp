@@ -195,13 +195,12 @@ void Containers::SetContainer(const std::string &window, const ZoneItem &bag, in
 	SidlWindow *wnd = m_windows->Find(window);
 	if (!wnd)
 		return;
-	wnd->Root().text = bag.name;
+	// The bag's name on the label (the title stays the screen's "Container"), and its icon as
+	// Container_Icon's decal (its A_DragItem's cell) over the button's A_RecessedBox.
 	if (SidlWindow::Control *label = wnd->Find("Container_Label"))
 		label->text = bag.name;
-	if (SidlWindow::Control *icon = wnd->Find("Container_Icon")) {
-		icon->cell_animation = "A_DragItem";
+	if (SidlWindow::Control *icon = wnd->Find("Container_Icon"))
 		icon->cell = bag.icon >= 500 ? bag.icon - 500 : -1;
-	}
 	// What the label, the icon and the slots shown take up, in the client area.
 	bool any = false;
 	int left = 0, top = 0, right = 0, bottom = 0;

@@ -199,8 +199,8 @@ void MerchantWindow::Select(int slot)
 		Highlight("", "");
 	if (SidlWindow *wnd = m_windows->Find("MerchantWnd"))
 		if (SidlWindow::Control *icon = wnd->Find("MW_SelectedItem")) {
+			// The item as MW_SelectedItem's decal (A_DragItem's cell) over its A_RecessedBox.
 			const ZoneItem *item = slot >= 0 ? Find(m_zone->Items(), slot) : nullptr;
-			icon->cell_animation = "A_DragItem";
 			icon->cell = item && item->icon >= 500 ? item->icon - 500 : -1;
 		}
 	if (slot < 0)
