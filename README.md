@@ -107,6 +107,9 @@ LastCharSel=0
 ShowNamesLevel=4
 EnableExtendedNameplateDistance=1
 VeliousTextures=1
+CharSelectAnimWindow=1
+CharSelectEmotes=0
+AttackOnAssist=0
 
 [Debug]
 RecordPackets=0
@@ -164,6 +167,11 @@ WeatherSounds=1
 - `VeliousTextures=1` dresses the Velious armor (materials 17..23) in its own textures from
   `global17_amr.s3d`..`global23_amr.s3d`, one switch for eqclient.ini's `LoadArmor17`..`LoadArmor23`;
   `0` shows it as the leather, chain or plate it stands in for, as eqgame does without them.
+- `CharSelectAnimWindow=1` shows our own Animations window at character select (not eqgame's):
+  every animation the model has, by name, played by double clicking one. `CharSelectEmotes` picks
+  what the character plays now and then: `0` eqgame's own picks for its class (combat moves,
+  casting, the fidget), `1` half of them a social's instead (`S01`..`S29`, those its model has).
+- `AttackOnAssist` is `/assist on|off`, kept as it changes.
 
 - `RecordPackets=1` writes each zone session's packets to `replays\<char>-<time>.eqr` next to the exe.
   `--replay FILE` plays one back: the GUI goes straight into that zone with no server, the recorded
@@ -215,9 +223,17 @@ eqgame's `OP_MoveItem`.
   `my-client.ini`, or the built-in ones), with a scrollbar and the wheel. Enter or `/` opens its
   input line, Up and Down bring back the last 40 lines sent. Commands are looked up in eqgame's own
   table, in its order, so abbreviations work as they do there (`/g` is /gsay, `/s` is /split).
-  So far: /say (or no slash, or `'`), /tell, /reply, /gsay, /guildsay, /shout, /auction, /ooc,
-  /emote (`:`, /me), /hail, /target, /location, /camp, /clearchat. The rest say they aren't
-  supported yet.
+  So far: /say (or no slash, or `'`), /tell (/msg, /send), /reply, /gsay, /guildsay, /shout,
+  /auction, /ooc, /emote (`:`, /me), /hail, /target, /assist, /consider, /location, /time,
+  /played, /motd, /afk, /anonymous, /shownames, /sit, /stand, /book, /cast, /camp, /clearchat.
+  The rest say they aren't supported yet; a GM's commands act as if they weren't there for
+  anyone else.
+- `/consider` sends `OP_Consider` (`OP_ConsiderCorpse` on a corpse) and prints the answer as
+  `PrintConsiderAssessment` does: the faction, the assessment by our level in the con color, and
+  the PvP and deity-team rules. `/time` is `CEverQuest_WhatTimeIsIt`: Norrath's date carried on
+  from `OP_TimeOfDay` (nothing in the Plane of Time or on Luclin), then Earth's. `/afk` and
+  `/anonymous` are SpawnAppearance 24 and 21. `/assist` sends `OP_Assist`, and the zone's answer
+  becomes the target.
 - The Actions window's tabs (Main, Abilities, Combat, Socials) switch pages, drawn as `CTabWnd`
   draws them, and its Camp, Run and Walk buttons work; Run or Walk, Sit or Stand and Invite or
   Follow show as eqgame picks them. The socials page and the hot button window page through ten
@@ -235,14 +251,64 @@ eqgame's `OP_MoveItem`.
   eqgfx draws them), shown as far out as the zone is drawn (eqgame's own cutoff is 70 units; see
   `EnableExtendedNameplateDistance`), and
   hidden behind walls. Your target's name flashes from white back to its color, as eqgame shows
-  the target (no ring: the client of this era had none).
-- The other windows are still mostly empty frames.
+  the target (no ring: the client of this era had none). Name sprites are lit as `renderNameTag`
+  lights them: the world's ambient plus 0.4, each channel at most full. F1, or clicking our own
+  model in the chase view, targets ourselves.
+- **Tooltips** (`WindowManager::DrawTooltip`, eqgame's `DrawWindows` and `DrawTooltipAtPoint`):
+  once the mouse has rested 500 ms, the control under it shows its tooltip, white on a
+  `0xc8000080` box 16 pixels right of the mouse (left of it at the screen's edge). `DrawWindows`
+  uses the system font (2), but the TAKP client shows an item's or a gem's in font 3. Controls
+  start with their `TooltipReference`; an inventory slot shows its item's name or the empty worn
+  slot's (eqstr 558-576), a gem `1) Spell`. Alt held shows every gem's at once
+  (`DrawSpellButtonTooltips`).
+- **In-game text** goes through eqgfx's glyph cache, not whole GDI strings: each glyph is
+  `ExtTextOutW`'d alone white on black, cut to its `GetTextExtentPoint32W` width
+  (`createGlyphCacheEntry`), its alpha the blue channel's top four bits (`updateGlyphTexture`),
+  and a string is those glyphs side by side. So there are no ClearType fringes and no overhang
+  into the next letter. SIDL fonts 0..4 ask weight 100 and 5..6 weight 700. eqmain's front-end
+  screens stay whole-string GDI.
+- The inventory, skills, item display, spellbook, casting, buff and quantity windows are filled
+  in (below, under Spells and Items and stats). Others are still empty frames.
 
 Command-line flags override the ini: `--eqdir`, `--login`, `--size WxH`, `--replay FILE`. The GUI saves the last
 username as `[Login] User=` and the selected character as `[Defaults] LastCharSel=`, and writes a log to `my-client.log` next to the exe.
 
 Like the real client on an EQMacEmu server with `auto_create_accounts`, the first login of a new
 name creates the account but is still rejected. Click CONNECT again.
+
+## Custom changes
+
+Everything else in this README follows the original client. These are deliberate changes and
+additions of ours, or ones taken from TAKP's eqgame.dll or Zeal rather than stock eqgame:
+
+- **Settings in `my-client.ini`:** nothing is read from or written to `eqclient.ini`, and the login
+  server is `[Login] Server`, not `eqhost.txt`, so the live TAKP server can't be reached by accident.
+- **Renderer:** Direct3D 11 by default, or our software rasterizer (`Renderer=d3d11|software`, with a
+  fallback when D3D11 isn't there), `VSync` on or off, and any `Width`x`Height`. The real client
+  draws through eqgfx_dx8 (Direct3D 8).
+- **Debug menu** (F11): the stat card with its folding sections, the 2D radar, the RENDER toggles
+  (wireframe, no fog, collision walls, floor marker, no occlusion culling, no clip plane, no
+  weather effects, Luclin spell effects, VSync, vision) and the SOUND switches, kept in `[Debug]`.
+- **Packet record and replay:** `RecordPackets=1` writes each zone session to an `.eqr`, and
+  `--replay` plays one back with no server (GUI, `eqclient` and `frontend_preview`).
+- **Mouse wheel camera zoom:** the wheel zooms from first person out to 200 units and back.
+- **Emotes in character select's random animations** (`CharSelectEmotes=1`): eqgame's
+  `DoClassRandomAnimation` picks only from its class's combat moves, casting and the fidget. With
+  this on, half its picks are a social instead (`S01`..`S29`, of those the model has).
+- **Character select Animations window** (`CharSelectAnimWindow`): ours, not eqgame's. It plays any
+  animation the model has, by name, and switches between Combat only and All + emotes.
+- **Character select field of view:** widened by the aspect ratio (88 degrees at 16:9) as Zeal's
+  `SetCameraLens` hook does, rather than eqgfx's 63.3.
+- **Extended nameplate distance** (`EnableExtendedNameplateDistance=1`): names show as far as the zone
+  is drawn, as TAKP's eqgame.dll and Zeal do, not eqgame's 70 units.
+- **`/shownames` 5, 6 and 7:** Zeal's levels (title and first name; title, first and last; first
+  name and guild) on top of eqgame's 0..4.
+- **Shift+click linking:** Shift+click on an inventory item while typing puts its link in the chat
+  line. eqgame links only from the item display's icon.
+- **SoundFont music** (`Music=sf2`): the XMI music through our own synth and a SoundFont the game
+  ships, instead of Windows' MIDI synth where the real client's went.
+- **One Velious armor switch** (`VeliousTextures`): stands in for all of eqclient.ini's
+  `LoadArmor17`..`LoadArmor23` together.
 
 ## Console client
 
@@ -259,6 +325,12 @@ build/eqclient -u USER -p PASS [options]
   --click-door ID       with --zone: use door ID once in, and print the doors that move (OP_MoveDoor)
   --zone-to ID          with --zone: once in, zone to zone ID (OP_ZoneChange; the zone checks it against
                         its zone points), through world to the next zone, then stay and camp there
+  --create-class N      with --create: a Human of class N instead (2 cleric, 11 necromancer...)
+  --click-link ID       with --zone: click a chat link to item (or say link) ID and print the item sent back
+  --move FROM:TO[:N]    with --zone: move what's in slot FROM to TO as the inventory window does (0 the
+                        cursor; N takes N of a stack; "auto" puts the cursor's item away). Repeatable
+  --cast GEM[:SPELL]    with --zone: cast gem GEM (1..8; SPELL memorized there first) on ourselves and
+                        print the zone's answers and our buffs. Repeatable, 3 s after each cast ends
   --idle SECONDS        without --char, stay at character select this long (default 0)
   --record DIR          with --zone: write each zone session's packets to DIR/<char>-<time>.eqr
   --replay FILE         play a recorded zone session back (no server): stay --zone seconds (default
@@ -287,13 +359,14 @@ snapshot the names over heads (from two distances and in first person) and print
 name says at each `/shownames` level.
 
 ```
-build/scene_preview EQDIR OUT.png --char RACE GENDER CLASS [--face F] [--equip M,M,...] [--camera H] [--frames N] [--size WxH]
+build/scene_preview EQDIR OUT.png --char RACE GENDER CLASS [--face F] [--equip M,M,...] [--velious 0|1] [--camera H] [--frames N] [--size WxH]
 build/scene_preview EQDIR OUT.png [--zone NAME] [--at X Y Z] [--heading H] [--pitch P] [--frames N] [--size WxH]
 build/scene_preview EQDIR OUT.png --player RACE GENDER --zone NAME --at X Y Z [--heading H] [--face F] [--equip M,M,...]
                     [--orbit H] [--pitch P] [--first-person] [--zoom N] [--walk MS [--turn -1|1]] [--npc ...]
                     [--time HOUR MINUTE] [--time-type T] [--fog START END RRGGBB] [--sky N] [--frames N] [--size WxH]
-                    [--debug-draw wireframe,nofog,walls,floor] [--door NAME TYPE X Y Z HEADING INCLINE SIZE PARAM]
+                    [--debug-draw wireframe,nofog,walls,floor,noculling,noclip] [--door NAME TYPE X Y Z HEADING INCLINE SIZE PARAM]
                     [--door-open MS] [--click X Y] [--jump MS] [--sound OUT.wav] [--weather rain|snow MS]
+                    [--vision none|infra|ultra] [--spell-effect STAGE EFFECT CASTER TARGET MS [CAST_MS ANIM]]
 ```
 
 `scene_preview` renders the 3D view to a PNG: the character select scene for any race, gender,
@@ -303,7 +376,8 @@ the zone's `OP_NewZone`). In that mode `--walk MS` runs forward first (and `--tu
 GENDER SIZE X Y Z HEADING` stands spawns around (each followed by any of `--npc-look TEXTURE HELM`,
 `--npc-equip M,M,...` (the nine equipment slots as the server sends them), `--npc-move SPEED TURN`, `--npc-stance S` and `--npc-fly F`), `--spawn-ms MS` runs them that long first
 and prints what they do, `--time HOUR MINUTE` sets the time of day, and `--debug-draw` turns on the
-debug menu's render toggles. `--door` puts a door there as `OP_SpawnDoor` would (copy a row of the
+debug menu's render toggles (`noculling` too), `--vision` the race's vision, and `--spell-effect`
+plays a `SpellsNew.eff` stage on the caster and target spawns. `--door` puts a door there as `OP_SpawnDoor` would (copy a row of the
 server's `doors` table), `--door-open MS` opens them all and runs that long before any `--walk`, and
 `--click X Y` reports what a left click there would do. `--jump MS` jumps that far into the walk, and
 `--sound OUT.wav` mixes what the doors, we and the spawns sound like as it runs (no zone music or
@@ -405,6 +479,19 @@ does the same, from these decompiled functions:
   are IT model numbers (`gequip*.s3d`): the primary hangs from the right hand's `R_POINT` bone, and the
   secondary from `L_POINT`, or from `SHIELD_POINT` on the forearm when it's a shield
   (`CDisplay_UpdateItemSlot2`, `IsShieldModel`). Models are scaled to their race's default height / 5 (`EQPlayer::SetHeights`), standing 3.125 x that over the floor.
+- **Fog:** `DoCharacterSelection` sets the load zone's fog to 150..250 in grey 200, pushed out by
+  `SetLocationByClass`'s clip plane (1.2; a druid's room 2.2), and darker in the rooms set at 23:00.
+  The yon is the fog's end, so the other class rooms don't show through the sky.
+- **Animations:** every 5 to 15 seconds the character plays one of `DoClassRandomAnimation`'s picks
+  for its class, once (mixing in emotes is ours, see Custom changes). The old models' social animations (`S05`..`S28`) are in `global3_chr.s3d`,
+  not `global_chr`, so character select loads it too.
+- **Name:** `CDisplay::SetNameSpriteState` with the character select window up is
+  `"%s [%d %s]\n%s"` (name, level, `GetClassDesc`, `GetFullZoneName`), tinted yellow.
+  `GetFullZoneName` is the eqstr string, else `EQWorldData`'s long name (its `AddZone` calls, the
+  first of an id kept; `core/zone_names.cpp`), else "Unknown Zone".
+- **Field of view:** eqgfx reads `SetViewAngle(90)` in 512ths of a turn, so 63.3 degrees across.
+  As a custom change, Zeal's `SetCameraLens` hook widens it in character select by the aspect ratio (88 degrees at
+  16:9); character creation keeps that.
 
 The renderer (`render/`) is a portable software rasterizer drawing into the same surface as the
 front end, standing in for `eqgfx_dx8.dll`: perspective-correct textures with mipmaps and bilinear
@@ -462,7 +549,10 @@ Clicking an empty slot ("Create New Character") opens `CharacterCreation` from
 - Set Face opens `FacePickWindow` with the camera close on the face. Face cycles 0..7; the old models
   have no separate hair, eyes or beard, so those rows don't change anything.
 - Next on the last screen sends `OP_ApproveName` and, once it's approved, `OP_CharacterCreate` with
-  the start zone `EQ_PC::InitPlayerStart` picks. Character select then opens on the new character.
+  what `EQ_PC::InitPlayerStart` fills in: the start zone, the spawn y/x/z and heading, and all five
+  bind points (`CreationRules::Start`). World copies them as sent, so a client that sends only the
+  zone starts new characters at 0, 0, 0, bound there. Character select then opens on the new
+  character.
 
 The rules are built into `core/creation_rules.cpp`: which classes a race can be, race base stats,
 class bonus points, allowed deities and cities, and `CreateName`'s syllables. The tables were taken
@@ -489,7 +579,7 @@ Not yet: the real client's messages use `CConfirmationDialog`; these use the fro
   `CEverQuest::SetTimedFog` and `CDisplay::SetFog` use `fog_minclip[0]` to `fog_maxclip[0]` in the zone's
   fog color, and the yon (far plane) is the fog's end. Past it you see the sky, or the fog color.
 - **Sky:** only when the zone's `sky` isn't 0 and the yon is at least 101, as `RealRender_World` checks
-  (`sky.s3d` `LAYER<sky>1` / `LAYER<sky>3`). Time of day isn't applied yet.
+  (`sky.s3d` `LAYER<sky>1` / `LAYER<sky>3`). It dims with the time of day (below).
 - **Our character:** dressed from `OP_ZoneEntry` (`ServerZoneEntry_Struct`, 356 bytes, not encrypted):
   race, gender, face, the nine equipment materials and tints, and the size the model is scaled to. The
   server's z is the model's center, `size / 5 * 3.125` over the feet (`Mob::CalcZOffset`). The feet go there
@@ -497,8 +587,8 @@ Not yet: the real client's messages use `CConfirmationDialog`; these use the fro
   spawn packets send them as a byte (0..256).
 - **Camera:** a chase camera behind and above the character, looking at their head. It comes in when a
   wall or the floor is in the way (tested over a box around the camera, so surfaces it backs into at a
-  shallow angle don't cut into the view), and hides the model once it's inside them. The wheel zooms
-  from first person out to 200 units, `DoCamAi`'s limit: out of first person into the chase camera, and
+  shallow angle don't cut into the view), and hides the model once it's inside them. The wheel (ours,
+  see Custom changes) zooms from first person out to 200 units, `DoCamAi`'s limit: out of first person into the chase camera, and
   back in past 3 units. Holding the right button turns the character with the mouse and tilts the view
   (the character first turns to where the camera looks); holding the left button in the chase view
   circles the camera around them, and running brings it back behind. Both buttons run forward. While a
@@ -514,7 +604,15 @@ Not yet: the real client's messages use `CConfirmationDialog`; these use the fro
   0.99, and gravity is `OP_NewZone`'s. The real client damps once a frame, so it stops quicker the
   faster it draws; we play like it does at 60 frames a second. That's about 30 units a second running,
   and the walk and run animations play at `1 + velocity / 2` (`ProcessAnimation`). Space jumps
-  (`1.65 * JumpHeightModifier`, 1.35, plus a push of 1 along the heading) and sends `OP_Jump`. The
+  (`1.65 * JumpHeightModifier`, 1.35, plus a push of 1 along the heading) and sends `OP_Jump`. A
+  press on the ground arms a jump 1.5 s after the last one, for half a second: moving forward jumps
+  at once (`L03`); standing still crouches first (`ChangeStance` 111, `L08`, sent as
+  `OP_SpawnAppearance`), then jumps straight up (`L04`); backing up calls it off. A press must
+  never be read on a frame where no time passed. The Windows loop timed frames with
+  `GetTickCount64`, whose 16 ms steps did that at vsync rates, so it uses `steady_clock`.
+  Sitting, `ProcessControls` takes no movement keys or Space and the right button doesn't turn us.
+  Forward stands us up, closing the spellbook, and we move off at once while getting up (`P02`
+  backwards) plays out. In first person the view follows the head bone down and up. The
   collision is ours: the feet follow the floor (stepping up to 40% of the character's height) and moves
   slide along walls, tested at knee and chest height.
 - **Water** (`render/zone_regions.cpp`): `<zone>.wld`'s BSP tree (0x21) finds the region (0x22) a point
@@ -632,8 +730,112 @@ Not yet: the real client's messages use `CConfirmationDialog`; these use the fro
   60 day periods (night until 3:00, dawn to 9:00, day to 15:00, dusk to 20:48), and the fog darkens with
   the light. The sun and moon aren't drawn yet.
 
+- **Occlusion culling** (`render/occlusion.cpp`): with `UseUmbra` on (eqclient.ini's default) eqgfx
+  culls with dPVS, not the regions' stored PVS. `initializeWorldGraphics` makes one cell for the
+  whole zone with no portals; `createDPVSObjectForRendering` makes an object for each region's mesh
+  and each actor, whose occluders are its solid (not 0x10), opaque, unmasked triangles; and
+  `resolveVisibility` goes nearest first, drawing each object unless what was written before hides
+  it, then writing its own. We do the same with a 256-wide depth buffer of the view, spawns
+  included. Against unculled renders from 80 views per zone under 0.002% of pixels differ; Qeynos
+  hides 777 of the 974 meshes in view.
+- **Our look** (`ZoneSession::UpdateAppearance`): after our items move, `CEverQuest_UpdatePlayerAppearance`
+  and `CDisplay::HandleMaterial` per armor slot (the worn item's material and tint, a custom helm's IT
+  number), `UpdateEquipmentDisplay`'s weapons (the ranged item in the left hand when both hands are
+  empty) and `UpdateLight` (the brightest worn light, a lightstone in a general slot over it). The
+  slots that changed go to the zone as `OP_WearChange` and the light as `OP_SpawnAppearance`.
+  Velious materials 17..23 come from `global17_amr.s3d`..`global23_amr.s3d`, or stand in as leather,
+  chain or plate without them (`CDisplay_SwapMaterial`; 4 and 23 are leather on all but a monk).
+  Helms 240 and 241 are each race's Velious helm by gender (IT530..IT656), anything from 240 its IT
+  model, and they hang on `<tag>HE_DAG` (`ActorInfo`'s DagHead), not `HEAD_POINT_DAG`. A held
+  item's particle clouds (a torch's flame and smoke) are kept by item and bone, so a model rebuilt
+  for a look change carries them on (`CDisplay::ChangeDag` makes them for a new item alone).
+
 The zone screen fills the window: the 3D view under the SIDL windows; with the debug menu open, our
 details and the nearest spawns at the top left and the radar at the top right.
+
+## Spells
+
+- **Spell data:** `spells_en.txt` (`core/spell_file.*`): names, the casting texts, range, cast time,
+  recast, the first SPA, target type, `goodEffect`, `AEDuration`, `CastingAnim` / `TargetAnim`,
+  both effect indexes, `new_icon` and `deleteable`.
+- **Spellbook** (`frontend/spell_book.*`, `CSpellBookWnd` and `CCastSpellWnd`): the gems' book
+  button or `/book` opens it for casters and sits us down; standing up closes it. Left and Right
+  turn two pages. Slots show the spell's `A_SpellIcons` cell on `Red`/`BlueIconBackground`.
+  Scribing is a scroll on the cursor clicked onto an empty slot: `StartSpellScribe`'s checks, 92
+  ticks, then `OP_MemorizeSpell` 0. Memorizing is a book spell onto the cursor (`CCursorAttachment`
+  type 1) clicked onto an empty gem, `OP_MemorizeSpell` 1; a gem's right click forgets it (2). Two
+  slots right clicked swap (`OP_SwapSpell`); Delete asks, then sends `OP_DeleteSpell`.
+- **Gems:** the spell's `A_SpellGems` icon on the background ring in its target type's color,
+  dimmed until it can be cast (`RefreshSpellGemButtons`, `setGaugeColor`).
+- **Casting** (`frontend/spell_cast.*`, `CastSpell`): a gem click or `/cast 1-8` runs eqgame's checks
+  and messages (standing, level, line of sight, mana, target type, range, body type, pet spells),
+  sends `OP_CastSpell` and shows the casting window's gauge. The zone answers with
+  `OP_MemorizeSpell` 3 for the recast and recovery, `OP_ManaChange` to end the cast, and
+  `OP_TokenText` for why one failed. A gem click stops a bard's song.
+- **Anyone's casts** (`frontend/spell_casting.*`): `OP_BeginCast`, `OP_Action` and `OP_Damage`.
+  `CEverQuest_StartCasting` prints "%1 begins to cast a spell." (ours is 12205; a bard's is
+  `other_casts`; rogue poisons are silent). `TriggerSpellEffect` plays the caster's `CastingAnim`,
+  except for a bard without an instrument. `ReportSuccessfulHit` prints `cast_on_you`,
+  "You have taken %2 points of damage." or `cast_on_other` (within 75 units of the target), and
+  plays the target's `TargetAnim` (`D02` for detrimental damage).
+- **Buffs** (`frontend/buffs.*`): the profile's, a spell landing on us (`HitBySpell`, with
+  `FindAffectSlot`'s stacking, blocking and overwriting), `OP_Buff` both ways, the 6 s tick and
+  expiry, and a click taking a beneficial one off. The buff window shows the icons on red or blue
+  and blinks their last ticks. Buffs count in the stats, resists, AC, max mana and speed (SoW,
+  snares, roots), and max HP is `Max_HP`'s, not the zone's HP updates.
+- **Luclin effects** (`frontend/spell_effects.*`, `render/spell_particles.*`): a spell's
+  `SpellsNew.eff` record plays stage 0 while casting and stage 2 on landing, each emitter chosen by
+  the caster's level (NPCs count as 1). The emitters sit on the caster, the target or a summoning's
+  spot and follow their bones (`CH_DAG`, `HEAD_POINT_DAG`, `L`/`R_POINT_DAG`, `BO_L`/`R_DAG`).
+  They're eqgfx's `CParticleSystem` (`createParticleEmitter`, `renderParticleSystem`): `spellsnew.edd`
+  v105 emitter definitions and `SpellEffects\` textures, a burst and then emissions at the density,
+  with a distance level of detail. There are ten spawn shapes, velocities and accelerations in the
+  bone's frame, fades, a color lerp, 2x2/4x4 cell sheets, streaks and spin. Texel alpha blends,
+  alpha tested at 8.
+- **Old effects:** a spell without a `SpellsNew.eff` record draws its `spells.eff` record instead
+  (all 256 are read, as `loadSpellEffectsFromFile` insists). These are the `PCLOUD` particle clouds
+  on bones and floors, and `EQEffect` sprite flashes and rings that light like lanterns. The debug
+  menu's Luclin spell effects switch forces them for every spell. Each stage's sound plays from the
+  caster or the target.
+
+## Items and stats
+
+- **Moving items** (`core/inventory.*`, `CInvSlot`, `SwapCombine`, `AutoInventory`): described under
+  Running the GUI. Each move is `OP_MoveItem`.
+- **Item display** (`frontend/item_display.*`, `CItemDisplayWnd`): alt+click (`CInvSlot::HandleLButtonUp`)
+  or the right button held 750 ms (`HandleRButtonHeld`) shows it; letting go over a slot after the
+  hold closes it. `SetItem`'s text shows the following:
+  - the status flags (MAGIC, LORE, ARTIFACT, SUMMONED, NO DROP, NO RENT), slots and charges
+  - a scroll's level, skill and mana, and a weapon's skill and delay
+  - AC and DMG with the damage bonus, in red at full value when `AntiTwinkAdj` brings them down
+  - elemental and bane damage, skill mod, faction, stats and saves
+  - recommended and required levels, effect and focus spells, food and drink sizes
+  - weight, range and size, and the classes, races and deities that can use it
+  `LORE:` shows only when `OP_LogServer` says the world auto-identifies.
+- **Links** (`frontend/item_tags.*`): an item tag is `0x12`, `'0'`, a six-digit id, the text, `0x12`
+  (`CEditWnd::AddItemTag`, `ConvertItemTags`). EQMacEmu sends say links the same way. The chat shows
+  a tag in `User_71`'s color (`convertColorIndex` 0x146), blue under the mouse and navy while pressed.
+  A click sends `OP_ItemLinkResponse` (0x4264) with the id and the first word. The zone answers an
+  item's with its `Item_Struct`, or says a say link's phrase for us. A line holds at most 10, and
+  Backspace takes one whole.
+- **Inventory window:** stats are base plus worn items through `AntiTwinkAdj`, 1..255, plus the
+  first food and drink in the general slots and bags (`GetAttributeModifierFromItems`). They're
+  colored as `getComparisonColor` does: grey at the base, green above, red below. AGI is times
+  `encum_factor`. The class is its Kunark title from 51 (`KunarkClass`), and the AA gauge shows
+  from 51.
+  - **AC** (`EQ_Main_CalcDefense`): `(old_ac without the soft caps + compute_defense) * 1000 / 847`.
+    Worn AC is four thirds for all but the casters. `GetClassACBonus` adds a monk's by weight, a
+    rogue's and beastlord's by AGI, and an Iksar's by level.
+  - **ATK** (`CalcATKValue`): `(offense + compute_tohit) * 1000 / 744` with the primary's skill, hand
+    to hand without a weapon.
+  - **Resists:** `basesave_*` by race (and a monk's disease and poison by level from 51), the worn
+    items', and the class bonuses (a warrior's half level to magic; monk, ranger, beastlord,
+    paladin, shadow knight and rogue more each level from 50), to 500.
+  - **Weight** (`cur_encumbrance`): the cursor, worn and general slots and their bags (less weight
+    reduction), and the coins (less the coin bags 17201..17230). It's red over our STR.
+- **Skills window** (`CSkillsWnd`): the skills the server says we have (0..73, not 254 or 255),
+  then the languages, with eqstr names and ranks from Awful to Master. `OP_SkillUpdate` prints
+  "You have become better at %1! (%2)"; `OP_SkillUpdate2` updates it silently.
 
 ## Sound
 
@@ -745,7 +947,7 @@ objects, `MusicManager`, the emitters), on our own mix (`audio/mixer.cpp`) inste
   playing by name. The switches last until the client exits.
 
 Not yet: everything triggered by game events the client doesn't have yet (combat and death music,
-spell, item and hit sounds, the merchant/bank music), and EAX reverb (the
+item and hit sounds, the merchant/bank music), and EAX reverb (the
 per-zone room types `SetCurrentZone` sets, and underwater's).
 
 ## Protocol
