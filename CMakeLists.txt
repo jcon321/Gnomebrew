@@ -123,6 +123,7 @@ add_library(eqfrontend STATIC
     frontend/bank_window.cpp
     frontend/merchant_window.cpp
     frontend/loot_window.cpp
+    frontend/trade_window.cpp
     frontend/spell_book.cpp
     frontend/spell_cast.cpp
     frontend/buffs.cpp

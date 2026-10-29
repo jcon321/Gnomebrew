@@ -98,6 +98,8 @@ namespace Inventory
 		case TooBigForBag: return "That item is too big to fit in that container.";
 		case QuiverArrowsOnly: return "Only arrows may go in a quiver.";
 		case BandolierAmmoOnly: return "Only ammo may go in a bandolier.";
+		case 12921: return "That item cannot be dropped, traded, or sold.";
+		case 12922: return "That container cannot be dropped, traded, or sold, as it contains an item which cannot be dropped, traded or sold.";
 		default: return "";
 		}
 	}

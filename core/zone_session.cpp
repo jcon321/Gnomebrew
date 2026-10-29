@@ -756,6 +756,80 @@ float ZoneSession::SpawnDistance(uint16_t id) const
 	return std::sqrt(dx * dx + dy * dy + dz * dz);
 }
 
+bool ZoneSession::TradeRequest(uint16_t target)
+{
+	if (m_state != State::InZone)
+		return false;
+	uint16_t body[2] = {target, m_my_id};
+	bool sent = Send(ZoneOp::TradeRequest, body, sizeof(body), "OP_TradeRequest " + std::to_string(target));
+	// The replay's zone answers an NPC's as the zone does (Handle_OP_TradeRequest): its go-ahead.
+	if (sent && m_replay) {
+		auto it = m_spawns.find(target);
+		if (it != m_spawns.end() && it->second.npc == 1) {
+			uint16_t ack[2] = {m_my_id, target};
+			ReplayAnswer(ZoneOp::TradeRequestAck, ack, sizeof(ack));
+		}
+	}
+	return sent;
+}
+
+bool ZoneSession::TradeRequestAck(uint16_t target)
+{
+	if (m_state != State::InZone)
+		return false;
+	uint16_t body[2] = {target, m_my_id};
+	return Send(ZoneOp::TradeRequestAck, body, sizeof(body), "OP_TradeRequestAck " + std::to_string(target));
+}
+
+bool ZoneSession::TradeRefuse(uint16_t target, uint8_t reason)
+{
+	if (m_state != State::InZone)
+		return false;
+	uint8_t body[6] = {};
+	std::memcpy(body, &target, 2);
+	std::memcpy(body + 2, &m_my_id, 2);
+	body[4] = reason;
+	return Send(ZoneOp::TradeRefused, body, sizeof(body), "OP_TradeRefused " + std::to_string(target));
+}
+
+bool ZoneSession::TradeAccept(uint16_t target)
+{
+	if (m_state != State::InZone)
+		return false;
+	// ReadyTrade_Struct {u16 the other side, u8 1, u8}.
+	uint8_t body[4] = {};
+	std::memcpy(body, &target, 2);
+	body[2] = 1;
+	bool sent = Send(ZoneOp::TradeAcceptClick, body, sizeof(body), "OP_TradeAcceptClick " + std::to_string(target));
+	if (sent && m_replay) { // an NPC takes it: OP_FinishTrade
+		auto it = m_spawns.find(target);
+		if (it != m_spawns.end() && it->second.npc == 1)
+			ReplayAnswer(ZoneOp::FinishTrade, nullptr, 0);
+	}
+	return sent;
+}
+
+bool ZoneSession::CancelTrade(uint16_t target)
+{
+	if (m_state != State::InZone)
+		return false;
+	uint16_t body[2] = {target, m_my_id};
+	bool sent = Send(ZoneOp::CancelTrade, body, sizeof(body), "OP_CancelTrade " + std::to_string(target));
+	if (sent && m_replay) {
+		uint16_t answer[2] = {m_my_id, 0}; // CancelTradeSession: cancelled by us
+		ReplayAnswer(ZoneOp::CancelTrade, answer, sizeof(answer));
+	}
+	return sent;
+}
+
+void ZoneSession::ClearTrade()
+{
+	for (int16_t slot = Inventory::FirstTrade; slot <= Inventory::LastHisTrade; ++slot)
+		Inventory::Remove(m_items, slot);
+	for (int32_t &coins : m_profile.trade_coins)
+		coins = 0;
+}
+
 bool ZoneSession::LootRequest(uint16_t corpse)
 {
 	ClearLoot();
@@ -1489,6 +1563,92 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 			UpdateAppearance(); // msg_snd_ieq
 		}
 		break;
+	case ZoneOp::TradeRequest:
+	case ZoneOp::TradeRequestAck: {
+		// BeginTrade_Struct {u16 target, u16 source}: who asks us, or who said yes to us.
+		if (data.size() < 4)
+			break;
+		Event e{opcode == ZoneOp::TradeRequest ? Event::Type::TradeRequested : Event::Type::TradeBegan};
+		e.id = Read<uint16_t>(data, 2);
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::TradeRefused: {
+		// RefuseTrade_Struct {u16 target, u16 source, u8 reason}.
+		if (data.size() < 5)
+			break;
+		Event e{Event::Type::TradeRefused};
+		e.id = Read<uint16_t>(data, 2);
+		e.value = data[4];
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::CancelTrade: {
+		// CancelTrade_Struct {u16 target: who cancelled, u16}.
+		Event e{Event::Type::TradeCancelled};
+		e.id = data.size() >= 2 ? Read<uint16_t>(data, 0) : 0;
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::TradeAcceptClick: {
+		// ReadyTrade_Struct {u16, u8 flag}: the other side accepted (1) or not (0).
+		Event e{Event::Type::TradeReady};
+		e.value = data.size() >= 3 ? data[2] : 0;
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::FinishTrade:
+		events.push_back({Event::Type::TradeFinished});
+		break;
+	case ZoneOp::TradeCoins: {
+		// TradeMoney_Struct {u16, u8 type (0 copper .. 3 platinum), u8, i32 amount}: CTradeWnd_SetHisMoney.
+		if (data.size() < 8)
+			break;
+		Event e{Event::Type::TradeCoins};
+		e.id = data[2];
+		e.value = Read<int32_t>(data, 4);
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::TradeItemPacket: {
+		// TradeItemHeader_Struct {u16 from, i16 slot, u8 type, item} (msg_trade_ieq): the other side
+		// put an item in their slot (0..7; 30.. in their bags), or took it out (type 0xff). Bags and
+		// books come short; what isn't there reads as 0.
+		if (data.size() < 5)
+			break;
+		int16_t slot = Read<int16_t>(data, 2);
+		uint8_t type = data[4];
+		if (slot < 0)
+			break;
+		int16_t at = -1;
+		if (slot < 8)
+			at = static_cast<int16_t>(Inventory::FirstHisTrade + slot);
+		else if (slot >= 30 && slot < 400 && (slot - 30) / 10 < 8)
+			at = Inventory::BagSlot(static_cast<int16_t>(Inventory::FirstHisTrade + (slot - 30) / 10), (slot - 30) % 10);
+		if (at < 0)
+			break;
+		if (type == 0xff)
+			Inventory::Remove(m_items, at);
+		else {
+			std::vector<uint8_t> body(data.begin() + 5, data.end());
+			body.resize(std::max(body.size(), ItemSize), 0);
+			ZoneItem item = ParseItem(body, 0);
+			if (item.id == 0 || (item.item_class == 0 && item.item_type == 13)) {
+				Log("[zone]    a bogus trade item");
+				break;
+			}
+			item.slot = at;
+			auto there = m_items.find(at);
+			// AddEquipmentToHisTradeArray: more of the same stack tops it up, to 20.
+			if (there != m_items.end() && Inventory::Stacks(there->second) && there->second.id == item.id)
+				there->second.charges = static_cast<int8_t>(std::min(
+					static_cast<int>(static_cast<uint8_t>(there->second.charges)) + static_cast<uint8_t>(item.charges), 20));
+			else
+				m_items[at] = item;
+		}
+		events.push_back({Event::Type::TradeItem});
+		break;
+	}
 	case ZoneOp::MoneyOnCorpse: {
 		// moneyOnCorpseStruct {u8 response, u8[3], u32 platinum, gold, silver, copper}.
 		if (data.size() < 20)

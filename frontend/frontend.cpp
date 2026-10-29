@@ -689,6 +689,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		m_bank.Frame(now_ms);
 		m_merchant.Frame(now_ms);
 		m_loot.Frame(now_ms);
+		m_trade.Frame(now_ms);
 		m_spell_book.Frame(now_ms);
 		m_spell_cast.Frame(now_ms);
 		m_buffs.Frame(now_ms);
@@ -1473,7 +1474,7 @@ namespace
 		{"HelpWindow", false}, {"CompassWindow", false}, {"SocialEditWnd", false}, {"ChatWindow", true},
 		{"SkillsWindow", false}, {"ItemDisplayWindow", false}, {"QuantityWnd", false}, {"SpellBookWnd", false},
 		{"ConfirmationDialogBox", false}, {"CastingWindow", false}, {"BankWnd", false},
-		{"MerchantWnd", false}, {"LootWnd", false},
+		{"MerchantWnd", false}, {"LootWnd", false}, {"TradeWnd", false}, {"GiveWnd", false},
 	};
 
 	// The selector's buttons (EQUI_SelectorWnd.xml) and the windows they open and close.
@@ -1578,6 +1579,12 @@ void FrontEnd::BuildZoneWindows()
 	loot_host.clear_target = [this] { m_game_values.target = 0; };
 	loot_host.height = [this](uint16_t id) { return m_zone_view ? m_zone_view->CenterHeight(id) : 0.0f; };
 	m_loot.Attach(m_windows, m_zone, m_window_state, m_game_values, std::move(loot_host));
+	TradeWindow::Host trade_host;
+	trade_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
+	trade_host.set_target = [this](uint16_t id) { m_game_values.target = id; };
+	trade_host.height = [this](uint16_t id) { return m_zone_view ? m_zone_view->CenterHeight(id) : 0.0f; };
+	trade_host.ok_to_transact = [this] { return IsOkToTransact(); };
+	m_trade.Attach(m_windows, m_zone, m_window_state, m_game_values, std::move(trade_host));
 	m_windows.TakeChanged();
 }
 
@@ -1676,6 +1683,9 @@ void FrontEnd::HandleWindowClicks()
 		// While a merchant's up, a slot anywhere is picked to buy or sell (CInvSlot::HandleLButtonUp).
 		if (m_merchant.SlotClick(click.window, click.control))
 			continue;
+		// The trade and give windows' buttons.
+		if (m_trade.Click(click.window, click.control))
+			continue;
 		// The inventory's slots and character view, the money buttons, and the quantity window's Accept.
 		InventoryClickResult moved;
 		if (MoneyClick(m_windows, m_window_state, m_zone, click.window, click.control, click.shift, click.ctrl, moved) ||
@@ -1685,7 +1695,9 @@ void FrontEnd::HandleWindowClicks()
 			if (moved.coin_sound && m_sound)
 				m_sound->PlayWave(0x8a);
 			if (moved.message)
-				ChatOut(EqString(moved.message, Inventory::MessageText(moved.message)), ChatType::Red);
+				ChatOut(EqString(moved.message, Inventory::MessageText(moved.message)), moved.message_color);
+			if (moved.trade_changed)
+				m_trade.ItemChanged();
 			if (moved.close_bag >= 0)
 				m_containers.Close(moved.close_bag);
 			// The quantity window's edit box takes the keys from the others.
@@ -1773,11 +1785,11 @@ void FrontEnd::ChangeStance(uint8_t stance)
 bool FrontEnd::IsOkToTransact() const
 {
 	// Not camping, no combine, buy or sell waiting (DAT_007d0254), no merchant asked
-	// (DAT_007d0258), no world container, spellbook, bank, merchant or corpse (the trade, trainer and
-	// bazaar windows when we have them).
+	// (DAT_007d0258), no world container, spellbook, bank, merchant, corpse or trade (the trainer
+	// and bazaar windows when we have them).
 	return m_zone.CampRemainingMs() == 0 && !m_containers.Combining() && !m_spell_book.Activated() && !m_bank.Active() &&
 	       !m_merchant.Active() && !m_merchant.Waiting() && !m_merchant.Busy() && !m_loot.Active() &&
-	       !m_loot.Waiting() && !m_loot.Busy();
+	       !m_loot.Waiting() && !m_loot.Busy() && !m_trade.Active();
 }
 
 void FrontEnd::RightClickedOnPlayer(uint16_t spawn)
@@ -1927,6 +1939,16 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 		case Type::LootEnded:
 			m_loot.ZoneEvent(event);
 			break;
+		case Type::TradeRequested:
+		case Type::TradeBegan:
+		case Type::TradeRefused:
+		case Type::TradeCancelled:
+		case Type::TradeReady:
+		case Type::TradeFinished:
+		case Type::TradeCoins:
+		case Type::TradeItem:
+			m_trade.ZoneEvent(event);
+			break;
 		case Type::Emote:
 			ChatOut(event.text, ChatType::Emote);
 			break;
@@ -1997,6 +2019,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			if (event.id == m_bank.Banker())
 				m_bank.Deactivate(false);
 			m_loot.ZoneEvent(event);
+			m_trade.ZoneEvent(event);
 			break;
 		case Type::TimeOfDay:
 			m_time_of_day = event.text;
@@ -2222,8 +2245,13 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 				AddZoneLog(EqString(1462, "You can't reach that, get closer."), ZoneYellow);
 				break;
 			case ZoneDoors::Use::Nothing:
-				if (uint16_t id = m_zone_view->PickSpawn(event.x, event.y, m_zone.MySpawnId()))
+				// LeftClickedOnPlayer: the spawn's our target; an item or coins on the cursor go to
+				// them (DropItemOrMoneyOnPlayer: a trade).
+				if (uint16_t id = m_zone_view->PickSpawn(event.x, event.y, m_zone.MySpawnId())) {
 					SetTarget(id);
+					if (m_zone.Items().count(Inventory::Cursor) || Inventory::CursorMoneyType(m_zone.Profile()))
+						m_trade.DropOnPlayer(id);
+				}
 				break;
 			}
 		}
@@ -2352,13 +2380,13 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			break;
 		}
 		// ExecuteCmd's escape: no target, then CDisplay_NewUIProcessEscape closes the first of its
-		// windows that's open (of the ones we have: the item display, quantity, the bank, a merchant, loot, help,
+		// windows that's open (of the ones we have: the item display, quantity, the bank, a merchant, loot, a trade, help,
 		// skills, then every bag window at once, options, the spellbook, the social editor, inventory).
 		SetTarget(0);
 		ChatOut(EqString(12375, "You no longer have a target."), ChatType::Default);
 		for (const char *screen :
-			{"ItemDisplayWindow", "QuantityWnd", "BankWnd", "MerchantWnd", "LootWnd", "HelpWindow", "SkillsWindow",
-			 "", "OptionsWindow", "SpellBookWnd", "SocialEditWnd", "InventoryWindow"}) {
+			{"ItemDisplayWindow", "QuantityWnd", "BankWnd", "MerchantWnd", "LootWnd", "TradeWnd", "HelpWindow",
+			 "SkillsWindow", "", "OptionsWindow", "SpellBookWnd", "SocialEditWnd", "InventoryWindow"}) {
 			if (!*screen) {
 				if (m_containers.CloseAll())
 					break;
@@ -2381,6 +2409,13 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			if (std::string(screen) == "LootWnd") {
 				if (m_loot.Active()) {
 					m_loot.Deactivate();
+					break;
+				}
+				continue;
+			}
+			if (std::string(screen) == "TradeWnd") { // or the give window
+				if (m_trade.Active()) {
+					m_trade.Deactivate();
 					break;
 				}
 				continue;
@@ -2455,6 +2490,7 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 		m_bank.DrawTooltips(canvas, m_text, m_mouse_x - area.x, m_mouse_y - area.y);
 		m_merchant.DrawTooltips(canvas, m_text, m_mouse_x - area.x, m_mouse_y - area.y);
 		m_loot.DrawTooltips(canvas, m_text, m_mouse_x - area.x, m_mouse_y - area.y);
+		m_trade.DrawTooltips(canvas, m_text, m_mouse_x - area.x, m_mouse_y - area.y);
 	}
 	// Top left and right: the debug menu's stat card and radar, above the windows.
 	m_debug.Draw(canvas, m_text, m_zone, m_zone_view.get(), height - 10);

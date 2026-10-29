@@ -1048,6 +1048,81 @@ int main(int argc, char **argv)
 			}
 		}
 
+		// The give window: an item picked up and the left button on an NPC (no merchant or banker)
+		// with it, the replay's zone saying yes as the zone does for an NPC; the item's in the give
+		// window; Give, and the zone's OP_FinishTrade closes it. Then again with Cancel.
+		{
+			const ZoneSpawn *npc = nullptr;
+			const ZoneSpawn &me_spawn = frontend.Zone().Self();
+			(void)me_spawn;
+			for (const auto &[id, spawn] : frontend.Zone().Spawns())
+				if (spawn.npc == 1 && spawn.class_id != 16 && spawn.class_id != 32 && spawn.race >= 1 && spawn.race <= 12 &&
+				    !npc)
+					npc = &spawn;
+			ZoneView *view = frontend.ZoneScene();
+			if (npc && view) {
+				uint16_t npc_id = npc->id;
+				size_t chat_before = frontend.Chat().Lines().size();
+				auto give_round = [&](const char *finish) {
+					windows.Show("InventoryWindow", true);
+					SidlWindow *inventory = windows.Find("InventoryWindow");
+					int lone = -1;
+					for (const auto &[slot, item] : frontend.Zone().Items())
+						if (slot >= Inventory::FirstGeneral && slot <= Inventory::LastGeneral && item.item_class == 0 &&
+						    !Inventory::Stacks(item) && lone < 0)
+							lone = slot;
+					if (lone < 0 || !inventory)
+						return;
+					windows.Raise("InventoryWindow");
+					if (const SidlWindow::Control *c = inventory->Find("InvSlot" + std::to_string(lone))) {
+						printf("[preview] give: picking up slot %d at %d,%d, under it %s\n", lone, c->rect.x + c->rect.w / 2,
+							c->rect.y + c->rect.h / 2, windows.ScreenAt(c->rect.x + c->rect.w / 2, c->rect.y + c->rect.h / 2).c_str());
+						click(c->rect.x + c->rect.w / 2, c->rect.y + c->rect.h / 2);
+					}
+					printf("[preview] give: quantity %d (up %d), busy %d, coins on the cursor %d\n",
+						windows.Shown("QuantityWnd"), frontend.WindowState().QuantityUp(), frontend.WindowState().busy,
+						Inventory::CursorMoneyType(frontend.Zone().Profile()));
+					printf("[preview] give: %s on the cursor\n",
+						frontend.Zone().Items().count(Inventory::Cursor) ? frontend.Zone().Items().at(Inventory::Cursor).name.c_str()
+						                                                 : "nothing");
+					windows.Show("InventoryWindow", false);
+					view->SetPlayerPosition(npc->x, npc->y - 8, npc->z, 0);
+					h.RunUntil([] { return false; }, 1000);
+					h.Snapshot("g0-at-npc");
+					int nx = -1, ny = -1;
+					for (int y = 8; y < frontend.ScreenHeight() && nx < 0; y += 8)
+						for (int x = 8; x < frontend.ScreenWidth() && nx < 0; x += 8)
+							if (view->PickSpawn(x, y, frontend.Zone().MySpawnId()) == npc_id && !windows.Over(x, y))
+								nx = x, ny = y;
+					printf("[preview] give: %s on the screen at %d,%d, %.1f away\n", npc->name.c_str(), nx, ny,
+						frontend.Zone().SpawnDistance(npc_id));
+					if (nx < 0)
+						return;
+					click(nx, ny);
+					h.RunUntil([&] { return windows.Shown("GiveWnd"); }, 2000);
+					if (const SidlWindow *give = where("GiveWnd")) {
+						const SidlWindow::Control *slot0 = give->Find("GVW_MyItemSlot0");
+						printf("[preview] give: slot 0 shows '%s', target %d\n", slot0 ? slot0->tooltip.c_str() : "(none)",
+							frontend.Target());
+						h.RunUntil([] { return false; }, 200);
+						h.Snapshot(std::string("g1-give-") + finish);
+						if (const SidlWindow::Control *b = give->Find(finish))
+							click(b->rect.x + b->rect.w / 2, b->rect.y + b->rect.h / 2);
+						h.RunUntil([&] { return !windows.Shown("GiveWnd"); }, 2000);
+						where("GiveWnd");
+						printf("[preview] give: after %s, trade slots %zu, cursor %s\n", finish,
+							static_cast<size_t>(std::count_if(frontend.Zone().Items().begin(), frontend.Zone().Items().end(),
+								[](const auto &p) { return p.first >= Inventory::FirstTrade && p.first < 4000; })),
+							frontend.Zone().Items().count(Inventory::Cursor) ? "busy" : "free");
+					}
+				};
+				give_round("GVW_Give_Button");
+				give_round("GVW_Cancel_Button");
+				for (size_t i = chat_before; i < frontend.Chat().Lines().size(); ++i)
+					printf("[preview] give chat: %s\n", frontend.Chat().Lines()[i].text.c_str());
+			}
+		}
+
 		// Item links: Shift+click an item into the chat line while typing (printed, the tags'
 		// markers as '|'), send it, then light the link in the chat under the mouse and click it
 		// (OP_ItemLinkResponse goes out); and the item display's icon links its item.

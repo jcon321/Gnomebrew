@@ -358,8 +358,9 @@ opens, minimizes, resizes and closes windows (the layout goes to OUTDIR), types 
 (a say, commands, /target) and prints what the chat window holds, then stands near the target to
 snapshot the names over heads (from two distances and in first person) and prints what a player's
 name says at each `/shownames` level. Along the way it opens a bag (a made-up backpack when the
-character has none) and moves an item in and out, and stands by a banker, right clicks it and
-moves an item and coins into the bank.
+character has none) and moves an item in and out, stands by a banker, right clicks it and
+moves an item and coins into the bank, and gives an NPC coins and then an item through the give
+window (the replay answers as the zone does for an NPC), Give once and Cancel once.
 
 ```
 build/scene_preview EQDIR OUT.png --char RACE GENDER CLASS [--face F] [--equip M,M,...] [--velious 0|1] [--camera H] [--frames N] [--size WxH]
@@ -882,6 +883,28 @@ details and the nearest spawns at the top left and the radar at the top right.
   `PutItemInInventory` sends: something bought, traded for or handed back by an NPC) goes out
   under it, and eqgame's `HandleWorldMessage` gives it to `msg_snd_ieq` as it does
   `OP_ItemPacket`: the item into our slot `equipSlot`.
+- **Trading** (`frontend/trade_window.*`, `CTradeWnd`, `CGiveWnd`): a left click on a player or NPC
+  with an item or coins on the cursor (`LeftClickedOnPlayer`, `DropItemOrMoneyOnPlayer`) asks to
+  trade when `IsOkToTransact` and they're within their `ModelHeightOffset` + 20 (3D; further:
+  12294), a NO DROP item only to an NPC (12921, 12922): `OP_TradeRequest` (0x40d1,
+  `BeginTrade_Struct` {target, source}). The zone answers an NPC's at once with
+  `OP_TradeRequestAck` (0x40e6) and passes a player's on; their `msg_req_trade` opens the window
+  and acks, or (busy) sends `OP_TradeRefused` (0x40d6, {target, source, reason}: 'b' nobody, 'c'
+  group only, 1 busy) and says 1447. The ack (`msg_begin_trade`) opens ours with the cursor's item
+  or coins in it, the give window for an NPC. Items go onto the same stack in our slots, else into
+  the first empty one (8 for a player, 4 for an NPC), as `OP_MoveItem` to 3000 + n; full is 12319
+  in color 10. Coins on the cursor onto our money buttons go in (`OP_MoveCoin` to 3). Theirs come
+  as `OP_TradeItemPacket` (0x40df: {u16 from, i16 slot (0..7, or 30 + bag * 10 + n), u8 type (0
+  common, 1 bag, 2 book, 0xff gone), the item, short for bags and books}) and `OP_TradeCoins`
+  (0x40e4, `TradeMoney_Struct`: 0 copper .. 3 platinum, how many more). The names are red, green
+  once that side accepted; any change takes both back (`UpdateTradeDisplay(0)`). Trade sends
+  `OP_TradeAcceptClick` (0x40da: {the other side, u8 1}), theirs comes the same way, and
+  `OP_FinishTrade` (0x40dc) closes it; what we get comes as `OP_MerchantItemPacket` items and
+  `OP_TradeMoneyUpdate` coins. Cancel sends `OP_CancelTrade` (0x40db, {target, source}) and the
+  zone's answer (target: who cancelled) closes it with 1450, 1448 or 1449. Escape, the close box
+  and walking off (every 500 ms) cancel. Closing forgets our items and coins in it: the zone hands
+  them back. eqgame's `Deactivate` would send a second `OP_CancelTrade` and say 1450 again after
+  the zone's cancel; ours doesn't.
 - **Looting** (`frontend/loot_window.*`, `CLootWnd`): the right button on a corpse is
   `CEverQuest_LootCorpse`: within `ModelHeightOffset * 1.6 + 14` (`PlayerDistance` with 1.2, up and
   down counting 1/1.2) and with nothing else waiting it sends `OP_LootRequest` (0x404e, the corpse's

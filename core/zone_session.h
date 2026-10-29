@@ -348,6 +348,20 @@ public:
 			LootOpened,
 			LootTaken,
 			LootEnded,
+			// Trading (id the other side): asked by them (OP_TradeRequest), their or the zone's
+			// go-ahead to ours (OP_TradeRequestAck), turned down (OP_TradeRefused: value the
+			// reason), cancelled (OP_CancelTrade: id who cancelled), their accept (OP_TradeAcceptClick:
+			// value 1 or 0), done (OP_FinishTrade), their coins (OP_TradeCoins: id 0 copper .. 3
+			// platinum, value how many more) and their items changed (OP_TradeItemPacket; in Items() at
+			// 3008 + their slot, and their bags' at BagSlot of those).
+			TradeRequested,
+			TradeBegan,
+			TradeRefused,
+			TradeCancelled,
+			TradeReady,
+			TradeFinished,
+			TradeCoins,
+			TradeItem,
 			LoggedOut,    // camp finished; the zone closes the connection
 			ZoneApproved, // value: the zone we're going to; OP_DeleteSpawn is sent
 			ZoneDenied,   // value: the answer (ZoningMessage: 0 down, -1 not ready, -7 not experienced...)
@@ -463,6 +477,16 @@ public:
 	// The corpse slot of what's in loot slot `index` (AddEquipmentToLootArray's ItemSlotIndex); -1 none.
 	int16_t LootSlot(int index) const { return index >= 0 && index < 30 ? m_loot_slots[index] : int16_t(-1); }
 	void ClearLoot(); // fn_releaseloot: the loot slots empty
+	// Trading (CTradeWnd; BeginTrade_Struct {u16 target, u16 us} and the others): OP_TradeRequest,
+	// OP_TradeRequestAck (yes to theirs), OP_TradeRefused (no, with a reason: 'b' nobody, 'c' group
+	// only, 1 busy), OP_TradeAcceptClick (we accept), OP_CancelTrade. ClearTrade forgets the
+	// trade window's items, both sides', and our coins in it.
+	bool TradeRequest(uint16_t target);
+	bool TradeRequestAck(uint16_t target);
+	bool TradeRefuse(uint16_t target, uint8_t reason);
+	bool TradeAccept(uint16_t target);
+	bool CancelTrade(uint16_t target);
+	void ClearTrade();
 	// CContainerWnd::HandleCombine: OP_TradeSkillCombine for the bag in a general slot (`slot`;
 	// 1000 a world container) with its type and id and the ids in its ten slots (-1 none). The
 	// zone answers with an empty one (CombineAnswered).

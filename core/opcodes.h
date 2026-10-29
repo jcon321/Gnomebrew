@@ -94,6 +94,16 @@ namespace ZoneOp
 	constexpr uint16_t ContainerPacket = 0x4166; // Item_Struct: a bag
 	constexpr uint16_t SummonedItem = 0x4178;    // Item_Struct: an item on the cursor
 	constexpr uint16_t MoveItem = 0x412c;        // MoveItem_Struct {i32 from, to, qty}: to -1 deletes it
+	// Trading: see ZoneSession::TradeRequest.
+	constexpr uint16_t TradeRequest = 0x40d1;     // BeginTrade_Struct {u16 target, u16 source}
+	constexpr uint16_t TradeRequestAck = 0x40e6;  // the same: yes to a trade
+	constexpr uint16_t TradeRefused = 0x40d6;     // RefuseTrade_Struct {u16 target, u16 source, u8 reason, u8}
+	constexpr uint16_t TradeAcceptClick = 0x40da; // ReadyTrade_Struct {u16 the other side, u8 flag, u8}
+	constexpr uint16_t CancelTrade = 0x40db;      // CancelTrade_Struct {u16 target, u16 source}
+	constexpr uint16_t FinishTrade = 0x40dc;      // empty: the trade's done
+	constexpr uint16_t TradeCoins = 0x40e4;       // TradeMoney_Struct: the other side's coins
+	constexpr uint16_t TradeItemPacket = 0x40df;  // TradeItemHeader_Struct {u16 from, i16 slot, u8 type, item}
+	constexpr uint16_t TradeReset = 0x4010;       // empty
 	// Looting: see ZoneSession::LootRequest.
 	constexpr uint16_t LootRequest = 0x404e;    // ours: {u16 corpse}
 	constexpr uint16_t MoneyOnCorpse = 0x4050;  // moneyOnCorpseStruct {u8 response, u8[3], u32 platinum, gold, silver, copper}
@@ -243,6 +253,15 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::MoveItem, "OP_MoveItem"},
 	{ZoneOp::TradeSkillCombine, "OP_TradeSkillCombine"},
 	{ZoneOp::MoveCoin, "OP_MoveCoin"},
+	{ZoneOp::TradeRequest, "OP_TradeRequest"},
+	{ZoneOp::TradeRequestAck, "OP_TradeRequestAck"},
+	{ZoneOp::TradeRefused, "OP_TradeRefused"},
+	{ZoneOp::TradeAcceptClick, "OP_TradeAcceptClick"},
+	{ZoneOp::CancelTrade, "OP_CancelTrade"},
+	{ZoneOp::FinishTrade, "OP_FinishTrade"},
+	{ZoneOp::TradeCoins, "OP_TradeCoins"},
+	{ZoneOp::TradeItemPacket, "OP_TradeItemPacket"},
+	{ZoneOp::TradeReset, "OP_TradeReset"},
 	{ZoneOp::LootRequest, "OP_LootRequest"},
 	{ZoneOp::MoneyOnCorpse, "OP_MoneyOnCorpse"},
 	{ZoneOp::LootItemPacket, "OP_LootItemPacket"},

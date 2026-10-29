@@ -782,8 +782,15 @@ bool InventoryClick(WindowManager &windows, GameWindowState &state, ZoneSession 
 		}
 	}
 	else if (in(FirstTrade, 3029)) {
-		// Into an empty trade slot, while trading (DropItemIntoTrade does it too); nothing yet.
-		return true;
+		// Into an empty slot of ours while trading, a NO DROP item only to an NPC.
+		if (there != items.end() || !state.trading || slot > LastTrade)
+			return true;
+		if (!state.trade_npc && !CanDrop(items, held->second, Cursor, false)) {
+			result.message = held->second.no_drop != 0 ? 12922 : 12921;
+			result.message_color = 15;
+			return true;
+		}
+		result.trade_changed = true;
 	}
 	else if (slot <= LastGeneral || in(3030, 3999) || in(FirstLoot, LastLoot))
 		return true;

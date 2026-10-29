@@ -188,6 +188,8 @@ struct GameWindowState
 	bool busy = false;
 	// The bank window's up: coins change into others (CEverQuest_MoveMoney).
 	bool bank_open = false;
+	// A trade (or the give window) is up, and with an NPC: our empty trade slots take items.
+	bool trading = false, trade_npc = false;
 };
 
 // A button clicked in one of the windows: the page arrows and the hot buttons. A hot button that
@@ -220,6 +222,8 @@ struct InventoryClickResult
 	uint32_t message = 0;
 	int16_t close_bag = -1; // a bag picked up or swapped out: its window closes (CloseContainer)
 	bool coin_sound = false; // WavePlay 0x8a: coins onto the cursor
+	int message_color = 13;  // the message's chat color type (ChatType::Red)
+	bool trade_changed = false; // an item went into the trade window (TradeItemChanged)
 };
 // A money button (the inventory's IW_Money0..3, the bank's BW_Money0..3), or the inventory's
 // character view with coins on the cursor: CInventoryWnd and CBankWnd::ClickedMoneyButton. Coins on

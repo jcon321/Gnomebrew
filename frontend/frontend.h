@@ -29,6 +29,7 @@
 #include "containers.h"
 #include "loot_window.h"
 #include "merchant_window.h"
+#include "trade_window.h"
 #include "spell_book.h"
 #include "spell_cast.h"
 #include "weather.h"
@@ -328,6 +329,7 @@ private:
 	BankWindow m_bank;
 	MerchantWindow m_merchant;
 	LootWindow m_loot;
+	TradeWindow m_trade;            // and the give window
 	uint64_t m_right_world_ms = 0;  // when the right button went down on the world (0: it didn't)
 	bool m_jump_requested = false;
 	bool m_crouch_sent = false; // the stance last sent for a standing jump's wind-up

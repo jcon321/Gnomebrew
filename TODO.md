@@ -70,6 +70,20 @@ no rules of its own.
      (`LootWindow::loot_no_drop`, DAT_00799674) and /autosplit's "as your split" (12071), the
      items in a corpse's bags (shown only to GMs and on player corpses past the eighth), the
      PvP item (Loot_Request_Type 5), MakeMeVisible, and the dead or mounted checks.
+   - Trade and give windows: done (`frontend/trade_window.*`, eqgame's CTradeWnd and CGiveWnd): an
+     item or coins on the cursor clicked onto a player or NPC in reach asks to trade
+     (DropItemOrMoneyOnPlayer, OP_TradeRequest), the go-ahead opens the trade window with it in
+     (the give window for an NPC), someone asking opens it with OP_TradeRequestAck (or turns
+     them down busy), their refusal is said; items onto the same stack or an empty slot, coins
+     onto our money buttons, their items (OP_TradeItemPacket) and coins (OP_TradeCoins) shown,
+     both names red until accepted (green), anything changing taking the accepts back; Trade or
+     Give (OP_TradeAcceptClick), OP_FinishTrade closing it, Cancel, Escape, the close box and
+     walking off cancelling (OP_CancelTrade). The give window checked through the replay (an
+     NPC's answers as the zone gives them); a trade with another player not yet. Still to do:
+     /trade's setting (DAT_00798ad8: nobody 'b', group only 'c'), auto attack's "busy", the
+     bags in a trade window (BagTrade1..16 open, but their contents aren't checked), OP_TradeReset,
+     and Deactivate's second OP_CancelTrade and "You have cancelled the trade." after the zone's
+     cancel (ours leaves them out).
    - The right button on a spawn (CEverQuest::RMouseUp within 500 ms, RightClickedOnPlayer): a
      corpse's loot, a banker's bank, a merchant's shop, else /consider of our target. A
      despawning merchant, banker or corpse closes its window. Still to do: our class's guildmaster
@@ -89,10 +103,10 @@ no rules of its own.
      from the class table rather than the zone's 254/255, the casting check (no moves but from the
      cursor while casting), /showhelm, and a carried light going out underwater (`UpdateLight`'s
      check of the body's environment; it's only not drawn there now).
-   - The item on the cursor: clicking the world with it drops it on the ground or gives it to the
-     target (`CEverQuest_LMouseUp`, `DropHeldItemOnGround`, `DropItemOrMoneyOnPlayer`), and
-     AutoInventory with no room drops it ("There was no place to put that!"); for now it stays on the
-     cursor. Holding a slot's item to make an item hot button (`CInvSlot::HandleLButtonHeld`), and
+   - The item on the cursor: clicking a spawn with it (or coins) gives it to them through a trade
+     (`DropItemOrMoneyOnPlayer`, below). Still to do: clicking the ground drops it
+     (`CEverQuest_LMouseUp`, `DropHeldItemOnGround`, `DropHeldMoneyOnGround`), and AutoInventory with
+     no room drops it ("There was no place to put that!"); for now it stays on the cursor. Holding a slot's item to make an item hot button (`CInvSlot::HandleLButtonHeld`), and
      the right button on a slot (eat, drink, click effects: `CInvSlot::HandleRButtonUp`).
    - Item display: alt+click or the right button held on an inventory slot shows its item
      (`frontend/item_display.*`, eqgame's SetItem text with spells_en.txt's spell names); letting
@@ -176,7 +190,7 @@ no rules of its own.
    The buff window's: the spell's name. Still to do: the key bound to a
    button after its text (SetKeyTooltip, UpdateTooltipText; needs the keymap), the help texts
    FindWnd's other hit codes ask for (GetHelpTextFromStringTable), and the slots of windows we
-   don't have yet (trade, give: their own DrawTooltips).
+   don't have yet (the world container's).
 5. **Options / Escape menu.** Graphics, sound and display settings, mouse sensitivity, the keymap.
 6. **A configurable keymap.** `InputEvent::Key` is a hard-coded list of about 18 keys; make it an
    EQ-style keymap with primary and alternate bindings.
