@@ -383,6 +383,86 @@ namespace Inventory
 		return true;
 	}
 
+	int32_t ValueBuy(const ZoneItem &item, float rate, int count)
+	{
+		if (item.price < 0)
+			return 0;
+		float each = static_cast<float>(item.price) * rate;
+		if (item.item_class == 0 && item.sell_rate > 1.0f)
+			each *= item.sell_rate;
+		return static_cast<int32_t>(static_cast<float>(count) * each + 0.5f);
+	}
+
+	int32_t ValueSell(const ZoneItem &item, float rate, int count)
+	{
+		if (item.price < 1 || rate == 0)
+			return 0;
+		int32_t total = static_cast<int32_t>(static_cast<double>(item.price) / rate + 0.5) * count;
+		if (total >= 10000000)
+			total = (total + 50) - (total + 50) % 100;
+		return total;
+	}
+
+	int32_t TotalOnPerson(const ZoneProfile &me)
+	{
+		return me.copper + (me.silver + (me.gold + me.platinum * 10) * 10) * 10;
+	}
+
+	bool HandleMoney(ZoneProfile &me, int32_t copper)
+	{
+		if (copper < 0 || TotalOnPerson(me) < copper)
+			return false;
+		while (me.copper < copper) {
+			if (me.silver != 0) {
+				--me.silver;
+				me.copper += 10;
+			}
+			else if (me.gold != 0) {
+				--me.gold;
+				me.silver = 10;
+			}
+			else if (me.platinum != 0) {
+				--me.platinum;
+				me.gold = 10;
+			}
+		}
+		me.copper -= copper;
+		return true;
+	}
+
+	void AddCoins(ZoneProfile &me, int32_t copper)
+	{
+		me.platinum += copper / 1000;
+		me.gold += copper % 1000 / 100;
+		me.silver += copper % 100 / 10;
+		me.copper += copper % 10;
+	}
+
+	bool CanDrop(const std::map<int16_t, ZoneItem> &items, const ZoneItem &item, int16_t slot, bool fv_rules)
+	{
+		if (fv_rules)
+			return true;
+		if (item.no_drop == 0)
+			return false;
+		if (item.item_class == 1)
+			for (int n = 0; n < item.bag_slots; ++n)
+				if (const ZoneItem *inside = Find(items, BagSlot(slot, n)); inside && inside->no_drop == 0)
+					return false;
+		return true;
+	}
+
+	bool HasLoreItem(const std::map<int16_t, ZoneItem> &items, const ZoneItem &item)
+	{
+		if (item.lore.empty() || item.lore[0] != '*')
+			return false;
+		for (const auto &[slot, have] : items) {
+			bool ours = slot <= CursorBagSlot + BagSlots || (slot >= FirstBank && slot < FirstTrade);
+			if (ours && have.id == item.id)
+				return true;
+		}
+		return false;
+	}
+
 	bool AutoInventory(ZoneSession &zone)
 	{
 		auto &items = zone.EditItems();

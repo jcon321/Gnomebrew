@@ -14,9 +14,11 @@ class EqStr
 public:
 	bool Load(const std::string &path);
 	bool Has(uint32_t id) const { return m_strings.count(id) != 0; }
-	// The string with %1..%9 replaced by args; "[string id]" plus the args if the id is unknown.
+	// The string with %1..%9 replaced by args (and %Tn, %#id: Expand); "[string id]" plus the args
+	// if the id is unknown.
 	std::string Format(uint32_t id, const std::vector<std::string> &args) const;
 
 private:
+	std::string Expand(const std::string &text, const std::vector<std::string> &args, int depth) const;
 	std::map<uint32_t, std::string> m_strings;
 };

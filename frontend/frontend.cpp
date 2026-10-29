@@ -684,9 +684,10 @@ void FrontEnd::Update(uint64_t now_ms)
 	if (m_screen == Screen::Zone) {
 		Rect area = ScreenArea();
 		m_windows.Update(now_ms, m_mouse_x - area.x, m_mouse_y - area.y);
-		m_window_state.busy = m_containers.Combining();
+		m_window_state.busy = m_containers.Combining() || m_merchant.Busy();
 		HandleWindowClicks();
 		m_bank.Frame(now_ms);
+		m_merchant.Frame(now_ms);
 		m_spell_book.Frame(now_ms);
 		m_spell_cast.Frame(now_ms);
 		m_buffs.Frame(now_ms);
@@ -1471,6 +1472,7 @@ namespace
 		{"HelpWindow", false}, {"CompassWindow", false}, {"SocialEditWnd", false}, {"ChatWindow", true},
 		{"SkillsWindow", false}, {"ItemDisplayWindow", false}, {"QuantityWnd", false}, {"SpellBookWnd", false},
 		{"ConfirmationDialogBox", false}, {"CastingWindow", false}, {"BankWnd", false},
+		{"MerchantWnd", false},
 	};
 
 	// The selector's buttons (EQUI_SelectorWnd.xml) and the windows they open and close.
@@ -1550,17 +1552,24 @@ void FrontEnd::BuildZoneWindows()
 	m_game_values.spell_cast = &m_spell_cast;
 	m_chat.Attach(m_windows.Find("ChatWindow"));
 	m_chat.SetLinkColor(m_chat_colors.Get(ItemTags::ColorType));
-	Containers::Host bag_host;
-	bag_host.sound = [this](int wave) {
+	auto bag_sound = [this](int wave) {
 		if (m_sound)
 			m_sound->PlayWave(wave);
 	};
+	Containers::Host bag_host;
+	bag_host.sound = bag_sound;
 	bag_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
 	m_containers.Attach(m_windows, m_zone, m_game_values, std::move(bag_host)); // the bag windows hidden
 	BankWindow::Host bank_host;
 	bank_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
 	bank_host.close_bags = [this] { m_containers.CloseAll(); };
 	m_bank.Attach(m_windows, m_zone, m_window_state, m_ui.eqstr, std::move(bank_host)); // hidden too
+	MerchantWindow::Host merchant_host;
+	merchant_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
+	merchant_host.sound = bag_sound;
+	merchant_host.close_bag = [this](int16_t slot) { m_containers.Close(slot); };
+	merchant_host.clear_target = [this] { m_game_values.target = 0; }; // pinstTarget, not the zone's
+	m_merchant.Attach(m_windows, m_zone, m_window_state, m_game_values, std::move(merchant_host));
 	m_windows.TakeChanged();
 }
 
@@ -1646,8 +1655,12 @@ void FrontEnd::HandleWindowClicks()
 		// The spellbook, the gems and the confirmation dialog.
 		if (m_spell_book.Click(click.window, click.control, click.alt, m_now_ms))
 			continue;
-		// A bag window's Done and Combine, and the bank's Done.
-		if (m_containers.Click(click.window, click.control) || m_bank.Click(click.window, click.control))
+		// A bag window's Done and Combine, the bank's Done, the merchant's Buy, Sell and Done.
+		if (m_containers.Click(click.window, click.control) || m_bank.Click(click.window, click.control) ||
+		    m_merchant.Click(click.window, click.control, click.shift, click.ctrl))
+			continue;
+		// While a merchant's up, a slot anywhere is picked to buy or sell (CInvSlot::HandleLButtonUp).
+		if (m_merchant.SlotClick(click.window, click.control))
 			continue;
 		// The inventory's slots and character view, the money buttons, and the quantity window's Accept.
 		InventoryClickResult moved;
@@ -1745,9 +1758,11 @@ void FrontEnd::ChangeStance(uint8_t stance)
 
 bool FrontEnd::IsOkToTransact() const
 {
-	// Not camping, no combine waiting, no world container, spellbook, bank (the merchant, loot,
-	// trade, trainer and bazaar windows when we have them).
-	return m_zone.CampRemainingMs() == 0 && !m_containers.Combining() && !m_spell_book.Activated() && !m_bank.Active();
+	// Not camping, no combine, buy or sell waiting (DAT_007d0254), no merchant asked
+	// (DAT_007d0258), no world container, spellbook, bank or merchant (the loot, trade, trainer and
+	// bazaar windows when we have them).
+	return m_zone.CampRemainingMs() == 0 && !m_containers.Combining() && !m_spell_book.Activated() && !m_bank.Active() &&
+	       !m_merchant.Active() && !m_merchant.Waiting() && !m_merchant.Busy();
 }
 
 void FrontEnd::RightClickedOnPlayer(uint16_t spawn)
@@ -1758,7 +1773,11 @@ void FrontEnd::RightClickedOnPlayer(uint16_t spawn)
 	if (it == m_zone.Spawns().end())
 		return;
 	const ZoneSpawn &who = it->second;
-	constexpr int Banker = 16;
+	constexpr int Banker = 16, Merchant = 32;
+	if (who.npc < 2 && who.class_id == Merchant && m_zone.SpawnDistance(spawn) <= 20) {
+		m_merchant.Request(spawn);
+		return;
+	}
 	if (who.npc < 2 && who.class_id == Banker && m_zone.SpawnDistance(spawn) <= 20) {
 		m_bank.Activate(spawn);
 		return;
@@ -1878,6 +1897,12 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			break;
 		case Type::CombineAnswered:
 			m_containers.CombineAnswered();
+			break;
+		case Type::MerchantOpened:
+		case Type::MerchantBought:
+		case Type::MerchantSold:
+		case Type::MerchantItemGone:
+			m_merchant.ZoneEvent(event);
 			break;
 		case Type::Emote:
 			ChatOut(event.text, ChatType::Emote);
@@ -2298,13 +2323,13 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			break;
 		}
 		// ExecuteCmd's escape: no target, then CDisplay_NewUIProcessEscape closes the first of its
-		// windows that's open (of the ones we have: the item display, quantity, the bank, help,
+		// windows that's open (of the ones we have: the item display, quantity, the bank, a merchant, help,
 		// skills, then every bag window at once, options, the spellbook, the social editor, inventory).
 		SetTarget(0);
 		ChatOut(EqString(12375, "You no longer have a target."), ChatType::Default);
 		for (const char *screen :
-			{"ItemDisplayWindow", "QuantityWnd", "BankWnd", "HelpWindow", "SkillsWindow", "", "OptionsWindow",
-			 "SpellBookWnd", "SocialEditWnd", "InventoryWindow"}) {
+			{"ItemDisplayWindow", "QuantityWnd", "BankWnd", "MerchantWnd", "HelpWindow", "SkillsWindow", "",
+			 "OptionsWindow", "SpellBookWnd", "SocialEditWnd", "InventoryWindow"}) {
 			if (!*screen) {
 				if (m_containers.CloseAll())
 					break;
@@ -2313,6 +2338,13 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			if (std::string(screen) == "BankWnd") {
 				if (m_bank.Active()) {
 					m_bank.Deactivate(true);
+					break;
+				}
+				continue;
+			}
+			if (std::string(screen) == "MerchantWnd") {
+				if (m_merchant.Active()) {
+					m_merchant.Deactivate();
 					break;
 				}
 				continue;
@@ -2385,6 +2417,7 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 		Rect area = ScreenArea();
 		m_containers.DrawTooltips(canvas, m_text, m_mouse_x - area.x, m_mouse_y - area.y);
 		m_bank.DrawTooltips(canvas, m_text, m_mouse_x - area.x, m_mouse_y - area.y);
+		m_merchant.DrawTooltips(canvas, m_text, m_mouse_x - area.x, m_mouse_y - area.y);
 	}
 	// Top left and right: the debug menu's stat card and radar, above the windows.
 	m_debug.Draw(canvas, m_text, m_zone, m_zone_view.get(), height - 10);

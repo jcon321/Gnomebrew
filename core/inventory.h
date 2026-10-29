@@ -79,6 +79,26 @@ namespace Inventory
 	bool MoveMoney(ZoneSession &zone, int from, int to, int from_coin, int to_coin, int32_t amount, bool bank_open,
 		bool force = false);
 
+	// EQ_Item::ValueBuy (@004cda6f): what `count` of a merchant's item costs, in copper, at its rate
+	// (its price times the rate, times SellRate when that's over 1 for a common item, rounded).
+	int32_t ValueBuy(const ZoneItem &item, float rate, int count);
+	// EQ_Item::ValueSell (@004cdac6): what a merchant gives for `count` of ours: the price over the
+	// rate, rounded, times the count, and to the nearest 100 from 10,000,000 on.
+	int32_t ValueSell(const ZoneItem &item, float rate, int count);
+	// EQ_Character::TotalOnPerson: our purse in copper.
+	int32_t TotalOnPerson(const ZoneProfile &me);
+	// HandleMoney (@004f2e27): `copper` out of the purse, breaking the bigger coins for change;
+	// false (and nothing taken) when there isn't that much.
+	bool HandleMoney(ZoneProfile &me, int32_t copper);
+	// EQ_Character::ItemSold_addCoinsFromItemSale: `copper` into the purse as the fewest coins.
+	void AddCoins(ZoneProfile &me, int32_t copper);
+	// CanDrop (@004ef773) with nothing to say (mode 0): not NO DROP, nor a bag with something NO DROP
+	// in it; anything under the FV rules (but EQ_Item::IsSpecialNoDrop's ids, not yet).
+	bool CanDrop(const std::map<int16_t, ZoneItem> &items, const ZoneItem &item, int16_t slot, bool fv_rules);
+	// HasLoreItem (@004f1469): a lore item ('*') we already have one of, anywhere: worn, carried,
+	// in a bag, in the bank.
+	bool HasLoreItem(const std::map<int16_t, ZoneItem> &items, const ZoneItem &item);
+
 	// AutoInventory: the cursor's item where it goes. False when there's no room for it: eqgame
 	// drops it on the ground then ("There was no place to put that!"), and we leave it on the cursor.
 	bool AutoInventory(ZoneSession &zone);

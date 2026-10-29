@@ -168,6 +168,17 @@ struct ZoneCast
 	uint8_t flags = 0;           // Action: 4 it landed
 };
 
+// A merchant's packets (Merchant_Click_Struct, Merchant_Sell_Struct, Merchant_Purchase_Struct):
+// OP_ShopRequest's answer (whether the shop's open, and its rate), and what we bought or sold.
+struct ZoneMerchant
+{
+	uint16_t npc = 0;
+	uint8_t command = 0; // ShopRequest: 1 open, 0 not
+	float rate = 1;      // ShopRequest: the merchant's greed (CalcPriceMod), what its prices are times
+	int16_t slot = 0;    // ShopPlayerBuy: its slot (0..79; -1 none); ShopPlayerSell: ours
+	int32_t quantity = 0, price = 0;
+};
+
 // OP_Consider's answer (Consider_Struct): what the zone thinks of us for a spawn we considered.
 struct ZoneConsider
 {
@@ -225,6 +236,8 @@ struct ZoneItem
 	std::string idfile;      // its model when held or worn: "IT92" (CDisplay draws IT<n>)
 	int32_t slots = 0;       // where it can be worn, a bit per slot
 	int32_t cast_time = 0;   // ms; a food or drink's duration
+	int32_t price = 0;       // in copper: a merchant's for one (its Price * SellRate), else the item's own
+	float sell_rate = 1;     // SellRate: a merchant's markup (1 on a merchant's own items)
 	uint16_t skill_mod_type = 0;
 	int16_t skill_mod_value = 0;
 	int16_t bane_race = 0, bane_body = 0;
@@ -313,6 +326,13 @@ public:
 			Considered,     // consider: OP_Consider's answer
 			Assisted,       // id: the target of whoever we assisted (OP_Assist's answer); not set yet
 			CombineAnswered, // OP_TradeSkillCombine: the zone's done with a combine (its items come as their own packets)
+			// A merchant (merchant): OP_ShopRequest's answer, what we bought (OP_ShopPlayerBuy) and sold
+			// (OP_ShopPlayerSell), and one of its items gone (OP_ShopDelItem: slot); its items are in
+			// Items() at 6000 + their slot (OP_ShopInventoryPacket, OP_MerchantItemPacket).
+			MerchantOpened,
+			MerchantBought,
+			MerchantSold,
+			MerchantItemGone,
 			LoggedOut,    // camp finished; the zone closes the connection
 			ZoneApproved, // value: the zone we're going to; OP_DeleteSpawn is sent
 			ZoneDenied,   // value: the answer (ZoningMessage: 0 down, -1 not ready, -7 not experienced...)
@@ -330,6 +350,7 @@ public:
 		ZoneCast cast;
 		ZoneBuff buff;
 		ZoneConsider consider;
+		ZoneMerchant merchant;
 	};
 
 	ZoneSession();
@@ -410,6 +431,13 @@ public:
 	// between the cursor (0), our purse (1), the bank (2) and the trade window (3), the coins 0
 	// copper .. 3 platinum. The zone doesn't answer one it agrees with.
 	bool MoveCoin(int from, int to, int from_coin, int to_coin, int32_t amount);
+	// A merchant (Merchant_Click_Struct and the others, 12 and 16 bytes): OP_ShopRequest to open its
+	// shop, OP_ShopPlayerBuy for `quantity` of what's in its slot (0..79), OP_ShopPlayerSell for
+	// that many of what's in our slot, OP_ShopEnd when we're done (its items go from Items()).
+	bool ShopRequest(uint16_t npc);
+	bool ShopBuy(uint16_t npc, int16_t slot, int32_t quantity);
+	bool ShopSell(uint16_t npc, int16_t slot, int32_t quantity);
+	bool ShopEnd(uint16_t npc);
 	// CContainerWnd::HandleCombine: OP_TradeSkillCombine for the bag in a general slot (`slot`;
 	// 1000 a world container) with its type and id and the ids in its ten slots (-1 none). The
 	// zone answers with an empty one (CombineAnswered).

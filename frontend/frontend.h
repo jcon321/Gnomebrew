@@ -27,6 +27,7 @@
 #include "bank_window.h"
 #include "buffs.h"
 #include "containers.h"
+#include "merchant_window.h"
 #include "spell_book.h"
 #include "spell_cast.h"
 #include "weather.h"
@@ -203,7 +204,7 @@ private:
 	void SaveCustom(); // CEverQuest_saveCustom: the hot buttons and the socials changed
 	void SaveDebugSettings(); // the debug menu's, to my-client.ini's [Debug]
 	void HandleWindowClicks();
-	// CEverQuest::RightClickedOnPlayer: a banker's bank, or else /consider (of our target).
+	// CEverQuest::RightClickedOnPlayer: a banker's bank, a merchant's shop, or else /consider (of our target).
 	void RightClickedOnPlayer(uint16_t spawn);
 	bool IsOkToTransact() const; // CEverQuest_IsOkToTransact: no window that deals with someone up
 	void AddZoneLog(const std::string &text, uint32_t color); // a line of chat in this color
@@ -323,6 +324,7 @@ private:
 	Buffs m_buffs;                  // the spells on us
 	Containers m_containers;        // the bag windows
 	BankWindow m_bank;
+	MerchantWindow m_merchant;
 	uint64_t m_right_world_ms = 0;  // when the right button went down on the world (0: it didn't)
 	bool m_jump_requested = false;
 	bool m_crouch_sent = false; // the stance last sent for a standing jump's wind-up

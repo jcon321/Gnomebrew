@@ -342,21 +342,24 @@ build/eqclient -u USER -p PASS [options]
 ## Preview tool (Linux)
 
 ```
-build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD]
+build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|shop]]
 build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS]
 ```
 
 This drives the real front-end code with scripted input and writes PNG snapshots. Text is
 drawn as outline boxes, since there's no GDI. With a login server it logs in, snapshots server
 select and character select, and presses Enter World (add `charselect` after the password to stop
-at character select instead). `create` instead makes an Erudite wizard from the first empty slot,
+at character select instead, or `shop` to stand by the nearest merchant, open its shop with the
+right button, sell the first thing worth anything and buy it back, then camp). `create` instead makes an Erudite wizard from the first empty slot,
 snapshots every creation screen and the face picker, submits it, and deletes it again. It's for
 checking layout and flow without Windows. `--replay` plays a packet log back instead (no server)
 and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,
 opens, minimizes, resizes and closes windows (the layout goes to OUTDIR), types into the chat window
 (a say, commands, /target) and prints what the chat window holds, then stands near the target to
 snapshot the names over heads (from two distances and in first person) and prints what a player's
-name says at each `/shownames` level.
+name says at each `/shownames` level. Along the way it opens a bag (a made-up backpack when the
+character has none) and moves an item in and out, and stands by a banker, right clicks it and
+moves an item and coins into the bank.
 
 ```
 build/scene_preview EQDIR OUT.png --char RACE GENDER CLASS [--face F] [--equip M,M,...] [--velious 0|1] [--camera H] [--frames N] [--size WxH]
@@ -849,6 +852,37 @@ details and the nearest spawns at the top left and the radar at the top right.
   `Deactivate` (Done, Escape right after the item display and quantity windows, walking away)
   says 12143 ("Come back soon!"), closes the inventory if the bank opened it and closes every bag
   window.
+- **Merchants** (`frontend/merchant_window.*`, `CMerchantWnd`): the right button on a merchant
+  (class 32) within 20 sends `OP_ShopRequest` (0x400b, 12 bytes: merchant, us) and waits
+  (`DAT_007d0258`, part of `IsOkToTransact`). The answer (`msg_req_merchantitems`: command @4, 1
+  open; the rate @8, a float, kept as `MerchantGreed`) opens the window and the inventory with it.
+  The items come deflated in `OP_ShopInventoryPacket` (0x400c: a count, a byte, then {u16 item
+  class, `Item_Struct`} records) and one at a time in `OP_MerchantItemPacket` (0x4031), each
+  in its `equipSlot` 0..79 (slots 6000..6079); `OP_ShopDelItem` (0x4038) takes one out. Their
+  `Price` is the item's times its SellRate, and `SellRate` comes as 1. While the window's up, a
+  left click on any slot only selects it (`CInvSlotMgr_SelectSlot`: a yellow 0xffff00 outline,
+  `CInvSlotWnd`'s 0x114) and says its price in chat color 0x111: `ValueBuy` is `round(count *
+  price * rate)` (times SellRate when it's over 1), `ValueSell` is `round(price / rate) *
+  count`, to the nearest 100 from 10,000,000; their text (`ValueSBuy`, `ValueSSell`) is eqstr
+  2409..2412 per coin (" 1 gold 5 silver"), or 2413 / 2408 for nothing. A stack's message says
+  "per" (4020 buying, 12026 selling), anything else "for the" (4019, 12027), and item type 39 its
+  monthly rent (4021, a twelfth of the price). Buy is disabled when the purse can't pay for one;
+  Sell for NO RENT, NO DROP (`CanDrop`) or worthless items. Buying asks the quantity window for a
+  stack (20 at most), checks lore items (1573), room in the general slots (1571) and the purse
+  (12060, 12061), then sends `OP_ShopPlayerBuy` (0x4035, 16 bytes: merchant, us, its slot @4,
+  the count @8) and locks the slots (`DAT_007d0254`); the answer (slot @4, count @8, price @12;
+  slot -1 refused) takes the price out of the purse (`HandleMoney`, breaking coins) and says
+  "You give%1 to %2." (1437). Selling checks one at a time (12063), NO DROP (12921, 12062) and
+  an empty bag (12064), sends `OP_ShopPlayerSell` (0x4027, the same layout), and the answer
+  adds `ValueSell` to the purse (the fewest coins) and says 1361 in color 0x114; the client
+  takes the item away itself, as the zone deletes it without a packet. Done, the close box,
+  Escape and walking more than 20 away across the ground (every 500 ms) send `OP_ShopEnd`
+  (0x4037: merchant, us) and clear our target. The slots scroll in `MW_MerchantSlotsWnd`, a
+  `Style_VScroll` screen; our step is 10 pixels.
+- **String expansion** (`orderedStringExpansion` @004f7ea2, `EqStr::Format`): `%1`..`%9` are the
+  arguments, `%Tn` the string whose id is argument n expanded with the same arguments (the
+  zone's 554 "%1 says '%T2'" for a merchant's welcome), `%#id` that string inline, `%%` a
+  percent sign; ten deep at most. `%R` (grammar rules) isn't ours yet.
 - **Item display** (`frontend/item_display.*`, `CItemDisplayWnd`): alt+click (`CInvSlot::HandleLButtonUp`)
   or the right button held 750 ms (`HandleRButtonHeld`) shows it; letting go over a slot after the
   hold closes it. `SetItem`'s text shows the following:

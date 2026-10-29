@@ -220,6 +220,7 @@ namespace
 	{
 		if (!windows.Shown("QuantityWnd")) {
 			state.quantity_slot = state.quantity_coin = -1;
+			state.quantity_done = nullptr;
 			return;
 		}
 		SidlWindow::Control *slider = wnd.Find("QTYW_Slider"), *edit = wnd.Find("QTYW_SliderInput");
@@ -280,6 +281,7 @@ namespace
 	{
 		state.quantity_slot = -1;
 		state.quantity_coin = -1;
+		state.quantity_done = nullptr;
 		if (int value = ActivateQuantity(windows, state, count, x, y, shift, ctrl)) {
 			Inventory::TakeFromStack(zone, slot, value);
 			return;
@@ -304,12 +306,16 @@ namespace
 		SidlWindow::Control *slider = wnd ? wnd->Find("QTYW_Slider") : nullptr;
 		SidlWindow::Control *edit = wnd ? wnd->Find("QTYW_SliderInput") : nullptr;
 		int slot = state.quantity_slot, coin = state.quantity_coin;
+		std::function<void(int)> done = std::move(state.quantity_done);
 		windows.Show("QuantityWnd", false);
 		state.quantity_slot = state.quantity_coin = -1;
+		state.quantity_done = nullptr;
 		if (!slider || !edit)
 			return;
 		wnd->SetSlider(*slider, std::atoi(edit->text.c_str()));
-		if (slot >= 0)
+		if (done)
+			done(slider->slider_value);
+		else if (slot >= 0)
 			Inventory::TakeFromStack(zone, static_cast<int16_t>(slot), slider->slider_value);
 		else if (coin >= 0)
 			result.coin_sound = CoinsToCursor(state, zone, state.quantity_place, coin, slider->slider_value);
@@ -821,6 +827,7 @@ bool MoneyClick(WindowManager &windows, GameWindowState &state, ZoneSession &zon
 	if (button)
 		x = button->rect.x + button->rect.w / 2, y = button->rect.y + button->rect.h / 2;
 	state.quantity_slot = state.quantity_coin = -1;
+	state.quantity_done = nullptr;
 	if (int value = ActivateQuantity(windows, state, Coins(me, place, coin), x, y, shift, ctrl)) {
 		result.coin_sound = CoinsToCursor(state, zone, place, coin, value);
 		return true;
@@ -830,6 +837,25 @@ bool MoneyClick(WindowManager &windows, GameWindowState &state, ZoneSession &zon
 		state.quantity_place = place;
 	}
 	return true;
+}
+
+void AskQuantity(WindowManager &windows, GameWindowState &state, int count, int x, int y, bool shift, bool ctrl,
+	std::function<void(int)> done)
+{
+	state.quantity_slot = state.quantity_coin = -1;
+	state.quantity_done = nullptr;
+	if (x < 0 || y < 0) { // CXWnd::Center
+		if (const SidlWindow *wnd = windows.Find("QuantityWnd")) {
+			x = (windows.ScreenWidth() - wnd->Bounds().w) / 2;
+			y = (windows.ScreenHeight() - wnd->Bounds().h) / 2;
+		}
+	}
+	if (int value = ActivateQuantity(windows, state, count, x, y, shift, ctrl)) {
+		done(value);
+		return;
+	}
+	if (windows.Shown("QuantityWnd"))
+		state.quantity_done = std::move(done);
 }
 
 bool QuantityEnter(WindowManager &windows, GameWindowState &state, ZoneSession &zone, InventoryClickResult &result)

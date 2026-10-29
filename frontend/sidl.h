@@ -266,7 +266,7 @@ public:
 		uint32_t text_color = 0xffffff;
 		bool visible = true;
 		bool enabled = true;
-		bool checked = false;
+		bool checked = false; // a checkbox's, or the selected InvSlot (CInvSlotWnd's 0x114)
 		bool hover = false;
 		bool pressed = false;
 		// A button drawing none of its ButtonDrawTemplate, just its text (an empty buff slot:
@@ -460,6 +460,8 @@ private:
 	ScrollPart ScrollPartAt(const Control &control, int x, int y) const;
 	void DrawScrollbar(const Control &control, Canvas &canvas, SidlTextures &textures, uint64_t now_ms) const;
 	void ScrollBy(Control &control, int rows);
+	void Scrolled(Control &control); // its scroll position changed
+	static constexpr int ScreenScrollUnit = 10; // a scrolling screen's step in pixels (ours)
 
 	const SidlDefinitions *m_defs = nullptr;
 	SidlValues *m_values = nullptr;

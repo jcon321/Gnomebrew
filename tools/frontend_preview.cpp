@@ -2,12 +2,13 @@
 // snapshots, to check layout and flow without a Windows box. Text is drawn as
 // outline boxes of an estimated Arial size, since GDI isn't available.
 //
-//   frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect]]
+//   frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|shop]]
 //   frontend_preview EQDIR OUTDIR --replay FILE [SECONDS]
 //
 // Without a login server it snapshots the start screen, a dialog and the login
 // screen. With one it also logs in and snapshots server select and the play result.
-// "charselect" stops at character select (two snapshots of the 3D scene, as the
+// "shop" enters the world, stands by the nearest merchant, opens its shop with the right button,
+// sells the first thing it can and buys it back. "charselect" stops at character select (two snapshots of the 3D scene, as the
 // camera turns) instead of entering the world. --replay plays a packet log back (no server)
 // and snapshots the zone once it's in, then every few seconds for SECONDS (default 10), then
 // tries the windows: drags the selector by its title bar, opens the inventory from it, shows its
@@ -161,6 +162,175 @@ namespace
 			return false;
 		}
 	};
+
+	// Where a spawn is drawn on the screen (window pixels, not under a window): the last frame's
+	// PickSpawn, rendered first.
+	bool FindOnScreen(FrontEnd &frontend, Harness &h, uint16_t id, int &x, int &y)
+	{
+		ZoneView *view = frontend.ZoneScene();
+		if (!view)
+			return false;
+		h.Snapshot("find-spawn");
+		Rect area = frontend.ScreenArea();
+		for (int sy = 8; sy < frontend.ScreenHeight(); sy += 8)
+			for (int sx = 8; sx < frontend.ScreenWidth(); sx += 8)
+				if (view->PickSpawn(sx, sy, frontend.Zone().MySpawnId()) == id && !frontend.Windows().Over(sx, sy)) {
+					x = sx + area.x, y = sy + area.y;
+					return true;
+				}
+		return false;
+	}
+
+	// Live: the nearest merchant's shop opened with the right button, the first thing in a general
+	// slot sold to it and bought back (the zone answering both), then Done and a camp.
+	int ShopTest(FrontEnd &frontend, Harness &h)
+	{
+		WindowManager &windows = frontend.Windows();
+		const ZoneSession &zone = frontend.Zone();
+		auto click = [&](const char *window, const std::string &id, bool ctrl = false) {
+			const SidlWindow *wnd = windows.Find(window);
+			const SidlWindow::Control *c = wnd ? wnd->Find(id) : nullptr;
+			if (!c) {
+				printf("[preview] no %s in %s\n", id.c_str(), window);
+				return;
+			}
+			Rect area = frontend.ScreenArea();
+			int x = area.x + c->rect.x + c->rect.w / 2, y = area.y + c->rect.y + c->rect.h / 2;
+			InputEvent e{InputEvent::Type::MouseMove, x, y};
+			frontend.OnEvent(e);
+			e.ctrl = ctrl;
+			e.type = InputEvent::Type::MouseDown;
+			frontend.OnEvent(e);
+			e.type = InputEvent::Type::MouseUp;
+			frontend.OnEvent(e);
+			frontend.Update(NowMs());
+		};
+		size_t chat_seen = frontend.Chat().Lines().size();
+		auto chat = [&] {
+			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
+				printf("[preview] chat: %s\n", frontend.Chat().Lines()[chat_seen].text.c_str());
+		};
+		auto coins = [&](const char *when) {
+			const ZoneProfile &me = zone.Profile();
+			printf("[preview] purse %s: %dp %dg %ds %dc\n", when, me.platinum, me.gold, me.silver, me.copper);
+		};
+		const ZoneProfile &me = zone.Profile();
+		const ZoneSpawn *merchant = nullptr;
+		float best = 0;
+		for (const auto &[id, spawn] : zone.Spawns()) {
+			float d = std::hypot(spawn.x - me.x, spawn.y - me.y);
+			if (spawn.npc == 1 && spawn.class_id == 32 && (!merchant || d < best))
+				merchant = &spawn, best = d;
+		}
+		if (!merchant) {
+			printf("[preview] no merchant in the zone\n");
+			return 1;
+		}
+		uint16_t merchant_id = merchant->id;
+		printf("[preview] merchant %s (%d), %.0f away\n", merchant->name.c_str(), merchant_id, best);
+		h.Key(InputEvent::Key::F11); // the debug menu (open by default) out of the way
+		for (const char *screen : {"InventoryWindow", "ChatWindow"})
+			windows.Show(screen, false);
+		windows.MoveTo("ChatWindow", frontend.ScreenWidth() - 400, 10); // clear of the shop's Done
+		frontend.ZoneScene()->SetPlayerPosition(merchant->x, merchant->y - 10, merchant->z, 0);
+		h.RunUntil([] { return false; }, 2000); // our position to the zone
+		int x = 0, y = 0;
+		if (!FindOnScreen(frontend, h, merchant_id, x, y)) {
+			printf("[preview] the merchant isn't on the screen\n");
+			return 1;
+		}
+		frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+		frontend.OnEvent({InputEvent::Type::RightDown, x, y});
+		frontend.OnEvent({InputEvent::Type::RightUp, x, y});
+		if (!h.RunUntil([&] { return windows.Shown("MerchantWnd"); }, 5000)) {
+			chat();
+			printf("[preview] no shop\n");
+			return 1;
+		}
+		h.RunUntil([] { return false; }, 1000); // its items
+		windows.Show("ChatWindow", true);
+		size_t count = 0;
+		for (const auto &[slot, item] : zone.Items())
+			if (slot >= Inventory::FirstMerchant && slot <= Inventory::LastMerchant) {
+				if (count++ < 8)
+					printf("[preview]   merchant slot %d: %s, %d copper\n", slot - Inventory::FirstMerchant, item.name.c_str(),
+						item.price);
+			}
+		printf("[preview] the shop is up with %zu items; inventory %s\n", count,
+			windows.Shown("InventoryWindow") ? "up" : "down");
+		chat();
+		h.Snapshot("m1-shop");
+		// Sell the first common item in a general slot that doesn't stack.
+		for (const auto &[slot, item] : zone.Items())
+			if (slot >= Inventory::FirstGeneral && slot <= Inventory::LastGeneral)
+				printf("[preview]   our slot %d: %s, class %d, price %d, no_drop %d, no_rent %d\n", slot, item.name.c_str(),
+					item.item_class, item.price, item.no_drop, item.no_rent);
+		int16_t sell = -1;
+		ZoneItem sold;
+		for (const auto &[slot, item] : zone.Items())
+			if (slot >= Inventory::FirstGeneral && slot <= Inventory::LastGeneral && item.item_class == 0 &&
+			    !Inventory::Stacks(item) && item.no_drop != 0 && item.price > 0 && sell < 0)
+				sell = slot, sold = item;
+		if (sell >= 0) {
+			coins("before");
+			click("InventoryWindow", "InvSlot" + std::to_string(sell));
+			chat();
+			h.Snapshot("m2-selected");
+			click("MerchantWnd", "MW_Sell_Button");
+			h.RunUntil([&] { return !zone.Items().count(sell); }, 5000);
+			h.RunUntil([] { return false; }, 1000);
+			chat();
+			coins("after selling");
+			int16_t back = -1;
+			for (const auto &[slot, item] : zone.Items())
+				if (slot >= Inventory::FirstMerchant && slot <= Inventory::LastMerchant && item.id == sold.id)
+					back = slot;
+			if (back >= 0) {
+				printf("[preview] it's in the merchant's slot %d for %d copper\n", back - Inventory::FirstMerchant,
+					zone.Items().at(back).price);
+				click("MerchantWnd", "MW_MerchantSlot" + std::to_string(back - Inventory::FirstMerchant));
+				chat();
+				click("MerchantWnd", "MW_Buy_Button", true);
+				h.RunUntil([&] {
+					for (const auto &[slot, item] : zone.Items())
+						if (slot < Inventory::FirstMerchant && item.id == sold.id)
+							return true;
+					return false;
+				}, 5000);
+				h.RunUntil([] { return false; }, 500);
+				chat();
+				coins("after buying it back");
+				for (const auto &[slot, item] : zone.Items())
+					if (slot < Inventory::FirstMerchant && item.id == sold.id)
+						printf("[preview] %s is back in slot %d\n", item.name.c_str(), slot);
+			}
+		}
+		if (sell < 0) {
+			// Nothing to sell: Buy on the merchant's first item, more than we have.
+			click("MerchantWnd", "MW_MerchantSlot0");
+			const SidlWindow *shop = windows.Find("MerchantWnd");
+			const SidlWindow::Control *buy = shop ? shop->Find("MW_Buy_Button") : nullptr;
+			printf("[preview] Buy %s, %s\n", buy && buy->visible ? "shown" : "hidden", buy && buy->enabled ? "enabled" : "disabled");
+			click("MerchantWnd", "MW_Buy_Button", true);
+			h.RunUntil([] { return false; }, 300);
+			chat();
+		}
+		h.Snapshot("m3-after");
+		click("MerchantWnd", "DoneButton");
+		h.RunUntil([] { return false; }, 300);
+		printf("[preview] after Done: shop %s, inventory %s, merchant items %zu\n", windows.Shown("MerchantWnd") ? "up" : "down",
+			windows.Shown("InventoryWindow") ? "up" : "down",
+			static_cast<size_t>(std::count_if(zone.Items().begin(), zone.Items().end(),
+				[](const auto &p) { return p.first >= Inventory::FirstMerchant; })));
+		chat();
+		h.Key(InputEvent::Key::Enter);
+		h.Type("/camp");
+		h.Key(InputEvent::Key::Enter);
+		h.RunUntil([&] { return zone.GetState() != ZoneSession::State::InZone && zone.GetState() != ZoneSession::State::Camping; },
+			40000);
+		printf("[preview] camped\n");
+		return 0;
+	}
 }
 
 int main(int argc, char **argv)
@@ -191,6 +361,7 @@ int main(int argc, char **argv)
 	config.ui_dir = argv[2];
 	bool stop_at_charselect = argc == 7 && std::string(argv[6]) == "charselect";
 	bool create = argc == 7 && std::string(argv[6]) == "create";
+	bool shop = argc == 7 && std::string(argv[6]) == "shop";
 	if (argc >= 6 && !replay) {
 		std::string login = argv[3];
 		size_t colon = login.rfind(':');
@@ -1461,6 +1632,8 @@ int main(int argc, char **argv)
 					printf("[preview] our model %s, feet at %.2f, %.2f, %.2f (WLD)\n", view->Model()->Code().c_str(),
 						view->Feet().x, view->Feet().y, view->Feet().z);
 			}
+			if (shop)
+				return ShopTest(frontend, h);
 			h.Key(InputEvent::Key::F9);
 			h.Snapshot("8-zone-first-person");
 			h.Key(InputEvent::Key::F9);

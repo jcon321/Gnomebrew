@@ -621,9 +621,22 @@ void SidlWindow::Place(int index, const Rect &rect)
 			Place(child, inside);
 		return;
 	}
+	// A screen inside the window that scrolls (Style_VScroll: the merchant's slots) moves its
+	// pieces up by its scroll position, in ScreenScrollUnit pixels, as far as they reach below it.
+	int scrolled = 0;
+	if (index != 0 && control.def->type == "Screen" && control.def->vscroll && !control.children.empty()) {
+		int bottom = 0;
+		for (int child : control.children)
+			bottom = std::max(bottom, m_controls[child].def->rect.Bottom());
+		control.scroll_page = std::max(parent.h / ScreenScrollUnit, 1);
+		control.scroll_max = std::max((bottom - parent.h + ScreenScrollUnit - 1) / ScreenScrollUnit, 0);
+		control.scroll_pos = std::clamp(control.scroll_pos, 0, control.scroll_max);
+		scrolled = control.scroll_pos * ScreenScrollUnit;
+	}
 	for (int child : control.children) {
 		const SidlPiece &piece = *m_controls[child].def;
 		Rect r = piece.rect;
+		r.y -= scrolled;
 		if (m_controls[child].placed) {
 			const Rect &at = m_controls[child].place;
 			r = {parent.x + at.x, parent.y + at.y, at.w, at.h};
@@ -1285,6 +1298,9 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 				count = " " + count;
 			text.Draw(canvas, r - 13, b - 11, count, SidlFontHeight(1), 0xffffff, SidlFontWeight(1));
 		}
+		// The slot CInvSlotMgr_SelectSlot picked (a merchant's selection): a yellow outline around it.
+		if (control.checked)
+			canvas.Frame(control.rect, 0xffff00);
 	}
 	else if (def.type == "Slider") {
 		DrawSlider(control, canvas, textures, now_ms);
@@ -1397,9 +1413,11 @@ std::string SidlWindow::OnMouse(const InputEvent &event)
 		if (event.type == InputEvent::Type::MouseMove && m_scroll_part == ScrollPart::Thumb) {
 			ScrollLayout layout = LayoutScrollbar(control);
 			int travel = layout.track.h - layout.thumb.h;
-			if (travel > 0)
+			if (travel > 0) {
 				control.scroll_pos = std::clamp(m_scroll_grab_pos + (event.y - m_scroll_grab_y) * control.scroll_max / travel, 0,
 					control.scroll_max);
+				Scrolled(control);
+			}
 		}
 		if (event.type == InputEvent::Type::MouseUp) {
 			m_scroll_control = -1;
@@ -1592,6 +1610,14 @@ bool SidlWindow::OnWheel(int x, int y, int notches)
 void SidlWindow::ScrollBy(Control &control, int rows)
 {
 	control.scroll_pos = std::clamp(control.scroll_pos + rows, 0, std::max(control.scroll_max, 0));
+	Scrolled(control);
+}
+
+void SidlWindow::Scrolled(Control &control)
+{
+	// A scrolling screen's pieces move with it.
+	if (control.def->type == "Screen" && control.parent >= 0 && !control.children.empty())
+		Place(static_cast<int>(&control - m_controls.data()), control.rect);
 }
 
 // ---------------------------------------------------------------- gauges

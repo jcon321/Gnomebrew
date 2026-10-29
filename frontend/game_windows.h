@@ -98,6 +98,7 @@
 #include "zone_session.h"
 
 #include <cstdint>
+#include <functional>
 #include <string>
 
 class Canvas;
@@ -175,7 +176,9 @@ struct GameWindowState
 	// Or the coin a money button opened it for (0 platinum .. 3 copper; -1 none) and where the
 	// coins are (Inventory::Place: the purse, the bank): CQuantityWnd's window to notify.
 	int quantity_coin = -1, quantity_place = 0;
-	bool QuantityUp() const { return quantity_slot >= 0 || quantity_coin >= 0; }
+	// Or another window's: what it does with the number (the merchant's Buy and Sell).
+	std::function<void(int)> quantity_done;
+	bool QuantityUp() const { return quantity_slot >= 0 || quantity_coin >= 0 || quantity_done != nullptr; }
 	int quantity_value = 0;
 	std::string quantity_text;
 
@@ -228,6 +231,11 @@ bool InventoryClick(WindowManager &windows, GameWindowState &state, ZoneSession 
 	const std::string &control, bool shift, bool ctrl, InventoryClickResult &result);
 // Enter in the quantity window's edit box: as Accept.
 bool QuantityEnter(WindowManager &windows, GameWindowState &state, ZoneSession &zone, InventoryClickResult &result);
+// CQuantityWnd::Activate for another window: how many of `count`, the window at (x, y) (-1: centered
+// on the screen); `done` gets the number, at once when Shift, Ctrl or a count of one says it, or
+// when the window's accepted.
+void AskQuantity(WindowManager &windows, GameWindowState &state, int count, int x, int y, bool shift, bool ctrl,
+	std::function<void(int)> done);
 void UpdateGameWindows(WindowManager &windows, const GameValues &values, GameWindowState &state);
 
 // A skill's name (eqgame's __SkillDict, from InitializeSkillData), from eqstr (null: English).

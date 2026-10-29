@@ -158,6 +158,8 @@ namespace
 		item.slot = Read<int16_t>(d, o + 184);
 		item.idfile = CString(d, o + 144, 30);
 		item.slots = Read<int32_t>(d, o + 188);
+		item.price = Read<int32_t>(d, o + 192);
+		item.sell_rate = Read<float>(d, o + 288);
 		if (item.item_class == 0) {
 			item.str = Read<int8_t>(d, o + 228);
 			item.sta = Read<int8_t>(d, o + 229);
@@ -751,6 +753,58 @@ float ZoneSession::SpawnDistance(uint16_t id) const
 		return -1e27f;
 	float dx = it->second.x - m_profile.x, dy = it->second.y - m_profile.y, dz = it->second.z - m_profile.z;
 	return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+bool ZoneSession::ShopRequest(uint16_t npc)
+{
+	if (m_state != State::InZone)
+		return false;
+	uint8_t body[12] = {};
+	std::memcpy(body, &npc, 2);
+	std::memcpy(body + 2, &m_my_id, 2);
+	bool sent = Send(ZoneOp::ShopRequest, body, sizeof(body), "OP_ShopRequest " + std::to_string(npc));
+	if (sent && m_replay) { // the replay's merchant is closed
+		uint8_t answer[12] = {};
+		std::memcpy(answer, &npc, 2);
+		ReplayAnswer(ZoneOp::ShopRequest, answer, sizeof(answer));
+	}
+	return sent;
+}
+
+bool ZoneSession::ShopBuy(uint16_t npc, int16_t slot, int32_t quantity)
+{
+	if (m_state != State::InZone)
+		return false;
+	uint8_t body[16] = {};
+	std::memcpy(body, &npc, 2);
+	std::memcpy(body + 2, &m_my_id, 2);
+	std::memcpy(body + 4, &slot, 2);
+	std::memcpy(body + 8, &quantity, 4);
+	return Send(ZoneOp::ShopPlayerBuy, body, sizeof(body),
+		"OP_ShopPlayerBuy slot " + std::to_string(slot) + " x" + std::to_string(quantity));
+}
+
+bool ZoneSession::ShopSell(uint16_t npc, int16_t slot, int32_t quantity)
+{
+	if (m_state != State::InZone)
+		return false;
+	uint8_t body[16] = {};
+	std::memcpy(body, &npc, 2);
+	std::memcpy(body + 2, &m_my_id, 2);
+	std::memcpy(body + 4, &slot, 2);
+	std::memcpy(body + 8, &quantity, 4);
+	return Send(ZoneOp::ShopPlayerSell, body, sizeof(body),
+		"OP_ShopPlayerSell slot " + std::to_string(slot) + " x" + std::to_string(quantity));
+}
+
+bool ZoneSession::ShopEnd(uint16_t npc)
+{
+	for (int16_t slot = 6000; slot < 6080; ++slot)
+		m_items.erase(slot);
+	if (m_state != State::InZone)
+		return false;
+	uint16_t body[2] = {npc, m_my_id};
+	return Send(ZoneOp::ShopEnd, body, sizeof(body), "OP_ShopEnd " + std::to_string(npc));
 }
 
 bool ZoneSession::MoveCoin(int from, int to, int from_coin, int to_coin, int32_t amount)
@@ -1386,6 +1440,67 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 			UpdateAppearance(); // msg_snd_ieq
 		}
 		break;
+	case ZoneOp::ShopRequest: {
+		// msg_req_merchantitems: {u16 npc, u16, u8 command, u8[3], float rate}.
+		if (data.size() < 12)
+			break;
+		Event e{Event::Type::MerchantOpened};
+		e.merchant.npc = Read<uint16_t>(data, 0);
+		e.merchant.command = data[4];
+		e.merchant.rate = Read<float>(data, 8);
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::ShopInventoryPacket: {
+		// A count, a byte, then deflated {u16 item class, Item_Struct} records, each in its slot.
+		std::vector<uint8_t> list;
+		if (data.size() > 2 && Inflate::Zlib(data.data() + 2, data.size() - 2, list))
+			for (size_t o = 0; o + 2 + ItemSize <= list.size(); o += 2 + ItemSize) {
+				ZoneItem item = ParseItem(list, o + 2);
+				if (item.slot >= 0 && item.slot < 80) {
+					item.slot = static_cast<int16_t>(6000 + item.slot);
+					m_items[item.slot] = item;
+				}
+			}
+		break;
+	}
+	case ZoneOp::MerchantItemPacket:
+		// One more of a merchant's (something we sold it), in its slot.
+		if (data.size() >= ItemSize) {
+			ZoneItem item = ParseItem(data, 0);
+			if (item.slot >= 0 && item.slot < 80) {
+				item.slot = static_cast<int16_t>(6000 + item.slot);
+				m_items[item.slot] = item;
+			}
+		}
+		break;
+	case ZoneOp::ShopPlayerBuy:
+	case ZoneOp::ShopPlayerSell: {
+		// Merchant_Sell_Struct {u16 npc, u16, u16 slot, u8, u8, u8 quantity @8, u8[3], u32 price @12};
+		// Merchant_Purchase_Struct {u16 npc, u16, u16 slot, u16 price, u8 quantity @8, ...}.
+		if (data.size() < 12)
+			break;
+		bool buy = opcode == ZoneOp::ShopPlayerBuy;
+		Event e{buy ? Event::Type::MerchantBought : Event::Type::MerchantSold};
+		e.merchant.npc = Read<uint16_t>(data, 0);
+		e.merchant.slot = Read<int16_t>(data, 4);
+		e.merchant.quantity = Read<int32_t>(data, 8);
+		e.merchant.price = buy ? (data.size() >= 16 ? Read<int32_t>(data, 12) : 0) : Read<uint16_t>(data, 6);
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::ShopDelItem: {
+		// Merchant_DelItem_Struct {u16 npc, u16, u8 slot, u8 type}.
+		if (data.size() < 5)
+			break;
+		int16_t slot = static_cast<int8_t>(data[4]);
+		if (slot >= 0)
+			m_items.erase(static_cast<int16_t>(6000 + slot));
+		Event e{Event::Type::MerchantItemGone};
+		e.merchant.slot = slot;
+		events.push_back(e);
+		break;
+	}
 	case ZoneOp::ItemLinkResponse:
 		// msg_request_inspect_item: a link's item, for the item display.
 		if (data.size() >= ItemSize) {

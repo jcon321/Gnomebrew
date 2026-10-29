@@ -94,6 +94,15 @@ namespace ZoneOp
 	constexpr uint16_t ContainerPacket = 0x4166; // Item_Struct: a bag
 	constexpr uint16_t SummonedItem = 0x4178;    // Item_Struct: an item on the cursor
 	constexpr uint16_t MoveItem = 0x412c;        // MoveItem_Struct {i32 from, to, qty}: to -1 deletes it
+	// Merchants (Merchant_Click_Struct, Merchant_Sell_Struct, Merchant_Purchase_Struct): see ZoneSession::ShopRequest.
+	constexpr uint16_t ShopRequest = 0x400b;
+	constexpr uint16_t ShopInventoryPacket = 0x400c; // a count, a byte, deflated {u16 item class, Item_Struct} records
+	constexpr uint16_t MerchantItemPacket = 0x4031;  // Item_Struct: one of a merchant's
+	constexpr uint16_t ShopPlayerBuy = 0x4035;
+	constexpr uint16_t ShopPlayerSell = 0x4027;
+	constexpr uint16_t ShopEnd = 0x4037;             // ours: {u16 merchant, u16 us}
+	constexpr uint16_t ShopEndConfirm = 0x4146;
+	constexpr uint16_t ShopDelItem = 0x4038;         // Merchant_DelItem_Struct {u16 npc, u16, u8 slot, u8 type}
 	constexpr uint16_t MoveCoin = 0x412d;          // MoveCoin_Struct {i32 from, to, from coin, to coin, amount}: ours
 	constexpr uint16_t TradeSkillCombine = 0x4105; // Combine_Struct (32 bytes) ours; the zone's empty, done
 	constexpr uint16_t ItemLinkResponse = 0x4264; // ours: ItemViewRequest_Struct {u16 id, char name[64]}, a link clicked; the zone's: its Item_Struct
@@ -225,6 +234,14 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::MoveItem, "OP_MoveItem"},
 	{ZoneOp::TradeSkillCombine, "OP_TradeSkillCombine"},
 	{ZoneOp::MoveCoin, "OP_MoveCoin"},
+	{ZoneOp::ShopRequest, "OP_ShopRequest"},
+	{ZoneOp::ShopInventoryPacket, "OP_ShopInventoryPacket"},
+	{ZoneOp::MerchantItemPacket, "OP_MerchantItemPacket"},
+	{ZoneOp::ShopPlayerBuy, "OP_ShopPlayerBuy"},
+	{ZoneOp::ShopPlayerSell, "OP_ShopPlayerSell"},
+	{ZoneOp::ShopEnd, "OP_ShopEnd"},
+	{ZoneOp::ShopEndConfirm, "OP_ShopEndConfirm"},
+	{ZoneOp::ShopDelItem, "OP_ShopDelItem"},
 	{ZoneOp::TargetMouse, "OP_TargetMouse"},
 	{ZoneOp::TargetCommand, "OP_TargetCommand"},
 	{ZoneOp::GuildsList, "OP_GuildsList"},

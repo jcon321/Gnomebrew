@@ -47,9 +47,20 @@ no rules of its own.
      opened it, the quantity window if it was the bank's, and every bag window. Alt shows every
      slot's tooltip. Still to do: Activate's MakeMeVisible, auto attack off (none yet) and
      SetMusicSelection(3); Deactivate's SavePC.
+   - Merchant window: done (`frontend/merchant_window.*`, eqgame's CMerchantWnd): the right button
+     on a merchant asks for its shop (OP_ShopRequest), the answer opens it with its items
+     (OP_ShopInventoryPacket, OP_MerchantItemPacket, OP_ShopDelItem) in the scrolling slots, a
+     click on any slot selects it (a yellow outline) and says its price, Buy and Sell (the quantity
+     window for a stack) with eqgame's checks and messages, OP_ShopPlayerBuy and OP_ShopPlayerSell
+     and their answers (the price out of the purse, the sale's coins in and the item gone), Done,
+     the close box, Escape and walking away (OP_ShopEnd). Checked live against the server for
+     opening, the prices and the welcome; buying and selling only through their refusals (the
+     test character has no coins or anything worth selling). Still to do: a Bazaar trader's
+     (Type 0: OP_TraderShop, OP_TraderBuy), MakeMeVisible, auto attack off on the request and
+     SetMusicSelection(6), and the item display of a merchant's item (the slots' alt+click goes
+     through the selection now).
    - The right button on a spawn (CEverQuest::RMouseUp within 500 ms, RightClickedOnPlayer): a
-     banker's bank, else /consider of our target. Still to do: a merchant (class 32, OP_ShopRequest),
-     a corpse (CEverQuest_LootCorpse), our class's guildmaster (OP_GMTraining) and the message for
+     banker's bank, a merchant's shop, else /consider of our target. Still to do: a corpse (CEverQuest_LootCorpse), our class's guildmaster (OP_GMTraining) and the message for
      another's (eqstr 1467), a trader in the Bazaar (OP_TraderShop), a horse (race 141), and the
      inspect of a player (doInspect).
    - Bag windows: done (`frontend/containers.*`, eqgame's CContainerMgr and CContainerWnd): the right
@@ -153,7 +164,7 @@ no rules of its own.
    The buff window's: the spell's name. Still to do: the key bound to a
    button after its text (SetKeyTooltip, UpdateTooltipText; needs the keymap), the help texts
    FindWnd's other hit codes ask for (GetHelpTextFromStringTable), and the slots of windows we
-   don't have yet (loot, trade, merchants, give: their own DrawTooltips).
+   don't have yet (loot, trade, give: their own DrawTooltips).
 5. **Options / Escape menu.** Graphics, sound and display settings, mouse sensitivity, the keymap.
 6. **A configurable keymap.** `InputEvent::Key` is a hard-coded list of about 18 keys; make it an
    EQ-style keymap with primary and alternate bindings.

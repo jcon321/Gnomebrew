@@ -1,5 +1,6 @@
 #include "eqstr.h"
 
+#include <cctype>
 #include <cstdlib>
 #include <fstream>
 
@@ -37,17 +38,56 @@ std::string EqStr::Format(uint32_t id, const std::vector<std::string> &args) con
 			out += " " + arg;
 		return out;
 	}
+	return Expand(it->second, args, 0);
+}
+
+std::string EqStr::Expand(const std::string &text, const std::vector<std::string> &args, int depth) const
+{
+	// orderedStringExpansion (@004f7ea2): %1..%9 the arguments; %Tn the string whose id is
+	// argument n, expanded with the same arguments; %#id that string; %% a '%'. Ten deep at most.
+	if (++depth > 10)
+		return "";
+	auto inner = [&](const std::string &number) {
+		auto found = m_strings.find(static_cast<uint32_t>(std::strtoul(number.c_str(), nullptr, 10)));
+		return found != m_strings.end() ? Expand(found->second, args, depth) : std::string();
+	};
 	std::string out;
-	const std::string &text = it->second;
 	for (size_t i = 0; i < text.size(); ++i) {
-		if (text[i] == '%' && i + 1 < text.size() && text[i + 1] >= '1' && text[i + 1] <= '9') {
-			size_t arg = static_cast<size_t>(text[i + 1] - '1');
+		char next = i + 1 < text.size() ? text[i + 1] : '\0';
+		if (text[i] != '%') {
+			out.push_back(text[i]);
+			continue;
+		}
+		if (next >= '1' && next <= '9') {
+			size_t arg = static_cast<size_t>(next - '1');
 			if (arg < args.size())
 				out += args[arg];
 			++i;
 		}
+		else if (next == 'T' && i + 2 < text.size() && text[i + 2] >= '1' && text[i + 2] <= '9') {
+			size_t arg = static_cast<size_t>(text[i + 2] - '1');
+			if (arg < args.size() && !args[arg].empty())
+				out += inner(args[arg]);
+			i += 2;
+		}
+		else if (next == '#') {
+			size_t end = i + 2;
+			while (end < text.size() && std::isalnum(static_cast<unsigned char>(text[end])) && end - (i + 2) < 8)
+				++end;
+			if (end == i + 2) {
+				out += "%#";
+				++i;
+				continue;
+			}
+			out += inner(text.substr(i + 2, end - (i + 2)));
+			i = end - 1;
+		}
+		else if (next == '%') {
+			out.push_back('%');
+			++i;
+		}
 		else
-			out.push_back(text[i]);
+			out.push_back('%');
 	}
 	return out;
 }
