@@ -32,7 +32,16 @@ no rules of its own.
      down, split through the quantity window and put away on the character view (`core/inventory.*`).
      Still to do: for stats, resists, AC and ATK, items' worn effects, ATK's buffs, AAs,
      the Resistant Discipline, drunkenness and berserking; the XP and AA gauges (the experience table); coins onto the
-     cursor, Destroy, Alt. Advance, bag windows, and icons in the hot button window's weapon slots.
+     cursor, Destroy, Alt. Advance, and icons in the hot button window's weapon slots.
+   - Bag windows: done (`frontend/containers.*`, eqgame's CContainerMgr and CContainerWnd): the right
+     button on a bag opens or closes its window, laid out for its slots with Combine and Done
+     under them, kept in the layout as BagInv1..8 (BagBank, BagTrade), picking up or swapping out
+     a bag closes it, Escape closes them all, Alt shows every slot's tooltip, and Combine sends
+     OP_TradeSkillCombine with the class and racial containers' checks, the slots locked until the
+     zone answers. Still to do: world containers (forges, ovens: OP_ClickObject,
+     OP_ClickObjectAction, OP_ObjectItemPacket, BagWorld1 and its 20 unit distance check in
+     CContainerMgr::Process), the bag's open flag (EQ_Container::Open), and the right button on a
+     book or note reading it (EQ_Note::SendTextRequestMsg, OP_ReadBook).
    - Equipping: our model's armor, weapons and light follow what we have on (`ZoneSession::UpdateAppearance`).
      Still to do: dual wield
      from the class table rather than the zone's 254/255, the casting check (no moves but from the
@@ -49,7 +58,7 @@ no rules of its own.
      OP_ItemLinkResponse), and clicking the icon links the item in the chat line
      (`CItemDisplayWnd::WndNotification`; so does Shift+click on a slot while typing, our own).
      Still to do: FV's always-no-drop item ids (`EQ_Item::IsSpecialNoDrop`), open bags, items in
-     other windows (bags, loot, trade, merchants), and the item+0xdc check WndNotification makes
+     other windows (loot, trade, merchants), and the item+0xdc check WndNotification makes
      before linking (unknown field).
    - Skills window: the skills the server says we have (not 254 or 255) and our languages, with
      their ranks, kept up to date by OP_SkillUpdate. Still to do: racial skills the server marks
@@ -125,7 +134,7 @@ no rules of its own.
    The buff window's: the spell's name. Still to do: the key bound to a
    button after its text (SetKeyTooltip, UpdateTooltipText; needs the keymap), the help texts
    FindWnd's other hit codes ask for (GetHelpTextFromStringTable), and the slots of windows we
-   don't have yet (bags, bank, loot, trade, merchants, give: their own DrawTooltips).
+   don't have yet (bank, loot, trade, merchants, give: their own DrawTooltips).
 5. **Options / Escape menu.** Graphics, sound and display settings, mouse sensitivity, the keymap.
 6. **A configurable keymap.** `InputEvent::Key` is a hard-coded list of about 18 keys; make it an
    EQ-style keymap with primary and alternate bindings.

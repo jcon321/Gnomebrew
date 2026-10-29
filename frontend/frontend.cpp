@@ -684,6 +684,7 @@ void FrontEnd::Update(uint64_t now_ms)
 	if (m_screen == Screen::Zone) {
 		Rect area = ScreenArea();
 		m_windows.Update(now_ms, m_mouse_x - area.x, m_mouse_y - area.y);
+		m_window_state.busy = m_containers.Combining();
 		HandleWindowClicks();
 		m_spell_book.Frame(now_ms);
 		m_spell_cast.Frame(now_ms);
@@ -699,6 +700,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		if (m_zone_view)
 			m_game_values.heading = m_zone_view->Movement().heading;
 		UpdateGameWindows(m_windows, m_game_values, m_window_state);
+		m_containers.Update();
 		if (m_windows.TakeChanged())
 			SaveUiLayout();
 	}
@@ -1500,6 +1502,7 @@ void FrontEnd::BuildZoneWindows()
 		if (!m_windows.Add(window.screen, window.shown, &error))
 			Log("UI: " + error);
 	}
+	Containers::AddWindows(m_windows);
 	// eqgame names the file after the character and the first 7 characters of the login
 	// server's address (UI_Name_loginse.ini for loginserver.takproject.net).
 	m_ui_layout_path.clear();
@@ -1546,6 +1549,14 @@ void FrontEnd::BuildZoneWindows()
 	m_game_values.spell_cast = &m_spell_cast;
 	m_chat.Attach(m_windows.Find("ChatWindow"));
 	m_chat.SetLinkColor(m_chat_colors.Get(ItemTags::ColorType));
+	Containers::Host bag_host;
+	bag_host.sound = [this](int wave) {
+		if (m_sound)
+			m_sound->PlayWave(wave);
+	};
+	bag_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
+	m_containers.Attach(m_windows, m_zone, m_game_values, std::move(bag_host)); // the bag windows hidden
+	m_windows.TakeChanged();
 }
 
 void FrontEnd::SaveUiLayout()
@@ -1589,9 +1600,21 @@ void FrontEnd::HandleWindowClicks()
 	for (const auto &hold : m_windows.TakeHolds())
 		if (!m_zone.Items().count(Inventory::Cursor))
 			GameWindowHold(m_windows, m_window_state, hold.window, hold.control);
-	for (const auto &click : m_windows.TakeRightClicks())
-		if (!m_spell_book.RightClick(click.window, click.control))
-			GameWindowRightClick(m_windows, m_window_state, click.window, click.control);
+	for (const auto &click : m_windows.TakeRightClicks()) {
+		if (m_spell_book.RightClick(click.window, click.control))
+			continue;
+		// CInvSlot::HandleRButtonUp: a bag's window opens or closes, with no Shift, Ctrl or Alt
+		// down, nothing waiting on the zone and no spell being cast (but a bard's song).
+		if (int slot = InvSlotAt(m_windows, click.window, click.control); slot >= 0) {
+			if (!click.shift && !click.ctrl && !click.alt && !m_window_state.busy &&
+			    (!m_spell_cast.Casting() || m_zone.Profile().class_id == 8))
+				if (const ZoneItem *item = SlotItem(m_windows, m_game_values, click.window, click.control);
+				    item && item->item_class == 1)
+					m_containers.Toggle(static_cast<int16_t>(slot));
+			continue;
+		}
+		GameWindowRightClick(m_windows, m_window_state, click.window, click.control);
+	}
 	for (const auto &hold : m_windows.TakeRightHolds())
 		ShowItemDisplay(m_windows, m_game_values, m_window_state, hold.window, hold.control);
 	for (const auto &release : m_windows.TakeRightReleases())
@@ -1618,6 +1641,9 @@ void FrontEnd::HandleWindowClicks()
 		// The spellbook, the gems and the confirmation dialog.
 		if (m_spell_book.Click(click.window, click.control, click.alt, m_now_ms))
 			continue;
+		// A bag window's Done and Combine.
+		if (m_containers.Click(click.window, click.control))
+			continue;
 		// The inventory's slots and character view, and the quantity window's Accept.
 		InventoryClickResult moved;
 		if (InventoryClick(m_windows, m_window_state, m_zone, click.window, click.control, click.shift, click.ctrl, moved)) {
@@ -1625,6 +1651,8 @@ void FrontEnd::HandleWindowClicks()
 				m_sound->PlayWave(0x92);
 			if (moved.message)
 				ChatOut(EqString(moved.message, Inventory::MessageText(moved.message)), ChatType::Red);
+			if (moved.close_bag >= 0)
+				m_containers.Close(moved.close_bag);
 			// The quantity window's edit box takes the keys from the others.
 			if (m_windows.Shown("QuantityWnd")) {
 				m_chat.Close();
@@ -1815,6 +1843,9 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			break;
 		case Type::ItemLink:
 			ShowItemDisplay(m_windows, m_game_values, m_window_state, m_zone.LinkedItem());
+			break;
+		case Type::CombineAnswered:
+			m_containers.CombineAnswered();
 			break;
 		case Type::Emote:
 			ChatOut(event.text, ChatType::Emote);
@@ -2223,13 +2254,18 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			break;
 		}
 		// ExecuteCmd's escape: no target, then CDisplay_NewUIProcessEscape closes the first of its
-		// windows that's open (of the ones we have: the item display, quantity, help, skills, options,
-		// the social editor, inventory).
+		// windows that's open (of the ones we have: the item display, quantity, help, skills, then
+		// every bag window at once, options, the spellbook, the social editor, inventory).
 		SetTarget(0);
 		ChatOut(EqString(12375, "You no longer have a target."), ChatType::Default);
 		for (const char *screen :
-			{"ItemDisplayWindow", "QuantityWnd", "HelpWindow", "SkillsWindow", "OptionsWindow", "SpellBookWnd",
-			 "SocialEditWnd", "InventoryWindow"})
+			{"ItemDisplayWindow", "QuantityWnd", "HelpWindow", "SkillsWindow", "", "OptionsWindow", "SpellBookWnd",
+			 "SocialEditWnd", "InventoryWindow"}) {
+			if (!*screen) {
+				if (m_containers.CloseAll())
+					break;
+				continue;
+			}
 			if (m_windows.Shown(screen)) {
 				if (std::string(screen) == "SpellBookWnd")
 					m_spell_book.Deactivate();
@@ -2237,6 +2273,7 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 					m_windows.Show(screen, false);
 				break;
 			}
+		}
 		break;
 	}
 	default:
@@ -2292,6 +2329,11 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 			for (int gem = 0; gem < ZoneProfile::Gems; ++gem)
 				if (const SidlWindow::Control *c = gems->Find("CSPW_Spell" + std::to_string(gem)); c && gems->Shown(*c))
 					m_windows.DrawTooltip(canvas, m_text, c->tooltip, c->def->font, c->rect.Right() + 2, c->rect.y + 2, false);
+	// CContainerWnd::PostDraw: Alt held over a bag window shows each slot's tooltip.
+	if (m_alt_down) {
+		Rect area = ScreenArea();
+		m_containers.DrawTooltips(canvas, m_text, m_mouse_x - area.x, m_mouse_y - area.y);
+	}
 	// Top left and right: the debug menu's stat card and radar, above the windows.
 	m_debug.Draw(canvas, m_text, m_zone, m_zone_view.get(), height - 10);
 	times.ui = since(ui_start);

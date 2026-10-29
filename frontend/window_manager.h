@@ -66,7 +66,10 @@ public:
 	void Reset(const SidlDefinitions *defs, SidlTextures *textures, int screen_width, int screen_height);
 	// Builds a window from its <Screen>, where the UI files put it (laid out for 640x480, so
 	// moved for this resolution as LoadIniInfo's ConvertToRes does). Null if there's no such screen.
-	SidlWindow *Add(const std::string &screen, bool shown, std::string *error = nullptr);
+	// `name` (default: the screen's) is what the other calls, the clicks and the layout's
+	// [section] know it by: one screen can be up more than once (a bag window per bag,
+	// CContainerWnd's EnableIniStorage names: BagInv1...).
+	SidlWindow *Add(const std::string &screen, bool shown, std::string *error = nullptr, const std::string &name = "");
 	SidlWindow *Find(const std::string &screen);
 	// What gauges and labels with an EQType show, for every window (kept across Reset).
 	void SetValues(SidlValues *values);
@@ -82,6 +85,8 @@ public:
 	bool Shown(const std::string &screen) const;
 	void Raise(const std::string &screen); // on top of the others (CXWnd::Show's bring to front)
 	void MoveTo(const std::string &screen, int x, int y); // CXWnd::Move: its top left, the same size
+	void Resize(const std::string &screen, int w, int h); // CXWnd::Resize: the same top left
+	Rect WindowRect(const std::string &screen) const;      // where it is unminimized; empty if there's none
 	int ScreenWidth() const { return m_width; }
 	int ScreenHeight() const { return m_height; }
 	std::string ScreenAt(int x, int y) const; // the topmost shown window under (x, y), or ""

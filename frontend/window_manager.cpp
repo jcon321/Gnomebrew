@@ -66,7 +66,7 @@ void WindowManager::Reset(const SidlDefinitions *defs, SidlTextures *textures, i
 	m_box_down = SidlWindow::TitleBox::None;
 }
 
-SidlWindow *WindowManager::Add(const std::string &screen, bool shown, std::string *error)
+SidlWindow *WindowManager::Add(const std::string &screen, bool shown, std::string *error, const std::string &name)
 {
 	if (!m_defs)
 		return nullptr;
@@ -77,7 +77,7 @@ SidlWindow *WindowManager::Add(const std::string &screen, bool shown, std::strin
 			*error = build_error;
 		return nullptr;
 	}
-	w->screen = screen;
+	w->screen = name.empty() ? screen : name;
 	w->shown = shown;
 	w->wnd.SetValues(m_values);
 	Rect r = w->wnd.Def().rect;
@@ -236,6 +236,23 @@ void WindowManager::MoveTo(const std::string &screen, int x, int y)
 			m_changed = true;
 			return;
 		}
+}
+
+void WindowManager::Resize(const std::string &screen, int w, int h)
+{
+	for (auto &wp : m_windows)
+		if (wp->screen == screen) {
+			Place(*wp, {wp->rect.x, wp->rect.y, std::min(w, m_width), std::min(h, m_height)});
+			return;
+		}
+}
+
+Rect WindowManager::WindowRect(const std::string &screen) const
+{
+	for (const auto &wp : m_windows)
+		if (wp->screen == screen)
+			return wp->rect;
+	return {};
 }
 
 bool WindowManager::Shown(const std::string &screen) const
@@ -430,6 +447,9 @@ bool WindowManager::OnMouse(const InputEvent &event, uint64_t now_ms)
 		}
 		else {
 			bool same = !at.control.empty() && at.window == m_right_press.window && at.control == m_right_press.control;
+			at.alt = event.alt;
+			at.shift = event.shift;
+			at.ctrl = event.ctrl;
 			if (same)
 				(m_right_held ? m_right_releases : m_right_clicks).push_back(at);
 			m_right_press = {};

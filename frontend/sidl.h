@@ -300,6 +300,14 @@ public:
 		// InvSlot: how many of the item are in it, in a dark box at its corner (CInvSlotWnd::Draw);
 		// 0 shows none.
 		int count = 0;
+		// InvSlot: the item slot it shows, as its window sets it (CInvSlotWnd's SidlScreen: a bag
+		// window's slots are the bag's); -1 its EQType's, as the inventory's are.
+		int item_slot = -1;
+		int ItemSlot() const { return item_slot >= 0 ? item_slot : def->eq_type; }
+		// CXWnd::Move by its window: it sits at `place` in its parent's client area, not its
+		// Location (a bag window's Combine and Done under its last slot).
+		bool placed = false;
+		Rect place;
 		// Slider (CSliderWnd): its value, 0 to ticks - 1. The mouse moves it; its owner reads it.
 		int slider_value = 0, slider_ticks = 2;
 		// Listbox (CListWnd): its rows' text by column, each column's justification (0 left, 1
@@ -354,6 +362,9 @@ public:
 	// CXWnd::MoveAndInvalidate: a control's new rect, with its children laid out again.
 	void Move(const std::string &screen_id, const Rect &rect);
 	void Move(const Rect &rect) { Place(0, rect); } // the window itself
+	// CXWnd::Move for a child: its top left at (x, y) in its parent's client area, kept there as
+	// the window moves.
+	void Reposition(const std::string &screen_id, int x, int y);
 	void Focus(const std::string &screen_id); // "" (or a missing one): nothing
 	bool Focused(const std::string &screen_id) const;
 	bool Typing() const; // a shown, enabled edit box has the focus, and OnKey goes to it

@@ -119,6 +119,7 @@ add_library(eqfrontend STATIC
     frontend/chat_text.cpp
     frontend/game_values.cpp
     frontend/game_windows.cpp
+    frontend/containers.cpp
     frontend/spell_book.cpp
     frontend/spell_cast.cpp
     frontend/buffs.cpp

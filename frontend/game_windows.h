@@ -94,6 +94,7 @@
 //   - msg_request_inspect_item: a link's item, when the zone sends it for a click on the link;
 //   - WndNotification (@00425cf6): a click on the icon puts the item's tag in the chat input.
 
+#include "sidl.h"
 #include "zone_session.h"
 
 #include <cstdint>
@@ -175,6 +176,9 @@ struct GameWindowState
 	std::string quantity_text;
 
 	ZoneItem display_item; // the item display's (id 0: none yet)
+
+	// DAT_007d0254: a request the zone has yet to answer (a combine); the slots take no clicks.
+	bool busy = false;
 };
 
 // A button clicked in one of the windows: the page arrows and the hot buttons. A hot button that
@@ -185,6 +189,10 @@ std::string GameWindowClick(WindowManager &windows, GameWindowState &state, cons
 void GameWindowHold(WindowManager &windows, GameWindowState &state, const std::string &window, const std::string &control);
 // A button right clicked: a social's opens the social editor on it.
 void GameWindowRightClick(WindowManager &windows, GameWindowState &state, const std::string &window, const std::string &control);
+// CInvSlot::SetItem: an InvSlot showing `item` (null: none), its icon, its stack's count and its tooltip.
+void FillInvSlot(SidlWindow::Control &control, const ZoneItem *item, const GameValues &values);
+// The item slot a shown InvSlot shows (its window's, or its EQType); -1 if the control isn't one.
+int InvSlotAt(WindowManager &windows, const std::string &window, const std::string &control);
 // The item in an inventory slot; null if the control isn't a slot with an item.
 const ZoneItem *SlotItem(WindowManager &windows, const GameValues &values, const std::string &window, const std::string &control);
 // An inventory slot's item in the item display; false if the control isn't a slot with an item.
@@ -201,6 +209,7 @@ struct InventoryClickResult
 {
 	bool sound = false;
 	uint32_t message = 0;
+	int16_t close_bag = -1; // a bag picked up or swapped out: its window closes (CloseContainer)
 };
 bool InventoryClick(WindowManager &windows, GameWindowState &state, ZoneSession &zone, const std::string &window,
 	const std::string &control, bool shift, bool ctrl, InventoryClickResult &result);

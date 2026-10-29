@@ -25,6 +25,7 @@
 #include "login_client.h"
 #include "sidl.h"
 #include "buffs.h"
+#include "containers.h"
 #include "spell_book.h"
 #include "spell_cast.h"
 #include "weather.h"
@@ -316,6 +317,7 @@ private:
 	SpellBook m_spell_book;         // and the spell gems
 	SpellCast m_spell_cast;         // our casting from them
 	Buffs m_buffs;                  // the spells on us
+	Containers m_containers;        // the bag windows
 	bool m_jump_requested = false;
 	bool m_crouch_sent = false; // the stance last sent for a standing jump's wind-up
 	// Mouse drags in the zone: the right button turns the character and tilts the view, the left

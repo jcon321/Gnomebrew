@@ -446,6 +446,78 @@ int main(int argc, char **argv)
 				slot_click(stack, false);
 				items("put back");
 			}
+			// A bag: the right button on it opens its window (its slots, Done, its size), an item
+			// goes from the inventory into it and back out, then Done closes it; Escape closes them all.
+			int bag = -1;
+			for (const auto &[slot, item] : frontend.Zone().Items())
+				if (slot >= Inventory::FirstGeneral && slot <= Inventory::LastGeneral && item.item_class == 1 && bag < 0)
+					bag = slot;
+			// Without one, a backpack (8 slots) in the first empty general slot: the replay's zone
+			// hears nothing of it.
+			for (int16_t slot = Inventory::FirstGeneral; slot <= Inventory::LastGeneral && bag < 0; ++slot)
+				if (!frontend.Zone().Items().count(slot)) {
+					ZoneItem backpack;
+					backpack.slot = slot;
+					backpack.id = 17005;
+					backpack.item_class = 1;
+					backpack.name = "Backpack";
+					backpack.icon = 565;
+					backpack.size = 2;
+					backpack.bag_slots = 8;
+					backpack.bag_size = 2;
+					backpack.bag_type = 1;
+					const_cast<ZoneSession &>(frontend.Zone()).EditItems()[slot] = backpack;
+					bag = slot;
+				}
+			if (bag >= 0) {
+				const SidlWindow::Control *c = inventory->Find("InvSlot" + std::to_string(bag));
+				int x = c->rect.x + c->rect.w / 2, y = c->rect.y + c->rect.h / 2;
+				frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+				frontend.OnEvent({InputEvent::Type::RightDown, x, y});
+				frontend.OnEvent({InputEvent::Type::RightUp, x, y});
+				frontend.Update(NowMs());
+				std::string name = Containers::WindowName(static_cast<int16_t>(bag));
+				if (const SidlWindow *bag_wnd = where(name.c_str())) {
+					const Rect &r = bag_wnd->Bounds();
+					printf("[preview] %s '%s': %dx%d at %d,%d\n", name.c_str(), bag_wnd->Root().text.c_str(), r.w, r.h, r.x, r.y);
+					for (int n = 1; n <= 10; ++n)
+						if (const SidlWindow::Control *s = bag_wnd->Find("ContainerSlot" + std::to_string(n)); s && s->visible)
+							printf("[preview]   ContainerSlot%d: item slot %d, at %d,%d, '%s'\n", n, s->item_slot, s->rect.x - r.x,
+								s->rect.y - r.y, s->tooltip.c_str());
+					for (const char *id : {"Container_Combine", "DoneButton"})
+						if (const SidlWindow::Control *b = bag_wnd->Find(id))
+							printf("[preview]   %s: %s, at %d,%d\n", id, b->visible ? "shown" : "hidden", b->rect.x - r.x,
+								b->rect.y - r.y);
+					h.RunUntil([] { return false; }, 200);
+					h.Snapshot("w1-bag");
+					auto bag_click = [&](const SidlWindow *wnd, const std::string &id) {
+						if (const SidlWindow::Control *s = wnd->Find(id))
+							click(s->rect.x + s->rect.w / 2, s->rect.y + s->rect.h / 2);
+					};
+					int lone_now = -1;
+					for (const auto &[slot, item] : frontend.Zone().Items())
+						if (slot >= Inventory::FirstGeneral && slot <= Inventory::LastGeneral && item.item_class == 0 &&
+						    !Inventory::Stacks(item) && lone_now < 0)
+							lone_now = slot;
+					if (lone_now >= 0) {
+						slot_click(lone_now, false);
+						bag_click(bag_wnd, "ContainerSlot1");
+						items("into the bag");
+						bag_click(bag_wnd, "ContainerSlot1");
+						slot_click(lone_now, false);
+						items("back out");
+					}
+					bag_click(bag_wnd, "DoneButton");
+					where(name.c_str());
+					frontend.OnEvent({InputEvent::Type::RightDown, x, y});
+					frontend.OnEvent({InputEvent::Type::RightUp, x, y});
+					frontend.Update(NowMs());
+					where(name.c_str());
+					h.Key(InputEvent::Key::Escape); // the bags close before the inventory does
+					where(name.c_str());
+					where("InventoryWindow");
+				}
+			}
 			h.Key(InputEvent::Key::Escape); // eqgame's escape closes the inventory
 			where("InventoryWindow");
 		}

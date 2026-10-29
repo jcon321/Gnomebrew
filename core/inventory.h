@@ -12,8 +12,11 @@
 //   - AutoInventory and AutoGenInventory (@004f0eeb, @004f15cb): the cursor's item onto the same
 //     item in a worn slot, then into the first worn slot it can go in, then onto the same item in
 //     the general slots and bags, then into the first empty general slot, then a bag.
-// Slots are the zone's: 0 the cursor, 1..21 worn, 22..29 general, 250 + (general - 22) * 10 + n
-// in the bags, 330 + n in a bag on the cursor. eqgame keeps a bag's items in it, so they go
+// Slots are the zone's (CInvSlotMgr_MoveItem's): 0 the cursor, 1..21 worn, 22..29 general,
+// 250 + (general - 22) * 10 + n in the bags, 330 + n in a bag on the cursor; the bank's 2000..2007
+// and 2030 + bank * 10 + n in its bags; the trade window's 3000..3007 (ours, 3008..3015 the other
+// side's) and 3030 + trade * 10 + n in their bags; a world container's (a forge) 4000 + n; a
+// corpse's 5000..5029 and a merchant's 6000..6079. eqgame keeps a bag's items in it, so they go
 // with it here too.
 
 #include "zone_session.h"
@@ -26,6 +29,12 @@ namespace Inventory
 	constexpr int16_t Cursor = 0;
 	constexpr int16_t FirstWorn = 1, Range = 11, Primary = 13, Secondary = 14, Ammo = 21;
 	constexpr int16_t FirstGeneral = 22, LastGeneral = 29;
+	constexpr int16_t FirstBank = 2000, LastBank = 2007;
+	constexpr int16_t FirstTrade = 3000, LastTrade = 3007, FirstHisTrade = 3008, LastHisTrade = 3015;
+	constexpr int16_t WorldContainer = 4000; // its first slot
+	constexpr int16_t FirstLoot = 5000, LastLoot = 5029;
+	constexpr int16_t FirstMerchant = 6000, LastMerchant = 6079;
+	constexpr int BagSlots = 10;
 	constexpr int MaxStack = 20;
 
 	// The messages these give, eqstr ids.
@@ -39,8 +48,8 @@ namespace Inventory
 	bool Stacks(const ZoneItem &item); // CanDropItem
 	int Count(const ZoneItem &item);   // how many in its stack; 0 for an item that doesn't stack
 
-	// The n'th slot of the bag in `slot` (a general slot or the cursor), or -1; and the slot of
-	// the bag a slot is in, or -1 when it isn't in one.
+	// The n'th slot of the bag in `slot` (a general, bank or trade slot, or the cursor), or -1;
+	// and the slot of the bag a slot is in, or -1 when it isn't in one.
 	int16_t BagSlot(int16_t slot, int n);
 	int16_t BagOf(int16_t slot);
 

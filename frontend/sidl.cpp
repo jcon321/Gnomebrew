@@ -624,7 +624,11 @@ void SidlWindow::Place(int index, const Rect &rect)
 	for (int child : control.children) {
 		const SidlPiece &piece = *m_controls[child].def;
 		Rect r = piece.rect;
-		if (piece.auto_stretch) {
+		if (m_controls[child].placed) {
+			const Rect &at = m_controls[child].place;
+			r = {parent.x + at.x, parent.y + at.y, at.w, at.h};
+		}
+		else if (piece.auto_stretch) {
 			int l = piece.left_to_left ? parent.x + piece.left_offset : parent.Right() - piece.left_offset;
 			int t = piece.top_to_top ? parent.y + piece.top_offset : parent.Bottom() - piece.top_offset;
 			int rr = piece.right_to_left ? parent.x + piece.right_offset : parent.Right() - piece.right_offset;
@@ -669,6 +673,17 @@ void SidlWindow::Move(const std::string &screen_id, const Rect &rect)
 {
 	if (Control *control = Find(screen_id))
 		Place(static_cast<int>(control - m_controls.data()), rect);
+}
+
+void SidlWindow::Reposition(const std::string &screen_id, int x, int y)
+{
+	Control *control = Find(screen_id);
+	if (!control || control->parent < 0)
+		return;
+	const Control &parent = m_controls[control->parent];
+	control->place = {x, y, control->rect.w, control->rect.h};
+	control->placed = true;
+	Place(control->parent, parent.rect);
 }
 
 void SidlWindow::Focus(const std::string &screen_id)

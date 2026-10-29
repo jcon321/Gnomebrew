@@ -204,17 +204,8 @@ namespace
 		const std::map<int16_t, ZoneItem> &items = values.zone->Items();
 		for (int slot = 1; slot <= 29; ++slot)
 			if (SidlWindow::Control *control = wnd.Find("InvSlot" + std::to_string(slot))) {
-				auto it = items.find(static_cast<int16_t>(control->def->eq_type));
-				bool has = it != items.end();
-				control->cell_animation = "A_DragItem";
-				control->cell = has && it->second.icon >= 500 ? it->second.icon - 500 : -1;
-				control->count = has ? Inventory::Count(it->second) : 0;
-				// SetItem's tooltip: the item's name; an empty worn slot's name, an empty general slot none.
-				int n = control->def->eq_type;
-				control->tooltip = has                                              ? it->second.name
-				                   : n >= 0 && n < static_cast<int>(std::size(EmptySlotNames)) ? EqText(values.eqstr,
-				                                                                       EmptySlotNames[n].id, EmptySlotNames[n].name)
-				                                                                 : "";
+				auto it = items.find(static_cast<int16_t>(control->ItemSlot()));
+				FillInvSlot(*control, it != items.end() ? &it->second : nullptr, values);
 			}
 		// The character view takes a click only to put away what's on the cursor; otherwise it
 		// moves the window, as the rest of it does.
@@ -636,16 +627,38 @@ void GameWindowRightClick(WindowManager &windows, GameWindowState &state, const 
 	}
 }
 
-const ZoneItem *SlotItem(WindowManager &windows, const GameValues &values, const std::string &window, const std::string &control)
+void FillInvSlot(SidlWindow::Control &control, const ZoneItem *item, const GameValues &values)
 {
-	// The InvSlot a control is and the item in it (the slots are numbered by their EQType, as the
-	// items are).
+	control.cell_animation = "A_DragItem";
+	control.cell = item && item->icon >= 500 ? item->icon - 500 : -1;
+	control.count = item ? Inventory::Count(*item) : 0;
+	// SetItem's tooltip: the item's name; an empty worn slot's name, an empty general slot none.
+	int n = control.ItemSlot();
+	if (item)
+		control.tooltip = item->name;
+	else if (n >= 0 && n < static_cast<int>(std::size(EmptySlotNames)))
+		control.tooltip = EqText(values.eqstr, EmptySlotNames[n].id, EmptySlotNames[n].name);
+	else
+		control.tooltip.clear();
+}
+
+int InvSlotAt(WindowManager &windows, const std::string &window, const std::string &control)
+{
 	SidlWindow *wnd = windows.Find(window);
 	const SidlWindow::Control *slot = wnd ? wnd->Find(control) : nullptr;
-	if (!slot || slot->def->type != "InvSlot" || !values.zone)
+	if (!slot || slot->def->type != "InvSlot" || !wnd->Shown(*slot))
+		return -1;
+	return slot->ItemSlot();
+}
+
+const ZoneItem *SlotItem(WindowManager &windows, const GameValues &values, const std::string &window, const std::string &control)
+{
+	// The InvSlot a control is and the item in it.
+	int slot = InvSlotAt(windows, window, control);
+	if (slot < 0 || !values.zone)
 		return nullptr;
 	const std::map<int16_t, ZoneItem> &items = values.zone->Items();
-	auto it = items.find(static_cast<int16_t>(slot->def->eq_type));
+	auto it = items.find(static_cast<int16_t>(slot));
 	return it != items.end() ? &it->second : nullptr;
 }
 
@@ -681,6 +694,7 @@ void ShowItemDisplay(WindowManager &windows, const GameValues &values, GameWindo
 bool InventoryClick(WindowManager &windows, GameWindowState &state, ZoneSession &zone, const std::string &window,
 	const std::string &control, bool shift, bool ctrl, InventoryClickResult &result)
 {
+	using namespace Inventory;
 	result = {};
 	if (window == "QuantityWnd") {
 		if (control != "QTYW_Accept_Button")
@@ -688,13 +702,11 @@ bool InventoryClick(WindowManager &windows, GameWindowState &state, ZoneSession 
 		FinishQuantity(windows, state, zone);
 		return true;
 	}
-	if (window != "InventoryWindow")
-		return false;
 	const std::map<int16_t, ZoneItem> &items = zone.Items();
-	if (control == "IW_CharacterView") {
-		if (items.count(Inventory::Cursor)) {
+	if (window == "InventoryWindow" && control == "IW_CharacterView") {
+		if (items.count(Cursor)) {
 			result.sound = true;
-			Inventory::AutoInventory(zone);
+			AutoInventory(zone);
 		}
 		return true;
 	}
@@ -702,34 +714,48 @@ bool InventoryClick(WindowManager &windows, GameWindowState &state, ZoneSession 
 	const SidlWindow::Control *slot_control = wnd ? wnd->Find(control) : nullptr;
 	if (!slot_control || slot_control->def->type != "InvSlot")
 		return false;
-	if (state.quantity_slot >= 0)
+	// Nothing while the quantity window's up, or while the zone has a combine to answer.
+	if (state.quantity_slot >= 0 || state.busy)
 		return true;
 	// A button on the cursor goes; then the slot does what it does with an item or none.
 	state.ClearCursor();
-	int16_t slot = static_cast<int16_t>(slot_control->def->eq_type);
-	auto held = items.find(Inventory::Cursor), there = items.find(slot);
+	int16_t slot = static_cast<int16_t>(slot_control->ItemSlot());
+	auto in = [slot](int first, int last) { return slot >= first && slot <= last; };
+	auto held = items.find(Cursor), there = items.find(slot);
+	bool bag_there = there != items.end() && there->second.item_class == 1;
 	if (held == items.end()) {
-		if (there == items.end())
+		// Nothing comes back out of the trade window.
+		if (there == items.end() || in(FirstTrade, 3999))
 			return true;
-		if (Inventory::Stacks(there->second)) {
+		// A stack opens the quantity window, but for a corpse's or a world container's.
+		if (Stacks(there->second) && !in(FirstLoot, LastLoot) && !in(WorldContainer, 4999)) {
 			const Rect &r = slot_control->rect;
-			OpenQuantity(windows, state, zone, slot, Inventory::Count(there->second), r.x + r.w / 2, r.y + r.h / 2,
-				shift, ctrl);
+			OpenQuantity(windows, state, zone, slot, Count(there->second), r.x + r.w / 2, r.y + r.h / 2, shift, ctrl);
 			return true;
 		}
-		result.sound = Inventory::Move(zone, slot, Inventory::Cursor, result.message);
+		if (bag_there)
+			result.close_bag = slot;
+		result.sound = Move(zone, slot, Cursor, result.message);
 		return true;
 	}
 	const ZoneProfile &me = zone.Profile();
-	if (slot > 0 && slot <= Inventory::LastGeneral) {
-		if (!Inventory::CanEquip(me, items, held->second, slot))
+	if (slot > 0 && slot <= LastGeneral) {
+		if (!CanEquip(me, items, held->second, slot))
 			return true;
-		if (slot < Inventory::FirstGeneral && !Inventory::CanUse(me, held->second)) {
-			result.message = Inventory::CantEquip;
+		if (slot < FirstGeneral && !CanUse(me, held->second)) {
+			result.message = CantEquip;
 			return true;
 		}
 	}
-	result.sound = Inventory::Move(zone, Inventory::Cursor, slot, result.message);
+	else if (in(FirstTrade, 3029)) {
+		// Into an empty trade slot, while trading (DropItemIntoTrade does it too); nothing yet.
+		return true;
+	}
+	else if (slot <= LastGeneral || in(3030, 3999) || in(FirstLoot, LastLoot))
+		return true;
+	if (bag_there)
+		result.close_bag = slot;
+	result.sound = Move(zone, Cursor, slot, result.message);
 	return true;
 }
 
@@ -744,9 +770,7 @@ bool QuantityEnter(WindowManager &windows, GameWindowState &state, ZoneSession &
 
 void GameWindowRightRelease(WindowManager &windows, const std::string &window, const std::string &control)
 {
-	SidlWindow *wnd = windows.Find(window);
-	const SidlWindow::Control *slot = wnd ? wnd->Find(control) : nullptr;
-	if (slot && slot->def->type == "InvSlot")
+	if (InvSlotAt(windows, window, control) >= 0)
 		windows.Show("ItemDisplayWindow", false);
 }
 

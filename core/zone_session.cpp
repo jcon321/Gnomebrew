@@ -744,6 +744,25 @@ bool ZoneSession::MoveItem(int16_t from, int16_t to, int32_t qty)
 	return sent;
 }
 
+bool ZoneSession::TradeSkillCombine(uint8_t bag_type, int16_t slot, const int16_t ids[10], uint16_t bag_id)
+{
+	if (m_state != State::InZone)
+		return false;
+	// Combine_Struct (32 bytes): {u8 type, u8, i16 skill (0), i16 slot @4, i16 ids[10] @6,
+	// i16 product (-1) @26, i16 @28, u16 the bag's id @30}.
+	uint8_t body[32] = {};
+	body[0] = bag_type;
+	std::memcpy(body + 4, &slot, 2);
+	std::memcpy(body + 6, ids, 20);
+	int16_t none = -1;
+	std::memcpy(body + 26, &none, 2);
+	std::memcpy(body + 30, &bag_id, 2);
+	bool sent = Send(ZoneOp::TradeSkillCombine, body, sizeof(body), "OP_TradeSkillCombine " + std::to_string(slot));
+	if (sent && m_replay) // the replay's zone has nothing to make
+		ReplayAnswer(ZoneOp::TradeSkillCombine, nullptr, 0);
+	return sent;
+}
+
 void ZoneSession::WornLook(uint16_t material[9], uint32_t color[9]) const
 {
 	auto at = [&](int16_t slot) -> const ZoneItem * {
@@ -1112,6 +1131,14 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		p.gold = Read<int32_t>(data, 2928);
 		p.silver = Read<int32_t>(data, 2932);
 		p.copper = Read<int32_t>(data, 2936);
+		p.bank_platinum = Read<int32_t>(data, 2940);
+		p.bank_gold = Read<int32_t>(data, 2944);
+		p.bank_silver = Read<int32_t>(data, 2948);
+		p.bank_copper = Read<int32_t>(data, 2952);
+		p.cursor_platinum = Read<int32_t>(data, 2956);
+		p.cursor_gold = Read<int32_t>(data, 2960);
+		p.cursor_silver = Read<int32_t>(data, 2964);
+		p.cursor_copper = Read<int32_t>(data, 2968);
 		p.zone_id = Read<uint32_t>(data, 3444);
 		p.deity = Read<uint16_t>(data, 4944);
 		p.birthday = Read<uint32_t>(data, 4948);
@@ -1362,6 +1389,9 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		UpdateAppearance();
 		break;
 	}
+	case ZoneOp::TradeSkillCombine:
+		events.push_back({Event::Type::CombineAnswered});
+		break;
 	case ZoneOp::MemorizeSpell: {
 		// msg_launchspell_info: 0 a spell scribed (FinishScribing), 1 memorized (FinishMemorizing),
 		// 2 forgotten (ForgetMemorizedSpell), 3 a gem's spell gone off (its recast and recovery

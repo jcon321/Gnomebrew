@@ -59,6 +59,8 @@ struct ZoneProfile
 	float x = 0, y = 0, z = 0, heading = 0;
 	uint32_t zone_id = 0;
 	int32_t platinum = 0, gold = 0, silver = 0, copper = 0;
+	int32_t bank_platinum = 0, bank_gold = 0, bank_silver = 0, bank_copper = 0;
+	int32_t cursor_platinum = 0, cursor_gold = 0, cursor_silver = 0, cursor_copper = 0; // coins on the cursor
 	uint32_t birthday = 0;       // when the character was made (a time_t)
 	uint32_t minutes_played = 0; // as of the profile (ZoneSession::MinutesPlayed carries it on)
 	// By skill id (50 is swimming): 255 the class never has it, 254 it does at a later level,
@@ -309,6 +311,7 @@ public:
 			BuffChanged,    // OP_Buff: buff, id its slot, value how (ZoneOp::Buff)
 			Considered,     // consider: OP_Consider's answer
 			Assisted,       // id: the target of whoever we assisted (OP_Assist's answer); not set yet
+			CombineAnswered, // OP_TradeSkillCombine: the zone's done with a combine (its items come as their own packets)
 			LoggedOut,    // camp finished; the zone closes the connection
 			ZoneApproved, // value: the zone we're going to; OP_DeleteSpawn is sent
 			ZoneDenied,   // value: the answer (ZoningMessage: 0 down, -1 not ready, -7 not experienced...)
@@ -402,6 +405,10 @@ public:
 	// it's over, gone off or not, OP_ManaChange; gone off, OP_MemorizeSpell 3 before that.
 	bool CastSpell(int gem, int spell, uint16_t target);
 	bool StopCasting(); // an empty OP_ManaChange: a bard's song stops (StopSpellCast)
+	// CContainerWnd::HandleCombine: OP_TradeSkillCombine for the bag in a general slot (`slot`;
+	// 1000 a world container) with its type and id and the ids in its ten slots (-1 none). The
+	// zone answers with an empty one (CombineAnswered).
+	bool TradeSkillCombine(uint8_t bag_type, int16_t slot, const int16_t ids[10], uint16_t bag_id);
 	// OP_Buff about a buff slot of ours: what's there, and how (ZoneOp::Buff).
 	bool SendBuff(int slot, const ZoneBuff &buff, uint32_t how);
 	void Close();

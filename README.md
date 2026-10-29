@@ -802,6 +802,29 @@ details and the nearest spawns at the top left and the radar at the top right.
 
 - **Moving items** (`core/inventory.*`, `CInvSlot`, `SwapCombine`, `AutoInventory`): described under
   Running the GUI. Each move is `OP_MoveItem`.
+- **Slots** (`CInvSlotMgr_MoveItem`, `CInvSlot::HandleLButtonUp`): 0 the cursor, 1..21 worn,
+  22..29 general, 250 + (general - 22) * 10 + n in their bags and 330 + n in a bag on the cursor;
+  the bank's 2000..2007 and 2030 + bank * 10 + n; the trade window's 3000..3007 (3008..3015 the
+  other side's) and 3030 + trade * 10 + n; a world container's 4000 + n; a corpse's 5000..5029; a
+  merchant's 6000..6079 (the inspect window's 8000..8030 take no clicks). EQMacEmu's slots are the
+  same (`ServerToMacSlot` passes them through). Nothing comes back out of the trade window, a
+  corpse's or a world container's stack takes no quantity window, and an item goes into a trade
+  slot only while trading, an empty one, and no-drop only to an NPC.
+- **Bag windows** (`frontend/containers.*`, `CContainerMgr`, `CContainerWnd`): the right button on
+  a bag (`CInvSlot::HandleRButtonUp`, no Shift, Ctrl or Alt) opens its window or closes it; at
+  most 17 are up. `SetContainer` keeps it in the layout as `BagInv1..8`, `BagBank1..8`,
+  `BagTrade1..16` or `BagWorld1`, first placed at the screen's spot moved 5 right and 2 down per
+  general slot after the first (a bank slot 5 left and 2 down, a trade slot 5 left and 2 up). It
+  shows `bag_slots` of its ten slots, then `Container_Combine` (bag types over 8 but not 51) and
+  Done, each 4 under what's above and centered, and sizes the window 14 wider and 36 taller than
+  they take. Opening and closing play wave 0x91, or 0x86 and 0x85 for bag types 6, 7, 10, 15,
+  18..20 and 22. Picking up or swapping out a bag closes its window, and Escape closes them all
+  after the skills window. Alt over one shows every slot's tooltip at its right less 5, its top +
+  2 (+22 in the second column) (`PostDraw`). `HandleCombine` refuses the class and racial
+  containers (types 24..27 a class's tome, eqstr 12010; 31..45 a race's forge or kit,
+  12011..12023), a cursor with anything on it (12024) and an empty bag (12025), then sends
+  `OP_TradeSkillCombine` (0x4105, 32 bytes: type, slot, the ten item ids, the bag's id @30) and
+  locks the slots (`DAT_007d0254`) until the zone's empty answer.
 - **Item display** (`frontend/item_display.*`, `CItemDisplayWnd`): alt+click (`CInvSlot::HandleLButtonUp`)
   or the right button held 750 ms (`HandleRButtonHeld`) shows it; letting go over a slot after the
   hold closes it. `SetItem`'s text shows the following:

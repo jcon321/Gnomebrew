@@ -7,8 +7,8 @@ namespace Inventory
 {
 	namespace
 	{
-		constexpr int BagSlots = 10;
 		constexpr int16_t FirstBagSlot = 250, CursorBagSlot = 330;
+		constexpr int16_t FirstBankBagSlot = 2030, FirstTradeBagSlot = 3030;
 		constexpr int Agnostic = 396;
 
 		// Item types: what stacks (CanDropItem), and what the range, ammo and hand slots check.
@@ -127,6 +127,10 @@ namespace Inventory
 			return static_cast<int16_t>(CursorBagSlot + n);
 		if (slot >= FirstGeneral && slot <= LastGeneral)
 			return static_cast<int16_t>(FirstBagSlot + (slot - FirstGeneral) * BagSlots + n);
+		if (slot >= FirstBank && slot <= LastBank)
+			return static_cast<int16_t>(FirstBankBagSlot + (slot - FirstBank) * BagSlots + n);
+		if (slot >= FirstTrade && slot <= LastHisTrade)
+			return static_cast<int16_t>(FirstTradeBagSlot + (slot - FirstTrade) * BagSlots + n);
 		return -1;
 	}
 
@@ -136,6 +140,10 @@ namespace Inventory
 			return Cursor;
 		if (slot >= FirstBagSlot && slot < CursorBagSlot)
 			return static_cast<int16_t>(FirstGeneral + (slot - FirstBagSlot) / BagSlots);
+		if (slot >= FirstBankBagSlot && slot < FirstBankBagSlot + (LastBank - FirstBank + 1) * BagSlots)
+			return static_cast<int16_t>(FirstBank + (slot - FirstBankBagSlot) / BagSlots);
+		if (slot >= FirstTradeBagSlot && slot < FirstTradeBagSlot + (LastHisTrade - FirstTrade + 1) * BagSlots)
+			return static_cast<int16_t>(FirstTrade + (slot - FirstTradeBagSlot) / BagSlots);
 		return -1;
 	}
 
