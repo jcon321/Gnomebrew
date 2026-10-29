@@ -857,8 +857,7 @@ details and the nearest spawns at the top left and the radar at the top right.
   (`DAT_007d0258`, part of `IsOkToTransact`). The answer (`msg_req_merchantitems`: command @4, 1
   open; the rate @8, a float, kept as `MerchantGreed`) opens the window and the inventory with it.
   The items come deflated in `OP_ShopInventoryPacket` (0x400c: a count, a byte, then {u16 item
-  class, `Item_Struct`} records) and one at a time in `OP_MerchantItemPacket` (0x4031), each
-  in its `equipSlot` 0..79 (slots 6000..6079); `OP_ShopDelItem` (0x4038) takes one out. Their
+  class, `Item_Struct`} records), each in its `equipSlot` 0..79 (slots 6000..6079); `OP_ShopDelItem` (0x4038) takes one out. Their
   `Price` is the item's times its SellRate, and `SellRate` comes as 1. While the window's up, a
   left click on any slot only selects it (`CInvSlotMgr_SelectSlot`: a yellow 0xffff00 outline,
   `CInvSlotWnd`'s 0x114) and says its price in chat color 0x111: `ValueBuy` is `round(count *
@@ -879,6 +878,10 @@ details and the nearest spawns at the top left and the radar at the top right.
   Escape and walking more than 20 away across the ground (every 500 ms) send `OP_ShopEnd`
   (0x4037: merchant, us) and clear our target. The slots scroll in `MW_MerchantSlotsWnd`, a
   `Style_VScroll` screen; our step is 10 pixels.
+- **`OP_MerchantItemPacket`** (0x4031) isn't a merchant's: the zone's `ItemPacketTrade` (what
+  `PutItemInInventory` sends: something bought, traded for or handed back by an NPC) goes out
+  under it, and eqgame's `HandleWorldMessage` gives it to `msg_snd_ieq` as it does
+  `OP_ItemPacket`: the item into our slot `equipSlot`.
 - **Looting** (`frontend/loot_window.*`, `CLootWnd`): the right button on a corpse is
   `CEverQuest_LootCorpse`: within `ModelHeightOffset * 1.6 + 14` (`PlayerDistance` with 1.2, up and
   down counting 1/1.2) and with nothing else waiting it sends `OP_LootRequest` (0x404e, the corpse's

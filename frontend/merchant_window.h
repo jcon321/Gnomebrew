@@ -7,7 +7,7 @@
 //   - msg_req_merchantitems (@004e5531): the zone's answer opens the window (Activate @00426f18:
 //     the merchant's name on MW_MerchantName, the rate it sent kept as MerchantGreed, the
 //     inventory too if it wasn't up), or with command 0 just stops waiting; its items come in
-//     OP_ShopInventoryPacket and OP_MerchantItemPacket, each in its slot (AddEquipmentToMercArray
+//     OP_ShopInventoryPacket, each in its slot (AddEquipmentToMercArray
 //     and the others: item 0 is "Got a bogus item, deleting it", eqstr 1366), and
 //     OP_ShopDelItem takes one out (ClearMerchantSlot);
 //   - CInvSlot::HandleLButtonUp: while it's up, a click on any slot (the merchant's or ours)

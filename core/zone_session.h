@@ -337,7 +337,7 @@ public:
 			CombineAnswered, // OP_TradeSkillCombine: the zone's done with a combine (its items come as their own packets)
 			// A merchant (merchant): OP_ShopRequest's answer, what we bought (OP_ShopPlayerBuy) and sold
 			// (OP_ShopPlayerSell), and one of its items gone (OP_ShopDelItem: slot); its items are in
-			// Items() at 6000 + their slot (OP_ShopInventoryPacket, OP_MerchantItemPacket).
+			// Items() at 6000 + their slot (OP_ShopInventoryPacket).
 			MerchantOpened,
 			MerchantBought,
 			MerchantSold,

@@ -1479,6 +1479,7 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		break;
 	}
 	case ZoneOp::ItemPacket:
+	case ZoneOp::MerchantItemPacket: // ItemPacketTrade: what we bought, traded for or were given, in its slot
 	case ZoneOp::ContainerPacket:
 	case ZoneOp::BookPacket:
 	case ZoneOp::SummonedItem:
@@ -1564,16 +1565,6 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 			}
 		break;
 	}
-	case ZoneOp::MerchantItemPacket:
-		// One more of a merchant's (something we sold it), in its slot.
-		if (data.size() >= ItemSize) {
-			ZoneItem item = ParseItem(data, 0);
-			if (item.slot >= 0 && item.slot < 80) {
-				item.slot = static_cast<int16_t>(6000 + item.slot);
-				m_items[item.slot] = item;
-			}
-		}
-		break;
 	case ZoneOp::ShopPlayerBuy:
 	case ZoneOp::ShopPlayerSell: {
 		// Merchant_Sell_Struct {u16 npc, u16, u16 slot, u8, u8, u8 quantity @8, u8[3], u32 price @12};

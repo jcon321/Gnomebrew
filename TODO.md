@@ -49,7 +49,7 @@ no rules of its own.
      SetMusicSelection(3); Deactivate's SavePC.
    - Merchant window: done (`frontend/merchant_window.*`, eqgame's CMerchantWnd): the right button
      on a merchant asks for its shop (OP_ShopRequest), the answer opens it with its items
-     (OP_ShopInventoryPacket, OP_MerchantItemPacket, OP_ShopDelItem) in the scrolling slots, a
+     (OP_ShopInventoryPacket, OP_ShopDelItem) in the scrolling slots, a
      click on any slot selects it (a yellow outline) and says its price, Buy and Sell (the quantity
      window for a stack) with eqgame's checks and messages, OP_ShopPlayerBuy and OP_ShopPlayerSell
      and their answers (the price out of the purse, the sale's coins in and the item gone), Done,

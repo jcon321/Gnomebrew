@@ -104,7 +104,9 @@ namespace ZoneOp
 	// Merchants (Merchant_Click_Struct, Merchant_Sell_Struct, Merchant_Purchase_Struct): see ZoneSession::ShopRequest.
 	constexpr uint16_t ShopRequest = 0x400b;
 	constexpr uint16_t ShopInventoryPacket = 0x400c; // a count, a byte, deflated {u16 item class, Item_Struct} records
-	constexpr uint16_t MerchantItemPacket = 0x4031;  // Item_Struct: one of a merchant's
+	// Item_Struct: an item put in one of our slots (the zone's ItemPacketTrade: bought, traded for,
+	// given); eqgame's msg_snd_ieq, as OP_ItemPacket.
+	constexpr uint16_t MerchantItemPacket = 0x4031;
 	constexpr uint16_t ShopPlayerBuy = 0x4035;
 	constexpr uint16_t ShopPlayerSell = 0x4027;
 	constexpr uint16_t ShopEnd = 0x4037;             // ours: {u16 merchant, u16 us}
