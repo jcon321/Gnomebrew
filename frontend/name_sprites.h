@@ -13,7 +13,8 @@
 //   - eqgfx's renderNameTag draws the text 0.05 units a texel of a 20 pixel bold Arial (CDisplay::
 //     InitDDraw's font 5, antialiased), the glyphs stretched to size: a line is one unit tall from
 //     20 units out, and closer than that keeps the size it had at 20. Lines after the first are
-//     0.85 of the first (renderFormattedText).
+//     0.85 of the first (renderFormattedText). It lights the tint with the world's ambient
+//     light (the sky's, before any floor's exposure) plus 0.4, each channel at most full.
 //     eqgame's s3dSetStringSpriteYonClip hides it more than 70 units in front of the camera; TAKP's
 //     eqgame.dll (akplus: [Defaults] EnableExtendedNameplateDistance, on unless set FALSE) and
 //     Zeal (NameplateExtended) turn that off, so names show as far out as the zone is drawn.
@@ -39,6 +40,7 @@ namespace NameSprite
 	constexpr float LineScale = 0.85f;    // each line after the first
 	constexpr int PulseSteps = 11;        // the target's tint: 0 white .. 10 its own color
 	constexpr int PulseMs = 300;          // a step a frame; the cycle is about 300 ms (Zeal's measure)
+	constexpr float LightLift = 0.4f;     // renderNameTag: added to the ambient light
 }
 
 // The text over a spawn's head; empty draws nothing. '\n' starts the guild line.
@@ -49,3 +51,5 @@ std::string NameSpriteText(const ZoneSpawn &spawn, int show_names, const GuildNa
 uint32_t NameSpriteColor(const ZoneSpawn &spawn, uint32_t ruleset);
 // The target's color at pulse `step` (0..10).
 uint32_t NameSpritePulse(uint32_t color, int step);
+// renderNameTag (eqgfx @10054820): `color` lit by the world's ambient light (0..1 a channel).
+uint32_t NameSpriteLit(uint32_t color, float red, float green, float blue);

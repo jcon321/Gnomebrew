@@ -213,3 +213,17 @@ std::string FullZoneName(uint32_t zone_id, const EqStr *strings)
 		return strings->Format(it->string_id, {}).substr(0, 79); // steve_strncpy(.., 0x4f)
 	return it->long_name;
 }
+
+int ZoneExpansion(uint32_t zone_id)
+{
+	// The ids AddZone gives each expansion, the original world's being the rest.
+	if ((zone_id >= 78 && zone_id <= 97 && zone_id != 80) || (zone_id >= 102 && zone_id <= 109))
+		return 1;
+	if (zone_id >= 110 && zone_id <= 129 && zone_id != 122)
+		return 2;
+	if ((zone_id >= 150 && zone_id <= 176) || zone_id == 179)
+		return 3;
+	if (zone_id >= 200 && zone_id <= 223)
+		return 4;
+	return 0;
+}

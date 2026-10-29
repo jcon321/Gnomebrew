@@ -3,6 +3,7 @@
 // word starts is the one, so "/s" is /split and "/g" is /gsay, as in eqgame. Anything else is said.
 
 #include "frontend.h"
+#include "zone_names.h"
 
 #include <cctype>
 #include <cmath>
@@ -14,7 +15,7 @@ namespace
 	enum class Command
 	{
 		None, Say, Tell, Group, Shout, Auction, Ooc, Guild, Reply, Emote, Hail, Location, Target, Camp,
-		ClearChat, ShowNames, Sit, Stand, Book, Cast,
+		ClearChat, ShowNames, Sit, Stand, Book, Cast, Consider, Played, Motd, Time, Afk, Anonymous, Assist,
 	};
 
 	struct CommandEntry
@@ -26,10 +27,10 @@ namespace
 
 	// eqgame's table at 0x609afc, all 277 in order (abbreviations depend on it).
 	constexpr CommandEntry Commands[] = {
-		{"/who", 0, Command::None}, {"/consider", 0, Command::None}, {"/feedback", 0, Command::None},
-		{"/consent", 0, Command::None}, {"/played", 0, Command::None}, {"/ignore", 0, Command::None},
-		{"/anonymous", 0, Command::None}, {"/afk", 0, Command::None}, {"/filter", 0, Command::None},
-		{"/assist", 0, Command::None}, {"/duel", 0, Command::None}, {"/decline", 0, Command::None},
+		{"/who", 0, Command::None}, {"/consider", 0, Command::Consider}, {"/feedback", 0, Command::None},
+		{"/consent", 0, Command::None}, {"/played", 0, Command::Played}, {"/ignore", 0, Command::None},
+		{"/anonymous", 0, Command::Anonymous}, {"/afk", 0, Command::Afk}, {"/filter", 0, Command::None},
+		{"/assist", 0, Command::Assist}, {"/duel", 0, Command::None}, {"/decline", 0, Command::None},
 		{"/split", 0, Command::None}, {"/autosplit", 0, Command::None}, {"/quit", 0, Command::None},
 		{"/stopsong", 0, Command::None}, {"/friends", 0, Command::None}, {"/shield", 0, Command::None},
 		{"/shownames", 0, Command::ShowNames}, {"/shownpcnames", 10, Command::None}, {"/emote", 0, Command::Emote},
@@ -42,7 +43,7 @@ namespace
 		{"/guildpeace", 0, Command::None}, {"/pet", 0, Command::None}, {"/petition", 0, Command::None},
 		{"/private", 1, Command::None}, {"/find", 1, Command::None}, {"/goto", 1, Command::None},
 		{"/becomenpc", 1, Command::None}, {"/searchcorpse", 1, Command::None}, {"/yell", 0, Command::None},
-		{"/motd", 0, Command::None}, {"/corpse", 0, Command::None}, {"/me", 0, Command::Emote},
+		{"/motd", 0, Command::Motd}, {"/corpse", 0, Command::None}, {"/me", 0, Command::Emote},
 		{"/location", 0, Command::Location}, {"/adriver", 0, Command::None}, {"/sdriver", 0, Command::None},
 		{"/chat", 0, Command::None}, {"/join", 0, Command::None}, {"/leave", 0, Command::None},
 		{"/leaveall", 0, Command::None}, {"/list", 0, Command::None}, {"/announce", 0, Command::None},
@@ -77,7 +78,7 @@ namespace
 		{"/welcome", 0, Command::None}, {"/whine", 0, Command::None}, {"/whistle", 0, Command::None},
 		{"/yawn", 0, Command::None}, {"/smack", 0, Command::None}, {"/pat", 0, Command::None},
 		{"/fidget", 0, Command::None}, {"/flex", 0, Command::None}, {"/nudge", 0, Command::None},
-		{"/purr", 0, Command::None}, {"/kiss", 0, Command::None}, {"/time", 0, Command::None},
+		{"/purr", 0, Command::None}, {"/kiss", 0, Command::None}, {"/time", 0, Command::Time},
 		{"/discipline", 0, Command::None}, {"/random", 0, Command::None}, {"/summon", 3, Command::None},
 		{"/broadcast", 4, Command::None}, {"/lastname", 4, Command::None}, {"/zone", 3, Command::None},
 		{"/kick", 4, Command::None}, {"/kill", 3, Command::None}, {"/delcorpse", 8, Command::None},
@@ -146,6 +147,61 @@ namespace
 		for (auto &c : s)
 			c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 		return s;
+	}
+
+	// UTF8_strnicmp(text, word, n) == 0: their first n characters match, ignoring case (a shorter
+	// text matches only as long a word).
+	bool MatchesPrefix(const std::string &text, const std::string &word, size_t n)
+	{
+		return Lower(text.substr(0, n)) == Lower(word.substr(0, n));
+	}
+
+	// ctime without its newline, as eqgame strips it.
+	std::string CTime(std::time_t when)
+	{
+		const char *text = std::ctime(&when);
+		std::string s = text ? text : "";
+		while (!s.empty() && (s.back() == '\n' || s.back() == '\r'))
+			s.pop_back();
+		return s;
+	}
+
+	// GetTimeString (@004f4be1): the days, hours, minutes and seconds that aren't 0, largest first,
+	// joined as eqstr's "%1, %2, and %3"; just "0 seconds" when all are.
+	std::string TimeString(const EqStr *strings, int days, int hours, int minutes, int seconds)
+	{
+		auto part = [strings](int n, uint32_t one, uint32_t many, const char *one_text, const char *many_text) {
+			return FormatEqString(strings, n == 1 ? one : many, n == 1 ? one_text : many_text, {std::to_string(n)});
+		};
+		std::vector<std::string> parts;
+		if (days != 0)
+			parts.push_back(part(days, 12969, 12970, "%1 day", "%1 days"));
+		if (hours != 0)
+			parts.push_back(part(hours, 12971, 12972, "%1 hour", "%1 hours"));
+		if (minutes != 0)
+			parts.push_back(part(minutes, 12973, 12974, "%1 minute", "%1 minutes"));
+		if (seconds != 0 || parts.empty())
+			parts.push_back(part(seconds, 6686, 6687, "%1 second", "%1 seconds"));
+		static const char *const joined[] = {"%1", "%1 and %2", "%1, %2, and %3", "%1, %2, %3, and %4"};
+		size_t n = parts.size() - 1;
+		return FormatEqString(strings, 6688 + static_cast<uint32_t>(n), joined[n], parts);
+	}
+
+	// formatTimeFromSeconds (@004f4dcc).
+	std::string SecondsString(const EqStr *strings, int seconds)
+	{
+		return TimeString(strings, seconds / 86400, seconds % 86400 / 3600, seconds % 3600 / 60, seconds % 60);
+	}
+
+	// EQPlayer_WhatDeityAlliance (@0050976e): 1, 2 or 3 by deity; 0 the agnostic and anyone else.
+	int DeityAlliance(int deity)
+	{
+		switch (deity) {
+		case 201: case 203: case 206: case 211: return 3;
+		case 202: case 205: case 207: case 209: case 213: case 214: case 216: return 2;
+		case 204: case 208: case 210: case 212: case 215: return 1;
+		default: return 0;
+		}
 	}
 }
 
@@ -301,6 +357,168 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 		SetTarget(best, true); // the zone answers with the target it set
 		break;
 	}
+	case Command::Consider: {
+		// /consider (@004f6364): our target, or with anything typed after it, the one typing (eqgame
+		// hands its handlers the local player: "/consider x" considers us).
+		uint16_t id = args.empty() ? Target() : m_zone.MySpawnId();
+		const ZoneSpawn *spawn = id == m_zone.MySpawnId() && id != 0 ? &m_zone.Self() : nullptr;
+		if (!spawn && target != spawns.end() && target->first == id)
+			spawn = &target->second;
+		if (!spawn || id == 0) {
+			ChatOut(format(13063, "Consider whom?", {}), ChatType::Default);
+			break;
+		}
+		if (spawn->npc < 2 && (spawn->race == 72 || spawn->race == 141 || spawn->race == 73 || spawn->race == 114)) {
+			ChatOut(format(13064, "You can't consider that.", {}), ChatType::Default);
+			break;
+		}
+		m_zone.Consider(id, spawn->npc >= 2);
+		break;
+	}
+	case Command::Played: {
+		// /played (@004f4f97, display_played): the birthday, the time played (the profile's
+		// minutes, a minute added for each one since), this session (since the client started).
+		// Then the alarm's time left, when there's one (there's no alarm window yet).
+		ChatOut(format(12968, "%1's birthdate: %2.", {me.name, CTime(me.birthday).substr(0, 24)}), ChatType::Default);
+		uint32_t played = m_zone.MinutesPlayed();
+		ChatOut(format(12975, "Total time playing %1: %2", {me.name,
+			TimeString(m_ui.eqstr, static_cast<int>(played / 1440), static_cast<int>(played % 1440 / 60), static_cast<int>(played % 60), 0)}),
+			ChatType::Default);
+		ChatOut(format(6683, "This session: %1", {SecondsString(m_ui.eqstr, static_cast<int>(std::time(nullptr) - m_started_at))}),
+			ChatType::Default);
+		break;
+	}
+	case Command::Motd:
+		// /motd (@004f492e): the world's message of the day again, in yellow.
+		ChatOut(format(12965, "MESSAGE OF THE DAY: %1", {m_world.Motd()}), ChatType::Yellow);
+		break;
+	case Command::Time: {
+		// /time (CEverQuest_WhatTimeIsIt @005471ae): Norrath's time and date (EQWorldData::
+		// CurrentGameTime), but not in the Plane of Time (219, 223) nor on Luclin, then Earth's.
+		uint32_t zone = me.zone_id;
+		int hour = 0, minute = 0, day = 1, month = 1, year = 0;
+		if (zone == 219 || zone == 223)
+			ChatOut(format(4036, "In this place, Time has no meaning that you can comprehend.", {}), ChatType::Default);
+		else if (ZoneExpansion(zone) == 3)
+			ChatOut(format(12388, "The sun does not move here.  Without that frame of reference, you cannot tell what time it is.", {}),
+				ChatType::Default);
+		else if (m_zone.GameDate(hour, minute, day, month, year)) {
+			static const char *const weekdays[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+			static const char *const months[] = {"January", "February", "March", "April", "May", "June", "July", "August",
+				"September", "October", "November", "December"};
+			char clock[16], ordinal[16], line[160];
+			snprintf(clock, sizeof(clock), hour == 12 || (hour > 12 && hour != 24) ? "%d PM" : "%d AM",
+				hour == 24 ? 12 : hour > 12 ? hour - 12 : hour);
+			const char *suffix = day == 1 || day == 21 ? "st" : day == 2 || day == 22 ? "nd" : day == 3 || day == 23 ? "rd" : "th";
+			snprintf(ordinal, sizeof(ordinal), "%d%s", day, suffix);
+			// The week runs 1..7 and again: days 8..14 less 7, 15..21 less 14, 22 on less 21.
+			int weekday = day >= 22 ? day - 21 : day >= 15 ? day - 14 : day > 7 ? day - 7 : day;
+			snprintf(line, sizeof(line), "It is %s on %s, the %s day of %s, of the year %d.", clock,
+				weekday >= 1 && weekday <= 7 ? weekdays[weekday - 1] : "", ordinal,
+				month >= 1 && month <= 12 ? months[month - 1] : "", year);
+			ChatOut(line, ChatType::Default);
+		}
+		ChatOut(format(12389, "Earth Time: %1", {CTime(std::time(nullptr))}), ChatType::Default);
+		break;
+	}
+	case Command::Afk: {
+		// /afk (@004fb489): off, on with a message to answer tells with, or toggled. The zone hears
+		// SpawnAppearance 24 (the chat server's "/afk on silent" isn't ours).
+		std::string off = format(12946, "off", {});
+		bool afk;
+		if (MatchesPrefix(args, off, 3))
+			afk = false;
+		else if (!args.empty()) {
+			afk = true;
+			if (args.size() < 256)
+				m_afk_message = args;
+		}
+		else
+			afk = !m_zone.Self().afk;
+		if (!afk || args.empty())
+			m_afk_message.clear();
+		m_zone.SetAfk(afk);
+		ChatOut(afk ? format(13199, "You are now A.F.K. (Away From Keyboard).", {})
+		            : format(13200, "You are no longer A.F.K. (Away From Keyboard).", {}),
+			ChatType::Default);
+		break;
+	}
+	case Command::Anonymous: {
+		// /anonymous (@004fc5d1): off, on, or toggled; not while roleplaying. The zone hears
+		// SpawnAppearance 21 and keeps it (SavePC); our name sprite follows Self().
+		uint8_t anon = m_zone.Self().anon;
+		if (anon > 1) {
+			ChatOut(format(13235, "You may not use /anonymous while roleplaying.", {}), ChatType::Default);
+			break;
+		}
+		if (MatchesPrefix(args, format(12946, "off", {}), 3))
+			anon = 0;
+		else if (MatchesPrefix(args, format(12947, "on", {}), 2))
+			anon = 1;
+		else
+			anon = static_cast<uint8_t>(1 - anon);
+		ChatOut(anon == 0 ? format(13237, "You are no longer anonymous.", {}) : format(13236, "You are now anonymous.", {}),
+			ChatType::Default);
+		m_zone.SetAnonymous(anon);
+		break;
+	}
+	case Command::Assist: {
+		// /assist (@004fd7dc): not while we can't (allowslashcommand: casting, but for a bard's
+		// songs). Our target's target, or the nearest one whose name starts with what's typed; "on"
+		// and "off" set AttackOnAssist (and are still looked up as names). The zone answers with
+		// their target (Assisted).
+		if (m_spell_cast.Casting() && me.class_id != 8) {
+			ChatOut(format(12938, "You can't use that command while casting...", {}), ChatType::Default);
+			break;
+		}
+		uint16_t id = 0;
+		if (args.empty()) {
+			if (Target() == 0) {
+				ChatOut(format(13265, "You must target the person you wish to assist, or type their name after the command.", {}),
+					ChatType::Default);
+				ChatOut(format(13266, "FORMAT: /assist <name>", {}), ChatType::Default);
+				break;
+			}
+			id = Target();
+		}
+		else {
+			if (Lower(args) == Lower(format(12947, "on", {}))) {
+				m_config.attack_on_assist = true;
+				ChatOut(format(13263, "Auto attack on assist is now *ON*.", {}), ChatType::Default);
+			}
+			if (Lower(args) == Lower(format(12946, "off", {}))) {
+				m_config.attack_on_assist = false;
+				ChatOut(format(13264, "Auto attack on assist is now *OFF*.", {}), ChatType::Default);
+			}
+			// EQPlayer_get_player_partial_name: the nearest whose name starts with it, us included.
+			std::string want = Lower(args);
+			for (auto &c : want)
+				if (c == ' ')
+					c = '_';
+			if (Lower(me.name).compare(0, want.size(), want) == 0)
+				id = m_zone.MySpawnId();
+			else {
+				const ZoneMovement &at = m_zone_view ? m_zone_view->Movement() : ZoneMovement{};
+				float best_d = 0;
+				for (const auto &[spawn_id, spawn] : spawns) {
+					if (Lower(spawn.name).compare(0, want.size(), want) != 0)
+						continue;
+					float d = std::hypot(spawn.x - at.x, spawn.y - at.y);
+					if (id == 0 || d < best_d) {
+						id = spawn_id;
+						best_d = d;
+					}
+				}
+			}
+			if (id == 0)
+				break;
+		}
+		if (id == m_zone.MySpawnId())
+			ChatOut(format(1403, "You cannot assist yourself!", {}), ChatType::Default);
+		else
+			m_zone.Assist(id);
+		break;
+	}
 	case Command::Camp:
 		StartCamp();
 		break;
@@ -359,4 +577,122 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 	case Command::None:
 		break;
 	}
+}
+
+void FrontEnd::PrintConsider(const ZoneConsider &consider)
+{
+	auto format = [this](uint32_t id, const char *fallback, const std::vector<std::string> &args) {
+		return FormatEqString(m_ui.eqstr, id, fallback, args);
+	};
+	// Who it's about, if we still know them; us too.
+	const ZoneProfile &me = m_zone.Profile();
+	ZoneSpawn self = m_zone.Self();
+	self.name = me.name;
+	self.deity = static_cast<int16_t>(me.deity);
+	const ZoneSpawn *spawn = nullptr;
+	if (consider.target != 0 && consider.target == m_zone.MySpawnId())
+		spawn = &self;
+	else if (auto it = m_zone.Spawns().find(consider.target); it != m_zone.Spawns().end())
+		spawn = &it->second;
+	if (!spawn)
+		return;
+	if (spawn->npc >= 2) {
+		ChatOut(format(12241, "It is futile to consider the dead...", {}), ChatType::Default);
+		return;
+	}
+
+	int diff = static_cast<int>(spawn->level) - static_cast<int>(me.level);
+	std::string pronoun = spawn->gender == 0 ? format(12209, "he", {}) : spawn->gender == 1 ? format(12210, "she", {})
+	                                                                                        : format(12211, "it", {});
+	// The faction (players are indifferent), 1 ally .. 9 scowls.
+	static const char *const factions[] = {"regards you as an ally", "looks upon you warmly", "kindly considers you",
+		"judges you amiably", "regards you indifferently", "scowls at you, ready to attack", "glares at you threateningly",
+		"glowers at you dubiously", "looks your way apprehensively"};
+	uint32_t faction = spawn->npc == 0 ? 5 : consider.faction;
+	std::string regard;
+	if (faction >= 1 && faction <= 9)
+		regard = format(12211 + faction, factions[faction - 1], {});
+	uint8_t pvp = consider.pvpcon;
+	if (pvp == 4) {
+		// The deity teams' rules: our own team are allies; the rest by their demeanor.
+		int mine = DeityAlliance(static_cast<int16_t>(me.deity)), theirs = DeityAlliance(spawn->deity);
+		bool same = theirs == 0 || theirs == mine || (m_zone.Self().gm != 0);
+		if (same)
+			regard = format(12212, factions[0], {});
+		else if (mine == 2)
+			regard = theirs == 1 ? format(12221, "appears to have a goodly demeanor.", {})
+			                     : format(12222, "appears to have an evil demeanor.", {});
+		else if ((mine == 1 || mine == 3) && theirs == 2)
+			regard = format(12220, factions[8], {});
+		else
+			regard = format(12218, factions[6], {});
+	}
+
+	// The con color: the zone's, or under PvP rules by the level difference (green past -4, -8
+	// or -5, red from 5, 9 or 6 up, white between), and anyone under level 6 green to us past it.
+	int color = 20;
+	if (pvp == 1 || pvp == 2 || pvp == 4) {
+		int green = pvp == 1 ? -4 : pvp == 2 ? -8 : -5, red = pvp == 1 ? 5 : pvp == 2 ? 9 : 6;
+		if (diff < green)
+			color = 2;
+		else if (diff > 0)
+			color = diff >= red ? 13 : 20;
+	}
+	else
+		color = static_cast<int>(consider.color);
+	if (pvp != 0) {
+		if (spawn->level < 6)
+			color = 2;
+		else if (me.level < 6)
+			color = 13;
+	}
+
+	// The assessment: by our level (under 15, under 25, the rest) and the color; PvP its own.
+	std::string assessment;
+	auto said = [&](uint32_t id, const char *text) { assessment = format(id, text, {pronoun}); };
+	if (pvp == 0) {
+		if (me.level < 15) {
+			switch (color) {
+			case 2: said(12226, "looks like a reasonably safe opponent."); break;
+			case 4: diff < -3 || me.level < 7 ? said(12227, "looks like you would have the upper hand.")
+			                                  : said(12228, "looks kind of risky, but you might win."); break;
+			case 13: said(12225, "what would you like your tombstone to say?"); break;
+			case 15: said(12231, "looks like quite a gamble."); break;
+			case 18: said(12227, "looks like you would have the upper hand."); break;
+			case 20: me.level < 8 ? said(12229, "looks like an even fight.") : said(12230, "looks kind of risky..you might win."); break;
+			}
+		}
+		else if (me.level < 25) {
+			switch (color) {
+			case 2: diff < -5 ? said(12226, "looks like a reasonably safe opponent.")
+			                  : said(12232, "You would probably win this fight..it's not certain though."); break;
+			case 4: diff < -2 ? said(12234, "looks quite risky, but might be worth a try.")
+			                  : said(12233, "looks kind of dangerous."); break;
+			case 13: said(12225, "what would you like your tombstone to say?"); break;
+			case 15: said(12231, "looks like quite a gamble."); break;
+			case 18: said(12232, "You would probably win this fight..it's not certain though."); break;
+			case 20: said(12235, "%1 appears to be quite formidable."); break;
+			}
+		}
+		else {
+			switch (color) {
+			case 2: diff < -10 ? said(12236, "You could probably win this fight.")
+			                   : said(12237, "This creature could pose problems, you would probably defeat it."); break;
+			case 4: said(12235, "%1 appears to be quite formidable."); break;
+			case 13: said(12225, "what would you like your tombstone to say?"); break;
+			case 15: said(12238, "looks like %1 would wipe the floor with you!"); break;
+			case 18: said(12232, "You would probably win this fight..it's not certain though."); break;
+			case 20: said(12231, "looks like quite a gamble."); break;
+			}
+		}
+	}
+	else {
+		switch (color) {
+		case 2: said(12223, "%1 would not make a worthy opponent."); break;
+		case 13: said(12225, "what would you like your tombstone to say?"); break;
+		case 20: said(12224, "%1 would make quite a formidable opponent."); break;
+		}
+	}
+	// "%1 %2 -- %3", in the con color; white is 10 with the new UI's chat.
+	ChatOut(format(12239, "%1 %2 -- %3", {spawn->DisplayName(), regard, assessment}), color == 20 ? 10 : color);
 }

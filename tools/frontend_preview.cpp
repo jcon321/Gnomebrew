@@ -1339,6 +1339,19 @@ int main(int argc, char **argv)
 			h.RunUntil([] { return false; }, 500);
 			h.Snapshot("9b-zone-target");
 
+			// /consider the guard (the zone answers), /time, /played, /motd, /afk and /anonymous
+			// on and off, and /assist the guard (who has no target: nothing changes).
+			for (const char *line : {"/consider", "/time", "/played", "/motd", "/afk", "/afk", "/anonymous", "/anonymous",
+				     "/assist"}) {
+				h.Key(InputEvent::Key::Enter);
+				h.Type(line);
+				h.Key(InputEvent::Key::Enter);
+				h.RunUntil([] { return false; }, 400);
+			}
+			h.RunUntil([] { return false; }, 1000);
+			printf("[preview] target after /assist: %u\n", frontend.Target());
+			h.Snapshot("9c-zone-commands");
+
 			h.Key(InputEvent::Key::Enter); // camp
 			h.Type("/camp");
 			h.Key(InputEvent::Key::Enter);

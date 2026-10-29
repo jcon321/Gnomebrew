@@ -34,6 +34,7 @@
 #include "zone_view.h"
 #include "widgets.h"
 
+#include <ctime>
 #include <functional>
 #include <memory>
 #include <string>
@@ -55,6 +56,7 @@ struct FrontEndConfig
 	bool velious_textures = true;    // the Velious armor (materials 17..23), else the older armor they stand in for
 	bool char_select_anim_window = true; // our Animations window at character select (CharSelectAnimWindow)
 	bool char_select_emotes = false;     // character select's random animations include socials' (CharSelectEmotes)
+	bool attack_on_assist = false;       // /assist on|off (AttackOnAssist); there's no auto attack yet
 };
 
 class EqStr;
@@ -123,6 +125,7 @@ public:
 	int LastCharacter() const { return m_config.last_character; } // the slot to remember (LastCharSel)
 	int ShowNames() const { return m_config.show_names; }         // /shownames, to remember (ShowNamesLevel)
 	bool CharSelectEmotes() const { return m_config.char_select_emotes; } // the Animations window's choice
+	bool AttackOnAssist() const { return m_config.attack_on_assist; }      // /assist on|off, to remember
 	const ZoneSession &Zone() const { return m_zone; }
 	const ChatWindow &Chat() const { return m_chat; }
 	uint16_t Target() const { return m_game_values.target; } // spawn id, 0 none
@@ -207,6 +210,8 @@ private:
 	void StartCamp();
 	// CEverquest_InterpretCmd (chat_commands.cpp): a line typed into the chat window.
 	void InterpretCommand(const std::string &line);
+	// CEverQuest_Consider and PrintConsiderAssessment (@0052d0e6): the zone's answer to /consider.
+	void PrintConsider(const ZoneConsider &consider);
 	// Our target, and the zone told (OP_TargetMouse, or OP_TargetCommand for /target).
 	void SetTarget(uint16_t id, bool command = false);
 	// EQPlayer::ChangeStance for us (100 standing, 110 sitting): the zone told, our model, and the
@@ -289,6 +294,8 @@ private:
 	GameValues m_game_values;
 	std::string m_last_tell; // who to /reply to (AddNameToTellList)
 	std::string m_time_of_day;
+	std::string m_afk_message;                    // /afk's text (DAT_007cf0e0); nothing answers tells with it yet
+	std::time_t m_started_at = std::time(nullptr); // WinMain's, for /played's session time
 	std::unique_ptr<ZoneView> m_zone_view;
 	uint32_t m_my_look_serial = 0; // ZoneSpawn::look_serial our model was built for
 	bool m_zone_error_logged = false;

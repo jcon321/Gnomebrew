@@ -121,6 +121,11 @@ namespace ZoneOp
 	// one we took off (RemovePCAffectex, NotifyPCAffectChange); the zone takes off its spell.
 	constexpr uint16_t Buff = 0x4132;
 	constexpr uint16_t TokenText = 0x4235; // TokenText_Struct {i16 eqstr id, i16 color, i16 from world}
+	// Consider_Struct (24 bytes): {u16 us, u16 target, u32 faction (1 ally .. 9 scowls), u32 level
+	// (its con color), i32 hp, i32 max hp, u8 pvpcon, u8[3]}. Ours has the two ids; the zone fills it in.
+	constexpr uint16_t Consider = 0x4137;
+	constexpr uint16_t ConsiderCorpse = 0x4234; // the same, about a corpse; the zone answers in text
+	constexpr uint16_t Assist = 0x4200; // EntityId_Struct {i16 id}: ours who to assist; the zone's their target
 }
 
 struct OpcodeEntry
@@ -229,5 +234,8 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::CastSpell, "OP_CastSpell"},
 	{ZoneOp::Buff, "OP_Buff"},
 	{ZoneOp::TokenText, "OP_TokenText"},
+	{ZoneOp::Consider, "OP_Consider"},
+	{ZoneOp::ConsiderCorpse, "OP_ConsiderCorpse"},
+	{ZoneOp::Assist, "OP_Assist"},
 	{0, nullptr},
 };

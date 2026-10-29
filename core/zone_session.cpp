@@ -124,6 +124,7 @@ namespace
 		s.light = d[o + 94];
 		s.aa_title = d[o + 27];
 		s.guild_id = Read<int16_t>(d, o + 82);
+		s.deity = Read<int16_t>(d, o + 124);
 		s.invis = d[o + 90];
 		s.pvp = d[o + 92];
 		s.anon = d[o + 95];
@@ -895,6 +896,50 @@ void ZoneSession::SetStance(uint8_t stance)
 	m_self.stance = stance;
 }
 
+void ZoneSession::SetAfk(bool afk)
+{
+	if (m_state != State::InZone)
+		return;
+	uint8_t body[8] = {};
+	uint32_t value = afk ? 1 : 0;
+	memcpy(body, &m_my_id, 2);
+	memcpy(body + 2, &AppearanceAfk, 2);
+	memcpy(body + 4, &value, 4);
+	Send(ZoneOp::SpawnAppearance, body, sizeof(body), "OP_SpawnAppearance afk " + std::to_string(value));
+	m_self.afk = static_cast<uint8_t>(value);
+}
+
+void ZoneSession::SetAnonymous(uint8_t anon)
+{
+	if (m_state != State::InZone)
+		return;
+	uint8_t body[8] = {};
+	uint32_t value = anon;
+	memcpy(body, &m_my_id, 2);
+	memcpy(body + 2, &AppearanceAnonymous, 2);
+	memcpy(body + 4, &value, 4);
+	Send(ZoneOp::SpawnAppearance, body, sizeof(body), "OP_SpawnAppearance anonymous " + std::to_string(value));
+	m_self.anon = anon;
+}
+
+bool ZoneSession::Consider(uint16_t id, bool corpse)
+{
+	if (m_state != State::InZone)
+		return false;
+	uint8_t body[24] = {};
+	memcpy(body, &m_my_id, 2);
+	memcpy(body + 2, &id, 2);
+	return Send(corpse ? ZoneOp::ConsiderCorpse : ZoneOp::Consider, body, sizeof(body),
+		std::string(corpse ? "OP_ConsiderCorpse " : "OP_Consider ") + std::to_string(id));
+}
+
+bool ZoneSession::Assist(uint16_t id)
+{
+	if (m_state != State::InZone)
+		return false;
+	return Send(ZoneOp::Assist, &id, sizeof(id), "OP_Assist " + std::to_string(id));
+}
+
 void ZoneSession::SendMovement(uint64_t now_ms)
 {
 	// DoPassageOfTime flags an update every second.
@@ -972,6 +1017,46 @@ bool ZoneSession::GameTime(int &hour, float &minute) const
 	return true;
 }
 
+bool ZoneSession::GameDate(int &hour, int &minute, int &day, int &month, int &year) const
+{
+	// EQWorldData::AdvanceTime: the time since OP_TimeOfDay at 20 game seconds a second, into
+	// years (12 months), months (28 days), days, hours and minutes, each added to what the zone sent
+	// and carried over.
+	if (!m_time_received_ms)
+		return false;
+	uint64_t game = (NowMs() - m_time_received_ms) / 50; // game seconds
+	int years = static_cast<int>(game / 29030400);
+	game %= 29030400;
+	int months = static_cast<int>(game / 2419200);
+	game %= 2419200;
+	int days = static_cast<int>(game / 86400);
+	game %= 86400;
+	int hours = static_cast<int>(game / 3600);
+	minute = static_cast<int>(game % 3600 / 60) + m_time_minute;
+	for (; minute > 59; minute -= 60)
+		++hours;
+	hour = m_time_hour + hours - 1;
+	for (; hour > 23; hour -= 24)
+		++days;
+	++hour;
+	day = m_time_day + days - 1;
+	for (; day > 27; day -= 28)
+		++months;
+	++day;
+	month = m_time_month + months;
+	for (; month > 12; month -= 12)
+		++years;
+	year = m_time_year + years;
+	if (year > 9999)
+		year = 0;
+	return true;
+}
+
+uint32_t ZoneSession::MinutesPlayed() const
+{
+	return m_profile.minutes_played + (m_profile_ms ? static_cast<uint32_t>((NowMs() - m_profile_ms) / 60000) : 0);
+}
+
 uint64_t ZoneSession::CampRemainingMs() const
 {
 	if (m_state != State::Camping)
@@ -1029,6 +1114,9 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		p.copper = Read<int32_t>(data, 2936);
 		p.zone_id = Read<uint32_t>(data, 3444);
 		p.deity = Read<uint16_t>(data, 4944);
+		p.birthday = Read<uint32_t>(data, 4948);
+		p.minutes_played = Read<uint32_t>(data, 4956);
+		m_profile_ms = NowMs();
 		for (int i = 0; i < 100; ++i)
 			p.skills[i] = Read<int16_t>(data, 2988 + i * 2);
 		for (int i = 0; i < ZoneProfile::BookSlots; ++i)
@@ -1354,6 +1442,25 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 	case ZoneOp::GuildsList:
 		m_guilds = ParseGuildList(data);
 		break;
+	case ZoneOp::Consider: {
+		if (data.size() < 24)
+			break;
+		Event e(Event::Type::Considered);
+		e.consider.target = Read<uint16_t>(data, 2);
+		e.consider.faction = Read<uint32_t>(data, 4);
+		e.consider.color = Read<uint32_t>(data, 8);
+		e.consider.pvpcon = data[20];
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::Assist: {
+		// HandleWorldMessage's 0x4200: a spawn we know becomes our target; -1 (no one) changes nothing.
+		Event e(Event::Type::Assisted);
+		e.id = Read<uint16_t>(data, 0);
+		if (e.id != 0 && e.id != 0xffff)
+			events.push_back(e);
+		break;
+	}
 	case ZoneOp::TargetCommand: {
 		Event e;
 		e.type = Event::Type::TargetChanged;
@@ -1518,10 +1625,16 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		}
 		break;
 	case ZoneOp::TimeOfDay: {
+		// TimeOfDay_Struct: {u8 hour, u8 minute, u8 day, u8 month, u16 year}.
 		if (data.size() >= 2) {
 			m_time_hour = data[0];
 			m_time_minute = data[1];
 			m_time_received_ms = NowMs();
+		}
+		if (data.size() >= 6) {
+			m_time_day = data[2];
+			m_time_month = data[3];
+			m_time_year = Read<uint16_t>(data, 4);
 		}
 		char text[32];
 		snprintf(text, sizeof(text), "%u:%02u", data.size() > 0 ? data[0] : 0, data.size() > 1 ? data[1] : 0);

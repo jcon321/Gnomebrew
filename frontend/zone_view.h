@@ -123,6 +123,8 @@ public:
 	// drawn that are no more than `yon` in front of the camera and not behind something, nearest
 	// first.
 	std::vector<NameTag> NameTags(float yon) const;
+	// This frame's ambient light, the sky's (SetAmbientLight), which lights the names too.
+	const render::Vec3 &Ambient() const { return m_daylight.ambient; }
 
 	// F9 toggles first person and the chase camera. Orbit circles the chase camera around the
 	// character (in 512ths), Turn turns the character (and the camera with them), FaceCamera

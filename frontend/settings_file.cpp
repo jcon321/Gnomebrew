@@ -67,6 +67,9 @@ namespace
 			"class (its combat moves, casting and the fidget). 1: half of them are a social's instead\n"
 			"(/dance, /wave and the rest: S01..S29, of those its model has). The Animations window's\n"
 			"Combat only and All + emotes set it, kept on exit."},
+		{"Defaults", "AttackOnAssist", "0",
+			"/assist on|off: 1 turns auto attack on when /assist sets the target (once there's auto\n"
+			"attack). Kept on exit."},
 
 		{"Debug", "RecordPackets", "0",
 			"1: each zone session's packets go to replays\\<character>-<time>.eqr next to the exe, to\n"

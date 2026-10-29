@@ -148,3 +148,15 @@ uint32_t NameSpritePulse(uint32_t color, int step)
 	};
 	return pulse(Channel(color, 16)) << 16 | pulse(Channel(color, 8)) << 8 | pulse(Channel(color, 0));
 }
+
+uint32_t NameSpriteLit(uint32_t color, float red, float green, float blue)
+{
+	// Each channel's light as a byte, anything out of 0..255 full; the tint's byte times it, >> 8.
+	auto lit = [](uint32_t c, float light) {
+		int level = static_cast<int>((light + NameSprite::LightLift) * 255);
+		if (level < 0 || level > 0xff)
+			level = 0xff;
+		return c * static_cast<uint32_t>(level) >> 8;
+	};
+	return lit(Channel(color, 16), red) << 16 | lit(Channel(color, 8), green) << 8 | lit(Channel(color, 0), blue);
+}

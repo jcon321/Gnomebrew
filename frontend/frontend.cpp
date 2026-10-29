@@ -1367,6 +1367,7 @@ void FrontEnd::DrawNameSprites(Canvas &canvas, uint64_t now_ms)
 	const auto &spawns = m_zone.Spawns();
 	// Extended nameplate distance: as far as the zone is drawn (its actors are culled there).
 	float yon = m_config.extended_nameplates ? std::numeric_limits<float>::max() : NameSprite::YonClip;
+	const render::Vec3 &light = m_zone_view->Ambient();
 	for (const ZoneView::NameTag &tag : m_zone_view->NameTags(yon)) {
 		const ZoneSpawn *spawn = &self;
 		bool targeted = target != 0 && (tag.id == 0 ? target == m_zone.MySpawnId() : tag.id == target);
@@ -1382,6 +1383,7 @@ void FrontEnd::DrawNameSprites(Canvas &canvas, uint64_t now_ms)
 		uint32_t color = NameSpriteColor(*spawn, m_world.ServerType());
 		if (targeted)
 			color = NameSpritePulse(color, pulse);
+		color = NameSpriteLit(color, light.x, light.y, light.z);
 		DrawNameSprite(canvas, tag.x, tag.y, tag.depth, tag.focal, text, color);
 	}
 }
@@ -1860,6 +1862,15 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 		case Type::SkillUp: // msg_skillimprove
 			ChatOut(FormatEqString(m_ui.eqstr, 12091, "You have become better at %1! (%2)",
 				{SkillName(m_ui.eqstr, event.id), std::to_string(event.value)}), ChatType::Skills);
+			break;
+		case Type::Considered:
+			PrintConsider(event.consider);
+			break;
+		case Type::Assisted:
+			// HandleWorldMessage's 0x4200: their target is ours (DoPassageOfTime tells the zone), a
+			// spawn we know or us. (With AttackOnAssist, auto attack would go on.)
+			if (event.id == m_zone.MySpawnId() || m_zone.Spawns().count(event.id))
+				SetTarget(event.id);
 			break;
 		case Type::TargetChanged:
 			// The zone's answer to /target (or its refusal of a click).

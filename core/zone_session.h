@@ -59,6 +59,8 @@ struct ZoneProfile
 	float x = 0, y = 0, z = 0, heading = 0;
 	uint32_t zone_id = 0;
 	int32_t platinum = 0, gold = 0, silver = 0, copper = 0;
+	uint32_t birthday = 0;       // when the character was made (a time_t)
+	uint32_t minutes_played = 0; // as of the profile (ZoneSession::MinutesPlayed carries it on)
 	// By skill id (50 is swimming): 255 the class never has it, 254 it does at a later level,
 	// 0 it has it untrained.
 	int16_t skills[100] = {};
@@ -118,6 +120,7 @@ struct ZoneSpawn
 	uint8_t pvp = 0;
 	uint8_t invis = 0;
 	int16_t guild_id = -1;   // -1: none
+	int16_t deity = 0;       // Spawn_Struct's; not in our own (the profile has ours)
 	uint8_t aa_title = 0;    // the AA title rank, 1..3 (CEverQuest_GetTitleDesc)
 	float size = 0;          // model height; 0 = the race's default
 	uint8_t face = 0;
@@ -160,6 +163,15 @@ struct ZoneCast
 	int level = 0;               // Action: the caster's level for a potion's (spells 1252..1266, 1..60)
 	uint8_t type = 0;            // Action and Damage: 231 a spell
 	uint8_t flags = 0;           // Action: 4 it landed
+};
+
+// OP_Consider's answer (Consider_Struct): what the zone thinks of us for a spawn we considered.
+struct ZoneConsider
+{
+	uint16_t target = 0;
+	uint32_t faction = 0; // 1 ally .. 9 scowls (FACTION_*)
+	uint32_t color = 0;   // the con color (GetLevelCon: 2 green, 18 light blue, 4 blue, 20 white, 15 yellow, 13 red)
+	uint8_t pvpcon = 0;   // the PvP rules it was judged by; 0 none
 };
 
 // The guilds' names by id: OP_GuildsList (GuildsList_Struct: 4 bytes, then 96-byte entries
@@ -295,6 +307,8 @@ public:
 			SpellAction,    // cast: OP_Action
 			Damaged,        // cast: OP_Damage
 			BuffChanged,    // OP_Buff: buff, id its slot, value how (ZoneOp::Buff)
+			Considered,     // consider: OP_Consider's answer
+			Assisted,       // id: the target of whoever we assisted (OP_Assist's answer); not set yet
 			LoggedOut,    // camp finished; the zone closes the connection
 			ZoneApproved, // value: the zone we're going to; OP_DeleteSpawn is sent
 			ZoneDenied,   // value: the answer (ZoningMessage: 0 down, -1 not ready, -7 not experienced...)
@@ -311,6 +325,7 @@ public:
 		ZoneChat chat;
 		ZoneCast cast;
 		ZoneBuff buff;
+		ZoneConsider consider;
 	};
 
 	ZoneSession();
@@ -351,6 +366,15 @@ public:
 	// ChangeStance: OP_SpawnAppearance with our stance (100 standing, 110 sitting, 111 crouching...),
 	// kept in Self().stance.
 	void SetStance(uint8_t stance);
+	// /afk and /anonymous: OP_SpawnAppearance 24 (AFK) and 21 (anonymous), kept in Self(); the zone
+	// tells everyone else.
+	void SetAfk(bool afk);
+	void SetAnonymous(uint8_t anon);
+	// /consider: OP_Consider about a spawn (OP_ConsiderCorpse a corpse). The zone answers a
+	// spawn's with Considered.
+	bool Consider(uint16_t id, bool corpse);
+	// /assist: OP_Assist with who to assist. The zone answers with their target (Assisted).
+	bool Assist(uint16_t id);
 	// /camp: OP_Camp, then OP_Logout once the 30 second camp timer has run (Handle_OP_Logout expects that).
 	bool Camp();
 	// Ask to leave for another zone (a zone line): our position, then OP_ZoneChange. The answer
@@ -419,6 +443,10 @@ public:
 	// Norrath's time: OP_TimeOfDay's hour (1..24) and minute, carried on at 20 game seconds a
 	// second as EQWorldData::AdvanceTime does. False until the zone has sent it.
 	bool GameTime(int &hour, float &minute) const;
+	// The same with the date (AdvanceTime carries it on too): day 1..28, month 1..12, the year.
+	bool GameDate(int &hour, int &minute, int &day, int &month, int &year) const;
+	// /played: the profile's minutes played, and one more for each minute since (DoPassageOfTime).
+	uint32_t MinutesPlayed() const;
 	// The zone connection's round trip and traffic; false when there's no connection.
 	bool NetworkStats(RdpStats &out) const;
 
@@ -499,8 +527,9 @@ private:
 	std::vector<ZoneDoor> m_doors;
 	uint32_t m_zone_target = 0;
 	uint64_t m_zone_state_ms = 0; // when ZoneRequested or Departing began
-	int m_time_hour = 0, m_time_minute = 0;
+	int m_time_hour = 0, m_time_minute = 0, m_time_day = 1, m_time_month = 1, m_time_year = 0;
 	uint64_t m_time_received_ms = 0;
+	uint64_t m_profile_ms = 0; // when the profile came
 	// OP_ClientUpdate pacing (DoMainLoop / ProcessControls)
 	ZoneMovement m_movement;
 	bool m_have_movement = false;

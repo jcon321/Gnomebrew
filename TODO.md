@@ -7,7 +7,8 @@ no rules of its own.
 
 1. ~~**In-game SIDL windows.**~~ Done: `frontend/window_manager.*` (drag, resize, close, minimize,
    focus order, fading, `UI_<char>_<server>.ini`). Still to do: BGTint isn't drawn, no
-   right-click context menu (lock, alpha), and only the chat window's edit box takes typing. The
+   right-click context menu (lock, alpha), and only the chat window's and the social editor's
+   edit boxes take typing. The
    resize and drag cursors are the SIDL ones; the usual cursor is still eqmain's `cursor.bmp`
    rather than `A_DefaultCursor`.
 2. **Display-only windows**, showing what the server already sends:
@@ -104,8 +105,18 @@ no rules of its own.
    Still to do: more windows and the channel map (eqgame's `CChatManager`: which window each
    channel goes to, set from the right-click menu; there were no tabs in this era), the chat font
    size, hold-to-repeat on the scrollbar's arrows, languages scrambled by skill
-   (`HearBabel`), and the commands that still say they aren't supported (/who, /consider, /cast,
-   socials, /time...).
+   (`HearBabel`), and the commands that still say they aren't supported (/who, /random, /follow,
+   /lfg, /smile and the other emotes...).
+   Done in `chat_commands.cpp`: /consider (OP_Consider, PrintConsiderAssessment's text and con
+   color), /time (Norrath's date as EQWorldData::AdvanceTime carries it on, and Earth's), /played,
+   /motd, /afk, /anonymous and /assist (OP_Assist; the answer becomes our target). Still to do:
+   - /afk: answering tells with its message, and the chat server's "/afk on silent";
+   - /assist: AttackOnAssist turning auto attack on (there's no auto attack yet), and
+     allowslashcommand's other checks (/safelock, stance 0x66, the windows that block commands:
+     IsNoSlashWnd), also wanted by the other commands that call it;
+   - /played: the alarm's time left (no alarm window yet);
+   - /consider: under the deity PvP rules (pvpcon 4) NotOnSameDeity lets a GM off, read here as
+     our `gm` flag; EQPlayer+0x109 isn't checked to be IsGameMaster.
 4. **Cursor and dragging.** EQ's own cursors. (An item on the cursor follows it:
    `DrawCursorAttachment`.) Tooltips: done (`WindowManager::DrawTooltip`, eqgame's DrawWindows and
    DrawTooltipAtPoint): after the mouse rests 500 ms, the control under it shows its tooltip, its
@@ -123,8 +134,9 @@ no rules of its own.
 
 ## Rendering / presentation
 
-9. ~~**Nameplates**~~: done (`frontend/name_sprites.*`, eqgame's name sprites). Still to do:
-   their lighting (eqgfx dims them with the scene's light, +0.4), the trader tag in the Bazaar,
+9. ~~**Nameplates**~~: done (`frontend/name_sprites.*`, eqgame's name sprites), lit as
+   renderNameTag does (the world's ambient light +0.4, `NameSpriteLit`). Still to do: the
+   character select name sprite isn't lit (its scene's light is our own guess), the trader tag in the Bazaar,
    the names eqgame hides in some animations (skeletons, gargoyles and mimics lying or feigning:
    animations 0x10, 0x21, 0x26), `/shownpcnames`, Zeal's raid shownames, and the guild list in packet logs (replays show "Unknown Guild"). An HP
    bar over heads isn't eqgame's; leave it to an option if ever.
@@ -166,7 +178,7 @@ no rules of its own.
 
 ## Order
 
-1. Packet replay (16), so the rest can be built offline.
-2. The window manager (1).
+1. ~~Packet replay (16), so the rest can be built offline.~~
+2. ~~The window manager (1).~~
 3. ~~The Player, Target and Chat windows (2, 3), which prove out the whole SIDL pipeline.~~
 4. ~~Nameplates and the target indicator (9, 10).~~
