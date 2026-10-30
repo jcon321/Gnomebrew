@@ -32,6 +32,8 @@ namespace
 			"  --zone SECONDS        with --char, enter the zone, stay this long, then /camp (30s) and log out\n"
 			"  --say TEXT            with --zone, /say this once in the zone\n"
 			"  --click-door ID       with --zone, use door ID once in the zone and print the doors that move\n"
+			"  --pickup DROP|far     with --zone, once in, pick up ground item DROP (\"far\": the farthest one that can\n"
+			"                        be picked up) with no range check, and print the zone's answer and the cursor\n"
 			"  --click-link ID       with --zone, click a chat link to item (or say link) ID once in the zone and\n"
 			"                        print the item the zone sends back\n"
 			"  --zone-to ID          with --zone, once in, ask to zone to zone ID (the zone checks it against its\n"
@@ -121,6 +123,40 @@ namespace
 	std::vector<std::string> g_moves; // --move
 	std::vector<int> g_casts;         // --cast, gems from 1
 	std::vector<int> g_cast_spells;   // --cast GEM:SPELL's spell (0 the gem's)
+	std::string g_pickup;             // --pickup: a drop id or "far"
+
+	float GroundDistance(const ZoneSession &zone, const ZoneGroundItem &item)
+	{
+		const ZoneProfile &me = zone.Profile();
+		float dx = item.x - me.x, dy = item.y - me.y, dz = item.z - me.z;
+		return std::sqrt(dx * dx + dy * dy + dz * dz);
+	}
+
+	// --pickup: OP_ClickObject for a ground item however far away it is (the real client only sends
+	// it within 20), to see whether the zone checks the range.
+	void DoPickup(ZoneSession &zone)
+	{
+		const ZoneGroundItem *target = nullptr;
+		printf("[pickup] %zu ground items:\n", zone.GroundItems().size());
+		for (const auto &[drop_id, item] : zone.GroundItems()) {
+			float distance = GroundDistance(zone, item);
+			printf("[pickup]   drop %u item %u type %u %-16s %7.1f away  (%.0f, %.0f, %.0f)\n", drop_id, item.item_id,
+				item.object_type, item.model.c_str(), distance, item.x, item.y, item.z);
+			if (g_pickup == "far") {
+				if (item.object_type <= 1 && (!target || distance > GroundDistance(zone, *target)))
+					target = &item;
+			}
+			else if (drop_id == static_cast<uint32_t>(strtoul(g_pickup.c_str(), nullptr, 10)))
+				target = &item;
+		}
+		if (!target) {
+			printf("[pickup] nothing to pick up for '%s'\n", g_pickup.c_str());
+			return;
+		}
+		printf("[pickup] picking up drop %u (item %u) from %.1f away\n", target->drop_id, target->item_id,
+			GroundDistance(zone, *target));
+		zone.PickUp(target->drop_id);
+	}
 
 	void PrintItems(const ZoneSession &zone)
 	{
@@ -176,6 +212,8 @@ namespace
 		bool camping = false;
 		size_t next_cast = 0;
 		uint64_t cast_at = 0; // when the next --cast goes; 0 not yet
+		uint64_t pickup_at = 0;      // when --pickup goes (the ground items come in after we're in)
+		uint64_t pickup_check_at = 0; // when to look at the cursor after the zone answers it
 		for (;;) {
 			std::vector<ZoneSession::Event> events;
 			zone.Pump(100, events);
@@ -194,6 +232,8 @@ namespace
 						printf("[zone] using door %d\n", click_door);
 						zone.ClickDoor(static_cast<uint8_t>(click_door), 0xffff, 0);
 					}
+					if (!g_pickup.empty())
+						pickup_at = NowMs() + 2000;
 					if (g_click_link >= 0) {
 						printf("[zone] clicking link %d\n", g_click_link);
 						zone.ClickItemLink(static_cast<uint16_t>(g_click_link), "link");
@@ -262,6 +302,18 @@ namespace
 				case ZoneSession::Event::Type::DoorMoved:
 					printf("[zone] door %u -> state %d\n", event.id, event.value);
 					break;
+				case ZoneSession::Event::Type::GroundItemRemoved:
+					if (g_pickup.empty())
+						break;
+					if (static_cast<uint32_t>(event.value) == 0xffffffff)
+						printf("[pickup] the zone refused the pickup\n");
+					else {
+						printf("[pickup] drop %u gone (%s)\n", static_cast<uint32_t>(event.value),
+							event.id ? "our pickup" : "someone else's");
+						if (event.id)
+							pickup_check_at = NowMs() + 1000;
+					}
+					break;
 				case ZoneSession::Event::Type::ItemLink:
 					printf("[zone] linked item %u '%s' (icon %u, slot %d)\n", zone.LinkedItem().id, zone.LinkedItem().name.c_str(),
 						zone.LinkedItem().icon, zone.LinkedItem().slot);
@@ -311,6 +363,15 @@ namespace
 				int spell = gem >= 0 && gem < ZoneProfile::Gems ? zone.Profile().mem_spells[gem] : -1;
 				printf("[cast] casting gem %d (spell %d) on ourselves\n", gem + 1, spell);
 				zone.CastSpell(gem, spell, zone.MySpawnId());
+			}
+			if (pickup_at && NowMs() >= pickup_at) {
+				pickup_at = 0;
+				DoPickup(zone);
+			}
+			if (pickup_check_at && NowMs() >= pickup_check_at) {
+				pickup_check_at = 0;
+				auto cursor = zone.Items().find(0);
+				printf("[pickup] cursor: %s\n", cursor == zone.Items().end() ? "empty" : cursor->second.name.c_str());
 			}
 			if (leave_at && !camping && NowMs() >= leave_at) {
 				camping = true;
@@ -373,6 +434,8 @@ int main(int argc, char **argv)
 			g_casts.push_back(atoi(value.c_str()));
 			g_cast_spells.push_back(colon == std::string::npos ? 0 : atoi(value.c_str() + colon + 1));
 		}
+		else if (arg == "--pickup")
+			g_pickup = next();
 		else if (arg == "--click-link")
 			g_click_link = atoi(next().c_str());
 		else if (arg == "--zone-to")

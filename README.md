@@ -332,6 +332,9 @@ build/eqclient -u USER -p PASS [options]
                         its zone points), through world to the next zone, then stay and camp there
   --create-class N      with --create: a Human of class N instead (2 cleric, 11 necromancer...)
   --click-link ID       with --zone: click a chat link to item (or say link) ID and print the item sent back
+  --pickup DROP|far     with --zone: list the ground items, then OP_ClickObject drop DROP ("far": the
+                        farthest that isn't a tradeskill container) with no 20-unit range check, and
+                        print the zone's answer and the cursor. Tests the zone's own range check
   --move FROM:TO[:N]    with --zone: move what's in slot FROM to TO as the inventory window does (0 the
                         cursor; N takes N of a stack; "auto" puts the cursor's item away). Repeatable
   --cast GEM[:SPELL]    with --zone: cast gem GEM (1..8; SPELL memorized there first) on ourselves and
