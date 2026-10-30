@@ -819,6 +819,9 @@ details and the nearest spawns at the top left and the radar at the top right.
   same (`ServerToMacSlot` passes them through). Nothing comes back out of the trade window, a
   corpse's or a world container's stack takes no quantity window, and an item goes into a trade
   slot only while trading, an empty one, and no-drop only to an NPC.
+- **Labels:** `NoWrap` defaults to false (SIDL.xml), so a label's text breaks at its spaces into
+  lines as wide as the label, each line aligned on its own (`AlignCenter`, `AlignRight`): the
+  merchant's "Item Being Considered" is "Item Being" over a centered "Considered".
 - **Item buttons:** the bag window's `Container_Icon` and the merchant's `MW_SelectedItem` show
   their item as the button's decal (`A_DragItem`'s cell: `SetContainer`, `SelectBuySellSlot`) over
   its Normal, `A_RecessedBox`. The item display's `IconButton` is different: `SetItem` makes

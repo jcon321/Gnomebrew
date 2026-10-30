@@ -342,6 +342,7 @@ void SidlDefinitions::ReadElement(const XmlNode &node)
 	p.minimizebox = node.ChildBool("Style_Minimizebox", false);
 	p.sizable = node.ChildBool("Style_Sizable", false);
 	p.align_center = node.ChildBool("AlignCenter", false);
+	p.no_wrap = node.ChildBool("NoWrap", false);
 	p.align_right = node.ChildBool("AlignRight", false);
 	p.checkbox = node.ChildBool("Style_Checkbox", false);
 	p.radio_group = node.ChildText("RadioGroup");
@@ -1314,13 +1315,41 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 		if (def.eq_type != 0 && m_values)
 			m_values->Label(def.eq_type, shown, color);
 		if (!shown.empty()) {
-			TextSize size = text.Measure(shown, height, weight);
-			int x = control.rect.x;
-			if (def.align_center)
-				x += (control.rect.w - size.w) / 2;
-			else if (def.align_right)
-				x += control.rect.w - size.w;
-			text.Draw(canvas, x, control.rect.y, shown, height, color, weight);
+			// Without NoWrap, broken at the spaces into lines as wide as the label, each one aligned
+			// on its own ("Item Being" over "Considered", centered).
+			std::vector<std::string> lines;
+			if (def.no_wrap)
+				lines.push_back(shown);
+			else {
+				std::string line;
+				size_t i = 0;
+				while (i < shown.size()) {
+					size_t end = shown.find(' ', i);
+					std::string word = shown.substr(i, end == std::string::npos ? std::string::npos : end - i);
+					std::string longer = line.empty() ? word : line + " " + word;
+					if (!line.empty() && text.Measure(longer, height, weight).w > control.rect.w) {
+						lines.push_back(line);
+						line = word;
+					}
+					else
+						line = longer;
+					if (end == std::string::npos)
+						break;
+					i = end + 1;
+				}
+				lines.push_back(line);
+			}
+			int y = control.rect.y;
+			for (const std::string &line : lines) {
+				TextSize size = text.Measure(line, height, weight);
+				int x = control.rect.x;
+				if (def.align_center)
+					x += (control.rect.w - size.w) / 2;
+				else if (def.align_right)
+					x += control.rect.w - size.w;
+				text.Draw(canvas, x, y, line, height, color, weight);
+				y += size.h > 0 ? size.h : height;
+			}
 		}
 	}
 	else if (def.type == "TabBox") {

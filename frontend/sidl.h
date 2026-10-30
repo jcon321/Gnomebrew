@@ -115,6 +115,7 @@ struct SidlPiece
 	uint32_t text_color = 0xffffff;
 	bool has_text_color = false;
 	bool align_center = false;
+	bool no_wrap = false; // NoWrap: a label's text on one line, however long (false: wrapped at words)
 	bool align_right = false;
 
 	// Button
