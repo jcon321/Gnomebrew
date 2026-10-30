@@ -6,6 +6,7 @@
 #include "window_manager.h"
 #include "zone_session.h"
 
+#include <map>
 #include <string>
 
 namespace
@@ -20,11 +21,13 @@ namespace
 	}
 }
 
-void BankWindow::Attach(WindowManager &windows, ZoneSession &zone, GameWindowState &state, const EqStr *eqstr, Host host)
+void BankWindow::Attach(WindowManager &windows, ZoneSession &zone, GameWindowState &state, const GameValues &values,
+	const EqStr *eqstr, Host host)
 {
 	m_windows = &windows;
 	m_zone = &zone;
 	m_state = &state;
+	m_values = &values;
 	m_eqstr = eqstr;
 	m_host = std::move(host);
 	Reset();
@@ -112,6 +115,13 @@ void BankWindow::Frame(uint64_t now_ms)
 	for (int coin = 0; coin < 4; ++coin)
 		if (SidlWindow::Control *button = wnd->Find("BW_Money" + std::to_string(coin)))
 			button->text = std::to_string(Inventory::Coins(me, Inventory::Bank, coin));
+	// CInvSlot::SetItem: each slot shows what's in it.
+	const std::map<int16_t, ZoneItem> &items = m_zone->Items();
+	for (int n = 0; n < BankSlots; ++n)
+		if (SidlWindow::Control *c = wnd->Find("BW_BankSlot" + std::to_string(n))) {
+			auto it = items.find(static_cast<int16_t>(c->ItemSlot()));
+			FillInvSlot(*c, it != items.end() ? &it->second : nullptr, *m_values);
+		}
 }
 
 bool BankWindow::Click(const std::string &window, const std::string &control)

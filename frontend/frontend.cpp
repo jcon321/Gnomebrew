@@ -1572,7 +1572,7 @@ void FrontEnd::BuildZoneWindows()
 	BankWindow::Host bank_host;
 	bank_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
 	bank_host.close_bags = [this] { m_containers.CloseAll(); };
-	m_bank.Attach(m_windows, m_zone, m_window_state, m_ui.eqstr, std::move(bank_host)); // hidden too
+	m_bank.Attach(m_windows, m_zone, m_window_state, m_game_values, m_ui.eqstr, std::move(bank_host)); // hidden too
 	MerchantWindow::Host merchant_host;
 	merchant_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
 	merchant_host.sound = bag_sound;

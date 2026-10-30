@@ -25,6 +25,7 @@
 
 class Canvas;
 class EqStr;
+class GameValues;
 class TextRenderer;
 class WindowManager;
 class ZoneSession;
@@ -39,7 +40,8 @@ public:
 		std::function<void()> close_bags;                   // CloseAllContainers
 	};
 
-	void Attach(WindowManager &windows, ZoneSession &zone, GameWindowState &state, const EqStr *eqstr, Host host);
+	void Attach(WindowManager &windows, ZoneSession &zone, GameWindowState &state, const GameValues &values, const EqStr *eqstr,
+		Host host);
 	void Reset(); // a new zone: not banking
 
 	bool Active() const { return m_banker != 0; } // field200_0x134
@@ -56,6 +58,7 @@ private:
 	WindowManager *m_windows = nullptr;
 	ZoneSession *m_zone = nullptr;
 	GameWindowState *m_state = nullptr;
+	const GameValues *m_values = nullptr;
 	const EqStr *m_eqstr = nullptr;
 	Host m_host;
 	uint16_t m_banker = 0;
