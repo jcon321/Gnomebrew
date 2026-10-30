@@ -19,6 +19,7 @@ namespace
 	// print_chat_dsp_chat's colors for what the merchant says.
 	constexpr int SaidColor = ChatType::Default; // 0x111
 	constexpr int SoldColor = 0x114, NotBuyingColor = 0x113;
+	constexpr int PriceColor = 0x113; // DisplayBuyOrSellPrice's (User_20, yellow by default)
 
 	const ZoneItem *Find(const std::map<int16_t, ZoneItem> &items, int slot)
 	{
@@ -264,7 +265,7 @@ void MerchantWindow::ShowPrice(bool buying, const ZoneItem &item)
 	else
 		said = Text(whole, {name, price, item.name}, fill(whole_text));
 	if (m_host.chat)
-		m_host.chat(said, SaidColor);
+		m_host.chat(said, PriceColor);
 }
 
 bool MerchantWindow::SlotClick(const std::string &window, const std::string &control)

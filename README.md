@@ -874,7 +874,7 @@ details and the nearest spawns at the top left and the radar at the top right.
   class, `Item_Struct`} records), each in its `equipSlot` 0..79 (slots 6000..6079); `OP_ShopDelItem` (0x4038) takes one out. Their
   `Price` is the item's times its SellRate, and `SellRate` comes as 1. While the window's up, a
   left click on any slot only selects it (`CInvSlotMgr_SelectSlot`: a yellow 0xffff00 outline,
-  `CInvSlotWnd`'s 0x114) and says its price in chat color 0x111: `ValueBuy` is `round(count *
+  `CInvSlotWnd`'s 0x114) and says its price in chat color 0x113 (`User_20`, yellow by default; what else it says is 0x111): `ValueBuy` is `round(count *
   price * rate)` (times SellRate when it's over 1), `ValueSell` is `round(price / rate) *
   count`, to the nearest 100 from 10,000,000; their text (`ValueSBuy`, `ValueSSell`) is eqstr
   2409..2412 per coin (" 1 gold 5 silver"), or 2413 / 2408 for nothing. A stack's message says
