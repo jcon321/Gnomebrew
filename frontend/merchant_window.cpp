@@ -16,8 +16,9 @@ namespace
 	constexpr int MerchantSlots = 80;
 	constexpr int MaxBuy = 20;          // HandleBuy: a stack's most
 	constexpr uint8_t RentalItem = 39;  // DisplayBuyOrSellPrice's item type with a monthly rent
-	// print_chat_dsp_chat's colors for what the merchant says.
-	constexpr int SaidColor = ChatType::Default; // 0x111
+	// What the merchant says: eqgame prints it in 0x111 (User_18, the default text color); ours is
+	// yellow until the chat colors are settable.
+	constexpr int SaidColor = ChatType::Yellow;
 	constexpr int SoldColor = 0x114, NotBuyingColor = 0x113;
 
 	const ZoneItem *Find(const std::map<int16_t, ZoneItem> &items, int slot)
