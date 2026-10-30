@@ -57,8 +57,7 @@ no rules of its own.
      opening, the prices and the welcome; buying and selling only through their refusals (the
      test character has no coins or anything worth selling). Still to do: a Bazaar trader's
      (Type 0: OP_TraderShop, OP_TraderBuy), MakeMeVisible, auto attack off on the request and
-     SetMusicSelection(6), the merchant's messages in 0x111 (User_18) rather than our yellow once the
-     chat colors are settable, and the item display of a merchant's item (the slots' alt+click goes
+     SetMusicSelection(6), and the item display of a merchant's item (the slots' alt+click goes
      through the selection now).
    - Loot window: done (`frontend/loot_window.*`, eqgame's CLootWnd): the right button on a corpse
      in reach asks to loot it (CEverQuest_LootCorpse, OP_LootRequest); OP_MoneyOnCorpse's answer
