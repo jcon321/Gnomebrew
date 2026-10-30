@@ -2,13 +2,14 @@
 // snapshots, to check layout and flow without a Windows box. Text is drawn as
 // outline boxes of an estimated Arial size, since GDI isn't available.
 //
-//   frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|shop]]
+//   frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|shop|ground]]
 //   frontend_preview EQDIR OUTDIR --replay FILE [SECONDS]
 //
 // Without a login server it snapshots the start screen, a dialog and the login
 // screen. With one it also logs in and snapshots server select and the play result.
 // "shop" enters the world, stands by the nearest merchant, opens its shop with the right button,
-// sells the first thing it can and buys it back. "charselect" stops at character select (two snapshots of the 3D scene, as the
+// sells the first thing it can and buys it back. "ground" lists what's on the ground, drops an item
+// (yes to the dialog), finds it on the screen and picks it back up. "charselect" stops at character select (two snapshots of the 3D scene, as the
 // camera turns) instead of entering the world. --replay plays a packet log back (no server)
 // and snapshots the zone once it's in, then every few seconds for SECONDS (default 10), then
 // tries the windows: drags the selector by its title bar, opens the inventory from it, shows its
@@ -179,6 +180,166 @@ namespace
 					return true;
 				}
 		return false;
+	}
+
+	// Live: what's on the ground; an item from the inventory dropped in front of us (the dialog's
+	// Yes), found on the screen and picked back up, then put away; and a camp.
+	int GroundTest(FrontEnd &frontend, Harness &h)
+	{
+		WindowManager &windows = frontend.Windows();
+		const ZoneSession &zone = frontend.Zone();
+		ZoneView *view = frontend.ZoneScene();
+		h.Key(InputEvent::Key::F11); // the debug menu out of the way
+		Rect area = frontend.ScreenArea();
+		auto press = [&](int x, int y) {
+			frontend.OnEvent({InputEvent::Type::MouseMove, area.x + x, area.y + y});
+			frontend.OnEvent({InputEvent::Type::MouseDown, area.x + x, area.y + y});
+			frontend.OnEvent({InputEvent::Type::MouseUp, area.x + x, area.y + y});
+			frontend.Update(NowMs());
+		};
+		auto control = [&](const char *window, const std::string &id) {
+			const SidlWindow *wnd = windows.Find(window);
+			if (const SidlWindow::Control *c = wnd ? wnd->Find(id) : nullptr)
+				press(c->rect.x + c->rect.w / 2, c->rect.y + c->rect.h / 2);
+			else
+				printf("[preview] no %s in %s\n", id.c_str(), window);
+		};
+		size_t chat_seen = frontend.Chat().Lines().size();
+		auto chat = [&] {
+			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
+				printf("[preview] chat: %s\n", frontend.Chat().Lines()[chat_seen].text.c_str());
+		};
+		h.RunUntil([] { return false; }, 1500);
+		h.Snapshot("o0-zone");
+		printf("[preview] %zu on the ground, %zu drawn\n", zone.GroundItems().size(), view ? view->GroundItemsShown() : 0);
+		int listed = 0;
+		for (const auto &[id, item] : zone.GroundItems())
+			if (listed++ < 6)
+				printf("[preview]   %u: %s, item %d, type %u at %.0f,%.0f,%.0f\n", id, item.model.c_str(), item.item_id,
+					item.object_type, item.x, item.y, item.z);
+		// An item onto the cursor.
+		int lone = -1;
+		for (const auto &[slot, item] : zone.Items())
+			if (slot >= Inventory::FirstGeneral && slot <= Inventory::LastGeneral && item.item_class == 0 &&
+			    !Inventory::Stacks(item) && item.no_drop != 0 && lone < 0)
+				lone = slot;
+		if (lone < 0)
+			printf("[preview] nothing droppable\n");
+		else {
+			windows.Show("InventoryWindow", true);
+			windows.Raise("InventoryWindow");
+			control("InventoryWindow", "InvSlot" + std::to_string(lone));
+			windows.Show("InventoryWindow", false);
+			std::string name = zone.Items().count(Inventory::Cursor) ? zone.Items().at(Inventory::Cursor).name : "";
+			printf("[preview] on the cursor: '%s'\n", name.c_str());
+			// The ground in front of us, clear of the windows.
+			int gx = -1, gy = -1;
+			uint32_t none = 0;
+			for (int y = frontend.ScreenHeight() * 3 / 4; y < frontend.ScreenHeight() - 40 && gx < 0; y += 8)
+				for (int x = frontend.ScreenWidth() / 3; x < frontend.ScreenWidth() * 2 / 3 && gx < 0; x += 8)
+					if (!view->PickSpawn(x, y, zone.MySpawnId()) && !view->PickGroundItem(x, y, none) && !windows.Over(x, y))
+						gx = x, gy = y;
+			printf("[preview] the ground at %d,%d\n", gx, gy);
+			size_t before = zone.GroundItems().size();
+			press(gx, gy);
+			printf("[preview] dialog %s\n", windows.Shown("ConfirmationDialogBox") ? "up" : "down");
+			h.Snapshot("o1-confirm");
+			control("ConfirmationDialogBox", "Yes_Button");
+			h.RunUntil([&] { return zone.GroundItems().size() > before; }, 5000);
+			h.RunUntil([] { return false; }, 800);
+			chat();
+			printf("[preview] dropped: cursor %s, %zu on the ground (%zu drawn)\n",
+				zone.Items().count(Inventory::Cursor) ? "busy" : "free", zone.GroundItems().size(), view->GroundItemsShown());
+		}
+		h.Snapshot("o2-dropped");
+		// Everything dropped within 10 of us (this one, and any an earlier run left) back up, one
+		// at a time: found on the screen, clicked, put away.
+		for (int round = 0; round < 4; ++round) {
+			const ZoneProfile &me = zone.Profile();
+			uint32_t mine = 0;
+			for (const auto &[id, item] : zone.GroundItems())
+				if (std::hypot(item.x - me.x, item.y - me.y) < 10 && mine == 0)
+					mine = id;
+			if (mine == 0)
+				break;
+			// It's at our feet: step back so it's in front of us, out from under the chat window.
+			const ZoneGroundItem &there = zone.GroundItems().at(mine);
+			windows.Show("ChatWindow", false);
+			view->SetPlayerPosition(there.x, there.y - 12, there.z, 0);
+			h.RunUntil([] { return false; }, 1200);
+			h.Snapshot("o3-before-pickup"); // drawn: picked from the last frame
+			int px = -1, py = -1;
+			uint32_t picked = 0;
+			for (int y = 4; y < frontend.ScreenHeight() && px < 0; y += 4)
+				for (int x = 4; x < frontend.ScreenWidth() && px < 0; x += 4)
+					if (view->PickGroundItem(x, y, picked) && picked == mine && !windows.Over(x, y) &&
+					    !view->PickSpawn(x, y, zone.MySpawnId()))
+						px = x, py = y;
+			printf("[preview] drop %u (%s) on the screen at %d,%d\n", mine, zone.GroundItems().at(mine).model.c_str(), px, py);
+			if (px < 0)
+				break;
+			press(px, py);
+			h.RunUntil([&] { return zone.Items().count(Inventory::Cursor) != 0; }, 5000);
+			h.RunUntil([] { return false; }, 500);
+			chat();
+			printf("[preview] picked up: cursor '%s', %zu on the ground, inventory %s\n",
+				zone.Items().count(Inventory::Cursor) ? zone.Items().at(Inventory::Cursor).name.c_str() : "",
+				zone.GroundItems().size(), windows.Shown("InventoryWindow") ? "up" : "down");
+			if (zone.Items().count(Inventory::Cursor))
+				control("InventoryWindow", "IW_CharacterView");
+			h.RunUntil([] { return false; }, 500);
+			printf("[preview] put away: cursor %s\n", zone.Items().count(Inventory::Cursor) ? "busy" : "free");
+			windows.Show("InventoryWindow", false);
+		}
+		// A forge (a tradeskill container, type 17): clicked, it opens as BagWorld1; Done closes it.
+		for (const auto &[id, item] : zone.GroundItems()) {
+			if (item.object_type != 17)
+				continue;
+			uint32_t forge = id;
+			windows.Show("ChatWindow", false);
+			view->SetPlayerPosition(item.x, item.y - 12, item.z + 20, 0); // over the floor, to fall onto it
+			h.RunUntil([] { return false; }, 2500);
+			h.Snapshot("o4-forge");
+			int fx = -1, fy = -1;
+			uint32_t picked = 0;
+			for (int y = 4; y < frontend.ScreenHeight() && fx < 0; y += 4)
+				for (int x = 4; x < frontend.ScreenWidth() && fx < 0; x += 4)
+					if (view->PickGroundItem(x, y, picked) && picked == forge && !windows.Over(x, y) &&
+					    !view->PickSpawn(x, y, zone.MySpawnId()))
+						fx = x, fy = y;
+			printf("[preview] forge %u (%s) on the screen at %d,%d, %.1f away\n", forge, item.model.c_str(), fx, fy,
+				std::hypot(item.x - zone.Profile().x, item.y - zone.Profile().y));
+			if (fx < 0)
+				break;
+			press(fx, fy);
+			h.RunUntil([&] { return windows.Shown("BagWorld1"); }, 5000);
+			chat();
+			if (const SidlWindow *bag = windows.Find("BagWorld1"); bag && windows.Shown("BagWorld1")) {
+				const SidlWindow::Control *label = bag->Find("Container_Label");
+				int slots = 0;
+				for (int n = 1; n <= 10; ++n)
+					if (const SidlWindow::Control *c = bag->Find("ContainerSlot" + std::to_string(n)); c && c->visible)
+						++slots;
+				const SidlWindow::Control *combine = bag->Find("Container_Combine");
+				printf("[preview] BagWorld1 up: '%s', %d slots, Combine %s\n", label ? label->text.c_str() : "", slots,
+					combine && combine->visible ? "shown" : "hidden");
+				h.RunUntil([] { return false; }, 300);
+				h.Snapshot("o5-forge-open");
+				control("BagWorld1", "DoneButton");
+				h.RunUntil([] { return false; }, 300);
+				printf("[preview] after Done: BagWorld1 %s\n", windows.Shown("BagWorld1") ? "up" : "down");
+			}
+			else
+				printf("[preview] the forge didn't open\n");
+			break;
+		}
+		h.Key(InputEvent::Key::Enter);
+		h.Type("/camp");
+		h.Key(InputEvent::Key::Enter);
+		h.RunUntil([&] { return zone.GetState() != ZoneSession::State::InZone && zone.GetState() != ZoneSession::State::Camping; },
+			40000);
+		printf("[preview] camped\n");
+		return 0;
 	}
 
 	// Live: the nearest merchant's shop opened with the right button, the first thing in a general
@@ -362,6 +523,7 @@ int main(int argc, char **argv)
 	bool stop_at_charselect = argc == 7 && std::string(argv[6]) == "charselect";
 	bool create = argc == 7 && std::string(argv[6]) == "create";
 	bool shop = argc == 7 && std::string(argv[6]) == "shop";
+	bool ground = argc == 7 && std::string(argv[6]) == "ground";
 	if (argc >= 6 && !replay) {
 		std::string login = argv[3];
 		size_t colon = login.rfind(':');
@@ -1709,6 +1871,8 @@ int main(int argc, char **argv)
 			}
 			if (shop)
 				return ShopTest(frontend, h);
+			if (ground)
+				return GroundTest(frontend, h);
 			h.Key(InputEvent::Key::F9);
 			h.Snapshot("8-zone-first-person");
 			h.Key(InputEvent::Key::F9);

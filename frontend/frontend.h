@@ -27,6 +27,7 @@
 #include "bank_window.h"
 #include "buffs.h"
 #include "containers.h"
+#include "ground_items.h"
 #include "loot_window.h"
 #include "merchant_window.h"
 #include "trade_window.h"
@@ -209,7 +210,8 @@ private:
 	// CEverQuest::RightClickedOnPlayer: a corpse's loot, a banker's bank, a merchant's shop, or else
 	// /consider (of our target).
 	void RightClickedOnPlayer(uint16_t spawn);
-	bool IsOkToTransact() const; // CEverQuest_IsOkToTransact: no window that deals with someone up
+	bool IsOkToTransact() const;
+	void WorldClick(int x, int y); // CEverQuest_LMouseUp on the world (window pixels) // CEverQuest_IsOkToTransact: no window that deals with someone up
 	void AddZoneLog(const std::string &text, uint32_t color); // a line of chat in this color
 	void ChatOut(const std::string &text, int type);          // in a chat color type (ChatType)
 	void DrawNameSprites(Canvas &canvas, uint64_t now_ms);
@@ -330,6 +332,7 @@ private:
 	MerchantWindow m_merchant;
 	LootWindow m_loot;
 	TradeWindow m_trade;            // and the give window
+	GroundItems m_ground;           // dropping and picking up
 	uint64_t m_right_world_ms = 0;  // when the right button went down on the world (0: it didn't)
 	bool m_jump_requested = false;
 	bool m_crouch_sent = false; // the stance last sent for a standing jump's wind-up

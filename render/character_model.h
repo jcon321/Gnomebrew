@@ -164,6 +164,9 @@ namespace render
 		// A zone's own models, <zone>_chr.s3d and friends, searched first.
 		bool AddZone(const std::string &eq_dir, const std::string &zone);
 		std::unique_ptr<CharacterModel> Build(const CharacterAppearance &appearance, std::string &error);
+		// An item's model on its own, from its actor ("IT63_ACTORDEF" or "IT63"): one bone, scale 1,
+		// no animations (something on the ground). Null when there's no such item model.
+		std::unique_ptr<CharacterModel> BuildItem(const std::string &actor, std::string &error);
 
 	private:
 		struct Source
@@ -173,6 +176,10 @@ namespace render
 			TextureCache textures;
 		};
 		bool AddSource(std::vector<std::unique_ptr<Source>> &to, const std::string &eq_dir, const std::string &name);
+		// A held item's model (<tag>_HS_DEF or <tag>_DMSPRITEDEF) onto the model, on bone `point`;
+		// `it` its number for its particle clouds. False when there's none.
+		bool AppendItem(CharacterModel &model, const std::string &tag, unsigned it, uint16_t point);
+		static void AppendItemMesh(CharacterModel &model, const WldMesh &mesh, Source &from, uint16_t point);
 		std::vector<std::unique_ptr<Source>> m_sources;
 		std::vector<std::unique_ptr<Source>> m_items; // gequip*.s3d, searched after the models
 		std::vector<std::unique_ptr<Source>> m_armor; // global17..23_amr.s3d: materials, searched after the model's own

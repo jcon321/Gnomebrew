@@ -77,7 +77,11 @@ namespace ZoneOp
 	constexpr uint16_t SpawnDoor = 0x41f7;     // u16 count, then the Door_Structs (44 bytes each) deflated
 	constexpr uint16_t MoveDoor = 0x408e;      // {u8 door id, u8 action}: EQSwitch::ChangeState's state
 	constexpr uint16_t ClickDoor = 0x408d;     // ClickDoor_Struct, 8 bytes (EQSwitch::UseSwitch)
-	constexpr uint16_t GroundSpawn = 0x402c;
+	constexpr uint16_t GroundSpawn = 0x402c;       // Object_Struct (224 bytes): something on the ground; ours, a drop
+	constexpr uint16_t ClickObject = 0x402b;       // ClickObject_Struct {u32 drop id, u32 who}: a pickup; the zone's, it's gone
+	constexpr uint16_t ClickObjectAction = 0x40d7; // ClickObjectAction_Struct: a tradeskill container opened; ours, closed
+	constexpr uint16_t ObjectItemPacket = 0x40fb;  // Item_Struct: one in an open tradeskill container (slot 0..9)
+	constexpr uint16_t ClearObject = 0x4205;       // the open tradeskill container's items gone
 	constexpr uint16_t SendZonepoints = 0x40b4; // u32 count + ZonePoint_Entry (24 bytes) each: the teleport table
 	constexpr uint16_t ZoneChange = 0x40a3;     // ZoneChange_Struct, 76 bytes, both directions
 	constexpr uint16_t Stamina = 0x4157;
@@ -234,6 +238,10 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::MoveDoor, "OP_MoveDoor"},
 	{ZoneOp::ClickDoor, "OP_ClickDoor"},
 	{ZoneOp::GroundSpawn, "OP_GroundSpawn"},
+	{ZoneOp::ClickObject, "OP_ClickObject"},
+	{ZoneOp::ClickObjectAction, "OP_ClickObjectAction"},
+	{ZoneOp::ObjectItemPacket, "OP_ObjectItemPacket"},
+	{ZoneOp::ClearObject, "OP_ClearObject"},
 	{ZoneOp::SendZonepoints, "OP_SendZonepoints"},
 	{ZoneOp::ZoneChange, "OP_ZoneChange"},
 	{ZoneOp::Stamina, "OP_Stamina"},

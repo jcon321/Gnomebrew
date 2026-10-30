@@ -355,7 +355,8 @@ This drives the real front-end code with scripted input and writes PNG snapshots
 drawn as outline boxes, since there's no GDI. With a login server it logs in, snapshots server
 select and character select, and presses Enter World (add `charselect` after the password to stop
 at character select instead, or `shop` to stand by the nearest merchant, open its shop with the
-right button, sell the first thing worth anything and buy it back, then camp). `create` instead makes an Erudite wizard from the first empty slot,
+right button, sell the first thing worth anything and buy it back, then camp; or `ground` to list
+what's on the ground, drop an item and pick it back up, and open a forge and close it). `create` instead makes an Erudite wizard from the first empty slot,
 snapshots every creation screen and the face picker, submits it, and deletes it again. It's for
 checking layout and flow without Windows. `--replay` plays a packet log back instead (no server)
 and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,
@@ -918,6 +919,33 @@ details and the nearest spawns at the top left and the radar at the top right.
   and walking off (every 500 ms) cancel. Closing forgets our items and coins in it: the zone hands
   them back. eqgame's `Deactivate` would send a second `OP_CancelTrade` and say 1450 again after
   the zone's cancel; ours doesn't.
+- **The ground** (`frontend/ground_items.*`, `ZoneView`'s ground items): `OP_GroundSpawn` (0x402c)
+  is an `Object_Struct` (224 bytes; 222 arrive): item id @8, drop id @12, charges @24, heading @140,
+  z @144, x @148, y @152, the actor `"<IDFile>_ACTORDEF"` @156, a dropped bag's items' ids @186,
+  the object type @212 (a tradeskill container's bag type). HandleWorldMessage keeps it in the
+  EQItemList and `CreateActor`s it at `GetFloorHeight` from 1 over it, plus 0.5; ours is the item's
+  model (`CharacterModels::BuildItem`: `IT<n>_HS_DEF` or `IT<n>_DMSPRITEDEF` from gequip*.s3d on a
+  one-bone model, scale 1). `CEverQuest_LMouseUp` (new UI) goes, for a click that didn't drag
+  and with no transaction waiting (`DAT_007d0254`): the spawn under the cursor
+  (`LeftClickedOnPlayer`); else, with no trade, an item on the cursor is dropped (not a common
+  item of type 12, 33 or 39, which click the doors), coins do nothing, and with nothing held a
+  ground item within 20 (3D) is asked for, `OP_ClickObject` (0x402b: drop id, us), holding
+  `DAT_007d0254` and `DAT_007d0258` and opening the inventory; else the doors (`ClickedSwitch`). The
+  zone answers everyone with `OP_ClickObject` (who picked it up, or 0 when it decays: either one
+  answering ours lets the holds go; drop id 0xffffffff, a lore item refused), the item coming on
+  the cursor as its own packet. Dropping: NO DROP says 12921 or 12922; `/fastdrop`
+  (`DAT_0079966c`, 0 from eqOptions2.opt to start) 1 drops at once, -1 says 12320, 0 asks with
+  the confirmation dialog (category 0x15, 20 s, 10011); `DropHeldItemOnGround` says 10012 (color
+  15) and sends our own `OP_GroundSpawn` with the item where we stand (the zone puts it down there
+  and tells everyone, us too). A tradeskill container answers a click with `OP_ClickObjectAction`
+  (0x40d7: who @0, drop id @4, open @8, type @10, slots @12, icon @16; `msg_chest_lock`): not us,
+  nothing; open 0 is 1406; one already open 1443; else `OpenWorldContainer` names it by its type
+  ("Forge"...) and opens it as `BagWorld1` at 4000. Its items come as `OP_ObjectItemPacket` (0x40fb,
+  slot 0..9), `OP_ClearObject` (0x4205) empties it, Combine sends slot 1000, and
+  `CContainerMgr::Process` closes it past 20 (every 500 ms); `CheckCloseable` keeps it open (Done
+  disabled, Escape passes it by) while a NO DROP item's in it. Closing sends `OP_ClickObjectAction`
+  {us, drop id, 0} (20 bytes). The zone's merchant overflow and anything else
+  `CreateGroundObject` makes come the same way. `IsOkToTransact` waits on all of it.
 - **Looting** (`frontend/loot_window.*`, `CLootWnd`): the right button on a corpse is
   `CEverQuest_LootCorpse`: within `ModelHeightOffset * 1.6 + 14` (`PlayerDistance` with 1.2, up and
   down counting 1/1.2) and with nothing else waiting it sends `OP_LootRequest` (0x404e, the corpse's

@@ -445,6 +445,7 @@ void ZoneSession::Reset(const std::string &character)
 	m_profile = ZoneProfile{};
 	m_info = ZoneInfo{};
 	m_spawns.clear();
+	m_ground.clear();
 	ClearLoot();
 	m_self = ZoneSpawn{};
 	m_my_id = 0;
@@ -754,6 +755,71 @@ float ZoneSession::SpawnDistance(uint16_t id) const
 		return -1e27f;
 	float dx = it->second.x - m_profile.x, dy = it->second.y - m_profile.y, dz = it->second.z - m_profile.z;
 	return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+bool ZoneSession::PickUp(uint32_t drop_id)
+{
+	if (m_state != State::InZone)
+		return false;
+	// ClickObject_Struct {u32 drop id, u32 us}.
+	uint32_t body[2] = {drop_id, m_my_id};
+	bool sent = Send(ZoneOp::ClickObject, body, sizeof(body), "OP_ClickObject " + std::to_string(drop_id));
+	if (sent && m_replay) {
+		// The replay's zone: it's gone (Object::HandleClick tells everyone); nothing's summoned.
+		auto it = m_ground.find(drop_id);
+		if (it != m_ground.end() && it->second.object_type == 1)
+			ReplayAnswer(ZoneOp::ClickObject, body, sizeof(body));
+		else {
+			uint32_t refused[2] = {0xffffffff, m_my_id};
+			ReplayAnswer(ZoneOp::ClickObject, refused, sizeof(refused));
+		}
+	}
+	return sent;
+}
+
+bool ZoneSession::DropCursorItem()
+{
+	auto held = m_items.find(Inventory::Cursor);
+	if (m_state != State::InZone || held == m_items.end())
+		return false;
+	// DropHeldItemOnGround's EQItemList (Object_Struct): the item's id, its charges, its price @136,
+	// where we stand (z @144, x @148, y @152), "<IDFile>_ACTORDEF" @156, a bag's items' ids @186
+	// (-1 none) and charges, its weight @212.
+	const ZoneItem &item = held->second;
+	uint8_t body[224] = {};
+	std::memcpy(body + 8, &item.id, 2);
+	std::memcpy(body + 136, &item.price, 4);
+	std::memcpy(body + 144, &m_profile.z, 4);
+	std::memcpy(body + 148, &m_profile.x, 4);
+	std::memcpy(body + 152, &m_profile.y, 4);
+	std::string model = item.idfile + "_ACTORDEF";
+	std::memcpy(body + 156, model.c_str(), std::min<size_t>(model.size(), 15));
+	if (item.item_class == 0)
+		body[24] = static_cast<uint8_t>(item.charges);
+	for (int n = 0; n < 10; ++n) {
+		auto inside = item.item_class == 1 ? m_items.find(Inventory::BagSlot(Inventory::Cursor, n)) : m_items.end();
+		int16_t id = inside != m_items.end() ? static_cast<int16_t>(inside->second.id) : -1;
+		std::memcpy(body + 186 + n * 2, &id, 2);
+		if (inside != m_items.end() && inside->second.item_class == 0)
+			body[34 + n * 10] = static_cast<uint8_t>(inside->second.charges);
+	}
+	uint32_t weight = item.weight;
+	std::memcpy(body + 212, &weight, 4);
+	std::string what = "OP_GroundSpawn (drop) " + item.name;
+	Inventory::Remove(m_items, Inventory::Cursor);
+	return Send(ZoneOp::GroundSpawn, body, sizeof(body), what);
+}
+
+bool ZoneSession::CloseWorldContainer(uint32_t drop_id)
+{
+	for (int n = 0; n < 10; ++n)
+		m_items.erase(static_cast<int16_t>(Inventory::WorldContainer + n));
+	if (m_state != State::InZone)
+		return false;
+	uint8_t body[20] = {};
+	std::memcpy(body, &m_my_id, 2);
+	std::memcpy(body + 4, &drop_id, 4);
+	return Send(ZoneOp::ClickObjectAction, body, sizeof(body), "OP_ClickObjectAction (close) " + std::to_string(drop_id));
 }
 
 bool ZoneSession::TradeRequest(uint16_t target)
@@ -1562,6 +1628,74 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 			m_items[item.slot] = item;
 			UpdateAppearance(); // msg_snd_ieq
 		}
+		break;
+	case ZoneOp::GroundSpawn: {
+		// Object_Struct (224 bytes, 222 as it comes): an EQItemList entry (the 0x402c case of
+		// HandleWorldMessage).
+		if (data.size() < 216)
+			break;
+		ZoneGroundItem item;
+		item.item_id = Read<uint16_t>(data, 8);
+		item.drop_id = Read<uint32_t>(data, 12);
+		item.charges = data[24];
+		item.heading = Read<float>(data, 140);
+		item.z = Read<float>(data, 144);
+		item.x = Read<float>(data, 148);
+		item.y = Read<float>(data, 152);
+		item.model = CString(data, 156, 16);
+		for (int n = 0; n < 10; ++n)
+			item.contents[n] = Read<int16_t>(data, 186 + n * 2);
+		item.object_type = Read<uint32_t>(data, 212);
+		m_ground[item.drop_id] = item;
+		Event e{Event::Type::GroundItemAdded};
+		e.value = static_cast<int32_t>(item.drop_id);
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::ClickObject: {
+		// ClickObject_Struct {u32 drop id, u32 who}: it's gone (picked up, or decayed: who 0), and
+		// our own pickup answered (who us or 0; drop id 0xffffffff: refused).
+		if (data.size() < 6)
+			break;
+		uint32_t drop_id = Read<uint32_t>(data, 0);
+		uint16_t who = Read<uint16_t>(data, 4);
+		Event e{Event::Type::GroundItemRemoved};
+		e.value = static_cast<int32_t>(drop_id);
+		e.id = who == 0 || who == m_my_id ? 1 : 0;
+		m_ground.erase(drop_id);
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::ClickObjectAction: {
+		// ClickObjectAction_Struct {u32 who, u32 drop id, u8 open, u8, u8 type, u8, u8 slots, u8[3],
+		// u16 icon} (msg_chest_lock).
+		if (data.size() < 18)
+			break;
+		Event e{Event::Type::WorldContainerOpened};
+		e.world.player = Read<uint16_t>(data, 0);
+		e.world.drop_id = Read<uint32_t>(data, 4);
+		e.world.open = data[8];
+		e.world.type = data[10];
+		e.world.slots = data[12];
+		e.world.icon = Read<uint16_t>(data, 16);
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::ObjectItemPacket:
+		// msg_snd_weq_wnotes: one of an open tradeskill container's items, in its slot (0..9).
+		if (data.size() >= ItemSize) {
+			ZoneItem item = ParseItem(data, 0);
+			if (item.id == 0 || (item.item_class == 0 && item.item_type == 13) || item.slot < 0 || item.slot > 9)
+				break;
+			item.slot = static_cast<int16_t>(Inventory::WorldContainer + item.slot);
+			m_items[item.slot] = item;
+		}
+		break;
+	case ZoneOp::ClearObject:
+		// CContainerMgr_ClearWorldContainerItems: the open container's items gone (a combine's).
+		for (int n = 0; n < 10; ++n)
+			m_items.erase(static_cast<int16_t>(Inventory::WorldContainer + n));
+		events.push_back({Event::Type::WorldContainerCleared});
 		break;
 	case ZoneOp::TradeRequest:
 	case ZoneOp::TradeRequestAck: {

@@ -30,6 +30,8 @@
 //   - PostDraw (@00416cfc): with Alt down and the mouse over it, every slot's tooltip, at the
 //     slot's right less 5, its top + 2 in the first column and + 22 in the second.
 
+#include "zone_session.h"
+
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -40,7 +42,6 @@ class GameValues;
 class TextRenderer;
 class WindowManager;
 class ZoneSession;
-struct ZoneItem;
 
 class Containers
 {
@@ -67,8 +68,12 @@ public:
 	std::string WindowOf(int16_t slot) const;
 
 	// Every frame: windows closed by their close box, bags gone from their slots, and what's in
-	// the open ones' slots.
-	void Update();
+	// the open ones' slots; a world container out of reach.
+	void Update(uint64_t now_ms);
+	// msg_chest_lock -> CContainerMgr::OpenWorldContainer: a tradeskill container on the ground (a
+	// forge) opened for us, as BagWorld1 with its slots at 4000, named by its type.
+	void OpenWorld(const ZoneWorldContainer &world, uint64_t now_ms);
+	bool WorldOpen() const { return m_world_open; } // pWorldItems
 	// A click on Done or Combine in one of them; false if it isn't one of theirs.
 	bool Click(const std::string &window, const std::string &control);
 	// The zone answered a combine (an empty OP_TradeSkillCombine).
@@ -86,6 +91,8 @@ private:
 		std::string window;
 	};
 	void SetContainer(const std::string &window, const ZoneItem &bag, int16_t slot);
+	const ZoneItem *BagAt(int16_t slot) const;      // the bag in a slot, or the world container (4000)
+	static int16_t ContentSlot(int16_t slot, int n); // its n'th slot
 	void Combine(const Bag &bag);
 	void PlayOpenClose(const ZoneItem *bag, bool open);
 
@@ -95,4 +102,10 @@ private:
 	Host m_host;
 	std::vector<Bag> m_open;
 	bool m_combining = false;
+	// The world container: the bag msg_chest_lock made for it, the object's drop id, whether it
+	// can be closed (CheckCloseable), and when Process next checks how far it is.
+	ZoneItem m_world;
+	bool m_world_open = false, m_world_closeable = true;
+	uint32_t m_world_drop = 0;
+	uint64_t m_world_check_ms = 0;
 };

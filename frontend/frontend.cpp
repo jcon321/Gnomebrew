@@ -684,12 +684,13 @@ void FrontEnd::Update(uint64_t now_ms)
 	if (m_screen == Screen::Zone) {
 		Rect area = ScreenArea();
 		m_windows.Update(now_ms, m_mouse_x - area.x, m_mouse_y - area.y);
-		m_window_state.busy = m_containers.Combining() || m_merchant.Busy() || m_loot.Busy();
+		m_window_state.busy = m_containers.Combining() || m_merchant.Busy() || m_loot.Busy() || m_ground.Busy();
 		HandleWindowClicks();
 		m_bank.Frame(now_ms);
 		m_merchant.Frame(now_ms);
 		m_loot.Frame(now_ms);
 		m_trade.Frame(now_ms);
+		m_ground.Frame(now_ms);
 		m_spell_book.Frame(now_ms);
 		m_spell_cast.Frame(now_ms);
 		m_buffs.Frame(now_ms);
@@ -704,7 +705,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		if (m_zone_view)
 			m_game_values.heading = m_zone_view->Movement().heading;
 		UpdateGameWindows(m_windows, m_game_values, m_window_state);
-		m_containers.Update();
+		m_containers.Update(now_ms);
 		if (m_windows.TakeChanged())
 			SaveUiLayout();
 	}
@@ -1590,6 +1591,12 @@ void FrontEnd::BuildZoneWindows()
 	trade_host.height = [this](uint16_t id) { return m_zone_view ? m_zone_view->CenterHeight(id) : 0.0f; };
 	trade_host.ok_to_transact = [this] { return IsOkToTransact(); };
 	m_trade.Attach(m_windows, m_zone, m_window_state, m_game_values, std::move(trade_host));
+	GroundItems::Host ground_host;
+	ground_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
+	ground_host.open_inventory = [this] { m_windows.Show("InventoryWindow", true); };
+	ground_host.world_container_open = [this] { return m_containers.WorldOpen(); };
+	ground_host.open_world_container = [this](const ZoneWorldContainer &world) { m_containers.OpenWorld(world, m_now_ms); };
+	m_ground.Attach(m_windows, m_zone, m_window_state, m_game_values, std::move(ground_host));
 	m_windows.TakeChanged();
 }
 
@@ -1675,8 +1682,9 @@ void FrontEnd::HandleWindowClicks()
 			}
 			continue;
 		}
-		// A corpse's slots and Done, and the confirmation dialog when it's asking about a NO DROP item.
-		if (m_loot.Click(click.window, click.control, m_now_ms))
+		// A corpse's slots and Done, and the confirmation dialog when it's asking about a NO DROP
+		// item, or about dropping one on the ground.
+		if (m_loot.Click(click.window, click.control, m_now_ms) || m_ground.Click(click.window, click.control))
 			continue;
 		// The spellbook, the gems and the confirmation dialog.
 		if (m_spell_book.Click(click.window, click.control, click.alt, m_now_ms))
@@ -1787,14 +1795,48 @@ void FrontEnd::ChangeStance(uint8_t stance)
 		m_spell_book.StoodUp();
 }
 
+void FrontEnd::WorldClick(int x, int y)
+{
+	if (uint16_t id = m_zone_view->PickSpawn(x, y, m_zone.MySpawnId())) {
+		SetTarget(id);
+		if (m_zone.Items().count(Inventory::Cursor) || Inventory::CursorMoneyType(m_zone.Profile()))
+			m_trade.DropOnPlayer(id);
+		return;
+	}
+	if (!m_trade.Active()) {
+		bool held = m_zone.Items().count(Inventory::Cursor) != 0;
+		if (held && m_ground.DropRequest(m_now_ms))
+			return;
+		if (!held && Inventory::CursorMoneyType(m_zone.Profile()))
+			return;
+		uint32_t drop_id = 0;
+		if (!held && !m_containers.WorldOpen() && m_zone_view->PickGroundItem(x, y, drop_id) && m_ground.PickUp(drop_id))
+			return;
+	}
+	uint8_t door = 0;
+	int16_t skill = 0;
+	int16_t disarm = m_zone.Profile().skills[17]; // disarm traps
+	switch (m_zone_view->ClickDoor(x, y, disarm, door, skill)) {
+	case ZoneDoors::Use::Ask:
+		m_zone.ClickDoor(door, 0xffff, skill);
+		break;
+	case ZoneDoors::Use::TooFar:
+		AddZoneLog(EqString(1462, "You can't reach that, get closer."), ZoneYellow);
+		break;
+	case ZoneDoors::Use::Nothing:
+		break;
+	}
+}
+
 bool FrontEnd::IsOkToTransact() const
 {
 	// Not camping, no combine, buy or sell waiting (DAT_007d0254), no merchant asked
-	// (DAT_007d0258), no world container, spellbook, bank, merchant, corpse or trade (the trainer
-	// and bazaar windows when we have them).
+	// (DAT_007d0258), no world container (pWorldItems), spellbook, bank, merchant, corpse or trade
+	// (the trainer and bazaar windows when we have them).
 	return m_zone.CampRemainingMs() == 0 && !m_containers.Combining() && !m_spell_book.Activated() && !m_bank.Active() &&
 	       !m_merchant.Active() && !m_merchant.Waiting() && !m_merchant.Busy() && !m_loot.Active() &&
-	       !m_loot.Waiting() && !m_loot.Busy() && !m_trade.Active();
+	       !m_loot.Waiting() && !m_loot.Busy() && !m_trade.Active() && !m_ground.Busy() && !m_ground.Waiting() &&
+	       !m_containers.WorldOpen();
 }
 
 void FrontEnd::RightClickedOnPlayer(uint16_t spawn)
@@ -1865,6 +1907,8 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			m_zone_view->SetPlayerPosition(me.x, me.y, me.z, me.heading);
 			if (!m_zone.Doors().empty())
 				m_zone_view->SetDoors(m_zone.Doors(), m_now_ms);
+			for (const auto &[drop_id, item] : m_zone.GroundItems())
+				m_zone_view->AddGroundItem(drop_id, item.model, item.x, item.y, item.z, item.heading);
 			break;
 		}
 		case Type::DoorsSpawned:
@@ -1943,6 +1987,20 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 		case Type::LootTaken:
 		case Type::LootEnded:
 			m_loot.ZoneEvent(event);
+			break;
+		case Type::GroundItemAdded:
+			if (m_zone_view)
+				if (auto it = m_zone.GroundItems().find(static_cast<uint32_t>(event.value)); it != m_zone.GroundItems().end())
+					m_zone_view->AddGroundItem(it->first, it->second.model, it->second.x, it->second.y, it->second.z,
+						it->second.heading);
+			break;
+		case Type::GroundItemRemoved:
+			if (m_zone_view)
+				m_zone_view->RemoveGroundItem(static_cast<uint32_t>(event.value));
+			m_ground.ZoneEvent(event);
+			break;
+		case Type::WorldContainerOpened:
+			m_ground.ZoneEvent(event);
 			break;
 		case Type::TradeRequested:
 		case Type::TradeBegan:
@@ -2234,31 +2292,16 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 		m_click_travel = 0;
 		break;
 	case InputEvent::Type::MouseUp:
-		// A click that didn't drag uses the door or switch under the cursor (CEverQuest_ClickedSwitch),
-		// or else targets the spawn under the cursor (nobody: the target stays).
-		if (m_world_click && m_click_travel <= 3)
-			m_window_state.ClearCursor(); // and the click goes on
-		if (m_world_click && m_click_travel <= 3 && m_zone_view) {
-			uint8_t door = 0;
-			int16_t skill = 0;
-			int16_t disarm = m_zone.Profile().skills[17]; // disarm traps
-			switch (m_zone_view->ClickDoor(event.x, event.y, disarm, door, skill)) {
-			case ZoneDoors::Use::Ask:
-				m_zone.ClickDoor(door, 0xffff, skill);
-				break;
-			case ZoneDoors::Use::TooFar:
-				AddZoneLog(EqString(1462, "You can't reach that, get closer."), ZoneYellow);
-				break;
-			case ZoneDoors::Use::Nothing:
-				// LeftClickedOnPlayer: the spawn's our target; an item or coins on the cursor go to
-				// them (DropItemOrMoneyOnPlayer: a trade).
-				if (uint16_t id = m_zone_view->PickSpawn(event.x, event.y, m_zone.MySpawnId())) {
-					SetTarget(id);
-					if (m_zone.Items().count(Inventory::Cursor) || Inventory::CursorMoneyType(m_zone.Profile()))
-						m_trade.DropOnPlayer(id);
-				}
-				break;
-			}
+		// CEverQuest_LMouseUp, for a click that didn't drag (and not while a transaction waits:
+		// DAT_007d0254): what's on the cursor as a button goes; then the spawn under the cursor
+		// (LeftClickedOnPlayer: our target, and an item or coins on the cursor go to them, a
+		// trade); else, not trading, an item on the cursor goes on the ground and with nothing on
+		// it the ground item under it comes up (GroundItems); else the door or switch under it
+		// (CEverQuest_ClickedSwitch). Nobody: the target stays.
+		if (m_world_click && m_click_travel <= 3 && !m_window_state.busy) {
+			m_window_state.ClearCursor(); // RemoveAttachment, and the click goes on
+			if (m_zone_view)
+				WorldClick(event.x, event.y);
 		}
 		m_world_click = false;
 		break;

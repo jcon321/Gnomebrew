@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <cstdlib>
 #include <cstdio>
 #include <map>
 
@@ -500,59 +501,9 @@ namespace render
 
 		// EQPlayer::DisplayWeaponsAndArmor -> CDisplay_UpdateItemSlot2: IT<primary> in the right hand
 		// (<tag>R_POINT_DAG), IT<secondary> in the left (L_POINT_DAG), or on the arm (SHIELD_POINT_DAG)
-		// when it's a shield. CDisplay::ChangeDag hangs an item's skeleton (IT<n>_HS_DEF, here in its
-		// base pose) there, else its mesh (IT<n>_DMSPRITEDEF). Models without the point hold nothing;
-		// race 14 never does.
+		// when it's a shield (AppendItem). Models without the point hold nothing; race 14 never does.
 		auto append_item = [&](unsigned it, int point) {
-			std::vector<Source *> order;
-			for (auto &from : m_items)
-				order.push_back(from.get());
-			for (auto &from : m_sources)
-				order.push_back(from.get());
-			char name[64];
-			snprintf(name, sizeof(name), "IT%u_HS_DEF", it);
-			for (Source *from : order) {
-				int index = from->wld.Find(name);
-				WldSkeleton item;
-				if (index < 0 || from->wld.Fragments()[index].type != 0x10 || !from->wld.ReadSkeleton(index, item))
-					continue;
-				std::vector<Transform> pose = PoseSkeleton(item, nullptr, 0);
-				for (int part : item.meshes) {
-					WldMesh piece;
-					if (from->wld.ReadMesh(part, piece)) {
-						SkinMesh(piece, pose);
-						append(piece, *from, point);
-					}
-				}
-				// Meshes a bone carries itself (a torch's IT36_O_DAG), all on that bone, and its
-				// particle clouds (the flame and smoke on IT36_P1_DAG and IT36_P2_DAG).
-				for (size_t b = 0; b < item.bones.size(); ++b) {
-					WldMesh piece;
-					if (item.bones[b].mesh >= 0 && from->wld.ReadMesh(item.bones[b].mesh, piece)) {
-						piece.pieces = {{static_cast<uint16_t>(piece.positions.size()), static_cast<uint16_t>(b)}};
-						SkinMesh(piece, pose);
-						append(piece, *from, point);
-					}
-					CharacterModel::Emitter emitter;
-					if (item.bones[b].particle_cloud >= 0 && CloudDef(from->wld, from->textures, item.bones[b].particle_cloud, emitter.def)) {
-						emitter.bone = static_cast<uint16_t>(point);
-						emitter.item = it;
-						emitter.item_bone = static_cast<uint16_t>(b);
-						emitter.local = pose[b];
-						model->m_emitters.push_back(std::move(emitter));
-					}
-				}
-				return;
-			}
-			snprintf(name, sizeof(name), "IT%u_DMSPRITEDEF", it);
-			for (Source *from : order) {
-				int index = from->wld.Find(name);
-				WldMesh item;
-				if (index >= 0 && from->wld.Fragments()[index].type == 0x36 && from->wld.ReadMesh(index, item)) {
-					append(item, *from, point);
-					return;
-				}
-			}
+			AppendItem(*model, "IT" + std::to_string(it), it, static_cast<uint16_t>(point));
 		};
 		auto bone_named = [&](const std::string &name) {
 			for (size_t i = 0; i < skeleton.bones.size(); ++i)
@@ -591,6 +542,128 @@ namespace render
 		model->m_max_z *= model->m_scale;
 		model->m_head_z *= model->m_scale;
 		model->m_origin_over_feet = 3.125f * model->m_scale;
+		return model;
+	}
+
+	void CharacterModels::AppendItemMesh(CharacterModel &model, const WldMesh &mesh, Source &from, uint16_t point)
+	{
+		// All its vertices on the one bone it hangs from, its own materials untinted.
+		uint32_t base = static_cast<uint32_t>(model.m_positions.size());
+		model.m_bones.resize(base + mesh.positions.size(), point);
+		for (size_t i = 0; i < mesh.positions.size(); ++i) {
+			model.m_positions.push_back({mesh.positions[i].x, mesh.positions[i].y, mesh.positions[i].z});
+			model.m_normals.push_back(Normalize({mesh.normals[i].x, mesh.normals[i].y, mesh.normals[i].z}));
+			model.m_uvs.push_back(mesh.uvs[i * 2]);
+			model.m_uvs.push_back(mesh.uvs[i * 2 + 1]);
+		}
+		std::map<uint16_t, size_t> batch_of; // SIZE_MAX: not drawn
+		for (const auto &t : mesh.triangles) {
+			if (t.material >= mesh.materials.size())
+				continue;
+			auto found = batch_of.find(t.material);
+			if (found == batch_of.end()) {
+				const WldMaterial &material = mesh.materials[t.material];
+				MaterialInfo info = DescribeRenderMethod(material.render_method);
+				if (!info.visible) {
+					batch_of.emplace(t.material, SIZE_MAX);
+					continue;
+				}
+				CharacterModel::Batch batch;
+				batch.material.blend = info.blend;
+				batch.material.opacity = info.opacity;
+				batch.material.two_sided = info.blend != Blend::Opaque;
+				if (!material.textures.empty())
+					batch.material.texture = from.textures.Get(material.textures[0], info.masked);
+				found = batch_of.emplace(t.material, model.m_batches.size()).first;
+				model.m_batches.push_back(std::move(batch));
+			}
+			if (found->second == SIZE_MAX)
+				continue;
+			auto &indices = model.m_batches[found->second].indices;
+			indices.insert(indices.end(), {base + t.v[0], base + t.v[1], base + t.v[2]});
+		}
+	}
+
+	bool CharacterModels::AppendItem(CharacterModel &model, const std::string &tag, unsigned it, uint16_t point)
+	{
+		// CDisplay::ChangeDag hangs an item's skeleton (<tag>_HS_DEF, here in its base pose) on the
+		// point, else its mesh (<tag>_DMSPRITEDEF), from gequip*.s3d and then the models' files.
+		std::vector<Source *> order;
+		for (auto &from : m_items)
+			order.push_back(from.get());
+		for (auto &from : m_sources)
+			order.push_back(from.get());
+		std::string name = tag + "_HS_DEF";
+		for (Source *from : order) {
+			int index = from->wld.Find(name);
+			WldSkeleton item;
+			if (index < 0 || from->wld.Fragments()[index].type != 0x10 || !from->wld.ReadSkeleton(index, item))
+				continue;
+			std::vector<Transform> pose = PoseSkeleton(item, nullptr, 0);
+			for (int part : item.meshes) {
+				WldMesh piece;
+				if (from->wld.ReadMesh(part, piece)) {
+					SkinMesh(piece, pose);
+					AppendItemMesh(model, piece, *from, point);
+				}
+			}
+			// Meshes a bone carries itself (a torch's IT36_O_DAG), all on that bone, and its
+			// particle clouds (the flame and smoke on IT36_P1_DAG and IT36_P2_DAG).
+			for (size_t b = 0; b < item.bones.size(); ++b) {
+				WldMesh piece;
+				if (item.bones[b].mesh >= 0 && from->wld.ReadMesh(item.bones[b].mesh, piece)) {
+					piece.pieces = {{static_cast<uint16_t>(piece.positions.size()), static_cast<uint16_t>(b)}};
+					SkinMesh(piece, pose);
+					AppendItemMesh(model, piece, *from, point);
+				}
+				CharacterModel::Emitter emitter;
+				if (item.bones[b].particle_cloud >= 0 && CloudDef(from->wld, from->textures, item.bones[b].particle_cloud, emitter.def)) {
+					emitter.bone = point;
+					emitter.item = it;
+					emitter.item_bone = static_cast<uint16_t>(b);
+					emitter.local = pose[b];
+					model.m_emitters.push_back(std::move(emitter));
+				}
+			}
+			return true;
+		}
+		name = tag + "_DMSPRITEDEF";
+		for (Source *from : order) {
+			int index = from->wld.Find(name);
+			WldMesh item;
+			if (index >= 0 && from->wld.Fragments()[index].type == 0x36 && from->wld.ReadMesh(index, item)) {
+				AppendItemMesh(model, item, *from, point);
+				return true;
+			}
+		}
+		return false;
+	}
+
+	std::unique_ptr<CharacterModel> CharacterModels::BuildItem(const std::string &actor, std::string &error)
+	{
+		// An item on the ground (CDisplay::CreateActor's "<tag>_ACTORDEF"): the held item's model on a
+		// skeleton of one bone, at scale 1, with no animations.
+		std::string tag = Upper(actor);
+		if (tag.size() > 9 && tag.compare(tag.size() - 9, 9, "_ACTORDEF") == 0)
+			tag.resize(tag.size() - 9);
+		auto model = std::make_unique<CharacterModel>();
+		model->m_code = tag;
+		model->m_skeleton.bones.resize(1);
+		model->m_skeleton.bones[0].name = tag + "_DAG";
+		static const auto no_animations = std::make_shared<const std::map<std::string, SkeletonAnimation>>();
+		model->m_animations = no_animations;
+		unsigned it = tag.size() > 2 && tag.compare(0, 2, "IT") == 0 ? static_cast<unsigned>(std::strtoul(tag.c_str() + 2, nullptr, 10)) : 0;
+		if (!AppendItem(*model, tag, it, 0) || model->m_positions.empty()) {
+			error = "no model " + tag;
+			return nullptr;
+		}
+		model->m_min_z = 1e30f;
+		model->m_max_z = -1e30f;
+		for (const Vec3 &p : model->m_positions) {
+			model->m_min_z = std::min(model->m_min_z, p.z);
+			model->m_max_z = std::max(model->m_max_z, p.z);
+		}
+		model->m_scale = 1;
 		return model;
 	}
 

@@ -8,6 +8,7 @@
 #include "zone_session.h"
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 
 namespace
@@ -27,7 +28,66 @@ namespace
 		{"BagInv", Inventory::FirstGeneral, Inventory::LastGeneral, 5, 2},
 		{"BagBank", Inventory::FirstBank, Inventory::LastBank, -5, 2},
 		{"BagTrade", Inventory::FirstTrade, Inventory::LastHisTrade, -5, -2},
+		{"BagWorld", Inventory::WorldContainer, Inventory::WorldContainer, 3, -2},
 	};
+	constexpr float WorldRange = 20;          // CContainerMgr::Process
+	constexpr uint64_t WorldCheckMs = 500;
+	constexpr int16_t WorldCombineSlot = 1000; // HandleCombine's slot for a world container
+
+	// CContainerMgr::OpenWorldContainer's names, by the container's type.
+	const char *WorldContainerName(uint8_t type)
+	{
+		switch (type) {
+		case 0: return "Small Bag";
+		case 1: return "Large Bag";
+		case 2: return "Quiver";
+		case 3: return "Belt Pouch";
+		case 4: return "Wrist Pouch";
+		case 5: return "Back Pack";
+		case 6: return "Small Chest";
+		case 7: return "Large Chest";
+		case 9: return "Medicine Bag";
+		case 10: return "Tool Box";
+		case 11: return "Lexicon";
+		case 12: return "Mortar";
+		case 13: return "Self Dusting";
+		case 14: return "Mixing Bowl";
+		case 15: return "Oven";
+		case 16: return "Sewing Kit";
+		case 17: return "Forge";
+		case 18: return "Fletching Kit";
+		case 19: return "Brew Barrel";
+		case 20: return "Jeweler's Kit";
+		case 21: return "Pottery Wheel";
+		case 22: return "Kiln";
+		case 23: return "Keymaker";
+		case 24: return "Wizard's Lexicon";
+		case 25: return "Mage's Lexicon";
+		case 26: return "Necromancer's Lexicon";
+		case 27: return "Enchanter's Lexicon";
+		case 30: return "Always Works";
+		case 31: return "Koada'Dal Forge";
+		case 32: return "Teir'Dal Forge";
+		case 33: return "Oggok Forge";
+		case 34: return "Stormguard Forge";
+		case 35: return "Ak'anon Forge";
+		case 36: return "Northman Forge";
+		case 38: return "Cabilis Forge";
+		case 39: return "Freeport Forge";
+		case 40: return "Royal Qeynos Forge";
+		case 41: return "Halfling Tailoring Kit";
+		case 42: return "Erud Tailoring Kit";
+		case 43: return "Fier'Dal Tailoring Kit";
+		case 44: return "Fier'Dal Fletching Kit";
+		case 45: return "Iksar Pottery Wheel";
+		case 46: return "Tackle Box";
+		case 47: return "Grobb Forge";
+		case 48: return "Fier'Dal Forge";
+		case 49: return "Vale Forge";
+		case 50: return "Erud Forge";
+		default: return nullptr;
+		}
+	}
 
 	// The class and racial containers HandleCombine checks, by bag type: the class or race
 	// that may combine in it, and the message for anyone else.
@@ -112,6 +172,8 @@ void Containers::Reset()
 {
 	m_open.clear();
 	m_combining = false;
+	m_world_open = false;
+	m_world_closeable = true;
 	if (!m_windows)
 		return;
 	for (const BagPlace &place : Places)
@@ -151,11 +213,48 @@ void Containers::PlayOpenClose(const ZoneItem *bag, bool open)
 	m_host.sound(sound);
 }
 
+const ZoneItem *Containers::BagAt(int16_t slot) const
+{
+	// The world container isn't one of our items (its slots are 4000 on).
+	if (slot == Inventory::WorldContainer)
+		return m_world_open ? &m_world : nullptr;
+	return m_zone ? Find(m_zone->Items(), slot) : nullptr;
+}
+
+int16_t Containers::ContentSlot(int16_t slot, int n)
+{
+	if (slot == Inventory::WorldContainer)
+		return n >= 0 && n < Inventory::BagSlots ? static_cast<int16_t>(Inventory::WorldContainer + n) : -1;
+	return Inventory::BagSlot(slot, n);
+}
+
+void Containers::OpenWorld(const ZoneWorldContainer &world, uint64_t now_ms)
+{
+	// msg_chest_lock's EQ_Container: the type, the slots, the icon, open, size 10, no weight
+	// reduction; OpenWorldContainer names it by its type and opens it at 4000.
+	m_world = ZoneItem{};
+	m_world.item_class = 1;
+	m_world.bag_type = world.type;
+	m_world.bag_slots = world.slots;
+	m_world.icon = world.icon;
+	m_world.bag_open = 1;
+	m_world.bag_size = 10;
+	if (const char *name = WorldContainerName(world.type))
+		m_world.name = name;
+	m_world_drop = world.drop_id;
+	m_world_open = true;
+	m_world_check_ms = now_ms + WorldCheckMs;
+	if (!Open(Inventory::WorldContainer)) {
+		m_zone->CloseWorldContainer(m_world_drop);
+		m_world_open = false;
+	}
+}
+
 bool Containers::Open(int16_t slot)
 {
 	if (!m_windows || !m_zone)
 		return false;
-	const ZoneItem *bag = Find(m_zone->Items(), slot);
+	const ZoneItem *bag = BagAt(slot);
 	std::string window = WindowName(slot);
 	if (!bag || bag->item_class != 1 || window.empty() || !m_windows->Find(window))
 		return false;
@@ -176,17 +275,29 @@ void Containers::Close(int16_t slot)
 	auto it = std::find_if(m_open.begin(), m_open.end(), [slot](const Bag &bag) { return bag.slot == slot; });
 	if (it == m_open.end())
 		return;
-	PlayOpenClose(m_zone ? Find(m_zone->Items(), slot) : nullptr, false);
+	PlayOpenClose(BagAt(slot), false);
 	if (m_windows)
 		m_windows->Show(it->window, false);
 	m_open.erase(it);
+	// CloseEQContainer: a world container's let go (OP_ClickObjectAction), its items with it.
+	if (slot == Inventory::WorldContainer && m_world_open) {
+		m_world_open = false;
+		m_zone->CloseWorldContainer(m_world_drop);
+	}
 }
 
 bool Containers::CloseAll()
 {
-	bool any = !m_open.empty();
-	while (!m_open.empty())
-		Close(m_open.front().slot);
+	// All but a world container that can't be closed (a NO DROP item in it).
+	bool any = false;
+	for (size_t i = 0; i < m_open.size();) {
+		if (m_open[i].slot == Inventory::WorldContainer && !m_world_closeable) {
+			++i;
+			continue;
+		}
+		any = true;
+		Close(m_open[i].slot);
+	}
 	return any;
 }
 
@@ -226,7 +337,7 @@ void Containers::SetContainer(const std::string &window, const ZoneItem &bag, in
 			continue;
 		bool shown = n < bag.bag_slots;
 		c->visible = shown;
-		c->item_slot = shown ? Inventory::BagSlot(slot, n) : -1;
+		c->item_slot = shown ? ContentSlot(slot, n) : -1;
 		if (shown)
 			expand(c);
 	}
@@ -248,14 +359,39 @@ void Containers::SetContainer(const std::string &window, const ZoneItem &bag, in
 		m_windows->Resize(window, right - left + 14, bottom - top + 36);
 }
 
-void Containers::Update()
+void Containers::Update(uint64_t now_ms)
 {
 	if (!m_windows || !m_zone)
 		return;
 	const std::map<int16_t, ZoneItem> &items = m_zone->Items();
+	if (m_world_open) {
+		// CContainerMgr::Process: every 500 ms, the world container more than 20 away closes.
+		if (now_ms >= m_world_check_ms) {
+			m_world_check_ms = now_ms + WorldCheckMs;
+			auto it = m_zone->GroundItems().find(m_world_drop);
+			const ZoneProfile &me = m_zone->Profile();
+			if (it != m_zone->GroundItems().end()) {
+				float dx = it->second.x - me.x, dy = it->second.y - me.y, dz = it->second.z - me.z;
+				if (std::sqrt(dx * dx + dy * dy + dz * dz) > WorldRange)
+					Close(Inventory::WorldContainer);
+			}
+		}
+		// CheckCloseable: not with a NO DROP item in it (Done disabled, no close box).
+		m_world_closeable = true;
+		for (int n = 0; n < Inventory::BagSlots; ++n)
+			if (const ZoneItem *inside = Find(items, static_cast<int16_t>(Inventory::WorldContainer + n));
+			    inside && inside->no_drop == 0)
+				m_world_closeable = false;
+		std::string window = WindowName(Inventory::WorldContainer);
+		if (SidlWindow *wnd = m_windows->Find(window))
+			if (SidlWindow::Control *done = wnd->Find("DoneButton"))
+				done->enabled = m_world_closeable;
+		if (m_world_open && !m_world_closeable && IsOpen(Inventory::WorldContainer) && !m_windows->Shown(window))
+			m_windows->Show(window, true);
+	}
 	for (size_t i = 0; i < m_open.size();) {
 		const Bag &bag = m_open[i];
-		const ZoneItem *item = Find(items, bag.slot);
+		const ZoneItem *item = BagAt(bag.slot);
 		// The close box hides it; the bag gone from its slot (the zone moved it) closes it.
 		if (!m_windows->Shown(bag.window) || !item || item->item_class != 1) {
 			Close(bag.slot);
@@ -275,7 +411,8 @@ bool Containers::Click(const std::string &window, const std::string &control)
 	if (it == m_open.end())
 		return false;
 	if (control == "DoneButton") {
-		Close(it->slot);
+		if (it->slot != Inventory::WorldContainer || m_world_closeable)
+			Close(it->slot);
 		return true;
 	}
 	if (control == "Container_Combine") {
@@ -287,11 +424,12 @@ bool Containers::Click(const std::string &window, const std::string &control)
 
 void Containers::Combine(const Bag &open)
 {
-	// Only a bag in a general slot (field190_0x178; and a world container, which we don't open yet).
-	if (open.slot < Inventory::FirstGeneral || open.slot > Inventory::LastGeneral || m_combining)
+	// Only a bag in a general slot, or a world container (field190_0x178), as slot 1000.
+	bool world = open.slot == Inventory::WorldContainer;
+	if ((!world && (open.slot < Inventory::FirstGeneral || open.slot > Inventory::LastGeneral)) || m_combining)
 		return;
 	const std::map<int16_t, ZoneItem> &items = m_zone->Items();
-	const ZoneItem *bag = Find(items, open.slot);
+	const ZoneItem *bag = BagAt(open.slot);
 	if (!bag)
 		return;
 	const ZoneProfile &me = m_zone->Profile();
@@ -312,7 +450,7 @@ void Containers::Combine(const Bag &open)
 	int16_t ids[Inventory::BagSlots];
 	int count = 0;
 	for (int n = 0; n < Inventory::BagSlots; ++n) {
-		const ZoneItem *item = n < bag->bag_slots ? Find(items, Inventory::BagSlot(open.slot, n)) : nullptr;
+		const ZoneItem *item = n < bag->bag_slots ? Find(items, ContentSlot(open.slot, n)) : nullptr;
 		ids[n] = item ? static_cast<int16_t>(item->id) : -1;
 		count += item != nullptr;
 	}
@@ -322,7 +460,7 @@ void Containers::Combine(const Bag &open)
 				ChatType::Default);
 		return;
 	}
-	if (m_zone->TradeSkillCombine(bag->bag_type, open.slot, ids, bag->id))
+	if (m_zone->TradeSkillCombine(bag->bag_type, world ? WorldCombineSlot : open.slot, ids, bag->id))
 		m_combining = true;
 }
 

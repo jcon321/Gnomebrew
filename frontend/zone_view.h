@@ -219,6 +219,15 @@ public:
 	uint16_t PickSpawn(int x, int y, uint16_t me) const;
 	// A spawn's ModelHeightOffset (its center over its feet, server units); 0 before its model's in.
 	float CenterHeight(uint16_t id) const;
+	// Things on the ground (OP_GroundSpawn's EQItemList): CreateActor's "<tag>_ACTORDEF", set on
+	// the floor under where the zone put it (GetFloorHeight from 1 over it, then 0.5 up), turned
+	// to its heading. Server coordinates. Drawn from when the zone's models are in.
+	void AddGroundItem(uint32_t drop_id, const std::string &model, float x, float y, float z, float heading);
+	void RemoveGroundItem(uint32_t drop_id);
+	// EQItemList_is_item_actor on GetClickedActor: the ground item drawn under a window pixel,
+	// nearest first; false for none.
+	bool PickGroundItem(int x, int y, uint32_t &drop_id) const;
+	size_t GroundItemsShown() const; // with a model
 	// Debug drawing: triangle outlines instead of the scene, no fog (out to the zone's max clip),
 	// no clip plane (no far plane or fog at all), collision walls near us outlined, a marker on
 	// the floor under our feet, none of the weather (its sound goes on), and the spells' old
@@ -265,6 +274,7 @@ private:
 	static std::string SpawnModelKey(const ZoneSpawn &spawn);
 	std::shared_ptr<render::CharacterModel> SpawnModel(const ZoneSpawn &spawn, const std::string &key);
 	void DrawSpawns(uint64_t now_ms);
+	void DrawGroundItems();
 	// The lights spawns carry (point_lights.h), placed for this frame, and the regions each reaches.
 	void PlaceCarriedLights(uint64_t now_ms);
 	// The (up to 3) carried lights that light something centered at `center`.
@@ -350,6 +360,17 @@ private:
 		const render::Vec3 &Feet() const { return actor.Feet(); }
 	};
 	std::map<uint16_t, SpawnView> m_actors;
+	struct GroundItemView
+	{
+		std::string model_name;
+		render::Vec3 at;     // the server's position, in world space
+		float heading = 0;
+		bool placed = false; // its model looked for and set on the floor
+		std::unique_ptr<render::CharacterModel> model;
+		render::Vec3 feet;   // where it's drawn
+		float distance = 0;  // from the camera, last frame
+	};
+	std::map<uint32_t, GroundItemView> m_ground_items;
 	std::map<std::string, std::shared_ptr<render::CharacterModel>> m_model_cache;
 	std::set<std::string> m_missing_models;
 	render::Vec3 m_camera_position;

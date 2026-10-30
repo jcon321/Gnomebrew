@@ -94,19 +94,22 @@ no rules of its own.
      under them, kept in the layout as BagInv1..8 (BagBank, BagTrade), picking up or swapping out
      a bag closes it, Escape closes them all, Alt shows every slot's tooltip, and Combine sends
      OP_TradeSkillCombine with the class and racial containers' checks, the slots locked until the
-     zone answers. Still to do: world containers (forges, ovens: OP_ClickObject,
-     OP_ClickObjectAction, OP_ObjectItemPacket, BagWorld1 and its 20 unit distance check in
-     CContainerMgr::Process), the bag's open flag (EQ_Container::Open), and the right button on a
-     book or note reading it (EQ_Note::SendTextRequestMsg, OP_ReadBook).
+     zone answers. World containers (a forge clicked on the ground, msg_chest_lock): BagWorld1,
+     named by type (OpenWorldContainer), their items from OP_ObjectItemPacket at 4000 + n,
+     OP_ClearObject emptying them, Combine as slot 1000, closed by Done, Escape or walking off 20
+     (CContainerMgr::Process) with OP_ClickObjectAction, and not closeable with a NO DROP item in
+     (CheckCloseable). Still to do: CanGoInBag's checks for a world container's slots, the bag's
+     open flag (EQ_Container::Open), and the right button on a book or note reading it
+     (EQ_Note::SendTextRequestMsg, OP_ReadBook).
    - Equipping: our model's armor, weapons and light follow what we have on (`ZoneSession::UpdateAppearance`).
      Still to do: dual wield
      from the class table rather than the zone's 254/255, the casting check (no moves but from the
      cursor while casting), /showhelm, and a carried light going out underwater (`UpdateLight`'s
      check of the body's environment; it's only not drawn there now).
    - The item on the cursor: clicking a spawn with it (or coins) gives it to them through a trade
-     (`DropItemOrMoneyOnPlayer`, below). Still to do: clicking the ground drops it
-     (`CEverQuest_LMouseUp`, `DropHeldItemOnGround`, `DropHeldMoneyOnGround`), and AutoInventory with
-     no room drops it ("There was no place to put that!"); for now it stays on the cursor. Holding a slot's item to make an item hot button (`CInvSlot::HandleLButtonHeld`), and
+     (`DropItemOrMoneyOnPlayer`, below), and clicking the ground drops it (item 11). Still to do:
+     AutoInventory with no room drops it ("There was no place to put that!"); for now it stays on
+     the cursor. Holding a slot's item to make an item hot button (`CInvSlot::HandleLButtonHeld`), and
      the right button on a slot (eat, drink, click effects: `CInvSlot::HandleRButtonUp`).
    - Item display: alt+click or the right button held on an inventory slot shows its item
      (`frontend/item_display.*`, eqgame's SetItem text with spells_en.txt's spell names); letting
@@ -207,8 +210,17 @@ no rules of its own.
    bar over heads isn't eqgame's; leave it to an option if ever.
 10. ~~**Target indicator**~~: done, as eqgame does it: the target's name flashes from white back
    to its color. The client of this era had no target ring and no hover highlighting.
-11. **Ground spawns and dropped objects.** Handle `OP_GroundSpawn` so dropped items and forges
-    appear.
+11. ~~**Ground spawns and dropped objects**~~: done (`frontend/ground_items.*`, `ZoneView`'s ground
+    items, `CharacterModels::BuildItem`): what's on the ground (OP_GroundSpawn's EQItemList) drawn
+    from its item model on the floor under it, a click on it within 20 picking it up
+    (OP_ClickObject) or opening a tradeskill container (OP_ClickObjectAction), an item on the cursor
+    clicked onto the ground dropped (the confirmation dialog, DropHeldItemOnGround), and what the
+    zone takes away (its OP_ClickObject). Checked live: the zone's ground spawns and forges drawn, a
+    drop, the forge opened and closed. Still to do: /fastdrop (DAT_0079966c and eqOptions2.opt; we
+    always ask), coins dropped on the ground (DropHeldMoneyOnGround), the models' particle clouds
+    (a torch's flame on the ground), CreateActor's models from the zone's _obj.s3d (only item
+    models, IT<n>, are found), and clicks on the model itself (GetClickedActor; ours is a box
+    around it on the screen).
 12. **Spell visuals.** Done for anyone's casting as the zone shows it (`frontend/spell_casting.*`,
     `frontend/spell_effects.*`, `render/spell_particles.*`): OP_BeginCast's "begins to cast a spell"
     (CEverQuest_StartCasting), the caster's CastingAnim and the effect on the target from OP_Action

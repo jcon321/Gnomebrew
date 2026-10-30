@@ -611,6 +611,79 @@ bool ZoneView::SpawnStats(uint16_t id, SpawnDebug &out) const
 	return true;
 }
 
+void ZoneView::AddGroundItem(uint32_t drop_id, const std::string &model, float x, float y, float z, float heading)
+{
+	GroundItemView &view = m_ground_items[drop_id];
+	view = GroundItemView{};
+	view.model_name = model;
+	view.at = {y, x, z}; // WLD x/y are the server's y/x
+	view.heading = heading;
+}
+
+void ZoneView::RemoveGroundItem(uint32_t drop_id)
+{
+	m_ground_items.erase(drop_id);
+}
+
+size_t ZoneView::GroundItemsShown() const
+{
+	return static_cast<size_t>(std::count_if(m_ground_items.begin(), m_ground_items.end(),
+		[](const auto &item) { return item.second.model != nullptr; }));
+}
+
+void ZoneView::DrawGroundItems()
+{
+	if (!m_loaded || !m_error.empty())
+		return;
+	render::Vec3 camera = m_renderer->CurrentCamera().position;
+	for (auto &[id, view] : m_ground_items) {
+		if (!view.placed) {
+			// The 0x402c case of HandleWorldMessage: CreateActor at the floor below it + 0.5.
+			view.placed = true;
+			std::string error;
+			view.model = m_models.BuildItem(view.model_name, error);
+			float floor_z;
+			view.feet = view.at;
+			if (m_zone.FloorBelow(view.at + render::Vec3{0, 0, 1}, 1000, floor_z))
+				view.feet.z = floor_z + 0.5f;
+		}
+		if (!view.model)
+			continue;
+		view.distance = render::Length(view.feet - camera);
+		if (view.distance > FarPlane())
+			continue;
+		render::Transform placement;
+		placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(view.heading));
+		placement.translation = view.feet;
+		view.model->Draw(*m_renderer, placement, ModelLightingAt(view.feet), 0);
+	}
+}
+
+bool ZoneView::PickGroundItem(int x, int y, uint32_t &drop_id) const
+{
+	// A box over each one drawn: from its lowest point to its highest, at least 8 pixels each way.
+	bool found = false;
+	float best_distance = 0;
+	for (const auto &[id, view] : m_ground_items) {
+		if (!view.model || view.distance > FarPlane())
+			continue;
+		float bx, by, tx, ty;
+		if (!m_renderer->Project(view.feet + render::Vec3{0, 0, view.model->MinZ()}, bx, by) ||
+		    !m_renderer->Project(view.feet + render::Vec3{0, 0, view.model->MaxZ()}, tx, ty))
+			continue;
+		float half = std::max(8.0f, std::fabs(by - ty) / 2);
+		float center_x = (bx + tx) / 2, top = std::min(by, ty), bottom = std::max(by, ty);
+		if (x < center_x - half || x > center_x + half || y < top - 8 || y > bottom + 8)
+			continue;
+		if (!found || view.distance < best_distance) {
+			found = true;
+			best_distance = view.distance;
+			drop_id = id;
+		}
+	}
+	return found;
+}
+
 float ZoneView::CenterHeight(uint16_t id) const
 {
 	auto it = m_actors.find(id);
@@ -812,6 +885,7 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 	}
 	m_camera_position = camera.position;
 	DrawSpawns(now_ms);
+	DrawGroundItems();
 	DrawWeather(now_ms);
 	m_spell_effects.Update(now_ms, camera.position,
 		[this](uint16_t id, SpellEffects::Actor &actor) { return FindActor(id, actor); });

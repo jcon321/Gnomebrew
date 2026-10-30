@@ -179,6 +179,32 @@ struct ZoneMerchant
 	int32_t quantity = 0, price = 0;
 };
 
+// Something on the ground: OP_GroundSpawn's Object_Struct (224 bytes), an EQItemList entry. A
+// dropped item, a ground spawn to pick up, or a tradeskill container (a forge) to open.
+struct ZoneGroundItem
+{
+	uint32_t drop_id = 0;      // what a click on it asks for (OP_ClickObject)
+	uint16_t item_id = 0;
+	uint8_t charges = 0;
+	float heading = 0;         // 0..512
+	float x = 0, y = 0, z = 0; // the server's
+	std::string model;         // its actor, "IT63_ACTORDEF"
+	uint32_t object_type = 0;  // 1 a dropped item; a tradeskill container's bag type
+	int16_t contents[10] = {}; // a dropped bag's items' ids (-1 none)
+};
+
+// OP_ClickObjectAction (ClickObjectAction_Struct): a tradeskill container we clicked opens for us
+// (msg_chest_lock), or the zone says someone else has it.
+struct ZoneWorldContainer
+{
+	uint16_t player = 0;
+	uint32_t drop_id = 0;
+	uint8_t open = 0;
+	uint8_t type = 0;  // its bag type (17 a forge...)
+	uint8_t slots = 0;
+	uint16_t icon = 0;
+};
+
 // A corpse's answer to our OP_LootRequest (moneyOnCorpseStruct): 1 (or 3) we may loot it, with its
 // coins; 0 someone else is; 2 not now.
 struct ZoneLoot
@@ -362,6 +388,15 @@ public:
 			TradeFinished,
 			TradeCoins,
 			TradeItem,
+			// The ground (id: the drop id): something there (OP_GroundSpawn; GroundItems() has it),
+			// gone (OP_ClickObject: picked up or decayed; value 1 when it answers our own pickup, or
+			// a pickup refused, drop id 0xffffffff), a tradeskill container opened for us
+			// (OP_ClickObjectAction: world), its items cleared (OP_ClearObject; they're in Items()
+			// at 4000 + their slot, OP_ObjectItemPacket).
+			GroundItemAdded,
+			GroundItemRemoved,
+			WorldContainerOpened,
+			WorldContainerCleared,
 			LoggedOut,    // camp finished; the zone closes the connection
 			ZoneApproved, // value: the zone we're going to; OP_DeleteSpawn is sent
 			ZoneDenied,   // value: the answer (ZoningMessage: 0 down, -1 not ready, -7 not experienced...)
@@ -381,6 +416,7 @@ public:
 		ZoneConsider consider;
 		ZoneMerchant merchant;
 		ZoneLoot loot;
+		ZoneWorldContainer world;
 	};
 
 	ZoneSession();
@@ -487,6 +523,15 @@ public:
 	bool TradeAccept(uint16_t target);
 	bool CancelTrade(uint16_t target);
 	void ClearTrade();
+	// The ground: what's on it, by drop id. PickUp is CEverQuest_LMouseUp's OP_ClickObject {drop id,
+	// us}; the zone puts it on our cursor and tells everyone it's gone. DropCursorItem is
+	// DropHeldItemOnGround: OP_GroundSpawn with the cursor's item where we stand, which goes from
+	// the cursor (with what's in it); the zone puts it down for everyone. CloseWorldContainer is
+	// CloseEQContainer's OP_ClickObjectAction {us, drop id, 0}.
+	const std::map<uint32_t, ZoneGroundItem> &GroundItems() const { return m_ground; }
+	bool PickUp(uint32_t drop_id);
+	bool DropCursorItem();
+	bool CloseWorldContainer(uint32_t drop_id);
 	// CContainerWnd::HandleCombine: OP_TradeSkillCombine for the bag in a general slot (`slot`;
 	// 1000 a world container) with its type and id and the ids in its ten slots (-1 none). The
 	// zone answers with an empty one (CombineAnswered).
@@ -611,6 +656,7 @@ private:
 	std::map<int16_t, ZoneItem> m_items;
 	ZoneItem m_linked_item;
 	int16_t m_loot_slots[30] = {}; // -1 empty (ClearLoot, from Reset on)
+	std::map<uint32_t, ZoneGroundItem> m_ground;
 	GuildNames m_guilds;
 	bool m_have_profile = false;
 	bool m_have_zone_entry = false;
