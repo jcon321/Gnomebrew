@@ -93,6 +93,11 @@ namespace render
 		// Where each emitter is (world space) for Draw's arguments.
 		void PlaceEmitters(const Transform &placement, uint64_t time_ms, const std::string &animation, bool loop,
 			std::vector<Transform> &out) const;
+		// collideRayWithEntity (@10005a40): whether the ray from `from` along the unit `direction`
+		// hits the model, posed as Draw poses it, within `range`, and how far along (its nearest
+		// triangle, either side).
+		bool RayHit(const Transform &placement, uint64_t time_ms, const std::string &animation, bool loop,
+			const Vec3 &from, const Vec3 &direction, float range, float &distance) const;
 
 	private:
 		friend class CharacterModels;

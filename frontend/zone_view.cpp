@@ -4,6 +4,7 @@
 #include "animations.h"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -618,6 +619,23 @@ void ZoneView::AddGroundItem(uint32_t drop_id, const std::string &model, float x
 	view.model_name = model;
 	view.at = {y, x, z}; // WLD x/y are the server's y/x
 	view.heading = heading;
+	// CDisplay::CreateActor's sizes for the tradeskill containers' models: smaller in the small
+	// races' cities (Rivervale, Ak'Anon, Kaladim), else larger; and the bulletin boards.
+	auto is = [&](const std::string &prefix) {
+		return model.size() >= prefix.size() && std::equal(prefix.begin(), prefix.end(), model.begin(),
+			[](char a, char b) { return std::toupper(static_cast<unsigned char>(a)) == std::toupper(static_cast<unsigned char>(b)); });
+	};
+	const std::string &zone = m_info.short_name;
+	if (zone == "kaladima" || zone == "kaladimb" || zone == "rivervale" || zone == "akanon") {
+		if (is("IT70") || is("IT74"))
+			view.scale = 0.8f;
+	} else if (is("IT66") || is("IT69") || is("IT73")) {
+		view.scale = 1.5f;
+	} else if (is("IT74")) {
+		view.scale = 1.3f;
+	}
+	if (is("BBBOARD"))
+		view.scale = 1.5f;
 }
 
 void ZoneView::RemoveGroundItem(uint32_t drop_id)
@@ -631,17 +649,20 @@ size_t ZoneView::GroundItemsShown() const
 		[](const auto &item) { return item.second.model != nullptr; }));
 }
 
-void ZoneView::DrawGroundItems()
+void ZoneView::DrawGroundItems(uint64_t now_ms)
 {
 	if (!m_loaded || !m_error.empty())
 		return;
 	render::Vec3 camera = m_renderer->CurrentCamera().position;
 	for (auto &[id, view] : m_ground_items) {
 		if (!view.placed) {
-			// The 0x402c case of HandleWorldMessage: CreateActor at the floor below it + 0.5.
+			// The 0x402c case of HandleWorldMessage: CreateActor at the floor below it + 0.5. A
+			// model that isn't there is IT63's (a bag), as CreateActor's fallback for these.
 			view.placed = true;
 			std::string error;
 			view.model = m_models.BuildItem(view.model_name, error);
+			if (!view.model)
+				view.model = m_models.BuildItem("IT63", error);
 			float floor_z;
 			view.feet = view.at;
 			if (m_zone.FloorBelow(view.at + render::Vec3{0, 0, 1}, 1000, floor_z))
@@ -652,36 +673,64 @@ void ZoneView::DrawGroundItems()
 		view.distance = render::Length(view.feet - camera);
 		if (view.distance > FarPlane())
 			continue;
-		render::Transform placement;
-		placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(view.heading));
-		placement.translation = view.feet;
+		render::Transform placement = GroundItemPlacement(view);
 		view.model->Draw(*m_renderer, placement, ModelLightingAt(view.feet), 0);
+		view.particles.Draw(*m_renderer, *view.model, placement, 0, "P01", true, now_ms, m_daylight.ambient);
 	}
 }
 
-bool ZoneView::PickGroundItem(int x, int y, uint32_t &drop_id) const
+render::Transform ZoneView::GroundItemPlacement(const GroundItemView &view)
 {
-	// A box over each one drawn: from its lowest point to its highest, at least 8 pixels each way.
-	bool found = false;
-	float best_distance = 0;
-	for (const auto &[id, view] : m_ground_items) {
-		if (!view.model || view.distance > FarPlane())
-			continue;
-		float bx, by, tx, ty;
-		if (!m_renderer->Project(view.feet + render::Vec3{0, 0, view.model->MinZ()}, bx, by) ||
-		    !m_renderer->Project(view.feet + render::Vec3{0, 0, view.model->MaxZ()}, tx, ty))
-			continue;
-		float half = std::max(8.0f, std::fabs(by - ty) / 2);
-		float center_x = (bx + tx) / 2, top = std::min(by, ty), bottom = std::max(by, ty);
-		if (x < center_x - half || x > center_x + half || y < top - 8 || y > bottom + 8)
-			continue;
-		if (!found || view.distance < best_distance) {
-			found = true;
-			best_distance = view.distance;
-			drop_id = id;
+	render::Transform placement;
+	placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(view.heading));
+	placement.translation = view.feet;
+	placement.scale = view.scale;
+	return placement;
+}
+
+ZoneView::Picked ZoneView::Pick(int x, int y, uint16_t me) const
+{
+	// s3dPickObjectOnScreen: the ray from the camera through the pixel, out to the far plane, and
+	// the nearest model triangle it hits (collideRayWithEntity) of what was drawn.
+	Picked picked;
+	if (!m_loaded || !m_error.empty())
+		return picked;
+	render::Vec3 from = m_renderer->CurrentCamera().position;
+	render::Vec3 direction = m_renderer->ViewRay(static_cast<float>(x) + 0.5f, static_cast<float>(y) + 0.5f);
+	float best = FarPlane();
+	float distance;
+	for (const auto &[id, view] : m_actors) {
+		if (view.drawn && view.model &&
+			view.model->RayHit(view.placement, view.time_ms, view.animation, view.loops, from, direction, best, distance)) {
+			best = distance;
+			picked = Picked{id, false, 0};
 		}
 	}
-	return found;
+	if (me != 0 && m_model_shown) {
+		render::Transform placement;
+		placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(m_heading));
+		placement.translation = m_feet + render::Vec3{0, 0, m_model->OriginOverFeet()};
+		if (m_model->RayHit(placement, m_player_time_ms, m_animation, m_player_loops, from, direction, best, distance)) {
+			best = distance;
+			picked = Picked{me, false, 0};
+		}
+	}
+	for (const auto &[id, view] : m_ground_items) {
+		if (view.model && view.distance <= FarPlane() &&
+			view.model->RayHit(GroundItemPlacement(view), 0, "P01", true, from, direction, best, distance)) {
+			best = distance;
+			picked = Picked{0, true, id};
+		}
+	}
+	return picked;
+}
+
+bool ZoneView::PickGroundItem(int x, int y, uint16_t me, uint32_t &drop_id) const
+{
+	Picked picked = Pick(x, y, me);
+	if (picked.ground)
+		drop_id = picked.drop_id;
+	return picked.ground;
 }
 
 float ZoneView::CenterHeight(uint16_t id) const
@@ -692,29 +741,7 @@ float ZoneView::CenterHeight(uint16_t id) const
 
 uint16_t ZoneView::PickSpawn(int x, int y, uint16_t me) const
 {
-	// A box over each drawn model on screen, from its feet to the top of its head and a third of
-	// its height either side.
-	uint16_t best = 0;
-	float best_distance = 0;
-	auto consider = [&](uint16_t id, const render::Vec3 &feet, float height, float distance) {
-		float fx, fy, tx, ty;
-		if (!m_renderer->Project(feet, fx, fy) || !m_renderer->Project(feet + render::Vec3{0, 0, height}, tx, ty))
-			return;
-		float half = std::max(6.0f, (fy - ty) / 3);
-		float center = (fx + tx) / 2;
-		if (x < center - half || x > center + half || y < ty - 4 || y > fy + 4)
-			return;
-		if (best == 0 || distance < best_distance) {
-			best = id;
-			best_distance = distance;
-		}
-	};
-	for (const auto &[id, actor] : m_actors)
-		if (actor.drawn && actor.model)
-			consider(id, actor.Feet(), actor.model->MaxZ() - actor.model->MinZ(), actor.distance);
-	if (me != 0 && m_view == CameraView::Chase && m_model)
-		consider(me, m_feet, m_height, render::Length(m_feet - m_renderer->CurrentCamera().position));
-	return best;
+	return Pick(x, y, me).spawn;
 }
 
 ZoneDoors::Use ZoneView::ClickDoor(int x, int y, int16_t disarm, uint8_t &id, int16_t &skill) const
@@ -885,7 +912,7 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 	}
 	m_camera_position = camera.position;
 	DrawSpawns(now_ms);
-	DrawGroundItems();
+	DrawGroundItems(now_ms);
 	DrawWeather(now_ms);
 	m_spell_effects.Update(now_ms, camera.position,
 		[this](uint16_t id, SpellEffects::Actor &actor) { return FindActor(id, actor); });
@@ -1381,6 +1408,10 @@ void ZoneView::DrawSpawns(uint64_t now_ms)
 			time, animation, view.actor.AnimationLoops());
 		view.held.Draw(*m_renderer, model, placement, time, animation, view.actor.AnimationLoops(), now_ms, m_daylight.ambient);
 		view.drawn = true;
+		view.placement = placement;
+		view.time_ms = time;
+		view.animation = animation;
+		view.loops = view.actor.AnimationLoops();
 	}
 }
 

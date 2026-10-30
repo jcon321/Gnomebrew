@@ -212,15 +212,18 @@ no rules of its own.
    to its color. The client of this era had no target ring and no hover highlighting.
 11. ~~**Ground spawns and dropped objects**~~: done (`frontend/ground_items.*`, `ZoneView`'s ground
     items, `CharacterModels::BuildItem`): what's on the ground (OP_GroundSpawn's EQItemList) drawn
-    from its item model on the floor under it, a click on it within 20 picking it up
+    from its item model on the floor under it (IT63 for a missing one, CreateActor's sizes for the
+    tradeskill containers, its particle clouds), a click on it within 20 picking it up
     (OP_ClickObject) or opening a tradeskill container (OP_ClickObjectAction), an item on the cursor
     clicked onto the ground dropped (the confirmation dialog, DropHeldItemOnGround), and what the
     zone takes away (its OP_ClickObject). Checked live: the zone's ground spawns and forges drawn, a
     drop, the forge opened and closed. Still to do: /fastdrop (DAT_0079966c and eqOptions2.opt; we
-    always ask), coins dropped on the ground (DropHeldMoneyOnGround), the models' particle clouds
-    (a torch's flame on the ground), CreateActor's models from the zone's _obj.s3d (only item
-    models, IT<n>, are found), and clicks on the model itself (GetClickedActor; ours is a box
-    around it on the screen).
+    always ask), coins dropped on the ground (DropHeldMoneyOnGround), CreateActor's models from
+    the zone's _obj.s3d and the `_chr` files (only gequip's are found; the server's data has
+    none that would show), `RED_BLOB_ACTORDEF` when even IT63 is missing (a sprite), and
+    CreateActor's light argument (whether a lit item on the ground lights things).
+    Clicks follow GetClickedActor (the nearest model triangle under the cursor) for spawns, our
+    model and ground items; doors are still asked after them, not in the same nearest-first test.
 12. **Spell visuals.** Done for anyone's casting as the zone shows it (`frontend/spell_casting.*`,
     `frontend/spell_effects.*`, `render/spell_particles.*`): OP_BeginCast's "begins to cast a spell"
     (CEverQuest_StartCasting), the caster's CastingAnim and the effect on the target from OP_Action

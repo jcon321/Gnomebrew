@@ -848,6 +848,52 @@ namespace render
 		renderer.SetVertexLight({1, 1, 1}, {0, 0, 0});
 	}
 
+	bool CharacterModel::RayHit(const Transform &placement, uint64_t time_ms, const std::string &animation, bool loop,
+		const Vec3 &from, const Vec3 &direction, float range, float &distance) const
+	{
+		auto it = m_animations->find(animation);
+		if (it == m_animations->end())
+			it = m_animations->find("P01");
+		std::vector<Transform> bones = PoseSkeleton(m_skeleton, it == m_animations->end() ? nullptr : &it->second, time_ms, loop);
+		Transform scaled = placement;
+		scaled.scale *= m_scale;
+		for (auto &bone : bones)
+			bone = scaled * bone;
+		std::vector<Vec3> posed(m_positions.size());
+		for (size_t i = 0; i < m_positions.size(); ++i)
+			posed[i] = bones[m_bones[i]].Apply(m_positions[i]);
+		// Möller-Trumbore on each triangle.
+		bool hit = false;
+		float best = range;
+		for (const auto &batch : m_batches) {
+			for (size_t t = 0; t + 2 < batch.indices.size(); t += 3) {
+				const Vec3 &a = posed[batch.indices[t]];
+				Vec3 e1 = posed[batch.indices[t + 1]] - a, e2 = posed[batch.indices[t + 2]] - a;
+				Vec3 p = Cross(direction, e2);
+				float det = Dot(e1, p);
+				if (std::fabs(det) < 1e-8f)
+					continue;
+				float inverse = 1 / det;
+				Vec3 s = from - a;
+				float u = Dot(s, p) * inverse;
+				if (u < 0 || u > 1)
+					continue;
+				Vec3 q = Cross(s, e1);
+				float v = Dot(direction, q) * inverse;
+				if (v < 0 || u + v > 1)
+					continue;
+				float d = Dot(e2, q) * inverse;
+				if (d >= 0 && d < best) {
+					best = d;
+					hit = true;
+				}
+			}
+		}
+		if (hit)
+			distance = best;
+		return hit;
+	}
+
 	size_t CharacterModel::TriangleCount() const
 	{
 		size_t count = 0;

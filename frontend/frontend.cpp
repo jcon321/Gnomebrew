@@ -1811,7 +1811,7 @@ void FrontEnd::WorldClick(int x, int y)
 		if (!held && Inventory::CursorMoneyType(m_zone.Profile()))
 			return;
 		uint32_t drop_id = 0;
-		if (!held && !m_containers.WorldOpen() && m_zone_view->PickGroundItem(x, y, drop_id) && m_ground.PickUp(drop_id))
+		if (!held && !m_containers.WorldOpen() && m_zone_view->PickGroundItem(x, y, m_zone.MySpawnId(), drop_id) && m_ground.PickUp(drop_id))
 			return;
 	}
 	uint8_t door = 0;

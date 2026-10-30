@@ -214,8 +214,8 @@ public:
 		render::Environment body_environment = render::Environment::Dry;
 	};
 	bool SpawnStats(uint16_t id, SpawnDebug &out) const;
-	// The spawn drawn under a window pixel, nearest first (after Render); 0 for none. In the chase
-	// view our own model is one of them, as `me`.
+	// The spawn that's the nearest thing drawn under a window pixel (after Render; not a ground
+	// item in front of it); 0 for none. In the chase view our own model is one of them, as `me`.
 	uint16_t PickSpawn(int x, int y, uint16_t me) const;
 	// A spawn's ModelHeightOffset (its center over its feet, server units); 0 before its model's in.
 	float CenterHeight(uint16_t id) const;
@@ -224,9 +224,9 @@ public:
 	// to its heading. Server coordinates. Drawn from when the zone's models are in.
 	void AddGroundItem(uint32_t drop_id, const std::string &model, float x, float y, float z, float heading);
 	void RemoveGroundItem(uint32_t drop_id);
-	// EQItemList_is_item_actor on GetClickedActor: the ground item drawn under a window pixel,
-	// nearest first; false for none.
-	bool PickGroundItem(int x, int y, uint32_t &drop_id) const;
+	// EQItemList_is_item_actor on GetClickedActor: the ground item that's the nearest thing drawn
+	// under a window pixel (not a spawn in front of it); false for none.
+	bool PickGroundItem(int x, int y, uint16_t me, uint32_t &drop_id) const;
 	size_t GroundItemsShown() const; // with a model
 	// Debug drawing: triangle outlines instead of the scene, no fog (out to the zone's max clip),
 	// no clip plane (no far plane or fog at all), collision walls near us outlined, a marker on
@@ -274,7 +274,18 @@ private:
 	static std::string SpawnModelKey(const ZoneSpawn &spawn);
 	std::shared_ptr<render::CharacterModel> SpawnModel(const ZoneSpawn &spawn, const std::string &key);
 	void DrawSpawns(uint64_t now_ms);
-	void DrawGroundItems();
+	void DrawGroundItems(uint64_t now_ms);
+	// s3dPickObjectOnScreen: what's drawn nearest along the ray through a window pixel, a spawn
+	// (our own model in the chase view, as `me`) or a ground item.
+	struct Picked
+	{
+		uint16_t spawn = 0;
+		bool ground = false;
+		uint32_t drop_id = 0;
+	};
+	Picked Pick(int x, int y, uint16_t me) const;
+	struct GroundItemView;
+	static render::Transform GroundItemPlacement(const GroundItemView &view);
 	// The lights spawns carry (point_lights.h), placed for this frame, and the regions each reaches.
 	void PlaceCarriedLights(uint64_t now_ms);
 	// The (up to 3) carried lights that light something centered at `center`.
@@ -347,6 +358,11 @@ private:
 		uint64_t last_ms = 0;
 		float distance = 0; // from the camera, last frame
 		bool drawn = false;
+		// How it was last drawn, for clicks on it.
+		render::Transform placement;
+		uint64_t time_ms = 0;
+		std::string animation;
+		bool loops = true;
 		uint8_t light = 0;         // ZoneSpawn::light
 		bool warm = true;          // body type not 3, 5, 8 or 12 (SetPlayerConstantAmbient2)
 		float center_height = 0;   // ModelHeightOffset: the server's z over the feet
@@ -368,7 +384,9 @@ private:
 		bool placed = false; // its model looked for and set on the floor
 		std::unique_ptr<render::CharacterModel> model;
 		render::Vec3 feet;   // where it's drawn
+		float scale = 1;     // CreateActor's for tradeskill containers
 		float distance = 0;  // from the camera, last frame
+		render::HeldParticles particles; // its own clouds (a torch's flame and smoke)
 	};
 	std::map<uint32_t, GroundItemView> m_ground_items;
 	std::map<std::string, std::shared_ptr<render::CharacterModel>> m_model_cache;

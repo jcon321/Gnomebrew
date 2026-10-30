@@ -223,8 +223,11 @@ namespace
 			if (slot >= Inventory::FirstGeneral && slot <= Inventory::LastGeneral && item.item_class == 0 &&
 			    !Inventory::Stacks(item) && item.no_drop != 0 && lone < 0)
 				lone = slot;
-		if (lone < 0)
+		if (lone < 0) {
 			printf("[preview] nothing droppable\n");
+			for (const auto &[slot, item] : zone.Items())
+				printf("[preview]   slot %d: '%s' class %d no drop %d\n", slot, item.name.c_str(), item.item_class, item.no_drop);
+		}
 		else {
 			windows.Show("InventoryWindow", true);
 			windows.Raise("InventoryWindow");
@@ -237,7 +240,7 @@ namespace
 			uint32_t none = 0;
 			for (int y = frontend.ScreenHeight() * 3 / 4; y < frontend.ScreenHeight() - 40 && gx < 0; y += 8)
 				for (int x = frontend.ScreenWidth() / 3; x < frontend.ScreenWidth() * 2 / 3 && gx < 0; x += 8)
-					if (!view->PickSpawn(x, y, zone.MySpawnId()) && !view->PickGroundItem(x, y, none) && !windows.Over(x, y))
+					if (!view->PickSpawn(x, y, zone.MySpawnId()) && !view->PickGroundItem(x, y, zone.MySpawnId(), none) && !windows.Over(x, y))
 						gx = x, gy = y;
 			printf("[preview] the ground at %d,%d\n", gx, gy);
 			size_t before = zone.GroundItems().size();
@@ -262,17 +265,37 @@ namespace
 					mine = id;
 			if (mine == 0)
 				break;
-			// It's at our feet: step back so it's in front of us, out from under the chat window.
+			// Where it is at our feet, past our model: the pixels that pick it, and ours that pick us.
 			const ZoneGroundItem &there = zone.GroundItems().at(mine);
 			windows.Show("ChatWindow", false);
-			view->SetPlayerPosition(there.x, there.y - 12, there.z, 0);
+			windows.Show("InventoryWindow", false);
+			auto where = [&](const char *when) {
+				int on_item = 0, on_us = 0, x0 = 1 << 30, y0 = 1 << 30, x1 = -1, y1 = -1;
+				uint32_t under = 0;
+				for (int y = 0; y < frontend.ScreenHeight(); y += 2)
+					for (int x = 0; x < frontend.ScreenWidth(); x += 2) {
+						if (view->PickGroundItem(x, y, zone.MySpawnId(), under) && under == mine) {
+							++on_item;
+							x0 = std::min(x0, x), y0 = std::min(y0, y), x1 = std::max(x1, x), y1 = std::max(y1, y);
+						} else if (view->PickSpawn(x, y, zone.MySpawnId()) == zone.MySpawnId()) {
+							++on_us;
+						}
+					}
+				printf("[preview] %s: %d pixels pick it (%d,%d to %d,%d), %d pick us\n", when, on_item * 4, x0, y0, x1, y1, on_us * 4);
+			};
+			if (round == 0)
+				where("at our feet");
+			// Then step back and aside so it's in front of us and not behind our model, out from
+			// under the chat window.
+			view->SetPlayerPosition(there.x + 6, there.y - 12, there.z, 0);
 			h.RunUntil([] { return false; }, 1200);
 			h.Snapshot("o3-before-pickup"); // drawn: picked from the last frame
+			where("stepped back");
 			int px = -1, py = -1;
 			uint32_t picked = 0;
 			for (int y = 4; y < frontend.ScreenHeight() && px < 0; y += 4)
 				for (int x = 4; x < frontend.ScreenWidth() && px < 0; x += 4)
-					if (view->PickGroundItem(x, y, picked) && picked == mine && !windows.Over(x, y) &&
+					if (view->PickGroundItem(x, y, zone.MySpawnId(), picked) && picked == mine && !windows.Over(x, y) &&
 					    !view->PickSpawn(x, y, zone.MySpawnId()))
 						px = x, py = y;
 			printf("[preview] drop %u (%s) on the screen at %d,%d\n", mine, zone.GroundItems().at(mine).model.c_str(), px, py);
@@ -304,7 +327,7 @@ namespace
 			uint32_t picked = 0;
 			for (int y = 4; y < frontend.ScreenHeight() && fx < 0; y += 4)
 				for (int x = 4; x < frontend.ScreenWidth() && fx < 0; x += 4)
-					if (view->PickGroundItem(x, y, picked) && picked == forge && !windows.Over(x, y) &&
+					if (view->PickGroundItem(x, y, zone.MySpawnId(), picked) && picked == forge && !windows.Over(x, y) &&
 					    !view->PickSpawn(x, y, zone.MySpawnId()))
 						fx = x, fy = y;
 			printf("[preview] forge %u (%s) on the screen at %d,%d, %.1f away\n", forge, item.model.c_str(), fx, fy,

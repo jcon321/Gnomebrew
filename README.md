@@ -928,7 +928,21 @@ details and the nearest spawns at the top left and the radar at the top right.
   the object type @212 (a tradeskill container's bag type). HandleWorldMessage keeps it in the
   EQItemList and `CreateActor`s it at `GetFloorHeight` from 1 over it, plus 0.5; ours is the item's
   model (`CharacterModels::BuildItem`: `IT<n>_HS_DEF` or `IT<n>_DMSPRITEDEF` from gequip*.s3d on a
-  one-bone model, scale 1). `CEverQuest_LMouseUp` (new UI) goes, for a click that didn't drag
+  one-bone model), with its particle clouds (a torch's flame and smoke, as a held one's).
+  `CDisplay::CreateActor` (@004b0120) looks `<name>_ACTORDEF` up in everything the world has loaded
+  (gequip*.s3d, the zone's `_obj.s3d`, the `_chr` files); for a ground spawn a missing one is
+  `IT63_ACTORDEF` (a bag), then `RED_BLOB_ACTORDEF` (a sprite in gequip.s3d). It sizes the
+  tradeskill containers: in Rivervale, Ak'Anon and Kaladim (zones 19, 55, 60, 67) IT70 and IT74
+  at 0.8; elsewhere IT66, IT69 and IT73 at 1.5 and IT74 at 1.3; `BBBOARD*` at 1.5. The server's
+  `object` table is all `IT<n>` but one `CHEST1` in oasis (which oasis_obj.s3d doesn't have, so
+  it's a bag there too); `ground_spawns` has a few bad names (`IT`, `ORD`, `63`) that show as bags.
+  Ours doesn't search the zone's `_obj.s3d`. **Clicks** (`CDisplay::GetClickedActor` @004b008a,
+  eqgfx `s3dPickObjectOnScreen`): a ray from the camera through the pixel, out to the far clip,
+  and the actor whose triangles it hits first (`collideRayWithEntity`), spawns, our own model
+  outside first person, and ground items alike, invisible ones left out (`t3dIsActorInvisible`).
+  `CEverQuest_ClickedPlayer` and `EQItemList_is_item_actor` each take that one actor, so a model in
+  front of an item takes the click (`ZoneView::Pick`, `CharacterModel::RayHit`).
+  `CEverQuest_LMouseUp` (new UI) goes, for a click that didn't drag
   and with no transaction waiting (`DAT_007d0254`): the spawn under the cursor
   (`LeftClickedOnPlayer`); else, with no trade, an item on the cursor is dropped (not a common
   item of type 12, 33 or 39, which click the doors), coins do nothing, and with nothing held a
