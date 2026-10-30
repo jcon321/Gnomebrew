@@ -740,7 +740,8 @@ bool InventoryClick(WindowManager &windows, GameWindowState &state, ZoneSession 
 	if (window == "InventoryWindow" && control == "IW_CharacterView") {
 		if (items.count(Cursor)) {
 			result.sound = true;
-			AutoInventory(zone);
+			AutoInventory(zone, &result.message, state.fv_rules);
+			result.message_color = 15;
 		}
 		return true;
 	}

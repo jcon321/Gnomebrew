@@ -99,6 +99,7 @@ namespace Inventory
 		case QuiverArrowsOnly: return "Only arrows may go in a quiver.";
 		case BandolierAmmoOnly: return "Only ammo may go in a bandolier.";
 		case 12921: return "That item cannot be dropped, traded, or sold.";
+		case 12937: return "There was no place to put that!  The item has dropped to the ground!";
 		case 12922: return "That container cannot be dropped, traded, or sold, as it contains an item which cannot be dropped, traded or sold.";
 		default: return "";
 		}
@@ -488,8 +489,10 @@ namespace Inventory
 		return out;
 	}
 
-	bool AutoInventory(ZoneSession &zone)
+	bool AutoInventory(ZoneSession &zone, uint32_t *message, bool fv_rules)
 	{
+		if (message)
+			*message = 0;
 		auto &items = zone.EditItems();
 		const ZoneProfile &me = zone.Profile();
 		auto held = [&]() { return Find(items, Cursor); };
@@ -535,6 +538,17 @@ namespace Inventory
 				if (!Find(items, BagSlot(general, n)) && BagRefusal(*held(), *bag) == 0)
 					Put(zone, BagSlot(general, n));
 		}
-		return !held();
+		if (!held())
+			return true;
+		// No room: on the ground, unless it can't be dropped.
+		if (!CanDrop(items, *held(), Cursor, fv_rules)) {
+			if (message)
+				*message = held()->no_drop != 0 ? 12922 : 12921;
+			return false;
+		}
+		if (message)
+			*message = 12937;
+		zone.DropCursorItem();
+		return true;
 	}
 }

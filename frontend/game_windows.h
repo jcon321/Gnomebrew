@@ -190,6 +190,7 @@ struct GameWindowState
 	bool bank_open = false;
 	// A trade (or the give window) is up, and with an NPC: our empty trade slots take items.
 	bool trading = false, trade_npc = false;
+	bool fv_rules = false; // OP_LogServer's: anything can be dropped (CanDrop)
 };
 
 // A button clicked in one of the windows: the page arrows and the hot buttons. A hot button that

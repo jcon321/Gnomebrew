@@ -851,6 +851,39 @@ int main(int argc, char **argv)
 					where("InventoryWindow");
 				}
 			}
+			// No room: every general slot and bag slot filled (stand-ins the replay's zone never
+			// hears of), an item on the cursor put away on the character view drops to the ground
+			// (OP_GroundSpawn, eqstr 12937); then the inventory as it was.
+			{
+				std::map<int16_t, ZoneItem> &edit = const_cast<ZoneSession &>(frontend.Zone()).EditItems();
+				std::map<int16_t, ZoneItem> kept = edit;
+				ZoneItem filler;
+				filler.id = 13005;
+				filler.name = "Filler";
+				filler.icon = 600;
+				filler.no_drop = 1;
+				for (int16_t slot = Inventory::FirstGeneral; slot <= Inventory::LastGeneral; ++slot) {
+					if (!edit.count(slot))
+						edit[slot] = filler, edit[slot].slot = slot;
+					if (edit[slot].item_class == 1)
+						for (int n = 0; n < edit[slot].bag_slots; ++n)
+							if (int16_t inside = Inventory::BagSlot(slot, n); !edit.count(inside))
+								edit[inside] = filler, edit[inside].slot = inside;
+				}
+				ZoneItem held = filler;
+				held.name = "Dropped Filler";
+				held.slot = Inventory::Cursor;
+				held.slots = 0; // nowhere to wear it
+				edit[Inventory::Cursor] = held;
+				size_t chat_before = frontend.Chat().Lines().size();
+				h.RunUntil([] { return false; }, 100); // the character view takes clicks with an item held
+				if (const SidlWindow::Control *view = inventory->Find("IW_CharacterView"))
+					click(view->rect.x + view->rect.w / 2, view->rect.y + view->rect.h / 2);
+				printf("[preview] no room: cursor %s\n", frontend.Zone().Items().count(Inventory::Cursor) ? "busy" : "free");
+				for (size_t i = chat_before; i < frontend.Chat().Lines().size(); ++i)
+					printf("[preview] no room chat: %s\n", frontend.Chat().Lines()[i].text.c_str());
+				edit = kept;
+			}
 			h.Key(InputEvent::Key::Escape); // eqgame's escape closes the inventory
 			where("InventoryWindow");
 		}

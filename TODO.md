@@ -107,9 +107,9 @@ no rules of its own.
      cursor while casting), /showhelm, and a carried light going out underwater (`UpdateLight`'s
      check of the body's environment; it's only not drawn there now).
    - The item on the cursor: clicking a spawn with it (or coins) gives it to them through a trade
-     (`DropItemOrMoneyOnPlayer`, below), and clicking the ground drops it (item 11). Still to do:
-     AutoInventory with no room drops it ("There was no place to put that!"); for now it stays on
-     the cursor. Holding a slot's item to make an item hot button (`CInvSlot::HandleLButtonHeld`), and
+     (`DropItemOrMoneyOnPlayer`, below), clicking the ground drops it (item 11), and AutoInventory
+     with no room drops it (AutoGenInventory: "There was no place to put that!", eqstr 12937; a
+     NO DROP item stays on the cursor). Holding a slot's item to make an item hot button (`CInvSlot::HandleLButtonHeld`), and
      the right button on a slot (eat, drink, click effects: `CInvSlot::HandleRButtonUp`).
    - Item display: alt+click or the right button held on an inventory slot shows its item
      (`frontend/item_display.*`, eqgame's SetItem text with spells_en.txt's spell names); letting

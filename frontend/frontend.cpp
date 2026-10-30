@@ -685,6 +685,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		Rect area = ScreenArea();
 		m_windows.Update(now_ms, m_mouse_x - area.x, m_mouse_y - area.y);
 		m_window_state.busy = m_containers.Combining() || m_merchant.Busy() || m_loot.Busy() || m_ground.Busy();
+		m_window_state.fv_rules = m_game_values.fv_rules;
 		HandleWindowClicks();
 		m_bank.Frame(now_ms);
 		m_merchant.Frame(now_ms);

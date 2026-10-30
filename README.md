@@ -944,7 +944,9 @@ details and the nearest spawns at the top left and the radar at the top right.
   slot 0..9), `OP_ClearObject` (0x4205) empties it, Combine sends slot 1000, and
   `CContainerMgr::Process` closes it past 20 (every 500 ms); `CheckCloseable` keeps it open (Done
   disabled, Escape passes it by) while a NO DROP item's in it. Closing sends `OP_ClickObjectAction`
-  {us, drop id, 0} (20 bytes). The zone's merchant overflow and anything else
+  {us, drop id, 0} (20 bytes). `AutoGenInventory` with no room for the cursor's item drops it at
+  once, with no confirmation and whatever `/fastdrop` says (12937, color 15), or keeps a NO DROP
+  one on the cursor (`CanDrop`'s message). The zone's merchant overflow and anything else
   `CreateGroundObject` makes come the same way. `IsOkToTransact` waits on all of it.
 - **Looting** (`frontend/loot_window.*`, `CLootWnd`): the right button on a corpse is
   `CEverQuest_LootCorpse`: within `ModelHeightOffset * 1.6 + 14` (`PlayerDistance` with 1.2, up and

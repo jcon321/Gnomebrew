@@ -103,7 +103,9 @@ namespace Inventory
 	// BuildMoneyText (@004f8ee3), in English: "1 platinum, 2 gold and 3 copper", the coins there are.
 	std::string MoneyText(int32_t platinum, int32_t gold, int32_t silver, int32_t copper);
 
-	// AutoInventory: the cursor's item where it goes. False when there's no room for it: eqgame
-	// drops it on the ground then ("There was no place to put that!"), and we leave it on the cursor.
-	bool AutoInventory(ZoneSession &zone);
+	// AutoInventory: the cursor's item where it goes. With no room, AutoGenInventory drops it on the
+	// ground where we stand, at once (no confirmation; "There was no place to put that!  The item has
+	// dropped to the ground!", eqstr 12937, color 15), or keeps a NO DROP one on the cursor (CanDrop's
+	// 12921 or 12922). False when it's still on the cursor; `message` the eqstr id to say, or 0.
+	bool AutoInventory(ZoneSession &zone, uint32_t *message = nullptr, bool fv_rules = false);
 }
