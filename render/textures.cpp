@@ -120,6 +120,9 @@ namespace render
 					std::swap_ranges(image.pixels.begin() + static_cast<size_t>(y) * image.width,
 						image.pixels.begin() + static_cast<size_t>(y + 1) * image.width,
 						image.pixels.begin() + static_cast<size_t>(image.height - 1 - y) * image.width);
+			if (masked && m_mask_reference != 0x80)
+				for (uint32_t &p : image.pixels)
+					p = (p & 0xffffff) | ((p >> 24) >= m_mask_reference ? 0xff000000u : 0u);
 			return true;
 		}
 		return false;

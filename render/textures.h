@@ -21,6 +21,11 @@ namespace render
 	public:
 		// Archives are searched in the order added; the cache doesn't own them.
 		void AddArchive(const PfsArchive *archive) { m_archives.push_back(archive); }
+		// The alpha a masked texture's texel needs to be drawn (the rasterizer's is 128). eqgfx's alpha
+		// test is 192, but 16 for the textures of a file whose name has "_chr" or "equip" in it
+		// (t3dLoadWorldFile's flag 0x80, flushSpecialEffects): the Luclin models' DXT5 skirts and
+		// robes are mostly alpha 96..127. Their masked textures are loaded with alpha 0 or 255 by it.
+		void SetMaskReference(uint8_t alpha) { m_mask_reference = alpha; }
 
 		// masked: 8-bit BMPs treat palette index 0 as transparent.
 		const Texture *Get(const std::string &name, bool masked);
@@ -36,6 +41,7 @@ namespace render
 		std::vector<const PfsArchive *> m_archives;
 		std::map<std::string, std::unique_ptr<Texture>> m_cache; // lowercase name + mask flag
 		std::vector<std::string> m_missing;
+		uint8_t m_mask_reference = 0x80;
 	};
 
 	// A texture of a decoded picture (rows top first, as v = 0); `soft` as Build's.

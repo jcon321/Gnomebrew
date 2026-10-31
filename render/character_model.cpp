@@ -92,6 +92,36 @@ namespace render
 			return material;
 		}
 
+		// CDisplay_GetItemType (@004aa22c): what a held item (its IT number) is to the animations.
+		// 0 nothing, 3 a shield (IT200..300), 4 IT4, 5 IT61, 2 these, 1 anything else.
+		int HeldItemType(unsigned it)
+		{
+			switch (it) {
+			case 1: case 2: case 3: case 5: case 7: case 9: case 16: case 17: case 19: case 20: case 23: case 24:
+			case 25: case 30: case 34: case 35: case 37: case 39: case 40: case 41: case 42: case 43: case 44:
+			case 50: case 51: case 53: case 57: case 58: case 59: case 60: case 62:
+				return 2;
+			case 4:
+				return 4;
+			case 61:
+				return 5;
+			default:
+				return it == 0 ? 0 : it >= 200 && it < 301 ? 3 : 1;
+			}
+		}
+
+		// EQPlayer::SetAnimVariation (@005098d8): the variant (0..7, A..H) a Luclin model's animations
+		// play, by what it holds.
+		int AnimVariation(unsigned primary, unsigned secondary)
+		{
+			int held = HeldItemType(primary), off = HeldItemType(secondary);
+			if (off != 0)
+				return held != 0 ? 3 : off == 4 ? 7 : off == 3 ? 2 : 5;
+			if (held != 0)
+				return held != 1 ? 1 : 4;
+			return 0;
+		}
+
 		// SwapHead tints only these of the head's materials with the helm's color, not the face.
 		bool TintedByHelm(const std::string &name, uint16_t race)
 		{
@@ -265,6 +295,8 @@ namespace render
 		if (!source->archive.Read(name + ".wld", data) || !source->wld.Load(std::move(data)))
 			return false;
 		source->textures.AddArchive(&source->archive);
+		if (name.find("_chr") != std::string::npos || name.find("equip") != std::string::npos)
+			source->textures.SetMaskReference(0x10);
 		source->name = name;
 		to.push_back(std::move(source));
 		return true;
@@ -418,7 +450,9 @@ namespace render
 		bool luclin = bone_named(code + "TUNIC_POINT_DAG") >= 0;
 		// Every animation the model has, each bone from its own tracks or its source model's,
 		// shared by everyone with this model.
-		auto &animations = m_animation_sets[code];
+		// A Luclin model plays one variant of each animation, by what it holds (AnimVariation).
+		int variation = luclin ? AnimVariation(appearance.equip[7], appearance.equip[8]) : 0;
+		auto &animations = m_animation_sets[code + static_cast<char>('A' + variation)];
 		if (!animations) {
 			std::vector<const WldFile *> wlds = {&source->wld};
 			for (auto &other : m_sources)
@@ -429,14 +463,24 @@ namespace render
 			for (int id = 1; id < Anim::Count; ++id) {
 				const char *name = AnimationCode(id);
 				SkeletonAnimation animation;
-				// A Luclin model's tracks come in variants A..H ("C01A" + "HUMPEPELVIS_TRACK"); it plays
-				// A, else B (toggleAnimationState), else a plain one.
-				for (const char *variant : {"A", "B", ""}) {
-					if (!luclin && *variant)
-						continue;
-					animation = LoadAnimation(wlds, skeleton, std::string(name) + variant, code, from);
-					if (animation.length > 0)
-						break;
+				if (!luclin)
+					animation = LoadAnimation(wlds, skeleton, name, code, from);
+				else {
+					// A Luclin model's tracks come in variants A..H ("C01A" + "HUMPEPELVIS_TRACK"). It plays
+					// its variation's; without them toggleAnimationState's: B for A or C..H, A for B, and
+					// then A; else a plain track (initializeHierarchicalSprite loads one as A).
+					auto load = [&](int v) {
+						return LoadAnimation(wlds, skeleton, std::string(name) + static_cast<char>('A' + v), code, from);
+					};
+					animation = load(variation);
+					if (animation.length == 0) {
+						int toggled = variation == 1 ? 0 : 1;
+						animation = load(toggled);
+						if (animation.length == 0 && variation != 0 && toggled != 0)
+							animation = load(0);
+					}
+					if (animation.length == 0)
+						animation = LoadAnimation(wlds, skeleton, name, code, from);
 				}
 				// PlayAnimationTrack2: a Luclin model plays S20 for S08 and S08 for S20 (50 and 62).
 				const char *key = luclin && id == 50 ? AnimationCode(62) : luclin && id == 62 ? AnimationCode(50) : name;

@@ -640,6 +640,11 @@ Things learned about the files:
   stored that way already.
 - A bitmap (0x03) can carry two names. A second `<file>_LAYER` one (`t3dDefineBMInfoMIPMapped`) is
   drawn over the first by its alpha (see Luclin player models); `WldMaterial::layer` keeps it.
+- A masked texel is drawn at alpha 192 and over (`initializeRenderDeviceState`'s alpha reference), but
+  16 and over for the textures of a file whose name has `_chr` or `equip` in it (`t3dLoadWorldFile`
+  flags its bitmaps 0x80, and `flushSpecialEffects` uses 0x10 for them): the Luclin skirts' DXT5
+  alpha is mostly 96..127. We draw at 128 and over, and load those files' masked textures as alpha
+  0 or 255 by 16 (`TextureCache::SetMaskReference`).
 - Our mipmaps average a masked texture's color over its opaque texels only. A texture with no opaque
   texel at all (vequip's DXT5 plate, alpha 0 throughout, on an opaque material) averages them all.
 - Zone lighting is the `lights.wld` point lights (linear falloff) over a flat ambient, plus the meshes'
@@ -675,9 +680,17 @@ functions):
 - **Animations:** tracks come in variants A..H, `<anim><variant><tag><bone>_TRACK`
   (`C01AHUMPEPELVIS_TRACK`). `mapCharacterPrefixToRaceCode` with the flag sends HU and ER to the
   Human of that sex, keeps BA's own, and sends BGM, TRI, ENA and SKE to HUM; the rest borrow as the old
-  models do (DA, HI, HA... the Wood Elf's). `PlayAnimationTrack` plays the variant in the player's
-  byte at `+0x150`, `toggleAnimationState` falling back between A and B; we play A, else B.
-  `PlayAnimationTrack2` swaps 50 (`S08`) and 62 (`S20`) on these models.
+  models do (DA, HI, HA... the Wood Elf's). `initializeHierarchicalSprite` loads each bone's A..H
+  (and a plain track as A when there's no H). `PlayAnimationTrack` plays the variant in the player's
+  byte at `+0x150`, which `EQPlayer::SetAnimVariation` (@005098d8) sets from what it holds, by
+  `CDisplay_GetItemType` (@004aa22c: 0 nothing, 3 a shield IT200..300, 4 IT4, 5 IT61, 2 IT1, 2, 3, 5,
+  7, 9, 16, 17... 62, 1 anything else): a secondary with a primary D, a secondary of type 4 H, a
+  shield alone C, another secondary F; a primary alone of type 1 E, else B; nothing A. Without that
+  variant `toggleAnimationState` tries B (A for B), then A. The Vah Shir male's A tracks of some
+  combat moves (`C02A`, `C03A`...) hold the shield point turned round; with a shield it plays B.
+  `PlayAnimationTrack2` swaps 50 (`S08`) and 62 (`S20`) on these models, and at the normal speed
+  plays their idles (32, 38, 71, 74), sitting and standing (26, 72, 73) and a woman's 17 at half
+  speed and socials (`S..`) at three quarters; we don't (TODO).
 - **Two textures:** a Luclin material's bitmap is its skin and a `<file>_LAYER` (`HUMCHSK01.DDS`,
   `HUMCH0101.DDS_LAYER`: the armor). `setRenderEffectState` mode 2 binds the layer in stage 1 and
   `t3dRenderSpecialEffects` draws the skin, then the layer modulated by the same vertex color and

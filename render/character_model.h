@@ -233,6 +233,6 @@ namespace render
 		bool m_velious_textures = false;
 		bool m_old_skeletons = true;
 		bool Skipped(const Source &source, const std::string &code) const; // LoadOldSkeletons
-		std::map<std::string, std::shared_ptr<const std::map<std::string, SkeletonAnimation>>> m_animation_sets; // by model code
+		std::map<std::string, std::shared_ptr<const std::map<std::string, SkeletonAnimation>>> m_animation_sets; // by model code and variant ("KEMD")
 	};
 }
