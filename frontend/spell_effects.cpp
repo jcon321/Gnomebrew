@@ -359,13 +359,14 @@ void SpellEffects::StartNew(const Request &request, const FindActor &find)
 		render::SpellParticles::Frame frame;
 		uint32_t binding = 0;
 		uint16_t on = 0;
-		if (emitter.target == 0) {
+		int target = request.all_on >= 0 ? request.all_on : emitter.target;
+		if (target == 0) {
 			if (!request.at_point)
 				continue;
 			frame.position = request.point;
 		}
-		else if (emitter.target == 1 || emitter.target == 3) {
-			on = emitter.target == 1 ? request.caster : request.target;
+		else if (target == 1 || target == 3) {
+			on = target == 1 ? request.caster : request.target;
 			Actor actor;
 			if (!on || !find(on, actor))
 				continue;
@@ -386,7 +387,7 @@ void SpellEffects::StartNew(const Request &request, const FindActor &find)
 				continue;
 		}
 		uint32_t tag = static_cast<uint32_t>(on) << 16 | static_cast<uint16_t>(request.spell);
-		m_particles.Create(emitter.def, tag, duration, m_density, m_opacity, frame, binding);
+		m_particles.Create(emitter.def, tag, duration, m_density, m_opacity, frame, binding, request.all_on == 2);
 	}
 }
 

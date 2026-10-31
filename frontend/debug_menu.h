@@ -11,7 +11,7 @@
 //     SOUND the music track playing, the voices, the zone's emitters in range and the ambient sounds
 //       playing, and switches for all sound, the music, the zone's ambience and the game's sounds;
 //     RENDER toggles: wireframe, no fog, collision walls, floor marker, no occlusion culling, no clip
-//     plane, vsync;
+//     plane, vsync, and the bolt gun (left clicks shoot bolts no one else sees; not kept);
 //     TARGET a spawn clicked in the world or in NEARBY (else the nearest), in detail;
 //     NEARBY the nearest spawns.
 //   Top right, the radar: spawns within RadarRange, north up.
@@ -92,8 +92,8 @@ private:
 		int height;
 		uint32_t color;
 		int gap = 3; // below
-		enum class Action { None, Fold, Toggle, Pick, Vision, Sound } action = Action::None;
-		int value = 0; // the section, the toggle, the spawn id, or the vision
+		enum class Action { None, Fold, Toggle, Pick, Vision, Sound, Bolt } action = Action::None;
+		int value = 0; // the section, the toggle, the spawn id, the vision, or the bolt gun's spell
 		std::string right; // right-aligned, dim
 		bool highlight = false;
 	};

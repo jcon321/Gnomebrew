@@ -108,6 +108,9 @@ public:
 	// light, a spell's effect riding on it. The spells are for a bolt's (kind 9).
 	void SetSpellFile(const SpellFile *spells) { m_missiles.SetSpells(spells); }
 	void LaunchMissile(const ZoneMissile &missile);
+	// The debug menu's bolt gun: a bolt of `spell` from us at the spawn under a window pixel, else
+	// along the ray through it, made here (the zone never hears of it). False when there's no us.
+	bool FireBolt(int x, int y, int spell);
 	const Missiles &Flying() const { return m_missiles; }
 	// The spells' stage sounds lately (for the debug menu), newest last: played from the spawn on
 	// the game sounds' switch, as EQPlayer::PlaySoundA plays them.
@@ -246,6 +249,8 @@ public:
 		bool no_weather = false; // no rain or snow, and the zone's own fog, sky and light
 		bool new_spell_effects = true; // SpellsNew.eff's; off, every spell's spells.eff one
 		int vision = -1; // a Vision, or -1: our own (our race's; spells and items to come)
+		bool bolt_gun = false; // a left click in the world shoots a bolt (FireBolt), held it keeps on
+		int bolt_spell = 68;   // what it shoots: Bolt of Flame
 	};
 	// What we see in: the debug menu's choice, or our own (our race's; spells and items to come).
 	Vision CurrentVision() const;

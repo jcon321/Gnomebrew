@@ -240,6 +240,7 @@ bool *DebugMenu::Toggle(int index)
 	case 6: return &m_draw.no_weather;
 	case 7: return &m_draw.new_spell_effects;
 	case 8: return m_set_vsync ? &m_vsync : nullptr;
+	case 9: return &m_draw.bolt_gun; // not kept in [Debug]: it takes over left clicks
 	default: return nullptr;
 	}
 }
@@ -268,6 +269,9 @@ bool DebugMenu::OnMouse(const InputEvent &event)
 			break;
 		case Line::Action::Vision:
 			m_draw.vision = hit.value;
+			break;
+		case Line::Action::Bolt:
+			m_draw.bolt_spell = hit.value;
 			break;
 		case Line::Action::Sound:
 			if (m_sound) {
@@ -521,13 +525,26 @@ void DebugMenu::DrawCard(Canvas &canvas, TextRenderer &text, const ZoneSession &
 
 	if (section(Render, "RENDER")) {
 		static const char *const names[] = {"Wireframe", "No fog", "Collision walls", "Floor marker", "No occlusion culling",
-			"No clip plane", "No weather effects", "Luclin spell effects", "VSync"};
-		for (int i = 0; i < 9; ++i) {
+			"No clip plane", "No weather effects", "Luclin spell effects", "VSync",
+			"Bolt gun (left click shoots, hold for rapid fire)"};
+		for (int i = 0; i < 10; ++i) {
 			if (!Toggle(i))
 				continue;
 			Line &line = *row(std::string(*Toggle(i) ? "[x] " : "[  ] ") + names[i], *Toggle(i) ? White : Grey);
 			line.action = Line::Action::Toggle;
 			line.value = i;
+		}
+		if (m_draw.bolt_gun) {
+			// What it shoots: the bolts, and three whose SpellsNew.eff effects have a missile stage of their own.
+			static const int bolts[] = {68, 38, 54, 30, 206, 119};
+			for (int spell : bolts) {
+				const SpellInfo *info = m_spells ? m_spells->Find(spell) : nullptr;
+				std::string name = info ? info->name : Format("spell %d", spell);
+				bool chosen = m_draw.bolt_spell == spell;
+				Line &line = *row(std::string(chosen ? "    (o) " : "    (  ) ") + name, chosen ? White : Grey);
+				line.action = Line::Action::Bolt;
+				line.value = spell;
+			}
 		}
 		if (view && m_weather) {
 			// What the weather draws: its fog (with no sky behind it) and its particles.

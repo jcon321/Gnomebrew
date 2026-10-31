@@ -110,6 +110,7 @@ public:
 		render::Vec3 point;
 		int delay_ms = 0;    // started this long after (a dragon breath's casting)
 		uint32_t missile = 0; // the missile for the emitters on one (Missiles' id)
+		int all_on = -1;      // the bolt gun's: every emitter on 0 the point or 2 the missile, whoever it's for
 	};
 	// EQPlayer::PlaySoundA: a stage's sound (a numbered wave) from spawn `on`, as it starts.
 	using PlaySound = std::function<void(const Request &request, uint16_t on, int slot)>;

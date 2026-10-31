@@ -92,7 +92,9 @@ namespace render
 
 		// t3dParticleSystemCreateEmitter: binding 0 stays at `frame`. Density is the options' 0..1
 		// (none made at 0), opacity their 0..1. Returns how long it shows (ms); 0 when there's nothing.
-		int Create(int def, uint32_t tag, int duration_ms, float density, float opacity, const Frame &frame, uint32_t binding);
+		// `at_once` (the bolt gun's, not eqgame's): its first emission now rather than after its wait.
+		int Create(int def, uint32_t tag, int duration_ms, float density, float opacity, const Frame &frame, uint32_t binding,
+			bool at_once = false);
 		void DestroyTagged(uint32_t tag);
 		void DestroyBound(uint32_t binding);
 		void Clear() { m_emitters.clear(); }

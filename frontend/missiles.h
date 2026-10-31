@@ -74,6 +74,7 @@ public:
 		int spell = 0;             // kind 9: its spell, 0 none
 		uint16_t target = 0;
 		bool made = false, stuck = false, done = false;
+		bool bolt_gun = false, hit = false; // the debug menu's bolt gun: one of ours, and it hit something
 		uint64_t physics_ms = 0, aim_ms = 0, expires_ms = 0;
 		float aim_heading = 0, aim_climb = 0, aim_distance = 2000;
 	};
@@ -86,8 +87,9 @@ public:
 	const SpellFile *Spells() const { return m_spells; }
 	void SetEffects(StartEffect start) { m_start_effect = std::move(start); }
 
-	// OP_Projectile: on its way the next Update.
-	void Launch(const ZoneMissile &packet);
+	// OP_Projectile: on its way the next Update. `bolt_gun`: the debug menu's, which no packet
+	// sends; it bursts on a wall as well as a spawn (its spell's landing at where it hit).
+	void Launch(const ZoneMissile &packet, bool bolt_gun = false);
 	void Update(uint64_t now_ms, const World &world);
 	void Clear() { m_missiles.clear(); }
 

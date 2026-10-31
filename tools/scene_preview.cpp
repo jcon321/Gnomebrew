@@ -109,6 +109,14 @@ namespace
 	};
 	MissileOption g_missile;
 
+	// --bolt-gun X Y SPELL MS: the debug menu's bolt gun clicked at window pixel X Y (we're spawn
+	// 999), run MS in 16 ms frames.
+	struct BoltGunOption
+	{
+		int x = 0, y = 0, spell = 68, ms = 0;
+	};
+	BoltGunOption g_bolt_gun;
+
 	void WriteWav(const std::string &path, const std::vector<float> &stereo)
 	{
 		FILE *file = fopen(path.c_str(), "wb");
@@ -370,6 +378,28 @@ namespace
 						std::hypot(m.at.x - to.y, m.at.y - to.x), m.stuck ? " stuck" : "", view.Effects().EmitterCount());
 			}
 		}
+		if (g_bolt_gun.ms > 0) {
+			if (!spell_file.Find(g_bolt_gun.spell) && spell_file.Load(eq_dir + "/spells_en.txt"))
+				view.SetSpellFile(&spell_file);
+			view.UpdateSpawns(spawns, 999, spawn_clock);
+			view.Render(canvas, spawn_clock);
+			printf("bolt gun at %d, %d: %s\n", g_bolt_gun.x, g_bolt_gun.y,
+				view.FireBolt(g_bolt_gun.x, g_bolt_gun.y, g_bolt_gun.spell) ? "fired" : "no shot");
+			for (int ms = 0; ms <= g_bolt_gun.ms; ms += 16) {
+				spawn_clock += 16;
+				view.UpdateSpawns(spawns, 999, spawn_clock);
+				view.Render(canvas, spawn_clock);
+				const Missiles::Missile *m = view.Flying().All().empty() ? nullptr : &view.Flying().All().front();
+				if (ms % 96 >= 16)
+					continue;
+				if (m)
+					printf("  %5d ms: at loc %.1f, %.1f, %.1f heading %.0f climb %.0f target %u", ms, m->at.y, m->at.x,
+						m->at.z, m->heading, m->climb, m->target);
+				else
+					printf("  %5d ms: gone", ms);
+				printf(", %zu emitters, %zu particles\n", view.Effects().EmitterCount(), view.Effects().ParticleCount());
+			}
+		}
 		double total = 0;
 		for (int f = 0; f < frames; ++f) {
 			view.UpdateSpawns(spawns, 0, spawn_clock + f);
@@ -508,6 +538,12 @@ int main(int argc, char **argv)
 			g_missile.object = atoi(argv[++i]);
 			g_missile.model = argv[++i];
 			g_missile.ms = atoi(argv[++i]);
+		}
+		else if (arg == "--bolt-gun" && i + 4 < argc) {
+			g_bolt_gun.x = atoi(argv[++i]);
+			g_bolt_gun.y = atoi(argv[++i]);
+			g_bolt_gun.spell = atoi(argv[++i]);
+			g_bolt_gun.ms = atoi(argv[++i]);
 		}
 		else if (arg == "--weather" && i + 2 < argc) {
 			g_weather.type = std::string(argv[++i]) == "snow" ? 1 : 0;

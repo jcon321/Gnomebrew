@@ -172,7 +172,7 @@ namespace render
 	}
 
 	int SpellParticles::Create(int index, uint32_t tag, int duration_ms, float density, float opacity, const Frame &frame,
-		uint32_t binding)
+		uint32_t binding, bool at_once)
 	{
 		const EmitterDef *def = Def(index);
 		if (!def || density <= 0 || !TextureFor(*def))
@@ -220,6 +220,11 @@ namespace render
 		e.per_emit = per_emit;
 		e.rate = rate;
 		e.duration = e.left = duration;
+		if (at_once) {
+			float wait = def->stop_early + (initial == 0 && rate > 0 ? 1 / rate : 0);
+			if (wait < duration)
+				e.left = duration - wait;
+		}
 		e.opacity = opacity;
 		e.frame = frame;
 		// initializeParticleSystem: the level of detail never takes them under 16.

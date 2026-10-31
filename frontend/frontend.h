@@ -211,6 +211,7 @@ private:
 	// /consider (of our target).
 	void RightClickedOnPlayer(uint16_t spawn);
 	bool IsOkToTransact() const;
+	void FireBolt(); // the debug menu's bolt gun, at the mouse
 	void WorldClick(int x, int y); // CEverQuest_LMouseUp on the world (window pixels) // CEverQuest_IsOkToTransact: no window that deals with someone up
 	void AddZoneLog(const std::string &text, uint32_t color); // a line of chat in this color
 	void ChatOut(const std::string &text, int type);          // in a chat color type (ChatType)
@@ -343,6 +344,8 @@ private:
 	bool m_mouse_grabbed = false;
 	int m_look_x = 0, m_look_y = 0;
 	bool m_world_click = false; // the left button went down on the world
+	bool m_bolt_held = false;   // the bolt gun's trigger: the left button's down on the world
+	uint64_t m_bolt_ms = 0;     // its last shot
 	int m_click_travel = 0;     // pixels the mouse moved since, to tell a click from a drag
 
 	// sound

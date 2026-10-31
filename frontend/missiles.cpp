@@ -71,7 +71,7 @@ int Missiles::CasterAnimation(const ZoneMissile &packet)
 	}
 }
 
-void Missiles::Launch(const ZoneMissile &packet)
+void Missiles::Launch(const ZoneMissile &packet, bool bolt_gun)
 {
 	// EQMissile::EQMissile from the packet: its fields as they come, the speeds under 0.001 none.
 	Missile m;
@@ -92,6 +92,7 @@ void Missiles::Launch(const ZoneMissile &packet)
 	m.pitch = packet.pitch;
 	m.climb = packet.climb;
 	m.target = packet.target;
+	m.bolt_gun = bolt_gun;
 	m_missiles.push_back(m);
 }
 
@@ -170,6 +171,8 @@ void Missiles::Make(Missile &m, uint64_t now_ms, const World &world)
 		m.done = true;
 		return;
 	}
+	if (m.bolt_gun)
+		m.expires_ms = std::min(m.expires_ms, now_ms + 3000); // into the sky they'd pile up, 8 a second
 	m.radius = m.from.aimed ? 1.0f : 1.5f;
 	m.aim_heading = m.heading;
 	m.aim_climb = m.climb;
@@ -202,6 +205,7 @@ void Missiles::Aim(Missile &m, uint64_t now_ms, const World &world)
 		every = m.aim_distance < 150 ? 125 : m.aim_distance < 250 ? 250 : m.aim_distance < 350 ? 500 : 1000;
 	else if (m.aim_distance < 2) {
 		m.done = true; // HitActor
+		m.hit = true;
 		return;
 	}
 	// Unsigned, as eqgame's: a first ask put off into the future wraps round, and is now.
@@ -284,16 +288,24 @@ void Missiles::Move(Missile &m, const render::Vec3 &from, uint64_t now_ms, const
 		return; // set down (a spell's on its target), until its time's up
 	if (world.spawn_hit && world.spawn_hit(from, m.at, m.radius, m.from.source)) {
 		m.done = true; // CollsnCallbackForMissile
+		m.hit = true;
 		return;
 	}
 	if (world.blocked && world.blocked(from, m.at)) {
 		m.at = from;
 		m.stuck = true;
+		if (m.bolt_gun)
+			m.done = m.hit = true;
 	}
 }
 
 void Missiles::Destroy(Missile &m)
 {
+	if (m.bolt_gun) {
+		if (m.made && m.hit && m_start_effect)
+			m_start_effect(m, 2, &m.at);
+		return;
+	}
 	// ~EQMissile: Frost Bolt's landing where it was a step back.
 	if (m.made && m.spell == FrostBolt && m_start_effect) {
 		render::Vec3 at = m.at - m.velocity;

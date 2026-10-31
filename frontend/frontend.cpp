@@ -275,6 +275,8 @@ void FrontEnd::OnEvent(const InputEvent &event)
 		m_mouse_x = event.x;
 		m_mouse_y = event.y;
 	}
+	if (event.type == InputEvent::Type::MouseUp || event.type == InputEvent::Type::FocusLost)
+		m_bolt_held = false; // wherever the button's let go
 
 	// Held movement keys are let go even while a dialog has the input.
 	if (event.key == InputEvent::Key::Alt && (event.type == InputEvent::Type::Key || event.type == InputEvent::Type::KeyUp)) {
@@ -661,6 +663,10 @@ void FrontEnd::Update(uint64_t now_ms)
 		m_zone_view->SetMyLight(me.light);
 		m_zone_view->SetMyLevel(m_zone.Profile().level);
 		m_zone_view->SetDebugDraw(m_debug.Drawing());
+		if (m_bolt_held && !m_debug.Drawing().bolt_gun)
+			m_bolt_held = false;
+		else if (m_bolt_held && now_ms - m_bolt_ms >= 120)
+			FireBolt(); // rapid fire, 8 a second
 		MoveControls controls = ZoneControls();
 		// Sitting nothing moves us, a jump included (ProcessControls takes the keys only standing or
 		// crouching). Forward stands us up (ZoneEvent), and we go at once.
@@ -1796,6 +1802,13 @@ void FrontEnd::ChangeStance(uint8_t stance)
 		m_spell_book.StoodUp();
 }
 
+void FrontEnd::FireBolt()
+{
+	m_bolt_ms = m_now_ms;
+	if (m_zone_view && m_zone_view->FireBolt(m_mouse_x, m_mouse_y, m_debug.Drawing().bolt_spell))
+		m_zone_view->PlayAnimation(44); // a spell's missile (GetAnimationIdForAttack)
+}
+
 void FrontEnd::WorldClick(int x, int y)
 {
 	if (uint16_t id = m_zone_view->PickSpawn(x, y, m_zone.MySpawnId())) {
@@ -2297,6 +2310,12 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 		return;
 	case InputEvent::Type::MouseDown:
 	case InputEvent::Type::DoubleClick:
+		if (m_debug.Drawing().bolt_gun && m_zone_view) {
+			// The debug menu's bolt gun: a shot now, then more while the button's held (Frame).
+			m_bolt_held = true;
+			FireBolt();
+			return;
+		}
 		// Panning the chase camera (or running, with the right button too).
 		if (!m_mouse_turn) {
 			m_look_x = event.x;

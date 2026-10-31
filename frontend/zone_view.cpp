@@ -219,6 +219,16 @@ void ZoneView::Load()
 		}
 		else
 			request.missile = missile.id;
+		if (missile.bolt_gun) {
+			// The bolt gun's: its own missile stage, and the spell's landing riding it (as long as
+			// it's out); then the landing bursts where it hit.
+			if (!point)
+				StartSpellEffect(request);
+			request.stage = 2;
+			request.all_on = point ? 0 : 2;
+			if (!point)
+				request.duration_ms = 30000;
+		}
 		StartSpellEffect(request);
 	});
 	// The weather's sprites, I_RAINRINGSPRITE and I_SNOWFLAKESPRITE (user method 0x17).
@@ -710,6 +720,47 @@ void ZoneView::LaunchMissile(const ZoneMissile &missile)
 {
 	if (m_loaded && m_error.empty())
 		m_missiles.Launch(missile);
+}
+
+bool ZoneView::FireBolt(int x, int y, int spell)
+{
+	if (!m_loaded || !m_error.empty() || !m_placed || !m_my_id)
+		return false;
+	// From our chest (as UpdateMissiles finds us), at the spawn's center or the first of the zone
+	// along the ray through the pixel.
+	render::Vec3 from = m_feet + render::Vec3{0, 0, m_height / 5 * 3.125f};
+	Picked picked = Pick(x, y, m_my_id);
+	uint16_t target = picked.spawn != m_my_id ? picked.spawn : 0;
+	render::Vec3 to;
+	auto actor = m_actors.find(target);
+	if (actor != m_actors.end())
+		to = actor->second.Feet() + render::Vec3{0, 0, actor->second.center_height};
+	else {
+		target = 0;
+		render::Vec3 eye = m_renderer->CurrentCamera().position;
+		render::Vec3 ray = m_renderer->ViewRay(static_cast<float>(x) + 0.5f, static_cast<float>(y) + 0.5f);
+		render::Vec3 far = eye + ray * std::min(FarPlane(), 2000.0f);
+		float fraction;
+		to = m_zone.SegmentHit(eye, far, fraction, nullptr, true) ? eye + (far - eye) * fraction : far;
+	}
+	render::Vec3 d = to - from;
+	const float turn = 6.2831855f / 512;
+	ZoneMissile bolt;
+	bolt.x = from.y; // the server's
+	bolt.y = from.x;
+	bolt.z = from.z;
+	bolt.heading = std::fmod(std::atan2(d.y, d.x) / turn + 512, 512.0f);
+	bolt.climb = std::atan2(d.z, std::hypot(d.x, d.y)) / turn;
+	bolt.pitch = 128;
+	bolt.speed = 3; // 320 units a second, three times the server's bolts
+	bolt.source = m_my_id;
+	bolt.target = target;
+	bolt.object = static_cast<uint32_t>(spell);
+	bolt.light = 8;
+	bolt.kind = 9;
+	bolt.model = "IT68";
+	m_missiles.Launch(bolt, true);
+	return true;
 }
 
 render::CharacterModel *ZoneView::MissileModel(const std::string &name)
