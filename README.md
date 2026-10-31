@@ -110,6 +110,8 @@ VeliousTextures=1
 CharSelectAnimWindow=1
 CharSelectEmotes=0
 AttackOnAssist=0
+LootNoDrop=0
+FastDrop=0
 
 [Debug]
 RecordPackets=0
@@ -172,6 +174,10 @@ WeatherSounds=1
   what the character plays now and then: `0` eqgame's own picks for its class (combat moves,
   casting, the fidget), `1` half of them a social's instead (`S01`..`S29`, those its model has).
 - `AttackOnAssist` is `/assist on|off`, kept as it changes.
+- `LootNoDrop` is `/lootnodrop`: whether looting a NO DROP item asks first, `0` always, `1` only
+  for what you can't use, `2` never (eqgame's `DAT_00799674`, kept in its `eqOptions2.opt`).
+  `FastDrop` is `/fastdrop`: `1` drops an item clicked onto the ground at once, `0` asks first,
+  `-1` never drops it (`DAT_0079966c`). Both are kept as they change.
 
 - `RecordPackets=1` writes each zone session's packets to `replays\<char>-<time>.eqr` next to the exe.
   `--replay FILE` plays one back: the GUI goes straight into that zone with no server, the recorded
@@ -217,7 +223,10 @@ into an empty worn slot it fits, then a general slot, then a bag. Each move goes
 eqgame's `OP_MoveItem`.
 
 - The player window's gauges show HP (with your name), mana (not for classes without any) and
-  stamina; the pet gauge along the bottom of the HP bar, only while you have a pet. The target
+  stamina; the experience and AA gauges (EQTypes 4 and 5) are the zone's `OP_ExpUpdate` and
+  `OP_AAExpUpdate` values, each 0..330 of the way through the level or AA point, times 3.03031
+  (eqgame reads them from `PCData+0x94` and `+0x1528`; no experience table is needed, and the
+  profile's total experience is replaced by `OP_ExpUpdate`'s as we enter the zone); the pet gauge along the bottom of the HP bar, only while you have a pet. The target
   window shows the target's name, HP bar and percent. What the windows do for themselves each frame
   in eqgame is in `frontend/game_windows.cpp`: the group window's Invite and Disband buttons, the
   buff window's buttons in columns from the top right (empty slots draw nothing), and the hot
@@ -230,7 +239,8 @@ eqgame's `OP_MoveItem`.
   table, in its order, so abbreviations work as they do there (`/g` is /gsay, `/s` is /split).
   So far: /say (or no slash, or `'`), /tell (/msg, /send), /reply, /gsay, /guildsay, /shout,
   /auction, /ooc, /emote (`:`, /me), /hail, /target, /assist, /consider, /location, /time,
-  /played, /motd, /afk, /anonymous, /shownames, /sit, /stand, /book, /cast, /camp, /clearchat.
+  /played, /motd, /afk, /anonymous, /shownames, /sit, /stand, /book, /cast, /camp, /clearchat,
+  /random, /lootnodrop, /fastdrop and the socials (/smile, /wave and the other 86).
   The rest say they aren't supported yet; a GM's commands act as if they weren't there for
   anyone else.
 - `/consider` sends `OP_Consider` (`OP_ConsiderCorpse` on a corpse) and prints the answer as
@@ -239,6 +249,30 @@ eqgame's `OP_MoveItem`.
   from `OP_TimeOfDay` (nothing in the Plane of Time or on Luclin), then Earth's. `/afk` and
   `/anonymous` are SpawnAppearance 24 and 21. `/assist` sends `OP_Assist`, and the zone's answer
   becomes the target.
+- `/random` (@004f62aa) takes `high` or `low high` either way round, each under 7 characters, not
+  below 0 (eqstr 13061) nor over 32000 (13062), and sends `OP_RandomReq {u32 low, u32 high}`. The
+  zone rolls (0 to 100 for nothing typed) and sends everyone near `OP_RandomReply {low, high,
+  result, name[64]}`, printed as eqstr 1086 and 1087 in color `0x11f` (eqgame leaves out the rolls
+  of anyone it ignores).
+- `/lootnodrop` (@004f5c8b) matches `never`, `sometimes`, `always` by their first four letters (or
+  2, 1, 0) and says "New Setting:"; with nothing typed it prints its usage and the current setting.
+  `/fastdrop` (@004f9222) takes `on`, `off` or `never` as whole words, case aside.
+- **Socials** (`CEverQuest_send_social` @00532ddd): 88 of them, numbered in its switch from /smile
+  (0) to /flex (87); /gesture, /flipoff, /bird and /finger are /rude's handler. `/smile [name]
+  [text]`: the first word picks who it's at (`EQPlayer_get_player_partial_name`; nothing, or eqstr
+  12295, the target), not ourselves, and not past 60 ("I don't see anyone by that name around
+  here...", 12296 or 12321). Each social has an eqstr pair for what's sent (12500 on: with no target,
+  then with one) and another 200 on for our own echo, with its own arguments: our name (sent as
+  "", since the zone puts our name in front), the target's name, and our or the target's
+  he/him/his (12209..12211, 12297..12301 by gender; "You", "you", "your" in the echo). Anything
+  typed after the name replaces the text: sent as `" text."`, echoed as "You emote 'text'". A
+  full stop goes after a final letter or digit, the text goes out as `OP_Emote`, and the echo is
+  printed in the emote color (`0x107`). A social with an animation (`PlayAnimationTrack` id, e.g.
+  77 for /smile) plays it on us and sends `OP_Animation {u16 us, pad, i32 id, float 1}`, but only
+  standing still. A social with only a lone text (/fidget) does nothing with a target; /nudge has
+  only a targeted one. The table (`Socials` in `frontend/chat_commands.cpp`) was read out of the
+  exe's two switches: the sent one Ghidra recovers; the echo's jump table (0x535d63) it doesn't.
+  `DoPercentConvert` (%t and the rest) isn't applied.
 - The Actions window's tabs (Main, Abilities, Combat, Socials) switch pages, drawn as `CTabWnd`
   draws them, and its Camp, Run and Walk buttons work; Run or Walk, Sit or Stand and Invite or
   Follow show as eqgame picks them. The socials page and the hot button window page through ten
@@ -272,8 +306,19 @@ eqgame's `OP_MoveItem`.
   and a string is those glyphs side by side. So there are no ClearType fringes and no overhang
   into the next letter. SIDL fonts 0..4 ask weight 100 and 5..6 weight 700. eqmain's front-end
   screens stay whole-string GDI.
-- The inventory, skills, item display, spellbook, casting, buff and quantity windows are filled
-  in (below, under Spells and Items and stats). Others are still empty frames.
+- **The compass** (`frontend/compass.*`, eqgame's `CCompassWnd`): two `A_CompassStrip`s (180
+  pixels for the 512 heading units) slide under `A_CompassOverlay`
+  (`UpdateCompassAndBuffWindows` @0041564d): CompassStrip1 at
+  `ftol(((heading + needle) % 512) * 0.3515625 - 145) + 47`, less a multiple of 180 to bring it
+  into (-180, 0] when it's past 0, and CompassStrip2 180 to its right, both cut to the window. With
+  Sense Heading (skill 40) under 200 the needle wanders: it swings toward a variation
+  (`CalculateCompassNeedleVariation`: `rand() % span - span / 2`, span `(200 - skill) * 512 / 200`,
+  at least `51 - skill / 5` either way) at 80 heading units a second, 160 when it's more than 50
+  off, and on reaching it from below picks another; it's kept within -256..256. Using the skill
+  (`SenseHeading`) points it true for 5 s. eqgame opens it only with `TOGGLE_COMPASSWIN`, which has
+  no default key; until there's a keymap we put it up on every zone-in.
+- The inventory, skills, item display, spellbook, casting, buff, quantity and compass windows are
+  filled in (below, under Spells and Items and stats). Others are still empty frames.
 
 Command-line flags override the ini: `--eqdir`, `--login`, `--size WxH`, `--replay FILE`. The GUI saves the last
 username as `[Login] User=` and the selected character as `[Defaults] LastCharSel=`, and writes a log to `my-client.log` next to the exe.
@@ -350,7 +395,7 @@ build/eqclient -u USER -p PASS [options]
 ## Preview tool (Linux)
 
 ```
-build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|shop]]
+build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|shop|ground|commands]]
 build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS]
 ```
 
@@ -359,7 +404,9 @@ drawn as outline boxes, since there's no GDI. With a login server it logs in, sn
 select and character select, and presses Enter World (add `charselect` after the password to stop
 at character select instead, or `shop` to stand by the nearest merchant, open its shop with the
 right button, sell the first thing worth anything and buy it back, then camp; or `ground` to list
-what's on the ground, drop an item and pick it back up, and open a forge and close it). `create` instead makes an Erudite wizard from the first empty slot,
+what's on the ground, drop an item and pick it back up, and open a forge and close it; or
+`commands` to type /random, /lootnodrop, /fastdrop and socials (alone and at the nearest spawn),
+print the chat, and snapshot the compass as it turns). `create` instead makes an Erudite wizard from the first empty slot,
 snapshots every creation screen and the face picker, submits it, and deletes it again. It's for
 checking layout and flow without Windows. `--replay` plays a packet log back instead (no server)
 and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,

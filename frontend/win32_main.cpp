@@ -388,6 +388,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	bool char_select_anim_window = GetPrivateProfileIntW(L"Defaults", L"CharSelectAnimWindow", 1, ini.c_str()) != 0;
 	bool char_select_emotes = GetPrivateProfileIntW(L"Defaults", L"CharSelectEmotes", 0, ini.c_str()) != 0;
 	bool attack_on_assist = GetPrivateProfileIntW(L"Defaults", L"AttackOnAssist", 0, ini.c_str()) != 0;
+	int loot_no_drop = std::clamp(static_cast<int>(GetPrivateProfileIntW(L"Defaults", L"LootNoDrop", 0, ini.c_str())), 0, 2);
+	int fast_drop = std::clamp(static_cast<int>(GetPrivateProfileIntW(L"Defaults", L"FastDrop", 0, ini.c_str())), -1, 1);
 	bool record_packets = GetPrivateProfileIntW(L"Debug", L"RecordPackets", 0, ini.c_str()) != 0;
 	std::wstring replay;
 	bool sound_on = GetPrivateProfileIntW(L"Sound", L"Sound", 1, ini.c_str()) != 0;
@@ -431,6 +433,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	config.char_select_anim_window = char_select_anim_window;
 	config.char_select_emotes = char_select_emotes;
 	config.attack_on_assist = attack_on_assist;
+	config.loot_no_drop = loot_no_drop;
+	config.fast_drop = fast_drop;
 	if (record_packets)
 		config.record_dir = Narrow(exe_dir) + "\\replays";
 	config.ui_dir = Narrow(exe_dir); // UI_<character>_<server>.ini, as eqgame keeps them in its folder
@@ -649,6 +653,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	WritePrivateProfileStringW(L"Defaults", L"ShowNamesLevel", std::to_wstring(frontend.ShowNames()).c_str(), ini.c_str());
 	WritePrivateProfileStringW(L"Defaults", L"CharSelectEmotes", frontend.CharSelectEmotes() ? L"1" : L"0", ini.c_str());
 	WritePrivateProfileStringW(L"Defaults", L"AttackOnAssist", frontend.AttackOnAssist() ? L"1" : L"0", ini.c_str());
+	WritePrivateProfileStringW(L"Defaults", L"LootNoDrop", std::to_wstring(frontend.LootNoDrop()).c_str(), ini.c_str());
+	WritePrivateProfileStringW(L"Defaults", L"FastDrop", std::to_wstring(frontend.FastDrop()).c_str(), ini.c_str());
 	if (gpu)
 		WritePrivateProfileStringW(L"Display", L"VSync", gpu->VSync() ? L"1" : L"0", ini.c_str()); // the debug menu's toggle
 

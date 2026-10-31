@@ -2,14 +2,16 @@
 // snapshots, to check layout and flow without a Windows box. Text is drawn as
 // outline boxes of an estimated Arial size, since GDI isn't available.
 //
-//   frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|shop|ground]]
+//   frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|shop|ground|commands]]
 //   frontend_preview EQDIR OUTDIR --replay FILE [SECONDS]
 //
 // Without a login server it snapshots the start screen, a dialog and the login
 // screen. With one it also logs in and snapshots server select and the play result.
 // "shop" enters the world, stands by the nearest merchant, opens its shop with the right button,
 // sells the first thing it can and buys it back. "ground" lists what's on the ground, drops an item
-// (yes to the dialog), finds it on the screen and picks it back up. "charselect" stops at character select (two snapshots of the 3D scene, as the
+// (yes to the dialog), finds it on the screen and picks it back up. "commands" types chat commands
+// (/random, /lootnodrop, /fastdrop, socials at nobody and at the nearest spawn) and prints the chat,
+// then shows the compass as we turn (snapshots, and the strips' places) and the XP gauge. "charselect" stops at character select (two snapshots of the 3D scene, as the
 // camera turns) instead of entering the world. --replay plays a packet log back (no server)
 // and snapshots the zone once it's in, then every few seconds for SECONDS (default 10), then
 // tries the windows: drags the selector by its title bar, opens the inventory from it, shows its
@@ -180,6 +182,72 @@ namespace
 					return true;
 				}
 		return false;
+	}
+
+	// Live: chat commands typed in and what they print; the compass as we turn; the XP gauge.
+	int CommandsTest(FrontEnd &frontend, Harness &h)
+	{
+		WindowManager &windows = frontend.Windows();
+		const ZoneSession &zone = frontend.Zone();
+		h.Key(InputEvent::Key::F11); // the debug menu out of the way
+		size_t chat_seen = frontend.Chat().Lines().size();
+		auto chat = [&] {
+			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
+				printf("[preview] chat: %s\n", frontend.Chat().Lines()[chat_seen].text.c_str());
+		};
+		auto type = [&](const std::string &line) {
+			printf("[preview] > %s\n", line.c_str());
+			h.Key(InputEvent::Key::Enter);
+			h.Type(line);
+			h.Key(InputEvent::Key::Enter);
+			h.RunUntil([] { return false; }, 700);
+			chat();
+		};
+		chat();
+		for (const char *line : {"/random", "/random 50 10", "/random -1 5", "/random 1234567", "/random 40000",
+			"/lootnodrop", "/lootnodrop sometimes", "/lootnodrop", "/lootnodrop always", "/fastdrop", "/fastdrop never",
+			"/fastdrop off", "/smile", "/wave", "/hug", "/boggle", "/tap", "/fidget", "/smile nobodyhere", "/flipoff",
+			"/kiss blows you a kiss"})
+			type(line);
+		// The nearest spawn, by name.
+		const ZoneProfile &me = zone.Profile();
+		const ZoneSpawn *near = nullptr;
+		float best = 0;
+		for (const auto &[id, spawn] : zone.Spawns()) {
+			float d = std::hypot(spawn.x - me.x, spawn.y - me.y);
+			if (spawn.npc < 2 && (!near || d < best)) {
+				near = &spawn;
+				best = d;
+			}
+		}
+		if (near) {
+			printf("[preview] nearest: %s at %.0f\n", near->name.c_str(), best);
+			std::string first = near->name.substr(0, near->name.find('_'));
+			for (const char *social : {"/bow ", "/tap ", "/yawn ", "/dance "})
+				type(social + first);
+		}
+		printf("[preview] exp %u (gauge %d)\n", me.exp, static_cast<int>(std::min(me.exp * 3.03031, 1000.0)));
+
+		windows.Show("CompassWindow", true);
+		windows.MoveTo("CompassWindow", 300, 40);
+		for (int turn = 0; turn < 4; ++turn) {
+			h.RunUntil([] { return false; }, 400);
+			if (const SidlWindow *compass = windows.Find("CompassWindow")) {
+				const SidlWindow::Control *a = compass->Find("CompassStrip1"), *b = compass->Find("CompassStrip2");
+				printf("[preview] compass: heading %.1f, strips at %d and %d (client %d..%d)\n",
+					frontend.ZoneScene() ? frontend.ZoneScene()->Movement().heading : -1.0f, a ? a->rect.x : -1, b ? b->rect.x : -1,
+					compass->Root().client.x, compass->Root().client.x + compass->Root().client.w);
+			}
+			h.Snapshot("c" + std::to_string(turn) + "-compass");
+			frontend.OnEvent({InputEvent::Type::RightDown, 600, 300});
+			frontend.OnEvent({InputEvent::Type::MouseMove, 480, 300});
+			frontend.OnEvent({InputEvent::Type::RightUp, 480, 300});
+		}
+		type("/camp");
+		h.RunUntil([&] { return zone.GetState() != ZoneSession::State::InZone && zone.GetState() != ZoneSession::State::Camping; },
+			40000);
+		printf("[preview] camped\n");
+		return 0;
 	}
 
 	// Live: what's on the ground; an item from the inventory dropped in front of us (the dialog's
@@ -547,6 +615,7 @@ int main(int argc, char **argv)
 	bool create = argc == 7 && std::string(argv[6]) == "create";
 	bool shop = argc == 7 && std::string(argv[6]) == "shop";
 	bool ground = argc == 7 && std::string(argv[6]) == "ground";
+	bool commands = argc == 7 && std::string(argv[6]) == "commands";
 	if (argc >= 6 && !replay) {
 		std::string login = argv[3];
 		size_t colon = login.rfind(':');
@@ -1929,6 +1998,8 @@ int main(int argc, char **argv)
 				return ShopTest(frontend, h);
 			if (ground)
 				return GroundTest(frontend, h);
+			if (commands)
+				return CommandsTest(frontend, h);
 			h.Key(InputEvent::Key::F9);
 			h.Snapshot("8-zone-first-person");
 			h.Key(InputEvent::Key::F9);

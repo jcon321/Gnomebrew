@@ -706,6 +706,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		if (m_zone_view)
 			m_game_values.heading = m_zone_view->Movement().heading;
 		UpdateGameWindows(m_windows, m_game_values, m_window_state);
+		m_compass.Frame(m_windows, m_game_values.heading, m_zone.Profile().skills[40] /* Sense Heading */, now_ms);
 		m_containers.Update(now_ms);
 		if (m_windows.TakeChanged())
 			SaveUiLayout();
@@ -1541,6 +1542,10 @@ void FrontEnd::BuildZoneWindows()
 			LoadSocials(custom, m_window_state);
 		}
 	}
+	// CDisplay_ActivateMainUI activates the compass if it was up. eqgame opens it only with
+	// TOGGLE_COMPASSWIN (no default key); until there's a keymap it's always up (ours).
+	m_windows.Show("CompassWindow", true);
+	m_compass.Activate(m_zone.Profile().skills[40]);
 	m_windows.TakeChanged();
 	SpellBook::Host host;
 	host.change_stance = [this](uint8_t stance) { ChangeStance(stance); };
@@ -1586,6 +1591,7 @@ void FrontEnd::BuildZoneWindows()
 	loot_host.clear_target = [this] { m_game_values.target = 0; };
 	loot_host.height = [this](uint16_t id) { return m_zone_view ? m_zone_view->CenterHeight(id) : 0.0f; };
 	m_loot.Attach(m_windows, m_zone, m_window_state, m_game_values, std::move(loot_host));
+	m_loot.loot_no_drop = m_config.loot_no_drop;
 	TradeWindow::Host trade_host;
 	trade_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
 	trade_host.set_target = [this](uint16_t id) { m_game_values.target = id; };
@@ -1598,6 +1604,7 @@ void FrontEnd::BuildZoneWindows()
 	ground_host.world_container_open = [this] { return m_containers.WorldOpen(); };
 	ground_host.open_world_container = [this](const ZoneWorldContainer &world) { m_containers.OpenWorld(world, m_now_ms); };
 	m_ground.Attach(m_windows, m_zone, m_window_state, m_game_values, std::move(ground_host));
+	m_ground.fast_drop = m_config.fast_drop;
 	m_windows.TakeChanged();
 }
 

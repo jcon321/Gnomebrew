@@ -26,6 +26,7 @@
 #include "sidl.h"
 #include "bank_window.h"
 #include "buffs.h"
+#include "compass.h"
 #include "containers.h"
 #include "ground_items.h"
 #include "loot_window.h"
@@ -63,6 +64,8 @@ struct FrontEndConfig
 	bool char_select_anim_window = true; // our Animations window at character select (CharSelectAnimWindow)
 	bool char_select_emotes = false;     // character select's random animations include socials' (CharSelectEmotes)
 	bool attack_on_assist = false;       // /assist on|off (AttackOnAssist); there's no auto attack yet
+	int loot_no_drop = 0;                // /lootnodrop (LootNoDrop): 0 always ask, 1 for what we can't use, 2 never
+	int fast_drop = 0;                   // /fastdrop (FastDrop): 1 drop at once, 0 ask, -1 never
 };
 
 class EqStr;
@@ -132,6 +135,8 @@ public:
 	int ShowNames() const { return m_config.show_names; }         // /shownames, to remember (ShowNamesLevel)
 	bool CharSelectEmotes() const { return m_config.char_select_emotes; } // the Animations window's choice
 	bool AttackOnAssist() const { return m_config.attack_on_assist; }      // /assist on|off, to remember
+	int LootNoDrop() const { return m_config.loot_no_drop; }               // /lootnodrop, to remember
+	int FastDrop() const { return m_config.fast_drop; }                    // /fastdrop, to remember
 	const ZoneSession &Zone() const { return m_zone; }
 	const ChatWindow &Chat() const { return m_chat; }
 	uint16_t Target() const { return m_game_values.target; } // spawn id, 0 none
@@ -327,6 +332,7 @@ private:
 	SpellBook m_spell_book;         // and the spell gems
 	SpellCast m_spell_cast;         // our casting from them
 	Buffs m_buffs;                  // the spells on us
+	CompassWindow m_compass;
 	Containers m_containers;        // the bag windows
 	BankWindow m_bank;
 	MerchantWindow m_merchant;

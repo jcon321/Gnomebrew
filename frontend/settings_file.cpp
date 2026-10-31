@@ -70,6 +70,12 @@ namespace
 		{"Defaults", "AttackOnAssist", "0",
 			"/assist on|off: 1 turns auto attack on when /assist sets the target (once there's auto\n"
 			"attack). Kept on exit."},
+		{"Defaults", "LootNoDrop", "0",
+			"/lootnodrop: whether looting a NO DROP item asks first. 0 always, 1 only for what you can't\n"
+			"use, 2 never. Kept on exit."},
+		{"Defaults", "FastDrop", "0",
+			"/fastdrop: 1 drops an item clicked onto the ground at once, 0 asks first, -1 never drops it.\n"
+			"Kept on exit."},
 
 		{"Debug", "RecordPackets", "0",
 			"1: each zone session's packets go to replays\\<character>-<time>.eqr next to the exe, to\n"

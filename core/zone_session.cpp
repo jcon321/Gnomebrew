@@ -582,6 +582,30 @@ bool ZoneSession::Emote(const std::string &text)
 	return Send(ZoneOp::Emote, body.data(), body.size(), "OP_Emote" + text);
 }
 
+bool ZoneSession::SendAnimation(int animation)
+{
+	if (m_state != State::InZone)
+		return false;
+	uint8_t body[12] = {};
+	uint16_t id = m_my_id;
+	int32_t anim = animation;
+	float speed = 1.0f;
+	memcpy(body, &id, 2);
+	memcpy(body + 4, &anim, 4);
+	memcpy(body + 8, &speed, 4);
+	return Send(ZoneOp::Animation, body, sizeof(body), "OP_Animation " + std::to_string(animation));
+}
+
+bool ZoneSession::Random(uint32_t low, uint32_t high)
+{
+	if (m_state != State::InZone)
+		return false;
+	uint8_t body[8];
+	memcpy(body, &low, 4);
+	memcpy(body + 4, &high, 4);
+	return Send(ZoneOp::RandomReq, body, sizeof(body), "OP_RandomReq " + std::to_string(low) + " " + std::to_string(high));
+}
+
 void ZoneSession::SetTarget(uint16_t id, bool command)
 {
 	if (m_state != State::InZone)
@@ -1563,6 +1587,13 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 	case ZoneOp::ExpUpdate:
 		m_profile.exp = Read<uint32_t>(data, 0);
 		break;
+	case ZoneOp::AAExpUpdate:
+		if (data.size() >= 7) {
+			m_profile.aa_exp = Read<int32_t>(data, 0);
+			m_profile.aa_unspent = Read<int16_t>(data, 4);
+			m_profile.aa_percentage = Read<int8_t>(data, 6);
+		}
+		break;
 	case ZoneOp::LevelUpdate:
 		// LevelUpdate_Struct: {u32 level, u32 old level, u32 exp}.
 		if (data.size() >= 12) {
@@ -1977,6 +2008,24 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		Event e;
 		e.type = Event::Type::Emote;
 		e.text = CString(data, 2, 1024);
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::RandomReply: {
+		// HandleWorldMessage's 0x4016: who rolled and what (eqstr 1086, 1087), in color 0x11f.
+		// eqgame leaves out the rolls of anyone we ignore (CEverQuest_BeingIgnored; no ignore list yet).
+		if (data.size() < 12)
+			break;
+		std::string name = CString(data, 12, 64);
+		std::string low = std::to_string(Read<uint32_t>(data, 0)), high = std::to_string(Read<uint32_t>(data, 4)),
+		            result = std::to_string(Read<uint32_t>(data, 8));
+		Event e(Event::Type::Message);
+		e.value = 0x11f;
+		e.text = m_eqstr ? m_eqstr->Format(1086, {name}) : "**A Magic Die is rolled by " + name + ".";
+		events.push_back(e);
+		e.text = m_eqstr ? m_eqstr->Format(1087, {low, high, result})
+		                 : "**It could have been any number from " + low + " to " + high + ", but this time it turned up a " + result + ".";
+		Log("[zone]    random: " + name + " " + result);
 		events.push_back(e);
 		break;
 	}

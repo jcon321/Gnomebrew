@@ -2,7 +2,8 @@
 
 // What the in-game windows' gauges and labels show (eqgame's fn_GetGaugeLabelFromEQ @0043600d and
 // fn_GetLabelFromEQ @00436680), from the zone session and our target. The EQTypes so far:
-//   gauges  1 HP (with our name), 2 mana, 3 stamina, 6 the target's HP (with its name), 7 our
+//   gauges  1 HP (with our name), 2 mana, 3 stamina, 4 and 5 experience and AA experience (the
+//           zone's 0..330, OP_ExpUpdate and OP_AAExpUpdate, * 3.03031), 6 the target's HP (with its name), 7 our
 //           cast's time left, 9 and 10 the spellbook's memorizing and scribing, 16 our pet's
 //   labels  1 our name, 2 our level, 3 our class (its title from 51), 4 our deity, 5..11 STR, STA,
 //           DEX, AGI, WIS, INT, CHA (base and worn items), 12..16 the poison, disease, fire, cold

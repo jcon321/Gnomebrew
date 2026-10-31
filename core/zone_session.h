@@ -52,7 +52,10 @@ struct ZoneProfile
 	uint16_t deity = 0;
 	int16_t cur_hp = 0;
 	int16_t mana = 0;
-	uint32_t exp = 0;
+	uint32_t exp = 0;    // the profile's total, then OP_ExpUpdate's 0..330 of the way through the level
+	int32_t aa_exp = 0;  // OP_AAExpUpdate's 0..330 of the way to the next AA point
+	int16_t aa_unspent = 0;
+	int8_t aa_percentage = 0; // how much of our experience goes to AAs
 	int16_t str = 0, sta = 0, cha = 0, dex = 0, int_ = 0, agi = 0, wis = 0; // base stats, without items or spells
 	int8_t fatigue = 0; // 0 rested .. 100 exhausted (OP_Stamina keeps it up to date)
 	uint8_t languages[32] = {}; // skill in each language, 0..100
@@ -485,6 +488,12 @@ public:
 	// /consider: OP_Consider about a spawn (OP_ConsiderCorpse a corpse). The zone answers a
 	// spawn's with Considered.
 	bool Consider(uint16_t id, bool corpse);
+	// OP_Animation for us (Animation_Struct {u16 spawn, pad, i32 animation, float 1}): a social's,
+	// played for everyone near.
+	bool SendAnimation(int animation);
+	// /random: OP_RandomReq {low, high}. Everyone near, us too, hears the roll (OP_RandomReply's
+	// two lines as Message events).
+	bool Random(uint32_t low, uint32_t high);
 	// /assist: OP_Assist with who to assist. The zone answers with their target (Assisted).
 	bool Assist(uint16_t id);
 	// /camp: OP_Camp, then OP_Logout once the 30 second camp timer has run (Handle_OP_Logout expects that).

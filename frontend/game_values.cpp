@@ -588,6 +588,10 @@ int GameValues::Gauge(int eq_type, std::string &text)
 		bool caster = c >= 2 && (c <= 6 || c == 8 || (c >= 10 && c <= 15));
 		return caster ? 0 : -1;
 	}
+	case 4: // experience: OP_ExpUpdate's 0..330 through the level, * 3.03031 (PCData+0x94)
+		return static_cast<int>(std::min(static_cast<double>(me.exp) * 3.03031, 1000.0));
+	case 5: // AA experience: OP_AAExpUpdate's 0..330 (PCData+0x1528)
+		return static_cast<int>(std::clamp(static_cast<double>(me.aa_exp) * 3.03031, 0.0, 1000.0));
 	case 3: // stamina: fatigue 0..100 counts down from full
 		return me.fatigue <= 0 ? 1000 : 1000 - std::min<int>(me.fatigue, 100) * 10;
 	case 6: { // the target's HP and name; a corpse has an empty bar

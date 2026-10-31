@@ -16,6 +16,7 @@ namespace
 	{
 		None, Say, Tell, Group, Shout, Auction, Ooc, Guild, Reply, Emote, Hail, Location, Target, Camp,
 		ClearChat, ShowNames, Sit, Stand, Book, Cast, Consider, Played, Motd, Time, Afk, Anonymous, Assist,
+		Random, LootNoDrop, FastDrop, Social,
 	};
 
 	struct CommandEntry
@@ -50,36 +51,36 @@ namespace
 		{"/1", 0, Command::None}, {"/2", 0, Command::None}, {"/3", 0, Command::None}, {"/4", 0, Command::None},
 		{"/5", 0, Command::None}, {"/6", 0, Command::None}, {"/7", 0, Command::None}, {"/8", 0, Command::None},
 		{"/9", 0, Command::None}, {"/10", 0, Command::None}, {"/autojoin", 0, Command::None}, {"/keys", 0, Command::None},
-		{"/mp3", 0, Command::None}, {"/smile", 0, Command::None}, {"/hail", 0, Command::Hail}, {"/frown", 0, Command::None},
-		{"/laugh", 0, Command::None}, {"/cry", 0, Command::None}, {"/chuckle", 0, Command::None}, {"/hug", 0, Command::None},
-		{"/poke", 0, Command::None}, {"/bow", 0, Command::None}, {"/bounce", 0, Command::None}, {"/panic", 0, Command::None},
-		{"/nod", 0, Command::None}, {"/rofl", 0, Command::None}, {"/wave", 0, Command::None}, {"/cheer", 0, Command::None},
-		{"/gesture", 0, Command::None}, {"/rude", 0, Command::None}, {"/flipoff", 0, Command::None},
-		{"/bird", 0, Command::None}, {"/finger", 0, Command::None}, {"/agree", 0, Command::None},
-		{"/amaze", 0, Command::None}, {"/apologize", 0, Command::None}, {"/applaud", 0, Command::None},
-		{"/plead", 0, Command::None}, {"/bite", 0, Command::None}, {"/bleed", 0, Command::None},
-		{"/blink", 0, Command::None}, {"/blush", 0, Command::None}, {"/boggle", 0, Command::None},
-		{"/bonk", 0, Command::None}, {"/bored", 0, Command::None}, {"/brb", 0, Command::None}, {"/burp", 0, Command::None},
-		{"/bye", 0, Command::None}, {"/cackle", 0, Command::None}, {"/calm", 0, Command::None}, {"/clap", 0, Command::None},
-		{"/comfort", 0, Command::None}, {"/congratulate", 0, Command::None}, {"/cough", 0, Command::None},
-		{"/cringe", 0, Command::None}, {"/curious", 0, Command::None}, {"/dance", 0, Command::None},
-		{"/drool", 0, Command::None}, {"/duck", 0, Command::None}, {"/eye", 0, Command::None}, {"/gasp", 0, Command::None},
-		{"/giggle", 0, Command::None}, {"/glare", 0, Command::None}, {"/grin", 0, Command::None},
-		{"/groan", 0, Command::None}, {"/grovel", 0, Command::None}, {"/happy", 0, Command::None},
-		{"/hungry", 0, Command::None}, {"/introduce", 0, Command::None}, {"/jk", 0, Command::None},
-		{"/kneel", 0, Command::None}, {"/lost", 0, Command::None}, {"/massage", 0, Command::None},
-		{"/moan", 0, Command::None}, {"/mourn", 0, Command::None}, {"/peer", 0, Command::None}, {"/point", 0, Command::None},
-		{"/ponder", 0, Command::None}, {"/puzzle", 0, Command::None}, {"/raise", 0, Command::None},
-		{"/ready", 0, Command::None}, {"/roar", 0, Command::None}, {"/salute", 0, Command::None},
-		{"/shiver", 0, Command::None}, {"/shrug", 0, Command::None}, {"/sigh", 0, Command::None},
-		{"/smirk", 0, Command::None}, {"/snarl", 0, Command::None}, {"/snicker", 0, Command::None},
-		{"/stare", 0, Command::None}, {"/tap", 0, Command::None}, {"/tease", 0, Command::None},
-		{"/thank", 0, Command::None}, {"/thirsty", 0, Command::None}, {"/veto", 0, Command::None},
-		{"/welcome", 0, Command::None}, {"/whine", 0, Command::None}, {"/whistle", 0, Command::None},
-		{"/yawn", 0, Command::None}, {"/smack", 0, Command::None}, {"/pat", 0, Command::None},
-		{"/fidget", 0, Command::None}, {"/flex", 0, Command::None}, {"/nudge", 0, Command::None},
-		{"/purr", 0, Command::None}, {"/kiss", 0, Command::None}, {"/time", 0, Command::Time},
-		{"/discipline", 0, Command::None}, {"/random", 0, Command::None}, {"/summon", 3, Command::None},
+		{"/mp3", 0, Command::None}, {"/smile", 0, Command::Social}, {"/hail", 0, Command::Hail}, {"/frown", 0, Command::Social},
+		{"/laugh", 0, Command::Social}, {"/cry", 0, Command::Social}, {"/chuckle", 0, Command::Social}, {"/hug", 0, Command::Social},
+		{"/poke", 0, Command::Social}, {"/bow", 0, Command::Social}, {"/bounce", 0, Command::Social}, {"/panic", 0, Command::Social},
+		{"/nod", 0, Command::Social}, {"/rofl", 0, Command::Social}, {"/wave", 0, Command::Social}, {"/cheer", 0, Command::Social},
+		{"/gesture", 0, Command::Social}, {"/rude", 0, Command::Social}, {"/flipoff", 0, Command::Social},
+		{"/bird", 0, Command::Social}, {"/finger", 0, Command::Social}, {"/agree", 0, Command::Social},
+		{"/amaze", 0, Command::Social}, {"/apologize", 0, Command::Social}, {"/applaud", 0, Command::Social},
+		{"/plead", 0, Command::Social}, {"/bite", 0, Command::Social}, {"/bleed", 0, Command::Social},
+		{"/blink", 0, Command::Social}, {"/blush", 0, Command::Social}, {"/boggle", 0, Command::Social},
+		{"/bonk", 0, Command::Social}, {"/bored", 0, Command::Social}, {"/brb", 0, Command::Social}, {"/burp", 0, Command::Social},
+		{"/bye", 0, Command::Social}, {"/cackle", 0, Command::Social}, {"/calm", 0, Command::Social}, {"/clap", 0, Command::Social},
+		{"/comfort", 0, Command::Social}, {"/congratulate", 0, Command::Social}, {"/cough", 0, Command::Social},
+		{"/cringe", 0, Command::Social}, {"/curious", 0, Command::Social}, {"/dance", 0, Command::Social},
+		{"/drool", 0, Command::Social}, {"/duck", 0, Command::Social}, {"/eye", 0, Command::Social}, {"/gasp", 0, Command::Social},
+		{"/giggle", 0, Command::Social}, {"/glare", 0, Command::Social}, {"/grin", 0, Command::Social},
+		{"/groan", 0, Command::Social}, {"/grovel", 0, Command::Social}, {"/happy", 0, Command::Social},
+		{"/hungry", 0, Command::Social}, {"/introduce", 0, Command::Social}, {"/jk", 0, Command::Social},
+		{"/kneel", 0, Command::Social}, {"/lost", 0, Command::Social}, {"/massage", 0, Command::Social},
+		{"/moan", 0, Command::Social}, {"/mourn", 0, Command::Social}, {"/peer", 0, Command::Social}, {"/point", 0, Command::Social},
+		{"/ponder", 0, Command::Social}, {"/puzzle", 0, Command::Social}, {"/raise", 0, Command::Social},
+		{"/ready", 0, Command::Social}, {"/roar", 0, Command::Social}, {"/salute", 0, Command::Social},
+		{"/shiver", 0, Command::Social}, {"/shrug", 0, Command::Social}, {"/sigh", 0, Command::Social},
+		{"/smirk", 0, Command::Social}, {"/snarl", 0, Command::Social}, {"/snicker", 0, Command::Social},
+		{"/stare", 0, Command::Social}, {"/tap", 0, Command::Social}, {"/tease", 0, Command::Social},
+		{"/thank", 0, Command::Social}, {"/thirsty", 0, Command::Social}, {"/veto", 0, Command::Social},
+		{"/welcome", 0, Command::Social}, {"/whine", 0, Command::Social}, {"/whistle", 0, Command::Social},
+		{"/yawn", 0, Command::Social}, {"/smack", 0, Command::Social}, {"/pat", 0, Command::Social},
+		{"/fidget", 0, Command::Social}, {"/flex", 0, Command::Social}, {"/nudge", 0, Command::Social},
+		{"/purr", 0, Command::Social}, {"/kiss", 0, Command::Social}, {"/time", 0, Command::Time},
+		{"/discipline", 0, Command::None}, {"/random", 0, Command::Random}, {"/summon", 3, Command::None},
 		{"/broadcast", 4, Command::None}, {"/lastname", 4, Command::None}, {"/zone", 3, Command::None},
 		{"/kick", 4, Command::None}, {"/kill", 3, Command::None}, {"/delcorpse", 8, Command::None},
 		{"/hideme", 3, Command::None}, {"/servers", 3, Command::None}, {"/height", 4, Command::None},
@@ -89,7 +90,7 @@ namespace
 		{"/praise", 3, Command::None}, {"/warn", 3, Command::None}, {"/edit", 3, Command::None},
 		{"/voice", 0, Command::None}, {"/microphone", 0, Command::None}, {"/movelog", 0, Command::None},
 		{"/hidecorpses", 0, Command::None}, {"/vrdelay", 0, Command::None}, {"/reverb", 0, Command::None},
-		{"/fastdrop", 0, Command::None}, {"/trackplayers", 0, Command::None}, {"/help", 0, Command::None},
+		{"/fastdrop", 0, Command::FastDrop}, {"/trackplayers", 0, Command::None}, {"/help", 0, Command::None},
 		{"/lfg", 0, Command::None}, {"/approval", 4, Command::None}, {"/sit", 0, Command::Sit},
 		{"/stand", 0, Command::Stand}, {"/book", 0, Command::Book}, {"/cast", 0, Command::Cast},
 		{"/doability", 0, Command::None}, {"/whotarget", 0, Command::None}, {"/language", 0, Command::None},
@@ -97,7 +98,7 @@ namespace
 		{"/invite", 0, Command::None}, {"/disband", 0, Command::None}, {"/note", 0, Command::None},
 		{"/wincolor", 0, Command::None}, {"/usercolor", 0, Command::None}, {"/resetwindows", 0, Command::None},
 		{"/mcicontrol", 0, Command::None}, {"/popmail", 0, Command::None}, {"/audiodebug", 0, Command::None},
-		{"/dynamiclights", 0, Command::None}, {"/chatfontsize", 0, Command::None}, {"/lootnodrop", 0, Command::None},
+		{"/dynamiclights", 0, Command::None}, {"/chatfontsize", 0, Command::None}, {"/lootnodrop", 0, Command::LootNoDrop},
 		{"/reversesound", 0, Command::None}, {"/emotezone", 4, Command::None}, {"/invwinlabels", 0, Command::None},
 		{"/tracksort", 0, Command::None}, {"/trackfilter", 0, Command::None}, {"/mousespeed", 0, Command::None},
 		{"/gems", 0, Command::None}, {"/inspect", 0, Command::None}, {"/serverfilter", 0, Command::None},
@@ -115,6 +116,126 @@ namespace
 		{"/raidinvite", 0, Command::None}, {"/raiddecline", 0, Command::None}, {"/raidaccept", 0, Command::None},
 		{"/raiddisband", 0, Command::None}, {"/setloottype", 0, Command::None}, {"/addraidlooter", 0, Command::None},
 		{"/removeraidlooter", 0, Command::None}, {"/rsay", 0, Command::None}, {"/quit", 0, Command::None},
+	};
+
+
+	// CEverQuest_send_social (@00532ddd)'s socials, by its number (the order of these names; /gesture,
+	// /flipoff, /bird and /finger are /rude's): the animation (-1 none), then eqstr ids and their
+	// arguments for what's sent with no target and with one, and our own echo of each (the sent
+	// ones + 200). An argument is a letter: N our name, S O P our he/him/his, T the target's name,
+	// s o p its he/him/his. Sent, our name is "" (the zone puts it in front) and the pronouns are
+	// ours by our gender; in the echo they're "You", "you", "you" and "your". Taken from the exe's
+	// two switches.
+	struct SocialText
+	{
+		uint32_t id; // 0: none
+		const char *args;
+	};
+	struct SocialEntry
+	{
+		int animation;
+		SocialText sent, sent_target, echo, echo_target;
+	};
+	constexpr SocialEntry Socials[] = {
+		{77, {12500, "N"}, {12501, "NT"}, {12700, ""}, {12701, "T"}}, // /smile
+		{28, {12502, "N"}, {12503, "NT"}, {12702, ""}, {12703, "T"}}, // /frown
+		{63, {12504, "N"}, {12505, "NT"}, {12704, ""}, {12705, "T"}}, // /laugh
+		{28, {12506, "N"}, {12507, "NT"}, {12706, ""}, {12707, "T"}}, // /cry
+		{54, {12508, "N"}, {12509, "NT"}, {12708, ""}, {12709, "T"}}, // /chuckle
+		{-1, {12510, "NO"}, {12511, "NT"}, {12710, ""}, {12711, "T"}}, // /hug
+		{-1, {12512, "NO"}, {12513, "NT"}, {12712, ""}, {12713, "T"}}, // /poke
+		{70, {12514, "N"}, {12515, "NT"}, {12714, ""}, {12715, "T"}}, // /bow
+		{-1, {12516, "N"}, {12517, "NT"}, {12716, ""}, {12717, "T"}}, // /bounce
+		{-1, {12518, "N"}, {12519, "NT"}, {12718, ""}, {12719, "T"}}, // /panic
+		{48, {12520, "N"}, {12521, "NT"}, {12720, ""}, {12721, "T"}}, // /nod
+		{-1, {12522, "N"}, {12523, "NT"}, {12722, ""}, {12723, "T"}}, // /rofl
+		{29, {12524, "N"}, {12525, "NT"}, {12724, ""}, {12725, "T"}}, // /wave
+		{27, {12526, "N"}, {12527, "NT"}, {12726, ""}, {12727, "T"}}, // /cheer
+		{30, {12528, "N"}, {12529, "NT"}, {12728, ""}, {12729, "T"}}, // /rude
+		{48, {12531, "NO"}, {12530, "NT"}, {12731, ""}, {12730, "T"}}, // /agree
+		{49, {12533, "N"}, {12532, "NT"}, {12733, ""}, {12732, "NT"}}, // /amaze
+		{50, {12535, "N"}, {12534, "NT"}, {12735, ""}, {12734, "NT"}}, // /apologize
+		{51, {12537, "N"}, {12536, "NT"}, {12737, ""}, {12736, "NT"}}, // /applaud
+		{50, {12539, "NO"}, {12538, "NT"}, {12739, ""}, {12738, "NT"}}, // /plead
+		{-1, {12541, "N"}, {12540, "NT"}, {12741, ""}, {12740, "NT"}}, // /bite
+		{52, {12543, "N"}, {12542, "NT"}, {12743, ""}, {12742, "T"}}, // /bleed
+		{59, {12545, "N"}, {12544, "NT"}, {12745, ""}, {12744, "NT"}}, // /blink
+		{53, {12547, "N"}, {12546, "NT"}, {12747, ""}, {12746, "T"}}, // /blush
+		{49, {12549, "NP"}, {12548, "NTP"}, {12749, "P"}, {12748, "NTP"}}, // /boggle
+		{-1, {12551, "N"}, {12550, "NT"}, {12751, ""}, {12750, "NT"}}, // /bonk
+		{31, {12553, "NS"}, {12552, "NTS"}, {12753, "S"}, {12752, "NTS"}}, // /bored
+		{29, {12555, "NS"}, {12554, "NTS"}, {12755, "S"}, {12754, "NTS"}}, // /brb
+		{55, {12557, "N"}, {12556, "NT"}, {12757, ""}, {12756, "T"}}, // /burp
+		{29, {12559, "N"}, {12558, "NT"}, {12759, ""}, {12758, "T"}}, // /bye
+		{54, {12561, "N"}, {12560, "NT"}, {12761, ""}, {12760, "T"}}, // /cackle
+		{-1, {12563, "N"}, {12562, "NT"}, {12763, ""}, {12762, "T"}}, // /calm
+		{51, {12565, "NP"}, {12564, "NT"}, {12765, "P"}, {12764, "NT"}}, // /clap
+		{-1, {12567, "N"}, {12566, "NT"}, {12767, ""}, {12766, "T"}}, // /comfort
+		{27, {12569, "NO"}, {12568, "NT"}, {12769, "O"}, {12768, "NT"}}, // /congratulate
+		{55, {12571, "N"}, {12570, "NT"}, {12771, ""}, {12770, "T"}}, // /cough
+		{56, {12573, "N"}, {12572, "NT"}, {12773, ""}, {12772, "T"}}, // /cringe
+		{57, {12575, "NO"}, {12574, "NT"}, {12775, "O"}, {12774, "NT"}}, // /curious
+		{58, {12577, "NP"}, {12576, "NTo"}, {12777, "P"}, {12776, "NTo"}}, // /dance
+		{61, {12579, "NO"}, {12578, "NT"}, {12779, "O"}, {12778, "T"}}, // /drool
+		{56, {12581, "N"}, {12580, "NT"}, {12781, ""}, {12780, "T"}}, // /duck
+		{60, {12583, "N"}, {12582, "NT"}, {12783, ""}, {12782, "T"}}, // /eye
+		{49, {12585, "N"}, {12584, "NT"}, {12785, ""}, {12784, "NT"}}, // /gasp
+		{54, {12587, "N"}, {12586, "NT"}, {12787, ""}, {12786, "T"}}, // /giggle
+		{60, {12589, "N"}, {12588, "NT"}, {12789, ""}, {12788, "T"}}, // /glare
+		{-1, {12591, "N"}, {12590, "NT"}, {12791, ""}, {12790, "T"}}, // /grin
+		{28, {12593, "N"}, {12592, "NT"}, {12793, ""}, {12792, "T"}}, // /groan
+		{50, {12595, "N"}, {12594, "NT"}, {12795, ""}, {12794, "T"}}, // /grovel
+		{27, {12597, "N"}, {12596, "NT"}, {12797, ""}, {12796, "T"}}, // /happy
+		{52, {12599, "N"}, {12598, "NTS"}, {12799, ""}, {12798, "NTS"}}, // /hungry
+		{29, {12601, "NO"}, {12600, "NT"}, {12801, "O"}, {12800, "NT"}}, // /introduce
+		{-1, {12603, "N"}, {12602, "NTS"}, {12803, ""}, {12802, "NTS"}}, // /jk
+		{62, {12605, "N"}, {12604, "NT"}, {12805, ""}, {12804, "NT"}}, // /kneel
+		{-1, {12607, "N"}, {12606, "NTS"}, {12807, ""}, {12806, "NTS"}}, // /lost
+		{-1, {12609, "N"}, {12608, "NT"}, {12809, ""}, {12808, "NT"}}, // /massage
+		{-1, {12611, "N"}, {12610, "NT"}, {12811, ""}, {12810, "T"}}, // /moan
+		{28, {12613, "NP"}, {12612, "NPT"}, {12813, "P"}, {12812, "NPT"}}, // /mourn
+		{61, {12615, "N"}, {12614, "NTo"}, {12815, ""}, {12814, "NTo"}}, // /peer
+		{64, {12617, "N"}, {12616, "NT"}, {12817, ""}, {12816, "NT"}}, // /point
+		{65, {12619, "N"}, {12618, "NTo"}, {12819, ""}, {12818, "NTo"}}, // /ponder
+		{57, {12621, "N"}, {12620, "NT"}, {12821, ""}, {12820, "NT"}}, // /puzzle
+		{66, {12623, "NP"}, {12622, "NTP"}, {12823, "P"}, {12822, "NTP"}}, // /raise
+		{66, {12625, "NS"}, {12624, "NTs"}, {12825, "S"}, {12824, "NTs"}}, // /ready
+		{27, {12627, "N"}, {12626, "NT"}, {12827, ""}, {12826, "T"}}, // /roar
+		{67, {12629, "N"}, {12628, "NT"}, {12829, ""}, {12828, "NT"}}, // /salute
+		{68, {12631, "N"}, {12630, "NT"}, {12831, ""}, {12830, "NT"}}, // /shiver
+		{65, {12633, "N"}, {12632, "NT"}, {12833, ""}, {12832, "NT"}}, // /shrug
+		{28, {12635, "N"}, {12634, "NT"}, {12835, ""}, {12834, "NT"}}, // /sigh
+		{-1, {12637, "N"}, {12636, "NT"}, {12837, ""}, {12836, "NT"}}, // /smirk
+		{60, {12639, "NP"}, {12638, "NT"}, {12839, "P"}, {12838, "NT"}}, // /snarl
+		{54, {12641, "N"}, {12640, "NT"}, {12841, ""}, {12840, "NT"}}, // /snicker
+		{57, {12643, "N"}, {12642, "NTp"}, {12843, ""}, {12842, "NTp"}}, // /stare
+		{69, {12645, "NP"}, {12644, "NPST"}, {12845, "P"}, {12844, "NPST"}}, // /tap
+		{-1, {12647, "N"}, {12646, "NT"}, {12847, ""}, {12846, "NT"}}, // /tease
+		{70, {12649, "N"}, {12648, "NT"}, {12849, ""}, {12848, "NT"}}, // /thank
+		{-1, {12651, "N"}, {12650, "NTS"}, {12851, ""}, {12850, "NTS"}}, // /thirsty
+		{59, {12653, "N"}, {12652, "NT"}, {12853, ""}, {12852, "NT"}}, // /veto
+		{29, {12655, "N"}, {12654, "NT"}, {12855, ""}, {12854, "NT"}}, // /welcome
+		{-1, {12657, "N"}, {12656, "NT"}, {12857, ""}, {12856, "NT"}}, // /whine
+		{61, {12659, "N"}, {12658, "NT"}, {12859, ""}, {12858, "NT"}}, // /whistle
+		{31, {12661, "NP"}, {12660, "NTS"}, {12861, "P"}, {12860, "NT"}}, // /yawn
+		{-1, {12662, "NO"}, {12663, "NT"}, {12862, ""}, {12863, "T"}}, // /smack
+		{-1, {12664, "NO"}, {12665, "NT"}, {12864, ""}, {12865, "T"}}, // /pat
+		{-1, {0, ""}, {12666, "NT"}, {0, ""}, {12866, "T"}}, // /nudge
+		{-1, {12667, "N"}, {0, ""}, {12867, ""}, {0, ""}}, // /fidget
+		{-1, {12670, "NO"}, {12671, "NT"}, {12870, ""}, {12871, "T"}}, // /purr
+		{-1, {12672, "NO"}, {12673, "NT"}, {12872, "O"}, {12873, "T"}}, // /kiss
+		{-1, {12668, "NP"}, {12669, "NT"}, {12868, ""}, {12869, "T"}}, // /flex
+	};
+	constexpr const char *SocialNames[] = {
+		"/smile", "/frown", "/laugh", "/cry", "/chuckle", "/hug", "/poke", "/bow", "/bounce", "/panic", "/nod",
+		"/rofl", "/wave", "/cheer", "/rude", "/agree", "/amaze", "/apologize", "/applaud", "/plead", "/bite",
+		"/bleed", "/blink", "/blush", "/boggle", "/bonk", "/bored", "/brb", "/burp", "/bye", "/cackle", "/calm",
+		"/clap", "/comfort", "/congratulate", "/cough", "/cringe", "/curious", "/dance", "/drool", "/duck",
+		"/eye", "/gasp", "/giggle", "/glare", "/grin", "/groan", "/grovel", "/happy", "/hungry", "/introduce",
+		"/jk", "/kneel", "/lost", "/massage", "/moan", "/mourn", "/peer", "/point", "/ponder", "/puzzle",
+		"/raise", "/ready", "/roar", "/salute", "/shiver", "/shrug", "/sigh", "/smirk", "/snarl", "/snicker",
+		"/stare", "/tap", "/tease", "/thank", "/thirsty", "/veto", "/welcome", "/whine", "/whistle", "/yawn",
+		"/smack", "/pat", "/nudge", "/fidget", "/purr", "/kiss", "/flex"
 	};
 
 	bool IsSpace(char c) { return c == ' ' || c == '\t'; }
@@ -517,6 +638,202 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 			ChatOut(format(1403, "You cannot assist yourself!", {}), ChatType::Default);
 		else
 			m_zone.Assist(id);
+		break;
+	}
+	case Command::Random: {
+		// /random (@004f62aa): "high" or "low high", either way round, each under 7 characters,
+		// not below 0 and not over 32000. The zone rolls (nothing typed: 0 to 100) and everyone
+		// near hears it (OP_RandomReply).
+		std::string second;
+		std::string first = FirstWord(args, second);
+		if (first.size() >= 7 || second.size() >= 7) {
+			ChatOut(format(13060, "Please use smaller numbers.", {}), ChatType::Default);
+			break;
+		}
+		long low = std::atol(second.c_str()), high = std::atol(first.c_str());
+		if (low < 0 || high < 0) {
+			ChatOut(format(13061, "Please use positive numbers.", {}), ChatType::Default);
+			break;
+		}
+		if (high < low)
+			std::swap(low, high);
+		if (high > 32000) {
+			ChatOut(format(13062, "Please use numbers <= 32000.", {}), ChatType::Default);
+			break;
+		}
+		m_zone.Random(static_cast<uint32_t>(low), static_cast<uint32_t>(high));
+		break;
+	}
+	case Command::LootNoDrop: {
+		// /lootnodrop (@004f5c8b): whether looting a NO DROP item asks first: "never" (2),
+		// "sometimes" (1: only what we can't use), "always" (0), or 2, 1, 0, by their first four
+		// letters. Nothing typed says how to use it and what it is.
+		static const char *const settings[] = {"Always display loot requestor for no-drop items.",
+			"Display loot requestor for no-drop items I cannot use.", "Never display requestor for looting no-drop items."};
+		int &setting = m_loot.loot_no_drop;
+		if (setting < 0 || setting > 2)
+			setting = 0;
+		std::string always = format(12987, "always", {}), sometimes = format(12988, "sometimes", {}), never = format(12989, "never", {});
+		if (args.empty()) {
+			ChatOut(format(12990, "Usage:/lootnodrop <%1 | %2 | %3>", {always, sometimes, never}), ChatType::Default);
+			ChatOut(format(12991, "Your Current Setting: ", {}) + format(12992 + static_cast<uint32_t>(setting), settings[setting], {}),
+				ChatType::Default);
+			break;
+		}
+		if (MatchesPrefix(args, never, 4) || args[0] == '2')
+			setting = 2;
+		else if (MatchesPrefix(args, sometimes, 4) || args[0] == '1')
+			setting = 1;
+		else if (MatchesPrefix(args, always, 4) || args[0] == '0')
+			setting = 0;
+		else
+			break;
+		m_config.loot_no_drop = setting;
+		ChatOut(format(12995, "New Setting: ", {}) + format(12992 + static_cast<uint32_t>(setting), settings[setting], {}),
+			ChatType::Default);
+		break;
+	}
+	case Command::FastDrop: {
+		// /fastdrop (@004f9222): "on" drops an item clicked onto the ground at once, "off" asks
+		// first, "never" doesn't drop it at all; the whole word, any case.
+		std::string word = Lower(args);
+		int &setting = m_ground.fast_drop;
+		if (word == Lower(format(12947, "on", {}))) {
+			setting = 1;
+			ChatOut(format(13116, "Fast Drop is now *ON*.  You will drop items without confirmation.", {}), ChatType::Default);
+		}
+		else if (word == Lower(format(12946, "off", {}))) {
+			setting = 0;
+			ChatOut(format(13117, "Fast Drop is now *OFF*.  A confirmation requestor will be displayed before items are dropped.", {}),
+				ChatType::Default);
+		}
+		else if (word == Lower(format(12989, "never", {}))) {
+			setting = -1;
+			ChatOut(format(13118, "You have chosen to NEVER drop items.", {}), ChatType::Default);
+		}
+		else {
+			ChatOut(format(13119, "Please specify if you want to turn fast dropping of items 'on' or 'off', or, if you don't want "
+				"to drop items at all, specify 'never'.", {}), ChatType::Default);
+			break;
+		}
+		m_config.fast_drop = setting;
+		break;
+	}
+	case Command::Social: {
+		// CEverQuest_send_social (@00532ddd): "/smile [name] [text]". The first word picks who it's at
+		// (EQPlayer_get_player_partial_name; nothing, or eqstr 12295, our target), not us and not past
+		// 60; anything else typed is said as it is ("You emote '...'").
+		int social = 14; // /gesture, /flipoff, /bird and /finger are /rude
+		for (int i = 0; i < static_cast<int>(std::size(SocialNames)); ++i)
+			if (std::string(name) == SocialNames[i])
+				social = i;
+		const SocialEntry &entry = Socials[social];
+		std::string text;
+		std::string who = FirstWord(args, text);
+		uint16_t at = Target();
+		if (!who.empty() && Lower(who) != Lower(format(12295, "say", {}))) {
+			std::string want = Lower(who);
+			for (auto &c : want)
+				if (c == ' ')
+					c = '_';
+			at = 0;
+			if (Lower(me.name).compare(0, want.size(), want) == 0)
+				at = m_zone.MySpawnId();
+			else {
+				const ZoneMovement &here = m_zone_view ? m_zone_view->Movement() : ZoneMovement{};
+				float best_d = 0;
+				for (const auto &[spawn_id, spawn] : spawns) {
+					if (Lower(spawn.name).compare(0, want.size(), want) != 0)
+						continue;
+					float d = std::hypot(spawn.x - here.x, spawn.y - here.y);
+					if (at == 0 || d < best_d) {
+						at = spawn_id;
+						best_d = d;
+					}
+				}
+			}
+			if (at == 0) {
+				ChatOut(format(12296, "I don't see anyone by that name around here...", {}), ChatType::Default);
+				break;
+			}
+		}
+		if (at == m_zone.MySpawnId())
+			at = 0;
+		const ZoneSpawn *them = nullptr;
+		if (at != 0) {
+			auto it = spawns.find(at);
+			them = it != spawns.end() ? &it->second : nullptr;
+			if (!them)
+				at = 0;
+			else if (m_zone.SpawnDistance(at) > 60.0f) {
+				ChatOut(format(12321, "I don't see anyone by that name around here...", {}), ChatType::Default);
+				break;
+			}
+		}
+		// he, him, his by gender (0 male, 1 female, else it).
+		auto pronouns = [&](int gender, std::string out[3]) {
+			out[0] = format(gender == 0 ? 12209 : gender == 1 ? 12210 : 12211, gender == 0 ? "he" : gender == 1 ? "she" : "it", {});
+			out[1] = gender == 0 ? format(12297, "him", {}) : gender == 1 ? format(12298, "her", {}) : format(12211, "it", {});
+			out[2] = format(gender == 0 ? 12301 : gender == 1 ? 12299 : 12300, gender == 0 ? "his" : gender == 1 ? "her" : "its", {});
+		};
+		std::string mine[3], theirs[3];
+		pronouns(me.gender, mine);
+		if (them)
+			pronouns(them->gender, theirs);
+		std::string target_name = them ? them->DisplayName() : "";
+		auto build = [&](const SocialText &piece, const std::string &name, const std::string (&ours)[3]) {
+			if (piece.id == 0)
+				return std::string();
+			std::vector<std::string> values;
+			for (const char *a = piece.args; *a; ++a) {
+				switch (*a) {
+				case 'N': values.push_back(name); break;
+				case 'S': values.push_back(ours[0]); break;
+				case 'O': values.push_back(ours[1]); break;
+				case 'P': values.push_back(ours[2]); break;
+				case 'T': values.push_back(target_name); break;
+				case 's': values.push_back(theirs[0]); break;
+				case 'o': values.push_back(theirs[1]); break;
+				case 'p': values.push_back(theirs[2]); break;
+				}
+			}
+			return format(piece.id, "", values);
+		};
+		// A full stop after a letter or digit at the end.
+		auto stop = [](std::string &line) {
+			if (!line.empty() && std::isalnum(static_cast<unsigned char>(line.back())))
+				line += ".";
+		};
+		int animation = entry.animation;
+		const ZoneMovement &moving = m_zone_view ? m_zone_view->Movement() : ZoneMovement{};
+		if (moving.speed != 0 || m_zone.Self().stance != 100)
+			animation = -1; // only standing still
+		std::string lone = build(entry.sent, "", mine), sent = build(entry.sent_target, "", mine);
+		if (text.size() >= 2)
+			sent = " " + text + ".";
+		else if (at == 0 && !lone.empty())
+			sent = " " + lone;
+		if (!sent.empty()) {
+			stop(sent);
+			m_zone.Emote(sent); // eqgame's Emote_Struct has 0xffff in front here; the zone ignores it
+		}
+		if (animation != -1)
+			m_zone.SendAnimation(animation);
+		// The echo, in the emote color.
+		const std::string you[3] = {format(12303, "you", {}), format(12303, "you", {}), format(12304, "your", {})};
+		std::string you_name = format(12302, "You", {});
+		lone = build(entry.echo, you_name, you);
+		std::string echo = build(entry.echo_target, you_name, you);
+		if (text.size() >= 2)
+			echo = format(12305, "You emote '%1'", {text});
+		else if (at == 0 && !lone.empty())
+			echo = lone;
+		if (animation != -1 && m_zone_view)
+			m_zone_view->PlayAnimation(animation);
+		if (!echo.empty()) {
+			stop(echo);
+			ChatOut(echo, ChatType::Emote);
+		}
 		break;
 	}
 	case Command::Camp:

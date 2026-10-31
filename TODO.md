@@ -13,8 +13,9 @@ no rules of its own.
    rather than `A_DefaultCursor`.
 2. **Display-only windows**, showing what the server already sends:
    - ~~Player window~~ and ~~target window~~: done (`frontend/game_values.*`, gauges in `sidl.cpp`).
-     Targeting ourselves: F1 and clicking our model in the chase view. Still to do: max mana leaves
-     out items' worn effects and `AntiTwinkAdj` for items with a recommended level; the XP gauge (EQType 4) needs the experience table.
+     Targeting ourselves: F1 and clicking our model in the chase view. The XP and AA gauges
+     (EQTypes 4, 5) are OP_ExpUpdate's and OP_AAExpUpdate's 0..330 * 3.03031. Still to do: max mana
+     leaves out items' worn effects and `AntiTwinkAdj` for items with a recommended level.
    - Group window: laid out as `CGroupWnd::UpdateButtons` does (`frontend/game_windows.*`), but
      there's no group state yet (invites, members, leader).
    - Buff window: done (`frontend/buffs.*`, `game_windows.cpp`): our buffs from the profile, those
@@ -31,14 +32,15 @@ no rules of its own.
      Skills button opening the skills window (`frontend/game_windows.*`), and items picked up, put
      down, split through the quantity window and put away on the character view (`core/inventory.*`).
      Still to do: for stats, resists, AC and ATK, items' worn effects, ATK's buffs, AAs,
-     the Resistant Discipline, drunkenness and berserking; the XP and AA gauges (the experience table); Destroy,
+     the Resistant Discipline, drunkenness and berserking; Destroy,
      Alt. Advance, and icons in the hot button window's weapon slots.
    - Coins: done (`Inventory::MoveMoney`, CEverQuest_MoveMoney, OP_MoveCoin): a money button with
      nothing on the cursor asks how many through the quantity window and puts them on the cursor
      (A_DragItem's cell 143 + CursorMoneyType, the count across its bottom), with coins on it takes
      them onto its pile, as the character view does; changed into other coins only at the bank.
-     Still to do: coins clicked onto the world or a spawn (DropItemOrMoneyOnPlayer: given to the
-     target, or a trade), and Escape leaving them on the cursor as it does an item.
+     Escape leaves them on the cursor, as it does an item (RemoveAttachment takes off only a
+     button or a spell). Still to do: coins clicked onto the world or a spawn
+     (DropItemOrMoneyOnPlayer: given to the target, or a trade).
    - Bank window: done (`frontend/bank_window.*`, eqgame's CBankWnd): the right button on a banker
      within 20 (RightClickedOnPlayer, IsOkToTransact) opens it with the banker's welcome, the bank
      slots (2000..2007, their bags as BagBank1..8), the bank's coins on its money buttons (coins
@@ -66,8 +68,8 @@ no rules of its own.
      the inventory (OP_LootItem, a NO DROP item from another's corpse asking first), the slots
      locked until the zone answers; Done, the close box, Escape and walking away end it
      (OP_EndLootRequest), and the zone's answer, or the corpse gone, closes it. Not checked
-     against a server yet (no corpse to loot: there's no auto attack). Still to do: /lootnodrop
-     (`LootWindow::loot_no_drop`, DAT_00799674) and /autosplit's "as your split" (12071), the
+     against a server yet (no corpse to loot: there's no auto attack). /lootnodrop sets whether a
+     NO DROP item asks first (`LootNoDrop`). Still to do: /autosplit's "as your split" (12071), the
      items in a corpse's bags (shown only to GMs and on player corpses past the eighth), the
      PvP item (Loot_Request_Type 5), MakeMeVisible, and the dead or mounted checks.
    - Trade and give windows: done (`frontend/trade_window.*`, eqgame's CTradeWnd and CGiveWnd): an
@@ -167,17 +169,25 @@ no rules of its own.
      the edit boxes take typing only at their end (no caret to move, no Tab between them), and
      a social's lines go to InterpretCommand as typed, without eqgame's switch to the main chat
      window's channel while it runs.
-   - Compass
-   - Selector bar
+   - ~~Compass~~: done (`frontend/compass.*`, eqgame's CCompassWnd): the strips slide by our
+     heading, and the needle wanders with a Sense Heading under 200. Still to do: TOGGLE_COMPASSWIN
+     to open and close it (the keymap, 6; it's up on every zone-in until then), and the skill's use
+     pointing it true for 5 s (CCompassWnd::SenseHeading from EQ_Character::UseSkill; there's no
+     /doability or skill use yet).
+   - ~~Selector bar~~: done (`SelectorToggles` in `frontend/frontend.cpp`): its buttons open and
+     close their windows.
 3. ~~**A real chat window**~~: done (`frontend/chat_window.*`, `chat_text.*`, `chat_commands.cpp`).
    Still to do: more windows and the channel map (eqgame's `CChatManager`: which window each
    channel goes to, set from the right-click menu; there were no tabs in this era), the chat font
    size, hold-to-repeat on the scrollbar's arrows, languages scrambled by skill
-   (`HearBabel`), and the commands that still say they aren't supported (/who, /random, /follow,
-   /lfg, /smile and the other emotes...).
+   (`HearBabel`), and the commands that still say they aren't supported (/who, /follow, /lfg...).
+   DoPercentConvert (@00538110) isn't ported: %t (the target's name), %m (our pet's), %s, %o, %p
+   (the target's he/him/his) and %r (its race) in what's said, told, shouted, emoted and in socials.
    Done in `chat_commands.cpp`: /consider (OP_Consider, PrintConsiderAssessment's text and con
    color), /time (Norrath's date as EQWorldData::AdvanceTime carries it on, and Earth's), /played,
-   /motd, /afk, /anonymous and /assist (OP_Assist; the answer becomes our target). Still to do:
+   /motd, /afk, /anonymous, /assist (OP_Assist; the answer becomes our target), /random
+   (OP_RandomReq and OP_RandomReply), /lootnodrop, /fastdrop, and the 88 socials
+   (CEverQuest_send_social: OP_Emote, OP_Animation and our echo). Still to do:
    - /afk: answering tells with its message, and the chat server's "/afk on silent";
    - /assist: AttackOnAssist turning auto attack on (there's no auto attack yet), and
      allowslashcommand's other checks (/safelock, stance 0x66, the windows that block commands:
@@ -185,6 +195,10 @@ no rules of its own.
    - /played: the alarm's time left (no alarm window yet);
    - /consider: under the deity PvP rules (pvpcon 4) NotOnSameDeity lets a GM off, read here as
      our `gm` flag; EQPlayer+0x109 isn't checked to be IsGameMaster.
+   - /random: leaving out the rolls of someone we ignore (CEverQuest_BeingIgnored; no /ignore yet).
+   - socials: the 60 unit check is our 3D SpawnDistance (eqgame's CDisplay::PlayerDistance with
+     its last argument 0, not checked to be the same), DAT_007985f1 (a flag that stops them
+     all) isn't known, and OP_Emote goes out with 0 in front where send_social puts 0xffff.
 4. **Cursor and dragging.** EQ's own cursors. (An item on the cursor follows it:
    `DrawCursorAttachment`.) Tooltips: done (`WindowManager::DrawTooltip`, eqgame's DrawWindows and
    DrawTooltipAtPoint): after the mouse rests 500 ms, the control under it shows its tooltip, its
@@ -196,7 +210,8 @@ no rules of its own.
    don't have yet (the world container's).
 5. **Options / Escape menu.** Graphics, sound and display settings, mouse sensitivity, the keymap.
 6. **A configurable keymap.** `InputEvent::Key` is a hard-coded list of about 18 keys; make it an
-   EQ-style keymap with primary and alternate bindings.
+   EQ-style keymap with primary and alternate bindings. Then TOGGLE_COMPASSWIN (ExecuteCmd 0x6c)
+   opens and closes the compass, which is up on every zone-in until then.
 7. **Map window.** Draw the line maps from `../Maps` with our position and nearby spawns.
 8. **Loading screen** while zoning, with progress.
 
@@ -217,8 +232,8 @@ no rules of its own.
     (OP_ClickObject) or opening a tradeskill container (OP_ClickObjectAction), an item on the cursor
     clicked onto the ground dropped (the confirmation dialog, DropHeldItemOnGround), and what the
     zone takes away (its OP_ClickObject). Checked live: the zone's ground spawns and forges drawn, a
-    drop, the forge opened and closed. Still to do: /fastdrop (DAT_0079966c and eqOptions2.opt; we
-    always ask), coins dropped on the ground (DropHeldMoneyOnGround), CreateActor's models from
+    drop, the forge opened and closed. /fastdrop sets whether a drop asks first (`FastDrop`). Still
+    to do: coins dropped on the ground (DropHeldMoneyOnGround), CreateActor's models from
     the zone's _obj.s3d and the `_chr` files (only gequip's are found; the server's data has
     none that would show), `RED_BLOB_ACTORDEF` when even IT63 is missing (a sprite), and
     CreateActor's light argument (whether a lit item on the ground lights things).

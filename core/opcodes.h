@@ -71,7 +71,8 @@ namespace ZoneOp
 	constexpr uint16_t Logout = 0x4150;
 	constexpr uint16_t LogoutReply = 0x4159;
 	constexpr uint16_t ZoneInAvatarSet = 0x406f;
-	constexpr uint16_t ExpUpdate = 0x4199;
+	constexpr uint16_t ExpUpdate = 0x4199;   // {u32 exp}: how far into the level, 0..330
+	constexpr uint16_t AAExpUpdate = 0x4223; // AltAdvStats_Struct {i32 exp (0..330), i16 unspent, i8 percentage, i8}
 	constexpr uint16_t CharInventory = 0x41f6;
 	constexpr uint16_t ItemPacket = 0x4164;
 	constexpr uint16_t SpawnDoor = 0x41f7;     // u16 count, then the Door_Structs (44 bytes each) deflated
@@ -88,6 +89,8 @@ namespace ZoneOp
 	constexpr uint16_t MoneyUpdate = 0x4008;
 	constexpr uint16_t TradeMoneyUpdate = 0x413d; // TradeMoney_Struct {u16, u8 type (0 copper .. 3 platinum), u8, i32 amount}: coins added
 	constexpr uint16_t Emote = 0x4015;
+	constexpr uint16_t RandomReq = 0x41e7;   // {u32 low, u32 high}: /random
+	constexpr uint16_t RandomReply = 0x4016; // RandomReply_Struct {u32 low, u32 high, u32 result, char name[64]}
 	constexpr uint16_t Death = 0x404a;
 	constexpr uint16_t Animation = 0x40a1;
 	constexpr uint16_t WearChange = 0x4092;
@@ -238,6 +241,7 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::LogoutReply, "OP_LogoutReply"},
 	{ZoneOp::ZoneInAvatarSet, "OP_ZoneInAvatarSet"},
 	{ZoneOp::ExpUpdate, "OP_ExpUpdate"},
+	{ZoneOp::AAExpUpdate, "OP_AAExpUpdate"},
 	{ZoneOp::CharInventory, "OP_CharInventory"},
 	{ZoneOp::ItemPacket, "OP_ItemPacket"},
 	{ZoneOp::SpawnDoor, "OP_SpawnDoor"},
@@ -254,6 +258,8 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::MoneyUpdate, "OP_MoneyUpdate"},
 	{ZoneOp::TradeMoneyUpdate, "OP_TradeMoneyUpdate"},
 	{ZoneOp::Emote, "OP_Emote"},
+	{ZoneOp::RandomReq, "OP_RandomReq"},
+	{ZoneOp::RandomReply, "OP_RandomReply"},
 	{ZoneOp::Death, "OP_Death"},
 	{ZoneOp::Animation, "OP_Animation"},
 	{ZoneOp::WearChange, "OP_WearChange"},
