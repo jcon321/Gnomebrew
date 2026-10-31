@@ -41,6 +41,8 @@ public:
 	void SetCharacter(const render::CharacterAppearance *appearance, uint8_t class_id);
 	// The Velious armor textures (VeliousTextures); before StartLoading.
 	void SetVeliousTextures(bool on) { m_velious_textures = on; }
+	// The Luclin player models to use (my-client.ini's UseLuclin*); before StartLoading.
+	void SetLuclinModels(const render::LuclinModels &models) { m_luclin = models; }
 	// Socials' animations among the random ones (CharSelectEmotes); otherwise only the class's.
 	void SetEmotes(bool on) { m_emotes = on; }
 	// The animations the character's model has (render::Anim numbers, in order), and a number that
@@ -83,6 +85,7 @@ private:
 	render::Sky m_sky;
 	render::CharacterModels m_models;
 	bool m_velious_textures = true;
+	render::LuclinModels m_luclin;
 	std::unique_ptr<render::Renderer> m_renderer;
 
 	// What's selected, applied once loading finishes.

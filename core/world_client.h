@@ -25,6 +25,8 @@ struct CharacterSlot
 	uint16_t deity = 0;
 	uint32_t equip[9] = {}; // material per slot: head, chest, arms, wrists, hands, legs, feet, primary, secondary
 	uint32_t tint[9] = {};  // 0xFFRRGGBB when tinted
+	// The Luclin models' hair and beard style and color, and eye colors.
+	uint8_t hair_color = 0xff, beard_color = 0xff, eye_color1 = 0xff, eye_color2 = 0xff, hair_style = 0xff, beard = 0xff;
 
 	bool Empty() const { return name.empty() || name == "<none>"; }
 };

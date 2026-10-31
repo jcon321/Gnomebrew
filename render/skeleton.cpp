@@ -75,8 +75,9 @@ namespace render
 		for (size_t i = 0; i < skeleton.bones.size(); ++i) {
 			const auto &bone = skeleton.bones[i];
 			WldBoneTransform pose = bone.pose;
-			if (animation && i < animation->frames.size() && !animation->frames[i].empty()) {
-				const auto &frames = animation->frames[i];
+			size_t track = bone.animation_bone >= 0 ? static_cast<size_t>(bone.animation_bone) : i;
+			if (animation && track < animation->frames.size() && !animation->frames[track].empty()) {
+				const auto &frames = animation->frames[track];
 				// Tracks shorter than the animation hold their last frame.
 				size_t a = std::min(frame, frames.size() - 1);
 				size_t b = frame + 1 < animation->length ? std::min(frame + 1, frames.size() - 1) : loop ? 0 : a;

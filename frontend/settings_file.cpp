@@ -58,6 +58,46 @@ namespace
 		{"Defaults", "VeliousTextures", "1",
 			"1: the Velious armor's own textures (global17..23_amr.s3d, eqclient.ini's LoadArmor17..23).\n"
 			"0: that armor shows as the leather, chain or plate it stands in for."},
+		{"Defaults", "UseLuclinHumanMale", "0",
+			"1: that race and sex drawn with its Luclin model (global<tag>_chr.s3d: hair, beard and eyes\n"
+			"of its own, armor pieces and robes hung on it), as eqclient.ini's keys of the same names.\n"
+			"0: the old model. An Erudite's needs the Human's animations and a High, Dark or Half Elf's\n"
+			"the Wood Elf's, so those load too (and are what the Human or Wood Elf of that sex look like)."},
+		{"Defaults", "UseLuclinHumanFemale", "0", ""},
+		{"Defaults", "UseLuclinBarbarianMale", "0", ""},
+		{"Defaults", "UseLuclinBarbarianFemale", "0", ""},
+		{"Defaults", "UseLuclinEruditeMale", "0", ""},
+		{"Defaults", "UseLuclinEruditeFemale", "0", ""},
+		{"Defaults", "UseLuclinWoodElfMale", "0", ""},
+		{"Defaults", "UseLuclinWoodElfFemale", "0", ""},
+		{"Defaults", "UseLuclinHighElfMale", "0", ""},
+		{"Defaults", "UseLuclinHighElfFemale", "0", ""},
+		{"Defaults", "UseLuclinDarkElfMale", "0", ""},
+		{"Defaults", "UseLuclinDarkElfFemale", "0", ""},
+		{"Defaults", "UseLuclinHalfElfMale", "0", ""},
+		{"Defaults", "UseLuclinHalfElfFemale", "0", ""},
+		{"Defaults", "UseLuclinDwarfMale", "0", ""},
+		{"Defaults", "UseLuclinDwarfFemale", "0", ""},
+		{"Defaults", "UseLuclinTrollMale", "0", ""},
+		{"Defaults", "UseLuclinTrollFemale", "0", ""},
+		{"Defaults", "UseLuclinOgreMale", "0", ""},
+		{"Defaults", "UseLuclinOgreFemale", "0", ""},
+		{"Defaults", "UseLuclinHalflingMale", "0", ""},
+		{"Defaults", "UseLuclinHalflingFemale", "0", ""},
+		{"Defaults", "UseLuclinGnomeMale", "0", ""},
+		{"Defaults", "UseLuclinGnomeFemale", "0", ""},
+		{"Defaults", "UseLuclinIksarMale", "0", ""},
+		{"Defaults", "UseLuclinIksarFemale", "0", ""},
+		{"Defaults", "UseLuclinVahShirMale", "0", ""},
+		{"Defaults", "UseLuclinVahShirFemale", "0", ""},
+		{"Defaults", "UseLuclinElementals", "0", "1: the Luclin elementals (global5_chr.s3d, races 209..212); 0: they're race 75's."},
+		{"Defaults", "AllLuclinPcModelsOff", "0", "1: no Luclin player models but the Vah Shir's, whatever the keys above say."},
+		{"Defaults", "LoadVeliousArmorsWithLuclin", "1",
+			"1: the Velious armor files load with Luclin models on too; 0: as eqgame does by default, with\n"
+			"any Luclin model on (bar the Vah Shir's) they don't, and that armor shows as leather, chain or plate."},
+		{"Defaults", "LoadOldSkeletons", "1",
+			"1: skeletons (race 60 and the like) use the old model from global_chr.s3d; 0: the later one\n"
+			"from global6_chr.s3d, as eqgame shows them. Ours, not eqgame's."},
 		{"Defaults", "CharSelectAnimWindow", "1",
 			"1: our Animations window at character select (not eqgame's): Combat only or All + emotes\n"
 			"for the animations the character plays now and then (CharSelectEmotes below), and a list of\n"

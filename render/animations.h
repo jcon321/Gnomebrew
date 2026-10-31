@@ -48,6 +48,8 @@ namespace render
 
 	// mapCharacterPrefixToRaceCode (@004d8065): the model whose tracks a model plays when it has
 	// none of its own for a bone, e.g. the human male's are the elf male's ("HUM" -> "ELM"), a
-	// minotaur's the gnoll's. Classic (non-Luclin) models. Returns the code itself when it has no source.
-	std::string AnimationSource(const std::string &code);
+	// minotaur's the gnoll's. With `luclin` (a Luclin model) the Human and Erudite play the Human's
+	// own ("HUM", "HUF"), the Barbarian its own, and BGM, TRI, ENA and SKE the Human man's. Returns the
+	// code itself when it has no source.
+	std::string AnimationSource(const std::string &code, bool luclin = false);
 }

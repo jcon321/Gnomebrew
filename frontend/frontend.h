@@ -61,6 +61,7 @@ struct FrontEndConfig
 	int show_names = 4;       // /shownames: 0 (off) .. 7 (ShowNamesLevel)
 	bool extended_nameplates = true; // names as far out as the zone is drawn, not eqgame's 70 units
 	bool velious_textures = true;    // the Velious armor (materials 17..23), else the older armor they stand in for
+	render::LuclinModels luclin_models; // the player races drawn with their Luclin models (UseLuclin*), none by default
 	bool char_select_anim_window = true; // our Animations window at character select (CharSelectAnimWindow)
 	bool char_select_emotes = false;     // character select's random animations include socials' (CharSelectEmotes)
 	bool attack_on_assist = false;       // /assist on|off (AttackOnAssist); there's no auto attack yet

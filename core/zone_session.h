@@ -130,6 +130,8 @@ struct ZoneSpawn
 	uint8_t aa_title = 0;    // the AA title rank, 1..3 (CEverQuest_GetTitleDesc)
 	float size = 0;          // model height; 0 = the race's default
 	uint8_t face = 0;
+	// The Luclin models' hair and beard style and color, and eye colors (0xFF none).
+	uint8_t hair_style = 0xff, hair_color = 0xff, beard = 0xff, beard_color = 0xff, eye_color1 = 0xff, eye_color2 = 0xff;
 	uint16_t equipment[9] = {}; // material per slot: head, chest, arms, wrists, hands, legs, feet, primary, secondary
 	uint32_t colors[9] = {};    // 0xFFRRGGBB when tinted
 	float walk_speed = 0.46f, run_speed = 0.7f; // EQPlayer's MovementBackward/ForwardSpeedMultiplier

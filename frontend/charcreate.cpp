@@ -337,6 +337,10 @@ render::CharacterAppearance CharacterCreation::Appearance() const
 	appearance.race = m_race;
 	appearance.gender = m_gender;
 	appearance.face = m_face;
+	// What our create packet leaves them (0), as the new character's spawn will have them; picking
+	// them (a Luclin model's hair, beard and eyes) isn't done.
+	appearance.hair_style = appearance.hair_color = appearance.beard = appearance.beard_color = 0;
+	appearance.eye_color1 = appearance.eye_color2 = 0;
 	return appearance;
 }
 

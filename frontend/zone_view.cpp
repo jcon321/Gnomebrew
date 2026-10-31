@@ -180,7 +180,7 @@ void ZoneView::Load()
 	ZoneFog(fog_start, fog_end); // CDisplay::SetFog: no sky when the fog ends within 101
 	if (!m_zone.Load(m_eq_dir, m_info.short_name, error, lighting))
 		m_error = error;
-	else if (!m_models.Open(m_eq_dir, error, true, m_velious_textures))
+	else if (!m_models.Open(m_eq_dir, error, true, m_velious_textures, m_luclin))
 		m_error = error;
 	else if (m_info.sky != 0 && fog_end >= 101 && !m_sky.Load(m_eq_dir, m_info.sky, error))
 		fprintf(stderr, "[zone view] %s\n", error.c_str()); // the zone still draws, over the fog color
@@ -1258,8 +1258,9 @@ void ZoneView::DrawDebugOverlays(Canvas &canvas) const
 std::string ZoneView::SpawnModelKey(const ZoneSpawn &spawn)
 {
 	char key[512];
-	int length = snprintf(key, sizeof(key), "%u/%u/%u/%.2f/%u/%u/%u", spawn.race, spawn.gender, spawn.face, spawn.size,
-		spawn.body_texture, spawn.helm, spawn.class_id);
+	int length = snprintf(key, sizeof(key), "%u/%u/%u/%.2f/%u/%u/%u/%u.%u.%u.%u.%u.%u", spawn.race, spawn.gender, spawn.face,
+		spawn.size, spawn.body_texture, spawn.helm, spawn.class_id, spawn.hair_style, spawn.hair_color, spawn.beard,
+		spawn.beard_color, spawn.eye_color1, spawn.eye_color2);
 	for (int k = 0; k < render::EquipSlots; ++k)
 		length += snprintf(key + length, sizeof(key) - static_cast<size_t>(length), "/%u:%08x", spawn.equipment[k], spawn.colors[k]);
 	return key;
@@ -1278,6 +1279,12 @@ std::shared_ptr<render::CharacterModel> ZoneView::SpawnModel(const ZoneSpawn &sp
 	appearance.texture = spawn.body_texture;
 	appearance.helm = spawn.helm;
 	appearance.class_id = spawn.class_id;
+	appearance.hair_style = spawn.hair_style;
+	appearance.hair_color = spawn.hair_color;
+	appearance.beard = spawn.beard;
+	appearance.beard_color = spawn.beard_color;
+	appearance.eye_color1 = spawn.eye_color1;
+	appearance.eye_color2 = spawn.eye_color2;
 	for (int k = 0; k < render::EquipSlots; ++k) {
 		appearance.equip[k] = spawn.equipment[k];
 		appearance.tint[k] = spawn.colors[k];

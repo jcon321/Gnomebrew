@@ -31,6 +31,9 @@
 // long in 16 ms frames first, printing the weather's state and particles each second, and
 // --debug-draw noweather draws none of it.
 // With --char, --velious 0 shows the Velious armor (materials 17..23) as the older armor (VeliousTextures=0).
+// --luclin all|RACE:GENDER,... draws those player races with their Luclin models (all: every one), and
+// --hair STYLE COLOR, --beard STYLE COLOR and --eyes COLOR dress them (the character, or the --npc before).
+// --old-skeletons 0 draws skeletons with global6_chr's later model (LoadOldSkeletons=0).
 // --frames renders N times and prints the average frame time. --size picks the
 // image size (default 640x480).
 
@@ -83,6 +86,7 @@ namespace
 		}
 	};
 	SoundCapture g_sound;
+	render::LuclinModels g_luclin; // --luclin
 
 	struct WeatherOption
 	{
@@ -140,6 +144,7 @@ namespace
 		auto t0 = std::chrono::steady_clock::now();
 		CharacterSelectView view(eq_dir);
 		view.SetVeliousTextures(velious);
+		view.SetLuclinModels(g_luclin);
 		view.StartLoading();
 		while (!view.Loaded())
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -181,6 +186,7 @@ namespace
 	{
 		auto t0 = std::chrono::steady_clock::now();
 		ZoneView view(eq_dir);
+		view.SetLuclinModels(g_luclin);
 		view.StartLoading(info);
 		while (!view.Loaded())
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -574,6 +580,39 @@ int main(int argc, char **argv)
 		}
 		else if (arg == "--velious" && i + 1 < argc)
 			velious = atoi(argv[++i]) != 0;
+		else if (arg == "--old-skeletons" && i + 1 < argc)
+			g_luclin.old_skeletons = atoi(argv[++i]) != 0;
+		else if (arg == "--luclin" && i + 1 < argc) {
+			std::string list = argv[++i];
+			while (!list.empty()) {
+				size_t comma = list.find(',');
+				std::string item = list.substr(0, comma);
+				list = comma == std::string::npos ? "" : list.substr(comma + 1);
+				for (uint16_t race : render::LuclinRaces)
+					for (uint8_t gender = 0; gender < 2; ++gender)
+						if (item == "all" || item == std::to_string(race) + ":" + std::to_string(gender))
+							g_luclin.use[render::LuclinModels::Index(race)][gender] = true;
+			}
+		}
+		else if ((arg == "--hair" || arg == "--beard") && i + 2 < argc) {
+			uint8_t style = static_cast<uint8_t>(atoi(argv[++i])), color = static_cast<uint8_t>(atoi(argv[++i]));
+			bool hair = arg == "--hair";
+			if (!spawns.empty()) {
+				(hair ? spawns.rbegin()->second.hair_style : spawns.rbegin()->second.beard) = style;
+				(hair ? spawns.rbegin()->second.hair_color : spawns.rbegin()->second.beard_color) = color;
+			}
+			else {
+				(hair ? appearance.hair_style : appearance.beard) = style;
+				(hair ? appearance.hair_color : appearance.beard_color) = color;
+			}
+		}
+		else if (arg == "--eyes" && i + 1 < argc) {
+			uint8_t color = static_cast<uint8_t>(atoi(argv[++i]));
+			if (!spawns.empty())
+				spawns.rbegin()->second.eye_color1 = spawns.rbegin()->second.eye_color2 = color;
+			else
+				appearance.eye_color1 = appearance.eye_color2 = color;
+		}
 		else if (arg == "--face" && i + 1 < argc)
 			appearance.face = static_cast<uint8_t>(atoi(argv[++i]));
 		else if (arg == "--equip" && i + 1 < argc) {

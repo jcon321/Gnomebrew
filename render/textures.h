@@ -24,10 +24,15 @@ namespace render
 
 		// masked: 8-bit BMPs treat palette index 0 as transparent.
 		const Texture *Get(const std::string &name, bool masked);
+		// A Luclin material's two textures as one (WldMaterial::layer): `layer` over `name` by the
+		// layer's alpha, as eqgfx draws the skin and then the layer blended over it with the same
+		// vertex light (setRenderEffectState's mode 2). Just `name` when the layer is missing.
+		const Texture *GetLayered(const std::string &name, const std::string &layer, bool masked);
 		bool Exists(const std::string &name) const;
 		const std::vector<std::string> &Missing() const { return m_missing; }
 
 	private:
+		bool Load(const std::string &name, bool masked, Image &image) const; // as drawn: v = 0 the bottom row
 		std::vector<const PfsArchive *> m_archives;
 		std::map<std::string, std::unique_ptr<Texture>> m_cache; // lowercase name + mask flag
 		std::vector<std::string> m_missing;

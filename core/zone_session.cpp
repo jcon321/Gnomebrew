@@ -135,6 +135,12 @@ namespace
 		s.body_texture = d[o + 101];
 		s.helm = d[o + 102];
 		s.face = d[o + 103];
+		s.hair_color = d[o + 21];
+		s.beard_color = d[o + 22];
+		s.eye_color1 = d[o + 23];
+		s.eye_color2 = d[o + 24];
+		s.hair_style = d[o + 25];
+		s.beard = d[o + 26];
 		for (int k = 0; k < 9; ++k)
 			s.equipment[k] = Read<uint16_t>(d, o + 104 + k * 2);
 		s.name = CString(d, o + 127, 64);
@@ -243,6 +249,12 @@ namespace
 		s.level = d[177];
 		s.light = d[182];
 		s.face = d[183];
+		s.hair_color = d[341];
+		s.beard_color = d[342];
+		s.eye_color1 = d[343];
+		s.eye_color2 = d[344];
+		s.hair_style = d[345];
+		s.beard = d[346];
 		for (int k = 0; k < 9; ++k) {
 			s.equipment[k] = Read<uint16_t>(d, 184 + k * 2);
 			s.colors[k] = Read<uint32_t>(d, 204 + k * 4);

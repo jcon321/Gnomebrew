@@ -45,6 +45,12 @@ namespace
 		appearance.face = me.face;
 		appearance.height = me.size;
 		appearance.class_id = me.class_id ? me.class_id : static_cast<uint8_t>(zone.Profile().class_id);
+		appearance.hair_style = me.hair_style;
+		appearance.hair_color = me.hair_color;
+		appearance.beard = me.beard;
+		appearance.beard_color = me.beard_color;
+		appearance.eye_color1 = me.eye_color1;
+		appearance.eye_color2 = me.eye_color2;
 		for (int k = 0; k < render::EquipSlots; ++k) {
 			appearance.equip[k] = me.equipment[k];
 			appearance.tint[k] = me.colors[k];
@@ -68,6 +74,7 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 		// Character select's zone takes a moment to load; start while the player logs in.
 		m_charselect_view = std::make_unique<CharacterSelectView>(m_ui.eq_dir, MakeRenderer());
 		m_charselect_view->SetVeliousTextures(config.velious_textures);
+		m_charselect_view->SetLuclinModels(config.luclin_models);
 		m_charselect_view->SetEmotes(config.char_select_emotes);
 		m_charselect_view->StartLoading();
 		if (config.char_select_anim_window)
@@ -1077,6 +1084,12 @@ void FrontEnd::RefreshCharacterButtons()
 			appearance.gender = c.gender;
 			appearance.face = c.face;
 			appearance.class_id = static_cast<uint8_t>(c.class_id);
+			appearance.hair_style = c.hair_style;
+			appearance.hair_color = c.hair_color;
+			appearance.beard = c.beard;
+			appearance.beard_color = c.beard_color;
+			appearance.eye_color1 = c.eye_color1;
+			appearance.eye_color2 = c.eye_color2;
 			for (int k = 0; k < render::EquipSlots; ++k) {
 				appearance.equip[k] = c.equip[k];
 				appearance.tint[k] = c.tint[k];
@@ -1905,6 +1918,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 				break;
 			m_zone_view = std::make_unique<ZoneView>(m_ui.eq_dir, MakeRenderer());
 			m_zone_view->SetVeliousTextures(m_config.velious_textures);
+			m_zone_view->SetLuclinModels(m_config.luclin_models);
 			m_zone_view->SetSpellFile(m_ui.spells);
 			m_zone_view->StartLoading(m_zone.Info());
 			m_zone_view->SetSound(m_sound.get());

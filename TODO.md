@@ -262,6 +262,25 @@ no rules of its own.
 14. **Graphics options:** fullscreen or windowed, resolution changes, gamma, anisotropic filtering,
     MSAA, draw distance and level of detail.
 15. **Screenshots.**
+21. **Luclin player models.** Done (`render/character_model.*`): `UseLuclin*` in my-client.ini
+    picks them per race and sex (off by default), loaded in `CDisplay::InitWorld`'s order and rules;
+    their variant tracks (A, else B) and source models, the `_LAYER` textures, faces, eyes
+    (`CDisplay_SetEyeMaterial`), the Vah Shir's fur by face, robes, and the helm, tunic, robe,
+    shoulders, gauntlets, belt, boots, hair and beard as item models on their point bones
+    (`CDisplay_SetDefaultITAttachments`, `SetFHEB`) playing the body's tracks
+    (`UpdateAttachmentAnimations`). Still to do:
+    - The animation variant: `PlayAnimationTrack` plays the player's byte at `+0x150` (who sets it
+      isn't found); we always play A.
+    - Character creation's Luclin choices (hair style and color, beard, eye colors) in the face
+      picker, and sending them in the create packet; the preview and the new character get 0s.
+    - A body slot's material of 200 and up on a Luclin model (`CDisplay::HandleMaterialEx`: IT<material>
+      on the slot's point through `CDisplay_UpdateItemSlot2`, plate under it).
+    - Turning the models on and off in game (an options page); only my-client.ini, read at start.
+    - `AllLuclinPcModelsOff` as InitWorld forces it under 129 MB, and the expansion flags
+      (`DAT_007cf1f0`/`f4`) `ShouldLoadNewPcModel` checks: we take them as set.
+    - `frontend_preview` doesn't read the keys (`scene_preview --luclin` does).
+    - Zone `_chr` files are searched before the global ones (ours); eqgame keeps the first loaded,
+      the globals.
 
 ## Infrastructure / tooling
 

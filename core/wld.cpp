@@ -120,14 +120,30 @@ void WldFile::ReadSpriteFrames(const Fragment *sprite, WldMaterial &material) co
 		const Fragment *bitmap = Ref(Get<int32_t>(p));
 		if (!bitmap || bitmap->type != 0x03)
 			continue;
-		// u32 count - 1, then {u16 length, encoded name}; only the first name is used.
-		uint16_t length = Get<uint16_t>(bitmap->offset + 4);
-		size_t at = bitmap->offset + 6;
-		if (length == 0 || at + length > m_data.size())
-			continue;
-		std::vector<char> name(m_data.begin() + at, m_data.begin() + at + length);
-		Decode(name.data(), name.size());
-		material.textures.emplace_back(name.data(), strnlen(name.data(), name.size()));
+		// u32 count - 1, then {u16 length, encoded name}. The first name is the texture; a second
+		// "<file>_LAYER" one is drawn over it (t3dDefineBMInfoMIPMapped), unless it's the same file.
+		uint32_t names = Get<uint32_t>(bitmap->offset) + 1;
+		size_t at = bitmap->offset + 4;
+		std::string first;
+		for (uint32_t n = 0; n < names && n < 2; ++n) {
+			uint16_t length = Get<uint16_t>(at);
+			at += 2;
+			if (length == 0 || at + length > m_data.size())
+				break;
+			std::vector<char> raw(m_data.begin() + at, m_data.begin() + at + length);
+			at += length;
+			Decode(raw.data(), raw.size());
+			std::string name(raw.data(), strnlen(raw.data(), raw.size()));
+			if (n == 0) {
+				first = name;
+				material.textures.push_back(name);
+			}
+			else if (i == 0 && name.size() > 6 && name.compare(name.size() - 6, 6, "_LAYER") == 0) {
+				name.resize(name.size() - 6);
+				if (name != first)
+					material.layer = name;
+			}
+		}
 	}
 }
 

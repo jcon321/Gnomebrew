@@ -385,6 +385,24 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 		show_names = 4;
 	bool extended_nameplates = GetPrivateProfileIntW(L"Defaults", L"EnableExtendedNameplateDistance", 1, ini.c_str()) != 0;
 	bool velious_textures = GetPrivateProfileIntW(L"Defaults", L"VeliousTextures", 1, ini.c_str()) != 0;
+	// UseLuclin<Race><Male|Female> and friends, as eqclient.ini spells them; TRUE or 1 is on.
+	auto ini_bool = [&](const std::wstring &key, bool missing = false) {
+		std::wstring value = IniString(ini, L"Defaults", key.c_str());
+		if (value.empty())
+			return missing;
+		return value[0] == L'1' || value[0] == L'T' || value[0] == L't';
+	};
+	render::LuclinModels luclin_models;
+	for (uint16_t race : render::LuclinRaces) {
+		std::string name = render::LuclinModels::IniRaceName(race);
+		for (uint8_t gender = 0; gender < 2; ++gender)
+			luclin_models.use[render::LuclinModels::Index(race)][gender] =
+				ini_bool(L"UseLuclin" + std::wstring(name.begin(), name.end()) + (gender ? L"Female" : L"Male"));
+	}
+	luclin_models.elementals = ini_bool(L"UseLuclinElementals");
+	luclin_models.all_off = ini_bool(L"AllLuclinPcModelsOff");
+	luclin_models.velious_armor = ini_bool(L"LoadVeliousArmorsWithLuclin", true);
+	luclin_models.old_skeletons = ini_bool(L"LoadOldSkeletons", true);
 	bool char_select_anim_window = GetPrivateProfileIntW(L"Defaults", L"CharSelectAnimWindow", 1, ini.c_str()) != 0;
 	bool char_select_emotes = GetPrivateProfileIntW(L"Defaults", L"CharSelectEmotes", 0, ini.c_str()) != 0;
 	bool attack_on_assist = GetPrivateProfileIntW(L"Defaults", L"AttackOnAssist", 0, ini.c_str()) != 0;
@@ -430,6 +448,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	config.show_names = show_names;
 	config.extended_nameplates = extended_nameplates;
 	config.velious_textures = velious_textures;
+	config.luclin_models = luclin_models;
 	config.char_select_anim_window = char_select_anim_window;
 	config.char_select_emotes = char_select_emotes;
 	config.attack_on_assist = attack_on_assist;

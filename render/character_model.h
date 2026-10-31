@@ -1,10 +1,11 @@
 #pragma once
 
-// Player race models (the classic ones the TAKP client uses: global_chr.s3d,
-// global4_chr.s3d for Iksar, global7_chr.s3d for Vah Shir) and the creatures,
-// dressed from the equipment list (or an NPC's body texture and helm), holding
-// their weapons and shield (the IT models in gequip*.s3d) and playing any of their
-// animations by track code (see animations.h).
+// Player race models and the creatures, dressed from the equipment list (or an NPC's body
+// texture and helm), holding their weapons and shield (the IT models in gequip*.s3d) and playing
+// any of their animations by track code (see animations.h). The player races are the classic
+// models (global_chr.s3d, global4_chr.s3d for Iksar, global7_chr.s3d for Vah Shir) or, as
+// LuclinModels picks them, the Luclin ones (global<tag>_chr.s3d), which wear their hair, beard,
+// helm, robe and armor pieces as item models hung on their bones (lgequip*.s3d, vequip.s3d).
 
 #include "particles.h"
 #include "point_lights.h"
@@ -34,7 +35,37 @@ namespace render
 		uint8_t texture = 0xff;          // 0xFF: dressed per slot; else an NPC's body texture (Spawn_Struct bodytexture)
 		uint8_t helm = 0;                // an NPC's head (Spawn_Struct helm)
 		uint8_t class_id = 0;            // a monk wears materials 4 and 23 as they are; anyone else as leather
+		// The Luclin models' (Spawn_Struct, CharacterSelect_Struct): hair and beard style (IT1000+ and
+		// IT2000+ models) and color (an index into the hair colors), and the eye colors. 0xFF: none.
+		uint8_t hair_style = 0xff, hair_color = 0xff;
+		uint8_t beard = 0xff, beard_color = 0xff;
+		uint8_t eye_color1 = 0xff, eye_color2 = 0xff;
 	};
+
+	// Which player races use their Luclin model, as eqclient.ini's [Defaults] UseLuclin<Race>Male /
+	// Female and friends say (my-client.ini keeps the same names). CDisplay::InitWorld loads
+	// global<tag>_chr2.s3d and global<tag>_chr.s3d for each that ShouldLoad, before global_chr.s3d,
+	// and the first model of a name loaded is the one used.
+	struct LuclinModels
+	{
+		bool use[14][2] = {};       // [Human..Gnome (races 1..12), Iksar, Vah Shir][gender]
+		bool elementals = false;    // UseLuclinElementals: global5_chr.s3d (races 209..212)
+		bool all_off = false;       // AllLuclinPcModelsOff: none but the Vah Shir's
+		bool velious_armor = true;  // LoadVeliousArmorsWithLuclin: the Velious armor files with them too
+		// LoadOldSkeletons (ours, not eqgame's): the skeleton (SKE) from global_chr.s3d, not the later
+		// one global6_chr.s3d defines first.
+		bool old_skeletons = true;
+
+		static int Index(uint16_t race);               // into use; -1 for a race without one
+		static const char *IniRaceName(uint16_t race); // CDisplay_GetIniRaceName: "WoodElf", "VahShir"...
+		bool Wanted(uint16_t race, uint8_t gender) const; // CDisplay::GetNewPCIniFlag
+		// CDisplay::ShouldLoadNewPcModel: wanted, or another needs its animations (the Erudites play
+		// the Human's, the High, Dark and Half Elves the Wood Elf's); AllLuclinPcModelsOff leaves the
+		// Vah Shir only.
+		bool ShouldLoad(uint16_t race, uint8_t gender) const;
+	};
+	// The races InitWorld goes through: 1..12, Iksar and Vah Shir.
+	constexpr uint16_t LuclinRaces[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 128, 130};
 
 	// Three-letter model code for a playable race ("HUM", "IKF", ...), or empty.
 	std::string RaceModelCode(uint16_t race, uint8_t gender);
@@ -165,7 +196,10 @@ namespace render
 		// `creatures` all of global2..7_chr.s3d. And the weapons and shields, gequip*.s3d. With
 		// `velious_textures`, the Velious armor, materials 17..23 (global17..23_amr.s3d, as eqgame's
 		// LoadArmor17..23 load them); without, they're the leather, chain and plate they stand in for.
-		bool Open(const std::string &eq_dir, std::string &error, bool creatures = false, bool velious_textures = true);
+		// `luclin`: the Luclin player models to load (InitWorld's order and rules); the Velious armor
+		// isn't loaded with any but the Vah Shir's unless it says so.
+		bool Open(const std::string &eq_dir, std::string &error, bool creatures = false, bool velious_textures = true,
+			const LuclinModels &luclin = {});
 		// A zone's own models, <zone>_chr.s3d and friends, searched first.
 		bool AddZone(const std::string &eq_dir, const std::string &zone);
 		std::unique_ptr<CharacterModel> Build(const CharacterAppearance &appearance, std::string &error);
@@ -176,6 +210,7 @@ namespace render
 	private:
 		struct Source
 		{
+			std::string name; // "global6_chr"
 			PfsArchive archive;
 			WldFile wld;
 			TextureCache textures;
@@ -184,11 +219,20 @@ namespace render
 		// A held item's model (<tag>_HS_DEF or <tag>_DMSPRITEDEF) onto the model, on bone `point`;
 		// `it` its number for its particle clouds. False when there's none.
 		bool AppendItem(CharacterModel &model, const std::string &tag, unsigned it, uint16_t point);
-		static void AppendItemMesh(CharacterModel &model, const WldMesh &mesh, Source &from, uint16_t point);
+		static void AppendItemMesh(CharacterModel &model, const WldMesh &mesh, Source &from, uint16_t point,
+			uint32_t tint = 0xffffff);
+		// A Luclin model's item (<tag>_HS_DEF, "IT4370") hung on bone `point` of `skeleton` as
+		// CDisplay::ChangeDag hangs it: its bones join the skeleton, each playing the body bone of
+		// the same name's animation, and its meshes go on them in `tint`. Else its mesh
+		// (<tag>_DMSPRITEDEF) on the point. False when there's no such item.
+		bool AppendAttachment(CharacterModel &model, WldSkeleton &skeleton, const std::string &code, const std::string &tag,
+			int point, uint32_t tint);
 		std::vector<std::unique_ptr<Source>> m_sources;
-		std::vector<std::unique_ptr<Source>> m_items; // gequip*.s3d, searched after the models
+		std::vector<std::unique_ptr<Source>> m_items; // gequip*.s3d (lgequip*, vequip with Luclin models), searched after the models
 		std::vector<std::unique_ptr<Source>> m_armor; // global17..23_amr.s3d: materials, searched after the model's own
 		bool m_velious_textures = false;
+		bool m_old_skeletons = true;
+		bool Skipped(const Source &source, const std::string &code) const; // LoadOldSkeletons
 		std::map<std::string, std::shared_ptr<const std::map<std::string, SkeletonAnimation>>> m_animation_sets; // by model code
 	};
 }

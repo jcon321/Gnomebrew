@@ -130,7 +130,7 @@ void CharacterSelectView::Load()
 	std::string error;
 	if (!m_zone.Load(m_eq_dir, m_zone_name, error))
 		m_error = error;
-	else if (!m_models.Open(m_eq_dir, error, false, m_velious_textures))
+	else if (!m_models.Open(m_eq_dir, error, false, m_velious_textures, m_luclin))
 		m_error = error;
 	else if (!m_sky.Load(m_eq_dir, 1, error)) // no sky is fine; the rooms are mostly indoors
 		fprintf(stderr, "[charselect] %s\n", error.c_str());
@@ -140,7 +140,9 @@ void CharacterSelectView::Load()
 void CharacterSelectView::SetCharacter(const render::CharacterAppearance *appearance, uint8_t class_id)
 {
 	auto same = [](const render::CharacterAppearance &a, const render::CharacterAppearance &b) {
-		if (a.race != b.race || a.gender != b.gender || a.face != b.face)
+		if (a.race != b.race || a.gender != b.gender || a.face != b.face || a.hair_style != b.hair_style ||
+			a.hair_color != b.hair_color || a.beard != b.beard || a.beard_color != b.beard_color ||
+			a.eye_color1 != b.eye_color1 || a.eye_color2 != b.eye_color2)
 			return false;
 		for (int k = 0; k < render::EquipSlots; ++k)
 			if (a.equip[k] != b.equip[k] || a.tint[k] != b.tint[k])

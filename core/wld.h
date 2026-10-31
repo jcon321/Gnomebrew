@@ -26,6 +26,9 @@ struct WldMaterial
 	uint32_t render_method = 0; // 0x80000000 = user-defined method in the low bits
 	std::vector<std::string> textures; // file names; more than one is an animation
 	uint32_t frame_ms = 0;
+	// The bitmap's second name when it's "<file>_LAYER" (the Luclin models' armor over their
+	// skin, t3dDefineBMInfoMIPMapped): drawn over textures[0] by its alpha. Empty: none.
+	std::string layer;
 };
 
 // A DmSpriteDef2 (0x36): the zone's region meshes, objects and body parts.
@@ -119,6 +122,10 @@ struct WldSkeleton
 		std::vector<int> children;
 		int mesh = -1; // a 0x36 mesh the bone itself carries (item models: a torch's IT36_O_DAG)
 		int particle_cloud = -1; // a 0x34 particle cloud it carries (the torch's flame, IT36_P1_DAG)
+		// Not from the file: a Luclin attachment's bone (a tunic's IT4370PEPELVIS_DAG) hung on a body
+		// plays the body bone's animation of the same name (CDisplay::UpdateAttachmentAnimations);
+		// that bone's index here, else -1 (its own frames).
+		int animation_bone = -1;
 	};
 	std::string name;
 	std::vector<Bone> bones;

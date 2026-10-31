@@ -147,6 +147,49 @@ namespace render
 			return true;
 		}
 
+		// CDisplay_GetRaceOffsetForAttachmentITs: where a race's Luclin items start (IT1000 + this is
+		// its hair, IT5000 + this its helms); women's 30 on.
+		unsigned AttachmentOffset(uint16_t race, uint8_t gender)
+		{
+			unsigned offset = gender == 1 ? 30 : 0;
+			switch (race) {
+			case 1: return offset + 360;
+			case 2: return offset + 540;
+			case 3: return offset + 480;
+			case 4: return offset + 240;
+			case 5: return offset + 300;
+			case 6: return offset + 180;
+			case 7: return offset + 60;
+			case 8: return offset + 120;
+			case 9: return offset + 660;
+			case 10: return offset + 720;
+			case 11: return offset + 780;
+			case 128: return offset + 420;
+			case 130: return offset + 600;
+			default: return offset; // the gnome's are first
+			}
+		}
+
+		// The hair colors (the table at 00602850, B G R bytes) as 0xRRGGBB, if `color` is one the race
+		// can have (EQPlayer::GetAllowedHairColorIndexRange); else 0, and the item keeps its own.
+		uint32_t HairTint(uint16_t race, uint8_t color)
+		{
+			static const uint32_t colors[24] = {0x2e1a0c, 0x432916, 0x4e3123, 0x7f513b, 0x650b06, 0xb93714, 0xd75532,
+				0x8b721e, 0xccb361, 0xe1dd6c, 0xfbff81, 0xfdfac9, 0xffffff, 0xdedede, 0x808080, 0x6f8690, 0x3e585a,
+				0x293e40, 0x121214, 0xc9e5fd, 0xc9fdfd, 0xe9c9fd, 0xcefdc9, 0x559b48};
+			int low = 0, high = 18;
+			switch (race) {
+			case 5: low = 4; high = 17; break;
+			case 6: low = 11; high = 19; break;
+			case 9:
+			case 10: high = 23; break;
+			case 12: high = 22; break;
+			case 128:
+			case 130: high = 0; break;
+			}
+			return color < 24 && color >= low && color <= high ? colors[color] : 0;
+		}
+
 		uint32_t PackLight(float r, float g, float b)
 		{
 			auto channel = [](float c) { return static_cast<uint32_t>(std::clamp(c, 0.0f, 1.0f) * 255.0f + 0.5f); };
@@ -177,6 +220,42 @@ namespace render
 		return IsPlayerRace(race) ? ActorTag(race, gender) : std::string();
 	}
 
+	int LuclinModels::Index(uint16_t race)
+	{
+		if (race >= 1 && race <= 12)
+			return race - 1;
+		return race == 128 ? 12 : race == 130 ? 13 : -1;
+	}
+
+	const char *LuclinModels::IniRaceName(uint16_t race)
+	{
+		static const char *const names[] = {"Human", "Barbarian", "Erudite", "WoodElf", "HighElf", "DarkElf", "HalfElf",
+			"Dwarf", "Troll", "Ogre", "Halfling", "Gnome", "Iksar", "VahShir"};
+		int index = Index(race);
+		return index >= 0 ? names[index] : "";
+	}
+
+	bool LuclinModels::Wanted(uint16_t race, uint8_t gender) const
+	{
+		int index = Index(race);
+		return index >= 0 && gender <= 1 && use[index][gender];
+	}
+
+	bool LuclinModels::ShouldLoad(uint16_t race, uint8_t gender) const
+	{
+		if (race == 130)
+			return Wanted(130, gender);
+		if (all_off)
+			return false;
+		if (Wanted(race, gender))
+			return true;
+		if (race == 1)
+			return Wanted(3, gender);
+		if (race == 4)
+			return Wanted(6, gender) || Wanted(7, gender) || Wanted(5, gender);
+		return false;
+	}
+
 	bool CharacterModels::AddSource(std::vector<std::unique_ptr<Source>> &to, const std::string &eq_dir, const std::string &name)
 	{
 		auto source = std::make_unique<Source>();
@@ -186,37 +265,87 @@ namespace render
 		if (!source->archive.Read(name + ".wld", data) || !source->wld.Load(std::move(data)))
 			return false;
 		source->textures.AddArchive(&source->archive);
+		source->name = name;
 		to.push_back(std::move(source));
 		return true;
 	}
 
-	bool CharacterModels::Open(const std::string &eq_dir, std::string &error, bool creatures, bool velious_textures)
+	bool CharacterModels::Skipped(const Source &source, const std::string &code) const
+	{
+		return m_old_skeletons && code == "SKE" && (source.name == "global6_chr" || source.name == "global6_chr2");
+	}
+
+	bool CharacterModels::Open(const std::string &eq_dir, std::string &error, bool creatures, bool velious_textures,
+		const LuclinModels &luclin)
 	{
 		m_sources.clear();
 		m_items.clear();
 		m_armor.clear();
+		m_animation_sets.clear();
 		m_velious_textures = velious_textures;
+		m_old_skeletons = luclin.old_skeletons;
+		// CDisplay::InitWorld's order; the first model, track or material of a name loaded is the one
+		// used. The weapons and shields first.
+		for (const char *name : {"gequip", "gequip8", "gequip2", "gequip5", "gequip4", "gequip3"})
+			AddSource(m_items, eq_dir, name);
+		// The Luclin player models, each race and sex that ShouldLoad: global<tag>_chr2 (more of its
+		// animations) and global<tag>_chr. VEquip goes with the Vah Shir's (their helms), the
+		// LGEquip files (everyone else's hair, helms, robes and armor pieces) with the others'.
+		bool luclin_armor = false, vah_shir_items = false;
+		for (uint16_t race : LuclinRaces) {
+			for (uint8_t gender = 0; gender < 2; ++gender) {
+				if (!luclin.ShouldLoad(race, gender))
+					continue;
+				std::string tag = ActorTag(race, gender);
+				for (char &c : tag)
+					c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+				AddSource(m_sources, eq_dir, "global" + tag + "_chr2");
+				if (!AddSource(m_sources, eq_dir, "global" + tag + "_chr"))
+					continue;
+				if (race == 130)
+					vah_shir_items = vah_shir_items || gender == 0 || !luclin.Wanted(130, 0);
+				else
+					luclin_armor = true;
+			}
+		}
+		if (vah_shir_items)
+			AddSource(m_items, eq_dir, "vequip");
+		// The Luclin elementals (races 209..212), with UseLuclinElementals.
+		if (creatures && luclin.elementals) {
+			AddSource(m_sources, eq_dir, "global5_chr2");
+			AddSource(m_sources, eq_dir, "global5_chr");
+		}
+		if (luclin_armor)
+			for (const char *name : {"lgequip_amr2", "lgequip_amr", "lgequip2", "lgequip"})
+				AddSource(m_items, eq_dir, name);
+		// The low-poly Vah Shir (and GEquip6, their helms) unless both of theirs are Luclin's.
+		if (!luclin.Wanted(130, 0) || !luclin.Wanted(130, 1)) {
+			AddSource(m_items, eq_dir, "gequip6");
+			AddSource(m_sources, eq_dir, "global7_chr");
+		}
+		// Without the creatures, still the player races' own: global4_chr the Iksar, global_chr the
+		// rest, global3_chr the old models' socials (S05..S28) and later idles.
+		if (creatures) {
+			AddSource(m_sources, eq_dir, "global6_chr2");
+			AddSource(m_sources, eq_dir, "global6_chr");
+		}
+		AddSource(m_sources, eq_dir, "global4_chr");
 		if (!AddSource(m_sources, eq_dir, "global_chr")) {
 			error = "Couldn't read global_chr.s3d in " + eq_dir;
 			return false;
 		}
-		// Without the creatures, still the player races' own: global3_chr's the old models' socials
-		// (S05..S28) and later idles, global4_chr the Iksar, global7_chr the Vah Shir.
-		for (const char *name : {"global2_chr", "global3_chr", "global4_chr", "global5_chr", "global6_chr", "global7_chr"}) {
-			if (creatures || std::string(name) == "global3_chr" || std::string(name) == "global4_chr" ||
-				std::string(name) == "global7_chr")
-				AddSource(m_sources, eq_dir, name);
-		}
-		// CDisplay::InitWorld's order (GEquip6 goes with the low-poly Vah Shir we use).
-		for (const char *name : {"gequip", "gequip8", "gequip2", "gequip5", "gequip4", "gequip3", "gequip6"})
-			AddSource(m_items, eq_dir, name);
-		// CDisplay::InitWorld: Global<n>_amr.s3d for each LoadArmor<n> that's on. Without them the
-		// materials fall back (BodyMaterial).
-		if (velious_textures) {
+		if (creatures)
+			AddSource(m_sources, eq_dir, "global2_chr");
+		AddSource(m_sources, eq_dir, "global3_chr");
+		// Global<n>_amr.s3d for each LoadArmor<n> that's on, only without Luclin models (bar the Vah
+		// Shir) or with LoadVeliousArmorsWithLuclin. Without them the materials fall back (BodyMaterial).
+		if (velious_textures && (!luclin_armor || luclin.velious_armor)) {
 			for (int n = 17; n <= 23; ++n)
 				if (!AddSource(m_armor, eq_dir, "global" + std::to_string(n) + "_amr"))
 					m_velious_textures = false;
 		}
+		else
+			m_velious_textures = false;
 		return true;
 	}
 
@@ -249,6 +378,8 @@ namespace render
 		// CDisplay::CreatePlayerActor: the race's actor, or race 75's when the zone doesn't have it.
 		auto find = [this](const std::string &tag, Source *&source, int &actor) {
 			for (auto &candidate : m_sources) {
+				if (Skipped(*candidate, tag))
+					continue;
 				actor = candidate->wld.Find(tag + "_ACTORDEF");
 				if (actor >= 0 && candidate->wld.ActorSkeleton(actor) >= 0) {
 					source = candidate.get();
@@ -277,21 +408,40 @@ namespace render
 		auto model = std::make_unique<CharacterModel>();
 		model->m_code = code;
 		bool player_race = IsPlayerRace(appearance.race) && code.size() == 3;
+		auto bone_named = [&](const std::string &name) {
+			for (size_t i = 0; i < skeleton.bones.size(); ++i)
+				if (Upper(skeleton.bones[i].name) == name)
+					return static_cast<int>(i);
+			return -1;
+		};
+		// initializeHierarchicalSprite: a model with a <tag>TUNIC_POINT_DAG is a Luclin one.
+		bool luclin = bone_named(code + "TUNIC_POINT_DAG") >= 0;
 		// Every animation the model has, each bone from its own tracks or its source model's,
 		// shared by everyone with this model.
 		auto &animations = m_animation_sets[code];
 		if (!animations) {
 			std::vector<const WldFile *> wlds = {&source->wld};
 			for (auto &other : m_sources)
-				if (other.get() != source)
+				if (other.get() != source && !Skipped(*other, code))
 					wlds.push_back(&other->wld);
 			auto set = std::make_shared<std::map<std::string, SkeletonAnimation>>();
-			std::string from = AnimationSource(code);
+			std::string from = AnimationSource(code, luclin);
 			for (int id = 1; id < Anim::Count; ++id) {
 				const char *name = AnimationCode(id);
-				SkeletonAnimation animation = LoadAnimation(wlds, skeleton, name, code, from);
+				SkeletonAnimation animation;
+				// A Luclin model's tracks come in variants A..H ("C01A" + "HUMPEPELVIS_TRACK"); it plays
+				// A, else B (toggleAnimationState), else a plain one.
+				for (const char *variant : {"A", "B", ""}) {
+					if (!luclin && *variant)
+						continue;
+					animation = LoadAnimation(wlds, skeleton, std::string(name) + variant, code, from);
+					if (animation.length > 0)
+						break;
+				}
+				// PlayAnimationTrack2: a Luclin model plays S20 for S08 and S08 for S20 (50 and 62).
+				const char *key = luclin && id == 50 ? AnimationCode(62) : luclin && id == 62 ? AnimationCode(50) : name;
 				if (animation.length > 0)
-					(*set)[name] = std::move(animation);
+					(*set)[key] = std::move(animation);
 			}
 			animations = std::move(set);
 		}
@@ -302,7 +452,8 @@ namespace render
 		model->m_head_bone = -1;
 		for (size_t i = 0; i < skeleton.bones.size(); ++i) {
 			const std::string &name = skeleton.bones[i].name;
-			if (name.size() > 6 && name.compare(name.size() - 6, 6, "HE_DAG") == 0) {
+			// The head: <tag>HE_DAG, a Luclin model's <tag>HEHEAD_DAG (CDisplay_UpdateDAGPointers).
+			if (name.size() > 6 && (name.compare(name.size() - 6, 6, "HE_DAG") == 0 || Upper(name) == code + "HEHEAD_DAG")) {
 				model->m_head_z = bones[i].translation.z;
 				model->m_head_bone = static_cast<int>(i);
 			}
@@ -314,12 +465,20 @@ namespace render
 		// on the head itself (<tag>HE_DAG: CDisplay_GetDagPointerByITS's slot 0 is ActorInfo's
 		// DagHead, not DagHeadPoint), where they're made to fit; a Vah Shir's helms all are, 1..3
 		// (and 240 as 3) IT661..663 on a woman, IT666..668 on a man.
+		// A Luclin model's head is SetDefaultITAttachments' (below).
 		bool npc_texture = appearance.texture != 0xff;
 		unsigned helm = appearance.equip[0];
 		bool hair = true;
 		unsigned helm_item = 0;
-		if (appearance.race == 130) {
+		unsigned face_base = appearance.face % 10, face_variant = appearance.face / 10; // EQPlayer::GetBaseFaceNbr
+		if (luclin) {
+			// SwapHead on a Luclin model only hangs the helm (SetDefaultITAttachments).
+		}
+		else if (appearance.race == 130) {
+			// CDisplay_SwapFace: face 7 puts on the mane, helm 1, when there's no helm.
 			unsigned m = helm == 240 ? 3 : helm;
+			if (m == 0 && face_base == 7)
+				m = 1;
 			if (m >= 1 && m <= 3)
 				helm_item = m + (appearance.gender == 1 ? 660 : 665);
 		}
@@ -337,7 +496,7 @@ namespace render
 			int index = head > 0 ? source->wld.Find(name) : -1;
 			return index >= 0 && source->wld.Fragments()[index].type == 0x36 ? index : -1;
 		};
-		if (appearance.race != 130) {
+		if (appearance.race != 130 && !luclin) {
 			if (npc_texture && appearance.helm < 0xf0)
 				head_mesh = head_named(appearance.helm);
 			if (head_mesh < 0)
@@ -348,7 +507,15 @@ namespace render
 		// (<tag>01_DMSPRITEDEF, CDisplay_SwapBody) with the bare chest (material 00) under it, and its
 		// cloth (CLK04nn..CLK10nn, ReplaceCloakMaterials: the robe - 6) in the chest's tint. Not on a Vah Shir.
 		unsigned chest = appearance.equip[1];
-		bool robe = !npc_texture && appearance.race != 130 && chest >= 10 && chest <= 16;
+		bool robe = !npc_texture && !luclin && appearance.race != 130 && chest >= 10 && chest <= 16;
+		// CDisplay::HandleMaterialEx: on a Luclin model a robe is its own chest material (and a tunic,
+		// below), and the arms and wrists wear it too, in its color.
+		bool luclin_robe = !npc_texture && luclin && chest >= 10 && chest <= 16;
+		if (luclin_robe)
+			for (int slot : {2, 3}) {
+				appearance.equip[slot] = chest;
+				appearance.tint[slot] = appearance.tint[1];
+			}
 		std::string bare_body = code + "_DMSPRITEDEF";
 		int robe_body = -1;
 		if (robe) {
@@ -362,6 +529,17 @@ namespace render
 		// (CDisplay_SwapFace); a creature's body texture goes on every part instead (SwapNPCMaterials),
 		// untinted. Skeletons (race 60) only have the one.
 		unsigned body_texture = appearance.texture < 31 && !(appearance.race == 60) ? appearance.texture : 0;
+		// CDisplay_SwapFace: a Luclin model's eyes are both the first color (1 for none), but the faces
+		// with an eye patch or scar (a human man's 3, a barbarian man's 6, 0xD1; a dwarf man's 5, a
+		// barbarian man's 4, 0xCF) on the right.
+		unsigned eye_left = appearance.eye_color1 == 0 || appearance.eye_color1 == 0xff ? 1u : appearance.eye_color1;
+		unsigned eye_right = eye_left;
+		if (appearance.gender == 0) {
+			if ((appearance.race == 1 && face_base == 3) || (appearance.race == 2 && face_base == 6))
+				eye_right = 0xd1;
+			else if ((appearance.race == 8 && face_base == 5) || (appearance.race == 2 && face_base == 4))
+				eye_right = 0xcf;
+		}
 		// The material's textures are in `textures_from`'s archive: the model's own, or the Velious
 		// armor's.
 		auto material_for = [&](const WldMaterial &material, int &slot, Source *&textures_from) {
@@ -375,6 +553,38 @@ namespace render
 				WldMaterial found;
 				return source->wld.FindMaterial(name, found) ? found : material;
 			}
+			auto find_any = [&](const std::string &name, WldMaterial &found) {
+				if (source->wld.FindMaterial(name, found))
+					return true;
+				for (auto *list : {&m_sources, &m_items})
+					for (auto &other : *list)
+						if (other->wld.FindMaterial(name, found)) {
+							textures_from = other.get();
+							return true;
+						}
+				return false;
+			};
+			// CDisplay_SetEyeMaterial: a Luclin model's eyes (<tag>L_EYE_MDF, <tag>R_EYE_MDF; a
+			// halfling man's R_01) become CHR_EYE<n>_MDF, the color plus the race's first.
+			if (luclin && upper.size() > 8 && upper.compare(0, 3, code) == 0 &&
+				(upper.compare(3, 5, "L_EYE") == 0 || upper.compare(3, 5, "R_EYE") == 0 ||
+					(appearance.race == 11 && appearance.gender == 0 && upper.compare(3, 4, "R_01") == 0))) {
+				unsigned eye = upper[3] == 'L' ? eye_left : eye_right;
+				if (appearance.race == 6)
+					eye += 20;
+				else if (appearance.race == 9)
+					eye += 100;
+				else if (appearance.race == 10)
+					eye += 80;
+				else if (appearance.race == 128)
+					eye += 40;
+				else if (appearance.race == 130)
+					eye += 60;
+				char name[32];
+				snprintf(name, sizeof(name), "CHR_EYE%03u_MDF", eye);
+				WldMaterial found;
+				return find_any(name, found) ? found : material;
+			}
 			if (upper.size() <= 8 || upper.compare(0, 3, code) != 0 || !Digits(upper, 5, 4))
 				return material;
 			std::string swapped = upper;
@@ -386,17 +596,33 @@ namespace render
 			else {
 				if (upper.size() != 13 || upper.compare(9, 4, "_MDF") != 0)
 					return material;
-				slot = SlotForPart(upper.substr(3, 2));
+				std::string part = upper.substr(3, 2);
+				slot = SlotForPart(part);
+				// A Vah Shir's tail goes with the legs (CDisplay_SwapMaterial).
+				if (appearance.race == 130 && part == "TA")
+					slot = 5;
 				if (slot < 0)
 					return material;
 				char name[16];
+				// The face (CDisplay_SwapFace): <tag>HE<variant><face><piece>. A Vah Shir's face is its
+				// fur too, on every part: <tag><part><material><face><piece>.
+				std::string tail = upper.substr(7, 2);
+				if (appearance.race == 130)
+					tail[0] = static_cast<char>('0' + face_base);
 				if (slot == 0)
-					snprintf(name, sizeof(name), "%sHE%02u%u%c_MDF", code.c_str(), 0u, appearance.face % 10u, upper[8]);
+					snprintf(name, sizeof(name), "%sHE%02u%u%c_MDF", code.c_str(), face_variant, face_base, upper[8]);
 				else
-					snprintf(name, sizeof(name), "%s%s%02u%s_MDF", code.c_str(), upper.substr(3, 2).c_str(),
-						slot == 1 && robe ? 0u : appearance.equip[slot] <= 99 ? appearance.equip[slot] : 0u,
-						upper.substr(7, 2).c_str());
+					snprintf(name, sizeof(name), "%s%s%02u%s_MDF", code.c_str(), part.c_str(),
+						slot == 1 && robe ? 0u : appearance.equip[slot] <= 99 ? appearance.equip[slot] : 0u, tail.c_str());
 				swapped = name;
+				WldMaterial found;
+				// What's missing falls back: a face's variant to 0, a Vah Shir's part to its bare one.
+				if (!source->wld.FindMaterial(swapped, found)) {
+					if (slot == 0 && face_variant != 0)
+						swapped.replace(5, 2, "00");
+					else if (slot > 0 && appearance.race == 130)
+						swapped.replace(5, 2, "00");
+				}
 			}
 			WldMaterial found;
 			if (swapped == upper)
@@ -475,7 +701,7 @@ namespace render
 					batch.material.opacity = info.opacity;
 					batch.material.two_sided = info.blend != Blend::Opaque;
 					if (!material.textures.empty())
-						batch.material.texture = textures_from->textures.Get(material.textures[0], info.masked);
+						batch.material.texture = textures_from->textures.GetLayered(material.textures[0], material.layer, info.masked);
 					batch.tint = body ? tint_for(material, slot) : 0xffffffu;
 					found = batch_of.emplace(t.material, model->m_batches.size()).first;
 					model->m_batches.push_back(std::move(batch));
@@ -505,12 +731,6 @@ namespace render
 		auto append_item = [&](unsigned it, int point) {
 			AppendItem(*model, "IT" + std::to_string(it), it, static_cast<uint16_t>(point));
 		};
-		auto bone_named = [&](const std::string &name) {
-			for (size_t i = 0; i < skeleton.bones.size(); ++i)
-				if (Upper(skeleton.bones[i].name) == name)
-					return static_cast<int>(i);
-			return -1;
-		};
 		if (helm_item != 0 && !npc_texture && appearance.race != 14) {
 			int bone = bone_named(code + "HE_DAG");
 			if (bone >= 0)
@@ -524,6 +744,80 @@ namespace render
 			int bone = bone_named(code + point);
 			if (bone >= 0)
 				append_item(it, bone);
+		}
+		// CDisplay_SetDefaultITAttachments: a Luclin model's helm, tunic or robe, shoulders, gauntlets,
+		// belt and boots are item models (IT<n> + the race's AttachmentOffset) on its point bones, in
+		// the slot's color; under a robe only the robe and the helm. Then SetFHEB: the hair (gone under
+		// a helm) and beard in their colors.
+		if (luclin && !npc_texture) {
+			uint16_t race = appearance.race;
+			unsigned offset = AttachmentOffset(race, appearance.gender);
+			auto slot_tint = [&](int slot) {
+				uint32_t tint = appearance.tint[slot] & 0xffffff;
+				return tint != 0 ? tint : 0xffffffu;
+			};
+			auto attach = [&](unsigned it, const char *point, uint32_t tint) {
+				int bone = bone_named(code + point);
+				return it != 0 && bone >= 0 && AppendAttachment(*model, skeleton, code, "IT" + std::to_string(it + offset), bone, tint);
+			};
+			bool iksar_or_vah_shir = race == 128 || race == 130;
+			unsigned head = appearance.equip[0];
+			unsigned helm_it = 0;
+			if (race == 3 && luclin_robe)
+				helm_it = 0; // an Erudite's robe has its hood
+			else if (race == 2)
+				helm_it = head == 241 || head > 2 ? 5029 : 5000 + head;
+			else if (head == 240 || head == 3)
+				helm_it = iksar_or_vah_shir ? 5003 : 5028;
+			else if (head == 241)
+				helm_it = 5029;
+			else
+				helm_it = 5000 + head;
+			bool helmed = attach(helm_it, "HEAD_POINT_DAG", slot_tint(0));
+			unsigned type = appearance.equip[1];
+			if (type <= 3) {
+				attach(type == 3 ? 6000 : 0, "CHEST_POINT_DAG", slot_tint(1));
+				if (!(race == 12 && appearance.gender == 1 && type == 1))
+					attach(4010 + type, "TUNIC_POINT_DAG", slot_tint(1));
+			}
+			else if (luclin_robe)
+				attach(3990 + type, "TUNIC_POINT_DAG", slot_tint(1));
+			if (!luclin_robe) {
+				// Arms, wrists and feet in pairs (right, left), the legs a belt.
+				const struct
+				{
+					int slot;
+					unsigned base;
+					const char *first, *second;
+				} pairs[] = {{2, 7000, "SHOULDR_POINT_DAG", "SHOULDL_POINT_DAG"}, {3, 8000, "GAUNTR_POINT_DAG", "GAUNTL_POINT_DAG"},
+					{6, 9000, "LEGL_POINT_DAG", "LEGR_POINT_DAG"}};
+				for (const auto &pair : pairs) {
+					unsigned t = appearance.equip[pair.slot];
+					if (t > 3)
+						continue;
+					attach(pair.base + t * 2, pair.first, slot_tint(pair.slot));
+					attach(pair.base + t * 2 + 1, pair.second, slot_tint(pair.slot));
+				}
+				attach(4020 + appearance.equip[5], "PELVIS_POINT_DAG", slot_tint(5));
+			}
+			// SetHairOrBeard: hair IT1000 + style, beard IT2000 + style. A Vah Shir has them only with
+			// face 7 (its mane, under a helm too); anyone else's hair is gone under a helm.
+			auto hair_tint = [&](uint8_t color) {
+				uint32_t tint = HairTint(race, color);
+				return tint != 0 ? tint : 0xffffffu;
+			};
+			if (race == 130) {
+				if (face_base == 7) {
+					attach(1000 + (appearance.hair_style == 0xff ? 0u : appearance.hair_style), "HAIR_POINT_DAG",
+						hair_tint(appearance.hair_color));
+					attach(2000u + appearance.beard, "BEARD_POINT_DAG", hair_tint(appearance.beard_color));
+				}
+			}
+			else {
+				if (!helmed)
+					attach(1000u + appearance.hair_style, "HAIR_POINT_DAG", hair_tint(appearance.hair_color));
+				attach(2000u + appearance.beard, "BEARD_POINT_DAG", hair_tint(appearance.beard_color));
+			}
 		}
 		if (model->m_positions.empty()) {
 			error = "model " + code + " has no meshes";
@@ -545,7 +839,8 @@ namespace render
 		return model;
 	}
 
-	void CharacterModels::AppendItemMesh(CharacterModel &model, const WldMesh &mesh, Source &from, uint16_t point)
+	void CharacterModels::AppendItemMesh(CharacterModel &model, const WldMesh &mesh, Source &from, uint16_t point,
+		uint32_t tint)
 	{
 		// All its vertices on the one bone it hangs from, its own materials untinted.
 		uint32_t base = static_cast<uint32_t>(model.m_positions.size());
@@ -573,7 +868,8 @@ namespace render
 				batch.material.opacity = info.opacity;
 				batch.material.two_sided = info.blend != Blend::Opaque;
 				if (!material.textures.empty())
-					batch.material.texture = from.textures.Get(material.textures[0], info.masked);
+					batch.material.texture = from.textures.GetLayered(material.textures[0], material.layer, info.masked);
+				batch.tint = tint;
 				found = batch_of.emplace(t.material, model.m_batches.size()).first;
 				model.m_batches.push_back(std::move(batch));
 			}
@@ -633,6 +929,79 @@ namespace render
 			WldMesh item;
 			if (index >= 0 && from->wld.Fragments()[index].type == 0x36 && from->wld.ReadMesh(index, item)) {
 				AppendItemMesh(model, item, *from, point);
+				return true;
+			}
+		}
+		return false;
+	}
+
+	bool CharacterModels::AppendAttachment(CharacterModel &model, WldSkeleton &skeleton, const std::string &code,
+		const std::string &tag, int point, uint32_t tint)
+	{
+		std::vector<Source *> order;
+		for (auto &from : m_items)
+			order.push_back(from.get());
+		for (auto &from : m_sources)
+			order.push_back(from.get());
+		size_t body_bones = skeleton.bones.size();
+		auto body_bone = [&](const std::string &name) {
+			for (size_t i = 0; i < body_bones; ++i)
+				if (Upper(skeleton.bones[i].name) == name)
+					return static_cast<int>(i);
+			return -1;
+		};
+		std::string name = tag + "_HS_DEF";
+		for (Source *from : order) {
+			int index = from->wld.Find(name);
+			WldSkeleton item;
+			if (index < 0 || from->wld.Fragments()[index].type != 0x10 || !from->wld.ReadSkeleton(index, item))
+				continue;
+			// Its bones under the point, in their own pose; each but its root plays the body's track of
+			// the same bone (IT4370PEPELVIS_DAG: HUMPEPELVIS_DAG's), as UpdateAttachmentAnimations names
+			// them from the body's animation.
+			uint16_t base = static_cast<uint16_t>(skeleton.bones.size());
+			for (size_t b = 0; b < item.bones.size(); ++b) {
+				WldSkeleton::Bone bone = item.bones[b];
+				bone.parent = bone.parent < 0 ? point : base + bone.parent;
+				bone.children.clear();
+				bone.mesh = -1;
+				bone.particle_cloud = -1;
+				std::string upper = Upper(bone.name);
+				if (b > 0 && upper.size() > tag.size() && upper.compare(0, tag.size(), tag) == 0)
+					bone.animation_bone = body_bone(code + upper.substr(tag.size()));
+				skeleton.bones.push_back(std::move(bone));
+			}
+			auto append = [&](WldMesh &mesh) {
+				size_t v = 0;
+				std::vector<uint16_t> bones;
+				for (const auto &piece : mesh.pieces)
+					for (uint16_t k = 0; k < piece.count && v < mesh.positions.size(); ++k, ++v)
+						bones.push_back(static_cast<uint16_t>(base + (piece.bone < item.bones.size() ? piece.bone : 0)));
+				bones.resize(mesh.positions.size(), base);
+				size_t first = model.m_bones.size();
+				AppendItemMesh(model, mesh, *from, base, tint);
+				std::copy(bones.begin(), bones.end(), model.m_bones.begin() + static_cast<long>(first));
+			};
+			for (int part : item.meshes) {
+				WldMesh mesh;
+				if (from->wld.ReadMesh(part, mesh))
+					append(mesh);
+			}
+			for (size_t b = 0; b < item.bones.size(); ++b) {
+				WldMesh mesh;
+				if (item.bones[b].mesh >= 0 && from->wld.ReadMesh(item.bones[b].mesh, mesh)) {
+					mesh.pieces = {{static_cast<uint16_t>(mesh.positions.size()), static_cast<uint16_t>(b)}};
+					append(mesh);
+				}
+			}
+			return true;
+		}
+		name = tag + "_DMSPRITEDEF";
+		for (Source *from : order) {
+			int index = from->wld.Find(name);
+			WldMesh mesh;
+			if (index >= 0 && from->wld.Fragments()[index].type == 0x36 && from->wld.ReadMesh(index, mesh)) {
+				AppendItemMesh(model, mesh, *from, static_cast<uint16_t>(point), tint);
 				return true;
 			}
 		}

@@ -57,7 +57,7 @@ namespace render
 		       id == Anim::Shuffle;
 	}
 
-	std::string AnimationSource(const std::string &code)
+	std::string AnimationSource(const std::string &code, bool luclin)
 	{
 		if (code.size() < 3)
 			return code;
@@ -76,14 +76,18 @@ namespace render
 		if (any({"DR2", "CCD", "BWD", "PRI"}))
 			return "TRK";
 		if (any({"DA", "HI", "HA", "HH", "QC", "NG", "FP", "EG", "BR", "HL", "ZO", "FEM", "FEF", "IV", "GHM", "GHF",
-				"GF", "GE", "HU", "ER", "BA"}))
+				"GF", "GE"}))
 			return "EL" + gendered;
+		if (any({"HU", "ER"}))
+			return (luclin ? "HU" : "EL") + gendered;
+		if (is("BA"))
+			return luclin ? code : "EL" + gendered;
 		if (any({"GNM", "GNF", "CLM", "CLF", "HO", "RIM", "RIF", "KAM", "KAF", "KA", "GD", "COM", "COF"}))
 			return "DW" + gendered;
 		if (any({"TRM", "OG", "TRF", "GRM", "GRF", "OKM", "OKF"}))
 			return "OGF";
 		if (any({"BGM", "TRI", "ENA", "SKE"}))
-			return "ELM";
+			return luclin ? "HUM" : "ELM";
 		static const struct
 		{
 			const char *source;

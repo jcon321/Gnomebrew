@@ -107,6 +107,38 @@ LastCharSel=0
 ShowNamesLevel=4
 EnableExtendedNameplateDistance=1
 VeliousTextures=1
+UseLuclinHumanMale=0
+UseLuclinHumanFemale=0
+UseLuclinBarbarianMale=0
+UseLuclinBarbarianFemale=0
+UseLuclinEruditeMale=0
+UseLuclinEruditeFemale=0
+UseLuclinWoodElfMale=0
+UseLuclinWoodElfFemale=0
+UseLuclinHighElfMale=0
+UseLuclinHighElfFemale=0
+UseLuclinDarkElfMale=0
+UseLuclinDarkElfFemale=0
+UseLuclinHalfElfMale=0
+UseLuclinHalfElfFemale=0
+UseLuclinDwarfMale=0
+UseLuclinDwarfFemale=0
+UseLuclinTrollMale=0
+UseLuclinTrollFemale=0
+UseLuclinOgreMale=0
+UseLuclinOgreFemale=0
+UseLuclinHalflingMale=0
+UseLuclinHalflingFemale=0
+UseLuclinGnomeMale=0
+UseLuclinGnomeFemale=0
+UseLuclinIksarMale=0
+UseLuclinIksarFemale=0
+UseLuclinVahShirMale=0
+UseLuclinVahShirFemale=0
+UseLuclinElementals=0
+AllLuclinPcModelsOff=0
+LoadVeliousArmorsWithLuclin=1
+LoadOldSkeletons=1
 CharSelectAnimWindow=1
 CharSelectEmotes=0
 AttackOnAssist=0
@@ -169,6 +201,13 @@ WeatherSounds=1
 - `VeliousTextures=1` dresses the Velious armor (materials 17..23) in its own textures from
   `global17_amr.s3d`..`global23_amr.s3d`, one switch for eqclient.ini's `LoadArmor17`..`LoadArmor23`;
   `0` shows it as the leather, chain or plate it stands in for, as eqgame does without them.
+- `UseLuclin<Race>Male` / `UseLuclin<Race>Female` (`1` or `TRUE`) draw that race and sex with its
+  Luclin model, `UseLuclinElementals` loads the Luclin elementals, `AllLuclinPcModelsOff` turns every
+  Luclin player model but the Vah Shir's off, and `LoadVeliousArmorsWithLuclin=1` (the default) keeps
+  the Velious armor files loaded with them: eqclient.ini's keys of the same names (see Luclin player
+  models).
+- `LoadOldSkeletons=1` (ours) draws skeletons (`SKE`, race 60 and those using it) with the old model
+  from `global_chr.s3d`; `0` with the later one `global6_chr.s3d` defines first, as eqgame does.
 - `CharSelectAnimWindow=1` shows our own Animations window at character select (not eqgame's):
   every animation the model has, by name, played by double clicking one. `CharSelectEmotes` picks
   what the character plays now and then: `0` eqgame's own picks for its class (combat moves,
@@ -359,6 +398,15 @@ additions of ours, or ones taken from TAKP's eqgame.dll or Zeal rather than stoc
   ships, instead of Windows' MIDI synth where the real client's went.
 - **One Velious armor switch** (`VeliousTextures`): stands in for all of eqclient.ini's
   `LoadArmor17`..`LoadArmor23` together.
+- **Luclin models off by default** (`UseLuclin*`): a missing key is off, so every race starts with
+  its old model. eqgame's `CDisplay::GetNewPCIniFlag` takes a missing key as TRUE (and writes it)
+  for the Vah Shir, and for everyone when the Luclin or Planes of Power flag is set, as on TAKP.
+- **Velious armor with Luclin models** (`LoadVeliousArmorsWithLuclin`): a missing key is on, so
+  turning on a Luclin model doesn't take the Velious armor textures off everyone on the old models.
+  eqgame takes it as off and skips the `Global<n>_amr` files then.
+- **Old skeletons** (`LoadOldSkeletons`, on by default): eqgame loads `global6_chr.s3d` before
+  `global_chr.s3d`, so its later skeleton model is the one drawn; we skip global6's `SKE` (its model
+  and tracks) and draw global_chr's.
 
 ## Console client
 
@@ -420,6 +468,7 @@ window (the replay answers as the zone does for an NPC), Give once and Cancel on
 
 ```
 build/scene_preview EQDIR OUT.png --char RACE GENDER CLASS [--face F] [--equip M,M,...] [--velious 0|1] [--camera H] [--frames N] [--size WxH]
+                    [--luclin all|RACE:GENDER,...] [--old-skeletons 0|1] [--hair STYLE COLOR] [--beard STYLE COLOR] [--eyes COLOR]
 build/scene_preview EQDIR OUT.png [--zone NAME] [--at X Y Z] [--heading H] [--pitch P] [--frames N] [--size WxH]
 build/scene_preview EQDIR OUT.png --player RACE GENDER --zone NAME --at X Y Z [--heading H] [--face F] [--equip M,M,...]
                     [--orbit H] [--pitch P] [--first-person] [--zoom N] [--walk MS [--turn -1|1]] [--npc ...]
@@ -446,7 +495,9 @@ server's `doors` table), `--door-open MS` opens them all and runs that long befo
 `--sound OUT.wav` mixes what the doors, we and the spawns sound like as it runs (no zone music or
 ambience), printing each wave played. `--weather rain|snow MS` starts it raining or snowing and runs
 that long first, printing the weather's fog and particles each second (`--debug-draw noweather` draws
-none of it). `--frames N` times N renders.
+none of it). `--luclin all` (or `RACE:GENDER,...`) draws those races with their Luclin models, as
+`UseLuclin*` would, `--old-skeletons 0` draws global6's skeleton, and `--hair STYLE COLOR`,
+`--beard STYLE COLOR` and `--eyes COLOR` dress the character, or the `--npc` before them. `--frames N` times N renders.
 
 ```
 build/sound_preview EQDIR OUT.wav [--zone NAME] [--at X Y Z] [--heading H] [--walk X Y Z] [--seconds S]
@@ -533,7 +584,7 @@ does the same, from these decompiled functions:
   eye height, looking level at the character, with a 90° view angle and the far plane at 5000. With
   Rotate checked (the default) the heading starts at 456 and turns 3 units every 50 ms.
 - **Model:** the classic race models (`global_chr.s3d`, plus `global4_chr` for Iksar and `global7_chr`
-  for Vah Shir) play their `P01` standing idle; races without one borrow another model's (the human
+  for Vah Shir), or the Luclin ones `UseLuclin*` picks (see Luclin player models), play their `P01` standing idle; races without one borrow another model's (the human
   female plays the wood elf female's). Face and armor materials from the character list swap the
   body textures (`HUMCH0201.BMP` is the chest in material 2, chain), and tints multiply them. A robe
   (chest 10 to 16, `CDisplay_SwapMaterial`) swaps in the robed body mesh (`HUM01_DMSPRITEDEF`) and its
@@ -587,9 +638,95 @@ Things learned about the files:
   gnome males' pelvis is 1.6 (410), without which they're two thirds the size of their females.
 - BMP textures are used bottom-up (v = 0 is the bottom row); the zones' DDS textures (DXT1/3/5) are
   stored that way already.
+- A bitmap (0x03) can carry two names. A second `<file>_LAYER` one (`t3dDefineBMInfoMIPMapped`) is
+  drawn over the first by its alpha (see Luclin player models); `WldMaterial::layer` keeps it.
+- Our mipmaps average a masked texture's color over its opaque texels only. A texture with no opaque
+  texel at all (vequip's DXT5 plate, alpha 0 throughout, on an opaque material) averages them all.
 - Zone lighting is the `lights.wld` point lights (linear falloff) over a flat ambient, plus the meshes'
   small additive vertex colors. It's an approximation of the real client's lighting.
 - TAKP's repacked `sky.s3d` names its filename table with CRC `0xFFFFFFFF` instead of `0x61580AC9`.
+
+## Luclin player models
+
+Each player race has a Luclin model besides its old one, chosen per race and sex
+(`render/character_model.cpp`, from `CDisplay::InitWorld` @004a44f4 and the `CDisplay` appearance
+functions):
+
+- **Which:** `[Defaults] UseLuclin%sMale` / `%sFemale`, the race as `CDisplay_GetIniRaceName` names
+  it (Human, Barbarian, Erudite, WoodElf, HighElf, DarkElf, HalfElf, Dwarf, Troll, Ogre, Halfling,
+  Gnome, Iksar, VahShir). `CDisplay::GetNewPCIniFlag` (@004a42a3) takes T, t or 1 as on.
+  `CDisplay::ShouldLoadNewPcModel` (@004a4361) loads the Vah Shir by its own key; anyone else only
+  without `AllLuclinPcModelsOff` (which InitWorld sets itself under 129 MB of memory) and with the
+  expansion flags (`DAT_007cf1f0`/`f4`, on with TAKP), and the Human's model loads for the Erudite's,
+  the Wood Elf's for the High, Dark and Half Elf's of that sex: their Luclin models have no tracks of
+  their own. So an Erudite's makes the Human of that sex Luclin too.
+- **Loading order** (InitWorld): GEquip, GEquip8, GEquip2, GEquip5, GEquip4, GEquip3; for races 1..12,
+  128 and 130 and each sex that loads, `global<tag>_chr2.s3d` then `global<tag>_chr.s3d`, and VEquip with
+  a Luclin Vah Shir; Global5_chr2 and Global5_chr (the Luclin elementals, races 209..212) with
+  `UseLuclinElementals`; LGEquip_amr2, LGEquip_amr, LGEquip2 and LGEquip with any other Luclin model;
+  GEquip6 and Global7_chr (the low-poly Vah Shir) unless both Vah Shir keys are on; Global6_chr2,
+  Global6_chr, Global4_chr, Global_chr; the `Global<n>_amr` Velious armor only with no other Luclin
+  model or `LoadVeliousArmorsWithLuclin`; Global2_chr, Global3_chr. The world keeps the first
+  definition of a name, so a loaded `globalhum_chr`'s `HUM_ACTORDEF` is the human, global4's
+  barbarians beat global_chr's, and global6's skeleton (`SKE`, unless our `LoadOldSkeletons`) and
+  `WOE` do too.
+- **Recognized** by a `<tag>TUNIC_POINT_DAG` bone (`initializeHierarchicalSprite` @004d8cab sets the
+  flag at `+0x3b0` of the model's animation info).
+- **Animations:** tracks come in variants A..H, `<anim><variant><tag><bone>_TRACK`
+  (`C01AHUMPEPELVIS_TRACK`). `mapCharacterPrefixToRaceCode` with the flag sends HU and ER to the
+  Human of that sex, keeps BA's own, and sends BGM, TRI, ENA and SKE to HUM; the rest borrow as the old
+  models do (DA, HI, HA... the Wood Elf's). `PlayAnimationTrack` plays the variant in the player's
+  byte at `+0x150`, `toggleAnimationState` falling back between A and B; we play A, else B.
+  `PlayAnimationTrack2` swaps 50 (`S08`) and 62 (`S20`) on these models.
+- **Two textures:** a Luclin material's bitmap is its skin and a `<file>_LAYER` (`HUMCHSK01.DDS`,
+  `HUMCH0101.DDS_LAYER`: the armor). `setRenderEffectState` mode 2 binds the layer in stage 1 and
+  `t3dRenderSpecialEffects` draws the skin, then the layer modulated by the same vertex color and
+  blended by its alpha (SRCALPHA, INVSRCALPHA). The light being the same, we blend the two once
+  (`TextureCache::GetLayered`). The low-poly Vah Shir's materials are made that way too (its shirt,
+  sash and trousers).
+- **Materials:** the face byte is variant x 10 + face (`EQPlayer::GetBaseFaceNbr`), its materials
+  `<tag>HE<variant><face><piece>_MDF` (`CDisplay_SwapFace`). Body parts are `<tag><part><material>`
+  + pieces as before (the chest three, the hands and feet up to five). A Vah Shir's fur is its face, on
+  every part, `<tag><part><material><face><piece>_MDF` (`CDisplay_SwapMaterial`'s `%02d%01d1_MDF`), and
+  its tail (`TA`) goes with the legs, else `TA00`; both its models. A robe (10..16) on a Luclin model
+  is its chest material, and `CDisplay::HandleMaterialEx` puts it on the arms and wrists too, in the
+  chest's color; there's no robed body or `CLK` cloth.
+- **Eyes** (`CDisplay_SetEyeMaterial`, `FindDefaultEyeMaterialIndexes`): `<tag>L_EYE_MDF` and
+  `R_EYE` (a halfling man's `R_01`) become `CHR_EYE%03d_MDF` (lgequip), the color + 20 for a Dark Elf,
+  100 Troll, 80 Ogre, 40 Iksar, 60 Vah Shir. `SwapFace` makes the right eye the left's (1 for 0 or
+  0xFF), but 0xD1 for a human man's face 3 or a barbarian man's 6 and 0xCF for a dwarf man's 5 or a
+  barbarian man's 4.
+- **Armor pieces** (`CDisplay_SetDefaultITAttachments` @004a02e8): item models `IT<n + offset>` on the
+  point bones `CDisplay_GetDagPointerByITS` names, tinted in the slot's color (`SetDagSpriteTint`, 0 is
+  white). The offset (`CDisplay_GetRaceOffsetForAttachmentITs`): Human 360, Barbarian 540, Erudite 480,
+  Wood Elf 240, High Elf 300, Dark Elf 180, Half Elf 60, Dwarf 120, Troll 660, Ogre 720, Halfling 780,
+  Gnome 0, Iksar 420, Vah Shir 600, and 30 more for a woman. By material m:
+  - head (`HEAD_POINT`): 5000 + m; 3 and 240 are 5028 (an Iksar's or Vah Shir's 5003), 241 is 5029, and a
+    barbarian's anything over 2 is 5029. None on an Erudite in a robe (its hood).
+  - chest: m 0..3 a tunic, 4010 + m on `TUNIC_POINT` (not a gnome woman's leather), and plate 6000 on
+    `CHEST_POINT` too; a robe 4000..4006 on `TUNIC_POINT`.
+  - arms (`SHOULDR`, `SHOULDL`) 7000 + 2m and the next; wrists (`GAUNTR`, `GAUNTL`) 8000 + 2m; feet
+    (`LEGL`, `LEGR`) 9000 + 2m; legs a belt, 4020 + m on `PELVIS_POINT`. Under a robe, none of these.
+  - Many numbers have no model (a human woman's chain tunic); `ChangeDag` then hangs nothing.
+- **Hair and beard** (`CDisplay::SetFHEB`, `SetHairOrBeard`, `UpdateAppearance`): IT1000 + style on
+  `HAIR_POINT`, IT2000 + style on `BEARD_POINT`, in the hair colors at 00602850 (24, B G R) when the color
+  is one the race may have (`EQPlayer::GetAllowedHairColorIndexRange`: High Elf 4..17, Dark Elf 11..19,
+  Troll and Ogre 0..23, Gnome 0..22, Iksar and Vah Shir 0, the rest 0..18). The hair goes when a helm
+  hangs on `HEAD_POINT` (`SetDefaultITAttachments_DagColor`). A Vah Shir has them only with face 7 (its
+  mane, helm or not); the low-poly Vah Shir with face 7 and no helm wears helm 1 (IT661, IT666) instead
+  (`SwapFace` -> `SwapHead`).
+- **How the pieces move:** each is a hierarchical sprite whose skeleton mirrors the body's (a tunic's
+  `NULL` -> `PEPELVIS` -> `CHCHEST`, thighs and `ROBEPOINT` bones; hair's `HEHAIR1`, `HEHAIR2`).
+  `CDisplay::UpdateAttachmentAnimations` plays on each of its bones but the root the body's current
+  track for the bone of the same name (the body track's first seven characters, `C01AHUM`, + the bone's
+  name after the item's tag). We add those bones to the model's skeleton under the point, each playing
+  the body bone's frames (`WldSkeleton::Bone::animation_bone`).
+- **Bones** (`CDisplay_UpdateDAGPointers`): the head is `<tag>HEHEAD_DAG` and `DagHead` its
+  `HEAD_POINT_DAG`; then the `TUNIC`, `HAIR`, `BEARD`, `CHEST`, `GAUNTL`/`R`, `SHOULDL`/`R`, `LEGL`/`R`
+  and `PELVIS` points and `CHCHEST1`, `CHCHEST2`.
+- **Packets:** `Spawn_Struct` bytes 21..26 are haircolor, beardcolor, eyecolor1, eyecolor2, hairstyle
+  and beard, `ServerZoneEntry_Struct` 341..346, and `CharacterSelect_Struct` has them [10] each at
+  1560..1610.
 
 ## Character creation
 
@@ -644,7 +781,8 @@ Not yet: the real client's messages use `CConfirmationDialog`; these use the fro
 - **Sky:** only when the zone's `sky` isn't 0 and the yon is at least 101, as `RealRender_World` checks
   (`sky.s3d` `LAYER<sky>1` / `LAYER<sky>3`). It dims with the time of day (below).
 - **Our character:** dressed from `OP_ZoneEntry` (`ServerZoneEntry_Struct`, 356 bytes, not encrypted):
-  race, gender, face, the nine equipment materials and tints, and the size the model is scaled to. The
+  race, gender, face, the nine equipment materials and tints, the hair, beard and eye colors (for a
+  Luclin model), and the size the model is scaled to. The
   server's z is the model's center, `size / 5 * 3.125` over the feet (`Mob::CalcZOffset`). The feet go there
   and then settle onto the floor right below. Headings in the profile and `OP_ZoneEntry` are 0..512;
   spawn packets send them as a byte (0..256).

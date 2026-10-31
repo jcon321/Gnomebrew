@@ -58,6 +58,8 @@ public:
 	void SetPlayer(const render::CharacterAppearance &appearance, float walk_speed, float run_speed);
 	// The Velious armor textures (VeliousTextures); before StartLoading.
 	void SetVeliousTextures(bool on) { m_velious_textures = on; }
+	// The Luclin player models to use (my-client.ini's UseLuclin*); before StartLoading.
+	void SetLuclinModels(const render::LuclinModels &models) { m_luclin = models; }
 	void SetPlayerPosition(float x, float y, float z, float heading);
 	void SetSwimSkill(int skill) { m_movement.SetSwimSkill(skill); } // the profile's swimming skill
 	void SetSafeFallSkill(int skill) { m_safe_fall = skill; }        // for the landing sounds
@@ -331,6 +333,7 @@ private:
 	render::Sky m_sky;
 	render::CharacterModels m_models;
 	bool m_velious_textures = true;
+	render::LuclinModels m_luclin;
 	std::unique_ptr<render::Renderer> m_renderer;
 
 	std::optional<render::CharacterAppearance> m_appearance;

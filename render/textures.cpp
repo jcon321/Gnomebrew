@@ -35,6 +35,14 @@ namespace render
 				for (int x = 0; x < texture->width; ++x)
 					level[static_cast<size_t>(y) * texture->width + x] = image.At(x * image.width / texture->width, sy);
 			}
+			// A texture with no opaque texel at all (vequip's DXT5 plate, alpha 0 throughout) is only
+			// drawn by materials that ignore its alpha: its mips average every texel.
+			bool any_opaque = false;
+			for (uint32_t p : level)
+				if ((p >> 24) >= 0x80) {
+					any_opaque = true;
+					break;
+				}
 			texture->levels.push_back(std::move(level));
 
 			int w = texture->width, h = texture->height;
@@ -68,6 +76,16 @@ namespace render
 							}
 						}
 						uint32_t a = sum[3] / samples;
+						if (!soft && !any_opaque) {
+							for (int dy = 0; dy < (h > 1 ? 2 : 1); ++dy)
+								for (int dx = 0; dx < (w > 1 ? 2 : 1); ++dx) {
+									uint32_t p = src[static_cast<size_t>(y * (h > 1 ? 2 : 1) + dy) * w + x * (w > 1 ? 2 : 1) + dx];
+									sum[0] += (p >> 16) & 0xff;
+									sum[1] += (p >> 8) & 0xff;
+									sum[2] += p & 0xff;
+								}
+							opaque = samples;
+						}
 						uint32_t r = opaque ? sum[0] / opaque : 0, g = opaque ? sum[1] / opaque : 0, b = opaque ? sum[2] / opaque : 0;
 						next[static_cast<size_t>(y) * nw + x] = (a << 24) | (r << 16) | (g << 8) | b;
 					}
@@ -85,6 +103,28 @@ namespace render
 		return Build(image, soft);
 	}
 
+	bool TextureCache::Load(const std::string &name, bool masked, Image &image) const
+	{
+		std::vector<uint8_t> file;
+		for (const PfsArchive *archive : m_archives) {
+			if (!archive->Read(name, file))
+				continue;
+			bool dds = file.size() >= 4 && file[0] == 'D' && file[1] == 'D' && file[2] == 'S';
+			bool ok = dds ? DecodeDds(file, image) : DecodeBmp(file, image, masked);
+			if (!ok || image.width <= 0 || image.height <= 0)
+				return false;
+			// The engine uses BMP rows in file order (bottom-up), so v = 0 is the bottom of
+			// the picture; DDS rows are already stored that way round.
+			if (!dds)
+				for (int y = 0; y < image.height / 2; ++y)
+					std::swap_ranges(image.pixels.begin() + static_cast<size_t>(y) * image.width,
+						image.pixels.begin() + static_cast<size_t>(y + 1) * image.width,
+						image.pixels.begin() + static_cast<size_t>(image.height - 1 - y) * image.width);
+			return true;
+		}
+		return false;
+	}
+
 	const Texture *TextureCache::Get(const std::string &name, bool masked)
 	{
 		std::string key = ToLower(name) + (masked ? "|m" : "");
@@ -93,27 +133,56 @@ namespace render
 			return it->second.get();
 
 		std::unique_ptr<Texture> texture;
-		std::vector<uint8_t> file;
-		for (const PfsArchive *archive : m_archives) {
-			if (!archive->Read(name, file))
-				continue;
-			Image image;
-			bool dds = file.size() >= 4 && file[0] == 'D' && file[1] == 'D' && file[2] == 'S';
-			bool ok = dds ? DecodeDds(file, image) : DecodeBmp(file, image, masked);
-			if (ok && image.width > 0 && image.height > 0) {
-				// The engine uses BMP rows in file order (bottom-up), so v = 0 is the bottom of
-				// the picture; DDS rows are already stored that way round.
-				if (!dds)
-					for (int y = 0; y < image.height / 2; ++y)
-						std::swap_ranges(image.pixels.begin() + static_cast<size_t>(y) * image.width,
-							image.pixels.begin() + static_cast<size_t>(y + 1) * image.width,
-							image.pixels.begin() + static_cast<size_t>(image.height - 1 - y) * image.width);
-				texture = Build(image);
-			}
-			break;
-		}
-		if (!texture)
+		Image image;
+		if (Load(name, masked, image))
+			texture = Build(image);
+		else
 			m_missing.push_back(name);
+		const Texture *result = texture.get();
+		m_cache.emplace(key, std::move(texture));
+		return result;
+	}
+
+	const Texture *TextureCache::GetLayered(const std::string &name, const std::string &layer, bool masked)
+	{
+		if (layer.empty())
+			return Get(name, masked);
+		std::string key = ToLower(name) + "+" + ToLower(layer) + (masked ? "|m" : "");
+		auto it = m_cache.find(key);
+		if (it != m_cache.end())
+			return it->second.get();
+
+		std::unique_ptr<Texture> texture;
+		Image base, over;
+		if (!Load(name, masked, base)) {
+			m_missing.push_back(name);
+		}
+		else if (!Load(layer, false, over)) {
+			m_missing.push_back(layer);
+			texture = Build(base);
+		}
+		else {
+			// Both at the larger size (they share the UVs): the layer's color over the skin's by
+			// the layer's alpha, keeping the skin's alpha.
+			Image out;
+			out.width = std::max(base.width, over.width);
+			out.height = std::max(base.height, over.height);
+			out.has_alpha = base.has_alpha;
+			out.pixels.resize(static_cast<size_t>(out.width) * out.height);
+			for (int y = 0; y < out.height; ++y) {
+				for (int x = 0; x < out.width; ++x) {
+					uint32_t b = base.At(x * base.width / out.width, y * base.height / out.height);
+					uint32_t l = over.At(x * over.width / out.width, y * over.height / out.height);
+					uint32_t a = l >> 24;
+					auto mix = [&](int shift) {
+						uint32_t cb = (b >> shift) & 0xff, cl = (l >> shift) & 0xff;
+						return ((cl * a + cb * (255 - a) + 127) / 255) << shift;
+					};
+					out.pixels[static_cast<size_t>(y) * out.width + x] = (b & 0xff000000) | mix(16) | mix(8) | mix(0);
+				}
+			}
+			texture = Build(out);
+		}
 		const Texture *result = texture.get();
 		m_cache.emplace(key, std::move(texture));
 		return result;
