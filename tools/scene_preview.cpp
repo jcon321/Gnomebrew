@@ -41,6 +41,7 @@
 #include "png_writer.h"
 #include "rasterizer.h"
 #include "sky.h"
+#include "spell_file.h"
 #include "zone_scene.h"
 
 #include <algorithm>
@@ -97,6 +98,16 @@ namespace
 		int stage = -1, effect = 0, old_effect = -1, caster = 0, target = 0, ms = 0, cast_ms = 0, anim = 0;
 	};
 	EffectOption g_effect;
+
+	// --missile SOURCE TARGET KIND OBJECT MODEL MS: OP_Projectile from one --npc spawn at another, as
+	// the server's Mob::ProjectileAnimation fills it for a bolt (speed 1, tilt 128, level, light 8,
+	// not aimed; KIND 28 is its own, 9 a spell's with OBJECT the spell), run MS in 16 ms frames.
+	struct MissileOption
+	{
+		int source = 0, target = 0, kind = 28, object = 0, ms = 0;
+		std::string model = "IT68";
+	};
+	MissileOption g_missile;
 
 	void WriteWav(const std::string &path, const std::vector<float> &stereo)
 	{
@@ -318,6 +329,47 @@ namespace
 			}
 			printf("%.1f ms per frame with the effect\n", effect_total / std::max(1, effect_frames));
 		}
+		SpellFile spell_file; // the view's for as long as it's there
+		if (g_missile.ms > 0 && spawns.count(static_cast<uint16_t>(g_missile.source)) &&
+			spawns.count(static_cast<uint16_t>(g_missile.target))) {
+			const ZoneSpawn &from = spawns.at(static_cast<uint16_t>(g_missile.source));
+			const ZoneSpawn &to = spawns.at(static_cast<uint16_t>(g_missile.target));
+			if (spell_file.Load(eq_dir + "/spells_en.txt"))
+				view.SetSpellFile(&spell_file);
+			view.UpdateSpawns(spawns, 0, spawn_clock);
+			view.Render(canvas, spawn_clock);
+			ZoneMissile missile;
+			missile.x = from.x;
+			missile.y = from.y;
+			missile.z = from.z + from.size * 0.4f;
+			missile.heading = std::fmod(std::atan2(to.x - from.x, to.y - from.y) * 256 / render::Pi + 512, 512.0f);
+			missile.pitch = 128;
+			missile.speed = 1;
+			missile.source = from.id;
+			missile.target = to.id;
+			missile.object = static_cast<uint32_t>(g_missile.object);
+			missile.light = 8;
+			missile.kind = static_cast<uint8_t>(g_missile.kind);
+			missile.model = g_missile.model;
+			printf("missile from %u at %.1f, %.1f, %.1f heading %.1f, caster animation %d\n", from.id, from.x, from.y, missile.z,
+				missile.heading, Missiles::CasterAnimation(missile));
+			view.LaunchMissile(missile);
+			for (int ms = 0; ms <= g_missile.ms; ms += 16) {
+				spawn_clock += 16;
+				view.UpdateSpawns(spawns, 0, spawn_clock);
+				view.Render(canvas, spawn_clock);
+				if (view.Flying().All().empty()) {
+					printf("  %5d ms: gone\n", ms);
+					break;
+				}
+				const Missiles::Missile &m = view.Flying().All().front();
+				render::Vec3 at = view.Flying().DrawnAt(m, spawn_clock);
+				if (ms % 96 < 16)
+					printf("  %5d ms: %s at loc %.1f, %.1f, %.1f (drawn %.1f, %.1f, %.1f) heading %.0f climb %.0f, %.1f to go%s, %zu emitters\n",
+						ms, m.model.c_str(), m.at.y, m.at.x, m.at.z, at.y, at.x, at.z, m.heading, m.climb,
+						std::hypot(m.at.x - to.y, m.at.y - to.x), m.stuck ? " stuck" : "", view.Effects().EmitterCount());
+			}
+		}
 		double total = 0;
 		for (int f = 0; f < frames; ++f) {
 			view.UpdateSpawns(spawns, 0, spawn_clock + f);
@@ -448,6 +500,14 @@ int main(int argc, char **argv)
 				g_effect.cast_ms = atoi(argv[++i]);
 				g_effect.anim = atoi(argv[++i]);
 			}
+		}
+		else if (arg == "--missile" && i + 6 < argc) {
+			g_missile.source = atoi(argv[++i]);
+			g_missile.target = atoi(argv[++i]);
+			g_missile.kind = atoi(argv[++i]);
+			g_missile.object = atoi(argv[++i]);
+			g_missile.model = argv[++i];
+			g_missile.ms = atoi(argv[++i]);
 		}
 		else if (arg == "--weather" && i + 2 < argc) {
 			g_weather.type = std::string(argv[++i]) == "snow" ? 1 : 0;

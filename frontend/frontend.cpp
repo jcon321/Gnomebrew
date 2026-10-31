@@ -1898,6 +1898,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 				break;
 			m_zone_view = std::make_unique<ZoneView>(m_ui.eq_dir, MakeRenderer());
 			m_zone_view->SetVeliousTextures(m_config.velious_textures);
+			m_zone_view->SetSpellFile(m_ui.spells);
 			m_zone_view->StartLoading(m_zone.Info());
 			m_zone_view->SetSound(m_sound.get());
 			if (m_sound) // StartWorldDisplay
@@ -2051,6 +2052,19 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			if (m_zone_view)
 				for (const SpellEffects::Request &effect : effects)
 					m_zone_view->StartSpellEffect(effect);
+			break;
+		}
+		case Type::MissileLaunched: {
+			// EQMissile::EQMissile: the caster's attack animation as it lets go, then the missile.
+			int animation = Missiles::CasterAnimation(event.missile);
+			if (animation != 0xfe) {
+				if (event.missile.source != m_zone.MySpawnId())
+					m_zone.PlayAnimation(event.missile.source, animation);
+				else if (m_zone_view)
+					m_zone_view->PlayAnimation(animation);
+			}
+			if (m_zone_view)
+				m_zone_view->LaunchMissile(event.missile);
 			break;
 		}
 		case Type::BuffChanged:

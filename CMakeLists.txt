@@ -130,6 +130,7 @@ add_library(eqfrontend STATIC
     frontend/buffs.cpp
     frontend/spell_casting.cpp
     frontend/spell_effects.cpp
+    frontend/missiles.cpp
     frontend/item_display.cpp
     frontend/name_sprites.cpp
     frontend/settings_file.cpp

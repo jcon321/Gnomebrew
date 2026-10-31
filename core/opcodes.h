@@ -145,6 +145,12 @@ namespace ZoneOp
 	// Damage_Struct (24 bytes): {u16 target, u16 source, u8 type @4 (231 a spell), u8, i16 spell @6,
 	// i32 damage @8, float force, heading, pitch}: msg_successful_hit's messages
 	constexpr uint16_t Damage = 0x4058;
+	// Arrow_Struct (112 bytes): a missile, EQMissile's own first 0x70 bytes (EQMissile::EQMissile from a
+	// packet): {u32 type, u32, u32, float y @12, x, z, heading @24, pitch, speed @32, velocity y, x, z,
+	// heading rate @48, pitch rate, climb @56, u32, u16 source @64, u16 target, u16 level, u16 offense,
+	// u32 object @72 (a spell when the kind's 9), u8 light @76, u8, u8 aimed @78, u8 kind @79 (an item
+	// type, 9 a spell), u8 skill, char model[16] @81}. Ours goes out as an archer's or thrower's shot.
+	constexpr uint16_t Projectile = 0x4045;
 	// CastSpell_Struct (12 bytes): {u16 gem (or 10, an item), u16 spell, u16 inventory slot (0xffff
 	// none), u16 target, u32 spell_crc (the zone doesn't look at it)}: EQ_Character::CastSpell. Empty,
 	// to the zone: stop the cast (StopSpellCast).
@@ -294,6 +300,7 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::BeginCast, "OP_BeginCast"},
 	{ZoneOp::Action, "OP_Action"},
 	{ZoneOp::Damage, "OP_Damage"},
+	{ZoneOp::Projectile, "OP_Projectile"},
 	{ZoneOp::CastSpell, "OP_CastSpell"},
 	{ZoneOp::Buff, "OP_Buff"},
 	{ZoneOp::TokenText, "OP_TokenText"},

@@ -168,6 +168,25 @@ struct ZoneCast
 	uint8_t flags = 0;           // Action: 4 it landed
 };
 
+// OP_Projectile (Arrow_Struct): a missile someone let go, an arrow, a thrown weapon or a bolt
+// spell, as EQMissile::EQMissile takes it from the packet. Angles are 512ths of a turn.
+struct ZoneMissile
+{
+	float x = 0, y = 0, z = 0;  // the server's: where it starts
+	float heading = 0, pitch = 0; // which way it's going, and the model's tilt
+	float speed = 0;            // pushed along its heading by this each 50 ms (before the drag)
+	float velocity_y = 0, velocity_x = 0, velocity_z = 0; // its first push (the server's y, x, z)
+	float heading_rate = 0, pitch_rate = 0; // a turn of each, each 50 ms
+	float climb = 0;            // how steeply it rises along its heading (0 level)
+	uint16_t source = 0, target = 0;
+	uint32_t object = 0;        // a spell (kind 9) or an item
+	uint8_t light = 0;          // a LightType it carries
+	uint8_t aimed = 0;          // 0: dragged harder (a bolt; 0.85 a step rather than 0.625)
+	uint8_t kind = 0;           // the item type (5 an arrow...), 9 a spell; the server's bolts are 28
+	uint8_t skill = 0;
+	std::string model;          // its actor, "IT68"
+};
+
 // A merchant's packets (Merchant_Click_Struct, Merchant_Sell_Struct, Merchant_Purchase_Struct):
 // OP_ShopRequest's answer (whether the shop's open, and its rate), and what we bought or sold.
 struct ZoneMerchant
@@ -357,6 +376,7 @@ public:
 			CastBegan,      // cast: OP_BeginCast
 			SpellAction,    // cast: OP_Action
 			Damaged,        // cast: OP_Damage
+			MissileLaunched, // missile: OP_Projectile
 			BuffChanged,    // OP_Buff: buff, id its slot, value how (ZoneOp::Buff)
 			Considered,     // consider: OP_Consider's answer
 			Assisted,       // id: the target of whoever we assisted (OP_Assist's answer); not set yet
@@ -412,6 +432,7 @@ public:
 		std::string text;
 		ZoneChat chat;
 		ZoneCast cast;
+		ZoneMissile missile;
 		ZoneBuff buff;
 		ZoneConsider consider;
 		ZoneMerchant merchant;

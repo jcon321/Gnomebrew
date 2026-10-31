@@ -233,8 +233,12 @@ no rules of its own.
     older `spells.eff` effects (gequip's sprites circling the target and eqgfx particle clouds) for
     the spells without a SpellsNew.eff record (the debug menu's "Luclin spell effects" off gives every
     spell its old one, as eqgame without SpellsNew.eff), the old sprite flashes' lights and the
-    stages' sounds (game sounds; the debug menu's Sound section lists them). Still to do: the
-    missiles (stage 1, EQMissile: bolts, their lights and sounds), the options'
+    stages' sounds (game sounds; the debug menu's Sound section lists them), and missiles
+    (OP_Projectile, `frontend/missiles.*`: bolts, arrows and thrown weapons with their models, lights,
+    the caster's animation and a spell's stage 1 on them). Still to do: a missile's old (spells.eff)
+    stage 1, blit-sprite actors as a missile's model (`GENC00_ACTORDEF`: only item meshes are built;
+    the server sends `IT68`), the static kind 9 missiles' checks on who walks into them (MoveMissile's
+    sentinel and trap spells), our own archery and throwing making their missile (DoAttack), the options'
     spell particle density and opacity (fixed at eqgame's 1 and 1), the chat filters for PC and NPC
     spells and bard songs, melee's OP_Damage (hit messages, the D02 hit and its sounds), being hit
     standing us up, and OP 0x4265 (destroy a cast's emitters; this server never sends it).

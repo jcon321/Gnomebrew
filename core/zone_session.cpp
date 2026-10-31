@@ -2120,6 +2120,34 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		events.push_back(e);
 		break;
 	}
+	case ZoneOp::Projectile: {
+		if (data.size() < 97)
+			break;
+		Event e{Event::Type::MissileLaunched};
+		ZoneMissile &m = e.missile;
+		m.y = Read<float>(data, 12);
+		m.x = Read<float>(data, 16);
+		m.z = Read<float>(data, 20);
+		m.heading = Read<float>(data, 24);
+		m.pitch = Read<float>(data, 28);
+		m.speed = Read<float>(data, 32);
+		m.velocity_y = Read<float>(data, 36);
+		m.velocity_x = Read<float>(data, 40);
+		m.velocity_z = Read<float>(data, 44);
+		m.heading_rate = Read<float>(data, 48);
+		m.pitch_rate = Read<float>(data, 52);
+		m.climb = Read<float>(data, 56);
+		m.source = Read<uint16_t>(data, 64);
+		m.target = Read<uint16_t>(data, 66);
+		m.object = Read<uint32_t>(data, 72);
+		m.light = data[76];
+		m.aimed = data[78];
+		m.kind = data[79];
+		m.skill = data[80];
+		m.model = CString(data, 81, 16);
+		events.push_back(e);
+		break;
+	}
 	case ZoneOp::Buff: {
 		if (data.size() < 20)
 			break;

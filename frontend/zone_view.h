@@ -13,6 +13,7 @@
 #include "actor_sound.h"
 #include "canvas.h"
 #include "character_model.h"
+#include "missiles.h"
 #include "particles.h"
 #include "player_movement.h"
 #include "rasterizer.h"
@@ -103,6 +104,11 @@ public:
 	// loaded. They follow the spawns from then on, drawn with the rest.
 	void StartSpellEffect(const SpellEffects::Request &request);
 	const SpellEffects &Effects() const { return m_spell_effects; }
+	// OP_Projectile: a missile (Missiles) on its way from the next Render, drawn with its model and
+	// light, a spell's effect riding on it. The spells are for a bolt's (kind 9).
+	void SetSpellFile(const SpellFile *spells) { m_missiles.SetSpells(spells); }
+	void LaunchMissile(const ZoneMissile &missile);
+	const Missiles &Flying() const { return m_missiles; }
 	// The spells' stage sounds lately (for the debug menu), newest last: played from the spawn on
 	// the game sounds' switch, as EQPlayer::PlaySoundA plays them.
 	struct SpellSound
@@ -275,6 +281,11 @@ private:
 	std::shared_ptr<render::CharacterModel> SpawnModel(const ZoneSpawn &spawn, const std::string &key);
 	void DrawSpawns(uint64_t now_ms);
 	void DrawGroundItems(uint64_t now_ms);
+	// The missiles stepped (once loaded), then drawn.
+	void UpdateMissiles(uint64_t now_ms);
+	void DrawMissiles(uint64_t now_ms);
+	render::Transform MissilePlacement(const Missiles::Missile &missile, uint64_t now_ms) const;
+	render::CharacterModel *MissileModel(const std::string &name);
 	// s3dPickObjectOnScreen: what's drawn nearest along the ray through a window pixel, a spawn
 	// (our own model in the chase view, as `me`) or a ground item.
 	struct Picked
@@ -373,6 +384,7 @@ private:
 		uint16_t race = 0;   // for the spell effects
 		bool player = false;
 		uint8_t level = 1;
+		bool dead = false;   // a corpse: missiles stop steering at it
 		const render::Vec3 &Feet() const { return actor.Feet(); }
 	};
 	std::map<uint16_t, SpawnView> m_actors;
@@ -409,6 +421,9 @@ private:
 	bool FindActor(uint16_t id, SpellEffects::Actor &actor) const;
 	void PlaySpellSound(const SpellEffects::Request &request, uint16_t on, int slot);
 	std::vector<SpellSound> m_spell_sounds;
+	Missiles m_missiles;
+	std::map<std::string, std::unique_ptr<render::CharacterModel>> m_missile_models; // by name; null not there
+	uint64_t m_missiles_ms = 0; // the last UpdateMissiles
 	std::vector<render::PointLight> m_carried_lights;
 	std::vector<std::vector<int>> m_carried_light_regions;
 	std::vector<render::PointLight> m_lights_for; // LightsFor's

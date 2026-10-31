@@ -10,7 +10,7 @@ namespace
 	                 FadesField = 8, RangeField = 9, CastTimeField = 13, RecoveryField = 14, RecastField = 15, DurationFormulaField = 16, DurationField = 17,
 	                 AeDurationField = 18, ManaField = 19, FirstBaseField = 20, FirstMaxField = 32, FirstFormulaField = 58,
 	                 GoodEffectField = 71, ActivatedField = 72, FirstSpaField = 74, TargetTypeField = 86, SkillField = 88, FirstClassField = 92,
-	                 CastingAnimField = 107, TargetAnimField = 108, EffectField = 110, IconField = 131,
+	                 CastingAnimField = 107, TargetAnimField = 108, TravelTypeField = 109, EffectField = 110, IconField = 131,
 	                 NewEffectField = 132, DeletableField = 136, RecourseField = 137;
 }
 
@@ -69,6 +69,7 @@ bool SpellFile::Load(const std::string &path)
 		// An empty field is ParserGetIntField's atoi(""), 0, not the constructor's default.
 		spell.casting_anim = static_cast<uint8_t>(number(CastingAnimField));
 		spell.target_anim = static_cast<uint8_t>(number(TargetAnimField));
+		spell.travel_type = static_cast<uint8_t>(number(TravelTypeField));
 		spell.effect = number(EffectField);
 		spell.new_effect = number(NewEffectField);
 		spell.icon = number(IconField);

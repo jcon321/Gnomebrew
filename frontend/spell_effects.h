@@ -50,8 +50,12 @@
 // of the numbered game waves (103..107 Spell_1..5, 108 SpelCast, 109 SpelGdHt, 110..113
 // SpelHit1..4, and a few others).
 //
-// Not done: the missiles (stage 1, EQMissile) and the sprites' circling between the 32 ms steps
-// (they keep their last place where eqgame would draw them back on the target).
+// A missile's own effect (EQMissile::ProcessMissile's DoSpellEffect, stage 1 of a bolt) has its
+// emitters on whom 2 bound to the missile's actor: they follow its root, its axes turned to its
+// heading and tilt, until it's gone.
+//
+// Not done: an old (spells.eff) effect on a missile, and the sprites' circling between the 32 ms
+// steps (they keep their last place where eqgame would draw them back on the target).
 
 #include "character_model.h"
 #include "particles.h"
@@ -89,10 +93,13 @@ public:
 	// CDisplay::GetFloorHeight: the floor's height under a spot (its own height when there's none).
 	using FloorAt = std::function<float(const render::Vec3 &at)>;
 	void SetFloor(FloorAt floor) { m_floor = std::move(floor); }
+	// Where a missile (Missiles' id) is drawn this frame; false when it's gone.
+	using FindMissile = std::function<bool(uint32_t id, render::Transform &placement)>;
+	void SetMissiles(FindMissile find) { m_find_missile = std::move(find); }
 
 	struct Request
 	{
-		int stage = 0;       // 0 casting, 2 landing
+		int stage = 0;       // 0 casting, 1 the missile, 2 landing
 		int effect = 0;      // the spell's SpellsNew.eff record
 		int old_effect = -1; // its spells.eff record (SpellAffectIndex), for when it has no SpellsNew.eff one
 		int spell = 0;
@@ -102,6 +109,7 @@ public:
 		bool at_point = false; // the spot (world space) for the emitters on one
 		render::Vec3 point;
 		int delay_ms = 0;    // started this long after (a dragon breath's casting)
+		uint32_t missile = 0; // the missile for the emitters on one (Missiles' id)
 	};
 	// EQPlayer::PlaySoundA: a stage's sound (a numbered wave) from spawn `on`, as it starts.
 	using PlaySound = std::function<void(const Request &request, uint16_t on, int slot)>;
@@ -224,6 +232,7 @@ private:
 	std::vector<SpriteEffect> m_sprites;
 	std::vector<std::pair<uint64_t, Request>> m_later; // delayed starts, by when
 	FloorAt m_floor;
+	FindMissile m_find_missile;
 	PlaySound m_play_sound;
 	uint64_t m_now_ms = 0;
 };

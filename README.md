@@ -380,6 +380,7 @@ build/scene_preview EQDIR OUT.png --player RACE GENDER --zone NAME --at X Y Z [-
                     [--debug-draw wireframe,nofog,walls,floor,noculling,noclip] [--door NAME TYPE X Y Z HEADING INCLINE SIZE PARAM]
                     [--door-open MS] [--click X Y] [--jump MS] [--sound OUT.wav] [--weather rain|snow MS]
                     [--vision none|infra|ultra] [--spell-effect STAGE EFFECT CASTER TARGET MS [CAST_MS ANIM]]
+                    [--missile SOURCE TARGET KIND OBJECT MODEL MS]
 ```
 
 `scene_preview` renders the 3D view to a PNG: the character select scene for any race, gender,
@@ -390,7 +391,9 @@ GENDER SIZE X Y Z HEADING` stands spawns around (each followed by any of `--npc-
 `--npc-equip M,M,...` (the nine equipment slots as the server sends them), `--npc-move SPEED TURN`, `--npc-stance S` and `--npc-fly F`), `--spawn-ms MS` runs them that long first
 and prints what they do, `--time HOUR MINUTE` sets the time of day, and `--debug-draw` turns on the
 debug menu's render toggles (`noculling` too), `--vision` the race's vision, and `--spell-effect`
-plays a `SpellsNew.eff` stage on the caster and target spawns. `--door` puts a door there as `OP_SpawnDoor` would (copy a row of the
+plays a `SpellsNew.eff` stage on the caster and target spawns. `--missile` lets an `OP_Projectile` go from
+one `--npc` at another as the server fills it for a bolt (`28 0 IT68` is its own; `9 SPELL MODEL` a
+spell's) and prints where it is every 96 ms. `--door` puts a door there as `OP_SpawnDoor` would (copy a row of the
 server's `doors` table), `--door-open MS` opens them all and runs that long before any `--walk`, and
 `--click X Y` reports what a left click there would do. `--jump MS` jumps that far into the walk, and
 `--sound OUT.wav` mixes what the doors, we and the spawns sound like as it runs (no zone music or
@@ -810,6 +813,28 @@ details and the nearest spawns at the top left and the radar at the top right.
   on bones and floors, and `EQEffect` sprite flashes and rings that light like lanterns. The debug
   menu's Luclin spell effects switch forces them for every spell. Each stage's sound plays from the
   caster or the target.
+- **Missiles** (`frontend/missiles.*`, `EQMissile` @00502540): `OP_Projectile` (`0x4045`,
+  `Arrow_Struct`, the missile's own first 0x70 bytes) is an arrow, a thrown weapon or a bolt in
+  flight, only to look at: the zone says what it hit. The caster plays `GetAnimationIdForAttack`'s
+  animation (44 for a spell). `ProcessMissile` makes it the first frame: `CreateActor` of the packet's
+  model (else `IT63`, else none and it's gone) with its light, out 2 minutes; a spell's (kind 9) is out
+  its `AEDuration`, or 30 s for a bolt (travel type 3, which also keeps it level), and gets the
+  effect's stage 1 on the missile (on whom 2). Then once 32 ms have gone by each frame: `MissileAI`
+  turns it at its target's center plus half its `ModelHeightOffset`, 16 a step at most, asking where
+  that is every 125 ms to a second by flat distance (every step under 60, hit under 2, pointed
+  straight at it under 32; not at all once it's dead); `process_physics` pushes it along its heading
+  at its speed x 0.8 onto 0.625 of the last push (0.85 when not aimed, as the server's bolts are), in
+  50 ms steps; `MoveMissile` ends it on a spawn in its way (not the caster) or when its time's up, and
+  holds it at the zone's walls. Two things differ from eqgame so it glides onto its target: it's
+  drawn on along its push between the 32 ms steps (eqgame's sits still between them), and a climb
+  off by under 16 is stepped too (eqgame leaves it until the last 32 units, then snaps).
+  - **This server's bolts** (`Mob::ProjectileAnimation`): kind 28 rather than 9, object 0 rather than
+    the spell, model `IT68` (a small orb) with light 8, speed 1, not aimed, level. So no spell
+    effect rides on them, and the caster swings (animation 5, skill 0's) rather than casting.
+    Speed 1 not aimed settles at 5.33 units a 50 ms step, 107 a second, against the zone's own bolt
+    (`Beacon::BoltSpell`) at 100. `SpellsNew.eff` has no missile stage for any bolt (only the
+    fireworks); `spells.eff`'s bolts name `GENC10`/`GENU00` sprite actors, and the server's comment
+    says the model should be `GENC00` or `GENW00`, gequip's blit-sprite actors.
 
 ## Items and stats
 

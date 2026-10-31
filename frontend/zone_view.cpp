@@ -2,6 +2,7 @@
 
 #include "actor_tags.h"
 #include "animations.h"
+#include "spell_file.h"
 
 #include <algorithm>
 #include <cctype>
@@ -194,6 +195,32 @@ void ZoneView::Load()
 	});
 	m_spell_effects.SetSound(
 		[this](const SpellEffects::Request &request, uint16_t on, int slot) { PlaySpellSound(request, on, slot); });
+	m_spell_effects.SetMissiles([this](uint32_t id, render::Transform &placement) {
+		const Missiles::Missile *missile = m_missiles.Find(id);
+		if (!missile || !missile->made)
+			return false;
+		placement = MissilePlacement(*missile, m_missiles_ms);
+		return true;
+	});
+	m_missiles.SetEffects([this](const Missiles::Missile &missile, int stage, const render::Vec3 *point) {
+		const SpellInfo *spell = m_missiles.Spells() ? m_missiles.Spells()->Find(missile.spell) : nullptr;
+		if (!spell)
+			return;
+		SpellEffects::Request request;
+		request.stage = stage;
+		request.effect = spell->new_effect;
+		request.old_effect = spell->effect;
+		request.spell = missile.spell;
+		request.caster = missile.from.source;
+		request.duration_ms = spell->ae_duration;
+		if (point) {
+			request.at_point = true;
+			request.point = *point;
+		}
+		else
+			request.missile = missile.id;
+		StartSpellEffect(request);
+	});
 	// The weather's sprites, I_RAINRINGSPRITE and I_SNOWFLAKESPRITE (user method 0x17).
 	if (m_equipment.Open(m_eq_dir + "/gequip.s3d", true)) {
 		m_effect_textures.AddArchive(&m_equipment);
@@ -679,6 +706,98 @@ void ZoneView::DrawGroundItems(uint64_t now_ms)
 	}
 }
 
+void ZoneView::LaunchMissile(const ZoneMissile &missile)
+{
+	if (m_loaded && m_error.empty())
+		m_missiles.Launch(missile);
+}
+
+render::CharacterModel *ZoneView::MissileModel(const std::string &name)
+{
+	// CreateActor's "<name>_ACTORDEF": an item's model, as on the ground.
+	auto it = m_missile_models.find(name);
+	if (it == m_missile_models.end()) {
+		std::string error;
+		it = m_missile_models.emplace(name, m_models.BuildItem(name, error)).first;
+	}
+	return it->second.get();
+}
+
+void ZoneView::UpdateMissiles(uint64_t now_ms)
+{
+	m_missiles_ms = now_ms;
+	if (m_missiles.All().empty())
+		return;
+	Missiles::World world;
+	float my_center = m_height / 5 * 3.125f;
+	world.find = [&](uint16_t id, Missiles::Spawn &spawn) {
+		if (id == 0)
+			return false;
+		if (id == m_my_id) {
+			if (!m_placed)
+				return false;
+			spawn.at = m_feet + render::Vec3{0, 0, my_center};
+			spawn.height_offset = my_center;
+			return true;
+		}
+		auto it = m_actors.find(id);
+		if (it == m_actors.end())
+			return false;
+		spawn.at = it->second.Feet() + render::Vec3{0, 0, it->second.center_height};
+		spawn.height_offset = it->second.center_height;
+		spawn.dead = it->second.dead;
+		return true;
+	};
+	world.spawn_hit = [&](const render::Vec3 &from, const render::Vec3 &to, float radius, uint16_t ignore) -> uint16_t {
+		// The actors' collision: each spawn a column from its feet up twice its center, half its
+		// center across.
+		auto hits = [&](const render::Vec3 &feet, float center) {
+			render::Vec3 d = to - from;
+			float flat = d.x * d.x + d.y * d.y;
+			float t = flat > 0 ? std::clamp(((feet.x - from.x) * d.x + (feet.y - from.y) * d.y) / flat, 0.0f, 1.0f) : 0;
+			render::Vec3 p = from + d * t;
+			float reach = center * 0.5f + radius;
+			return std::hypot(p.x - feet.x, p.y - feet.y) <= reach && p.z >= feet.z - radius && p.z <= feet.z + center * 2 + radius;
+		};
+		if (m_my_id && m_my_id != ignore && m_placed && hits(m_feet, my_center))
+			return m_my_id;
+		for (const auto &[id, view] : m_actors)
+			if (id != ignore && view.model && hits(view.Feet(), view.center_height))
+				return id;
+		return 0;
+	};
+	world.blocked = [&](const render::Vec3 &from, const render::Vec3 &to) {
+		float fraction;
+		return m_zone.SegmentHit(from, to, fraction, nullptr, true);
+	};
+	world.has_model = [&](const std::string &name) { return MissileModel(name) != nullptr; };
+	m_missiles.Update(now_ms, world);
+}
+
+render::Transform ZoneView::MissilePlacement(const Missiles::Missile &missile, uint64_t now_ms) const
+{
+	// t3dSetActorLocation: its heading, then its tilt (the actor's pitch, about y the other way).
+	render::Transform placement;
+	placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(missile.heading)) *
+	                     render::AxisAngle({0, 1, 0}, -render::HeadingToRadians(missile.pitch));
+	placement.translation = m_missiles.DrawnAt(missile, now_ms);
+	return placement;
+}
+
+void ZoneView::DrawMissiles(uint64_t now_ms)
+{
+	render::Vec3 camera = m_renderer->CurrentCamera().position;
+	for (const Missiles::Missile &missile : m_missiles.All()) {
+		render::CharacterModel *model = missile.made ? MissileModel(missile.model) : nullptr;
+		if (!model)
+			continue;
+		render::Transform placement = MissilePlacement(missile, now_ms);
+		if (render::Length(placement.translation - camera) > FarPlane())
+			continue;
+		model->Draw(*m_renderer, placement, ModelLightingAt(placement.translation), 0);
+	}
+}
+
 render::Transform ZoneView::GroundItemPlacement(const GroundItemView &view)
 {
 	render::Transform placement;
@@ -848,6 +967,7 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 	if (m_loader.joinable())
 		m_loader.join();
 	PlacePlayer();
+	UpdateMissiles(now_ms);
 
 	using Clock = std::chrono::steady_clock;
 	auto since = [](Clock::time_point start) { return std::chrono::duration<double, std::milli>(Clock::now() - start).count(); };
@@ -913,6 +1033,7 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 	m_camera_position = camera.position;
 	DrawSpawns(now_ms);
 	DrawGroundItems(now_ms);
+	DrawMissiles(now_ms);
 	DrawWeather(now_ms);
 	m_spell_effects.Update(now_ms, camera.position,
 		[this](uint16_t id, SpellEffects::Actor &actor) { return FindActor(id, actor); });
@@ -1255,6 +1376,7 @@ void ZoneView::UpdateSpawns(const std::map<uint16_t, ZoneSpawn> &spawns, uint16_
 		view.race = spawn.race;
 		view.player = spawn.npc == 0;
 		view.level = spawn.level;
+		view.dead = spawn.npc == 2 || spawn.npc == 3;
 		PoseSpawn(view, spawn, now_ms);
 		if (m_sound)
 			SpawnSounds(view, spawn, id, now_ms);
@@ -1281,6 +1403,16 @@ void ZoneView::PlaceCarriedLights(uint64_t now_ms)
 		add(m_my_light, m_feet, m_height / 5 * 3.125f, m_heading, m_movement.BodyEnvironment());
 	for (const auto &[id, view] : m_actors)
 		add(view.light, view.Feet(), view.center_height, view.actor.Heading(), view.actor.BodyEnvironment());
+	// The missiles' (CreateLight, MoveLight): right where they are.
+	for (const Missiles::Missile &missile : m_missiles.All()) {
+		render::PointLight light;
+		if (!missile.made || !missile.from.light ||
+			!render::CarriedLight(missile.from.light, m_info.short_name.c_str(), now_ms, light.color, light.radius))
+			continue;
+		light.position = m_missiles.DrawnAt(missile, now_ms);
+		m_carried_lights.push_back(light);
+		m_carried_light_regions.push_back(m_zone.Regions().RegionsTouched(light.position, light.radius));
+	}
 	// The spells' sprite flashes: EQEffect's CreateLight (type 6, the lglantern's color, out to 250)
 	// where the sprite is, while it lasts.
 	std::vector<render::Vec3> flashes;

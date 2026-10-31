@@ -13,6 +13,7 @@ namespace
 	constexpr size_t RecordSize = 0x10c;
 	constexpr size_t OldRecordSize = 0xae8, OldStageSize = 0x3a0, OldRecords = 256;
 	constexpr float TurnStep = 6.2831855f / 512; // a 512th of a turn, t3dFloatFastSine's
+	constexpr uint32_t MissileBinding = 0x80000000; // | a missile's id; a spawn's are spawn << 8 | attach
 
 	int32_t Int(const uint8_t *r, size_t o)
 	{
@@ -259,6 +260,23 @@ bool SpellEffects::PlaceBone(uint32_t binding, const FindActor &find, render::Tr
 
 bool SpellEffects::Locate(uint32_t binding, const FindActor &find, render::SpellParticles::Frame &frame)
 {
+	if (binding & MissileBinding) {
+		// The missile actor's root: its axes up and along its heading, its own turned by its tilt.
+		render::Transform placement;
+		if (!m_find_missile || !m_find_missile(binding & ~MissileBinding, placement))
+			return false;
+		render::Vec3 forward = placement.ApplyDirection({1, 0, 0});
+		render::Quat heading = render::AxisAngle({0, 0, 1}, std::atan2(forward.y, forward.x));
+		frame.position = placement.translation;
+		frame.axes[0] = {0, 0, 1};
+		frame.axes[1] = heading.Rotate({1, 0, 0});
+		frame.axes[2] = heading.Rotate({0, 1, 0});
+		frame.bone = true;
+		frame.bone_axes[0] = placement.ApplyDirection({0, 0, 1});
+		frame.bone_axes[1] = placement.ApplyDirection({1, 0, 0});
+		frame.bone_axes[2] = placement.ApplyDirection({0, 1, 0});
+		return true;
+	}
 	Actor actor;
 	render::Transform bone;
 	if (!find(static_cast<uint16_t>(binding >> 8), actor) || !PlaceBone(binding, find, bone))
@@ -359,8 +377,14 @@ void SpellEffects::StartNew(const Request &request, const FindActor &find)
 					continue;
 			}
 		}
-		else
-			continue; // 2: on the missile, not yet
+		else {
+			// 2: on the missile.
+			if (!request.missile)
+				continue;
+			binding = MissileBinding | request.missile;
+			if (!Locate(binding, find, frame))
+				continue;
+		}
 		uint32_t tag = static_cast<uint32_t>(on) << 16 | static_cast<uint16_t>(request.spell);
 		m_particles.Create(emitter.def, tag, duration, m_density, m_opacity, frame, binding);
 	}
@@ -427,7 +451,7 @@ void SpellEffects::MakeCloud(int pcloud, const OldEmitter &emitter, const render
 void SpellEffects::StartOld(const Request &request, const FindActor &find)
 {
 	if (request.stage == 1)
-		return; // the missiles aren't done
+		return; // an old effect on a missile isn't done
 	const OldStage &stage = m_old[request.old_effect].stages[request.stage];
 	Actor caster, target;
 	bool have_caster = request.caster && find(request.caster, caster);
