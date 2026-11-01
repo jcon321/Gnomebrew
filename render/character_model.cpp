@@ -448,6 +448,35 @@ namespace render
 		};
 		// initializeHierarchicalSprite: a model with a <tag>TUNIC_POINT_DAG is a Luclin one.
 		bool luclin = bone_named(code + "TUNIC_POINT_DAG") >= 0;
+		// The Global<n>_amr Velious armor is cut for the old models: two chest pieces (a Luclin chest
+		// has three) on the old UVs. eqgame swaps it in anyway with LoadVeliousArmorsWithLuclin, so
+		// half the chest is the armor and the rest the bare skin's shirt. A Luclin model wears what
+		// it stands in for (BodyMaterial without it) instead, as eqgame does with the key off.
+		if (luclin && m_velious_textures && appearance.texture == 0xff)
+			for (int slot = 1; slot <= 6; ++slot)
+				appearance.equip[slot] = BodyMaterial(appearance.equip[slot], appearance.class_id, false);
+		// CDisplay::CreatePlayerActor -> EQPlayer::SetDefaultFacialFeaturesByFace(-1, 0, 0) (@005204ee):
+		// a Luclin model of a LegalPlayerRace (1..12, 128, 130) whose first eye color is unset (0xff, a
+		// character made with the old models, most NPCs) gets the defaults. Its hair and beard are
+		// none (a Vah Shir with face 7 hair style 0); then with HasAttachedHair 1 (not an Erudite,
+		// Iksar, Vah Shir, or troll or ogre man) hair style 0 in GetAllowedHairColorIndexRange's
+		// first color, and a dwarf man beard 0 in the hair's color.
+		if (luclin && appearance.eye_color1 == 0xff &&
+			(appearance.race <= 12 || appearance.race == 128 || appearance.race == 130)) {
+			uint16_t race = appearance.race;
+			appearance.hair_style = race == 130 && appearance.face % 10 == 7 ? 0 : 0xff;
+			appearance.hair_color = appearance.beard = appearance.beard_color = 0xff;
+			bool attached_hair = race != 3 && race != 128 && race != 130 &&
+				!((race == 9 || race == 10) && appearance.gender == 0);
+			if (attached_hair) {
+				appearance.hair_style = 0;
+				appearance.hair_color = race == 5 ? 4 : race == 6 ? 11 : 0;
+			}
+			if (race == 8 && appearance.gender == 0) {
+				appearance.beard = 0;
+				appearance.beard_color = appearance.hair_color;
+			}
+		}
 		// Every animation the model has, each bone from its own tracks or its source model's,
 		// shared by everyone with this model.
 		// A Luclin model plays one variant of each animation, by what it holds (AnimVariation).

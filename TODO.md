@@ -268,7 +268,10 @@ no rules of its own.
     (`CDisplay_SetEyeMaterial`), the Vah Shir's fur by face, robes, and the helm, tunic, robe,
     shoulders, gauntlets, belt, boots, hair and beard as item models on their point bones
     (`CDisplay_SetDefaultITAttachments`, `SetFHEB`) playing the body's tracks
-    (`UpdateAttachmentAnimations`). Still to do:
+    (`UpdateAttachmentAnimations`). They never take the old models' `Global<n>_amr` Velious
+    textures, even with `LoadVeliousArmorsWithLuclin`; they wear what those stand in for
+    (`BodyMaterial`). Unset hair (eye color 0xff) gets `SetDefaultFacialFeaturesByFace`'s defaults
+    from `CreatePlayerActor`. Still to do:
     - `PlayAnimationTrack2`'s Luclin speeds: idles, sitting and standing (and a woman's 17) at
       half speed, socials at three quarters, at the normal speed.
     - Character creation's Luclin choices (hair style and color, beard, eye colors) in the face

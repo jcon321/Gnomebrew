@@ -403,7 +403,11 @@ additions of ours, or ones taken from TAKP's eqgame.dll or Zeal rather than stoc
   for the Vah Shir, and for everyone when the Luclin or Planes of Power flag is set, as on TAKP.
 - **Velious armor with Luclin models** (`LoadVeliousArmorsWithLuclin`): a missing key is on, so
   turning on a Luclin model doesn't take the Velious armor textures off everyone on the old models.
-  eqgame takes it as off and skips the `Global<n>_amr` files then.
+  eqgame takes it as off and skips the `Global<n>_amr` files then. The Luclin models themselves never
+  wear them: those textures are cut for the old models (two chest pieces on the old UVs, where a
+  Luclin chest has three), and eqgame with the key on puts them on half the chest over the bare
+  shirt. A Luclin model wears the armor they stand in for (17..22 as leather, chain, plate), as eqgame
+  does with the key off.
 - **Old skeletons** (`LoadOldSkeletons`, on by default): eqgame loads `global6_chr.s3d` before
   `global_chr.s3d`, so its later skeleton model is the one drawn; we skip global6's `SKE` (its model
   and tracks) and draw global_chr's.
@@ -728,6 +732,13 @@ functions):
   hangs on `HEAD_POINT` (`SetDefaultITAttachments_DagColor`). A Vah Shir has them only with face 7 (its
   mane, helm or not); the low-poly Vah Shir with face 7 and no helm wears helm 1 (IT661, IT666) instead
   (`SwapFace` -> `SwapHead`).
+- **Default hair** (`CDisplay::CreatePlayerActor` -> `EQPlayer::SetDefaultFacialFeaturesByFace(-1, 0, 0)`
+  @005204ee): a Luclin model of a `LegalPlayerRace` (0..12, 128, 130) whose first eye color is 0xff (a
+  character made with the old models, which leave the Luclin fields 0xff, and most NPCs) has its hair
+  and beard reset to none (a Vah Shir with face 7: hair style 0). With `HasAttachedHair` 1 (all but
+  the Erudite, Iksar, Vah Shir, and troll and ogre men) it gets hair style 0 in the race's first
+  allowed color; a dwarf man also beard 0 in that color. The face stays. With the third argument 1
+  (character creation, the face picker) it picks them at random instead.
 - **How the pieces move:** each is a hierarchical sprite whose skeleton mirrors the body's (a tunic's
   `NULL` -> `PEPELVIS` -> `CHCHEST`, thighs and `ROBEPOINT` bones; hair's `HEHAIR1`, `HEHAIR2`).
   `CDisplay::UpdateAttachmentAnimations` plays on each of its bones but the root the body's current
