@@ -447,7 +447,7 @@ build/eqclient -u USER -p PASS [options]
 ## Preview tool (Linux)
 
 ```
-build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|shop|ground|commands]]
+build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|ground|commands]]
 build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS]
 ```
 
@@ -459,7 +459,11 @@ right button, sell the first thing worth anything and buy it back, then camp; or
 what's on the ground, drop an item and pick it back up, and open a forge and close it; or
 `commands` to type /random, /lootnodrop, /fastdrop and socials (alone and at the nearest spawn),
 print the chat, and snapshot the compass as it turns). `create` instead makes an Erudite wizard from the first empty slot,
-snapshots every creation screen and the face picker, submits it, and deletes it again. It's for
+snapshots every creation screen and the face picker, submits it, and deletes it again (Yes in the
+confirmation dialog). `createluclin` does the same with every Luclin model on, as a dwarf warrior
+whose face picker steps through each feature, printing the rows shown and what the model takes,
+then what's sent and what the server lists. `explore` goes into explore mode, turns to the chase
+camera, prints the name tags, clicks the other character, walks forward, and leaves with Escape. It's for
 checking layout and flow without Windows. `--replay` plays a packet log back instead (no server)
 and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,
 opens, minimizes, resizes and closes windows (the layout goes to OUTDIR), types into the chat window
@@ -570,8 +574,46 @@ loads the same files:
   client area.
 
 Character select uses `CharacterSelectWindow`. Its buttons do what
-`CEverQuest::DoCharacterSelection` (@0053b9cf) does: Enter World sends `0x8001` with the name,
-Delete sends `0x405a` with the name, and Quit sends `0x4023`.
+`CEverQuest::DoCharacterSelection` (@0053b9cf) and `CCharacterSelect::WndNotification` (@0040f278)
+do:
+
+- **Enter World** (`CCharacterSelect::EnterWorld`, Enter, a double click): with a character
+  selected, the user light goes and `0x8001` goes out with the name.
+- **Delete** asks eqstr 10019 "Are you absolutely sure you want to delete %1?" in the confirmation
+  dialog (category 0x1b, 10 s) and turns the character, Explore, Enter World and Delete buttons off
+  (`SetButtonsEnabledState(0)`). Yes (`ProcessYes`, `CCharacterSelect::DeleteCharacter` @0040f93e)
+  deletes the character's option file (`CEverQuest_RemoveCharacterOptionFile` @0053b149:
+  `<name>_<server>.ini`, ours the hot buttons and socials) and sends `0x405a` with the name. Nothing
+  in eqgame turns the buttons back on, and `SelectCharacter` does nothing while the selected one's
+  is off, so after Delete, Yes or No, character select is stuck until the window is made again
+  (ours: each time character select is entered).
+- **Quit** (`ActivateBackButton`, Escape) sends `0x4023`. **Rotate** turns the camera's turning on
+  and off; off, it follows the character's heading.
+- **Explore** (`EnterExplorationMode` @0040f3f2) hides the window for `ExploreModeWindow`, whose
+  `EXW_CharInfoLabel` is eqstr 6681 "%1 [%2 %3] in %4" (`CExploreModeWnd::Activate`), and switches to
+  the default camera (`CDisplay_SwitchToDefaultCameraMode`: `DAT_0063b8ec`, first person until F9's
+  `CDisplay_ToggleView` changes it). `CreateExplorationModePlayers` stands the account's other
+  characters round ours (`SetRoomLocationByIndex`: our class's room spot 4 up, then by index 20 out
+  in y and x, 15 for a magician, 12 for a necromancer's first, facing us), each playing
+  `DoClassRandomAnimation`'s picks; ours doesn't (`Render_MinWorld`) and walks under
+  `ProcessControls`. Keys go to `ProcessNewUICharacterSelectKeys`: Escape leaves
+  (`LeaveExplorationMode`), Enter enters the world, the rest are `ProcessMovementKeys`. A left click
+  on another character selects it (`CEverQuest::LeftClickedOnPlayer` by name), which leaves and comes
+  back into explore mode with it (`SelectCharacter`). Every character has its name sprite.
+- **The character buttons** select (`SelectCharacter`), or on an empty slot open character creation;
+  `UpdateButtonNames` names the empty ones eqstr 1947 "Create a New Character". Up and Down are
+  `SelectCharacter(1001)` and `(1000)`: the one before (from the first, the last filled slot) and
+  the one after (past the last or onto an empty one, the first); none if the first slot is empty.
+  On entering it's `SelectCharacter(1002)`: `[Defaults] LastCharSel`, else the first.
+- **Nobody selected** (`SelectCharacter` with no valid character): the player stays as it looked
+  (at first `initializeNetworkGame`'s human man) and is named eqstr 4000 "Newbie", a level 1
+  warrior, in the warrior's room.
+- **A zone that's unavailable** (`0x8005`) sets `DAT_0079831c`, and character select puts up eqstr
+  1954 "That zone is unavailable." in the confirmation dialog (category 0x1d, 4 s).
+
+The confirmation dialog is `CConfirmationDialog` (`ConfirmationDialogBox`, @00415a80): category 0x1d
+shows OK alone, the rest Yes and No; it's centered, and its timeout answers No (unless category
+0x20). Another one coming up answers the first No.
 
 ## 3D character select
 
@@ -603,8 +645,26 @@ does the same, from these decompiled functions:
 - **Animations:** every 5 to 15 seconds the character plays one of `DoClassRandomAnimation`'s picks
   for its class, once (mixing in emotes is ours, see Custom changes). The old models' social animations (`S05`..`S28`) are in `global3_chr.s3d`,
   not `global_chr`, so character select loads it too.
+- **Light:** `CEverQuest`'s constructor starts the zone's time type at 1, so the time of day passes:
+  `SetLocationByClass` sets the hour (16, or 23 in the bard's, monk's, necromancer's, rogue's and
+  wizard's rooms; `SetLoadZoneWeather` and the old load zone 24) and `SetSunLight`, which give the
+  ambient light, the sun and the sky's brightness as in a zone (`frontend/day_light.cpp`). The zone is
+  its baked light plus the ambient over its vertices' exposure; the character is lit as in a zone
+  (its floor's exposure, the zone's lights). `SelectCharacter` gives it a light
+  (`CDisplay::CreateUserLight`: smlantern's color, radius 75), which `MovePlayer`'s `MoveLight`
+  keeps 2 in front of it and 4 over its center and `EnterWorld` takes away.
+- **Switches:** `CCharacterSelect::Activate` in load2 loads `load2_switches.dat`
+  (`CEverQuest_LoadSwitchesNonAvatar` @005472a3), 0x90-byte records as `EQSwitch_DoorLoadingCode`
+  reads them: the id at 0xc, the name at 0xd, the type at 0x1c and state at 0x1d, y, x, z, heading
+  and incline (floats) at 0x34, inverted at 0x48, size at 0x60 and parameter at 0x62. It keeps those
+  with a model and the particle effects (type 53): load2 has one door (`LOADDOOR300`, type 27, in
+  the rogue's room) and eight `CRATEG` effects.
+- **The old load zone** (`SetCharacterPositionInSelectScreen`, without load2): `IsSpecialLocationRequired`
+  (@0040f511: Dark Elves, Trolls, Ogres, Iksar, shadow knights, necromancers, deities 1, 3, 4, 201,
+  203, 206) stand at y 0, x -315, z 6 with the yon at 400; the rest at 0, 0, 7 with it at 140.
 - **Name:** `CDisplay::SetNameSpriteState` with the character select window up is
-  `"%s [%d %s]\n%s"` (name, level, `GetClassDesc`, `GetFullZoneName`), tinted yellow.
+  `"%s [%d %s]\n%s"` (name, level, `GetClassDesc`, `GetFullZoneName`), tinted yellow and lit as in a
+  zone (the ambient + 0.4).
   `GetFullZoneName` is the eqstr string, else `EQWorldData`'s long name (its `AddZone` calls, the
   first of an id kept; `core/zone_names.cpp`), else "Unknown Zone".
 - **Field of view:** eqgfx reads `SetViewAngle(90)` in 512ths of a turn, so 63.3 degrees across.
@@ -770,8 +830,21 @@ Clicking an empty slot ("Create New Character") opens `CharacterCreation` from
   insists the points are spent and the name is 4 to 15 letters.
 - Get Name is the client's own `CreateName`: syllables by race plus a feminine ending for women. The
   name is sent as a capital followed by lower case, the only form world approves.
-- Set Face opens `FacePickWindow` with the camera close on the face. Face cycles 0..7; the old models
-  have no separate hair, eyes or beard, so those rows don't change anything.
+- Set Face opens `FacePickWindow` (`CFacePick`) with the camera close on the face. Its rows show for
+  what the model has (TAKP's `SetDefaultFacialFeaturesByFace__` @0041a1bf, `ShowFacialFeatureUI`):
+  the face always; on a Luclin model the eyes, the hair and its color (`HasAttachedHair`), the beard
+  and its color (`HasAttachedBeard`) and a Barbarian's woad. The old models show the face alone.
+  Each row's buttons step its feature (`CycleThroughFHEB` @0041a8d0) on until the model takes one
+  (`CDisplay::SetFHEB`, `SetFHEB_Color`): hair and beard styles are IT1000 + n and IT2000 + n plus the
+  race's offset on the hair and beard points, eye colors CHR_EYE<n + the race's>_MDF, hair colors
+  `GetAllowedHairColorIndexRange`'s, and an Erudite's hair, an elf's or dwarf woman's beard and the
+  woad are the face's variant (its tens). Random is `SetDefaultFacialFeaturesByFace(-1, 1, 1)`;
+  Accept keeps the model's features, Cancel puts the new character's back.
+- `RandomizeFacialFeatures` (on a race, gender or opening) rolls a face 0..7 and the features on the
+  model before it changes race, so they're the old race's; `SetLoadZonePlayerLocation` then gives
+  the new model the new character's. `FinalizeNewPCAndSendToWorld` sends a Luclin model's features
+  (`CharCreate_Struct` 5422..5427: hair color, beard color, eye colors, hair style, beard) and the
+  model's face (5428).
 - Next on the last screen sends `OP_ApproveName` and, once it's approved, `OP_CharacterCreate` with
   what `EQ_PC::InitPlayerStart` fills in: the start zone, the spawn y/x/z and heading, and all five
   bind points (`CreationRules::Start`). World copies them as sent, so a client that sends only the
@@ -789,7 +862,9 @@ combination. Every race, class, deity and start zone combination the client allo
 `char_create_combinations` table (all 317; the server's extra rows are Berserkers, which this client
 doesn't know).
 
-Not yet: the real client's messages use `CConfirmationDialog`; these use the front end's dialog.
+Its messages are the confirmation dialog's with OK (category 0x1d): 5 s, and 45 s for the name's
+(`HandleNameApprovalResponse`: "Name is not valid." back on the first screen, the wait for approval,
+the rejection).
 
 ## In the zone
 

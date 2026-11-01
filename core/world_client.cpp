@@ -267,6 +267,12 @@ namespace
 			put(3840 + i * 4, &c.start.bind_z, 4);
 		}
 		put(4940, &c.deity, 2);
+		put(5422, &c.hair_color, 1); // haircolor, beardcolor, eyecolor1, eyecolor2, hairstyle, beard
+		put(5423, &c.beard_color, 1);
+		put(5424, &c.eye_color1, 1);
+		put(5425, &c.eye_color2, 1);
+		put(5426, &c.hair_style, 1);
+		put(5427, &c.beard, 1);
 		put(5428, &c.face, 1);      // luclinface
 		return out;
 	}

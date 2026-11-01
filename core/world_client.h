@@ -43,6 +43,8 @@ struct NewCharacter
 	StartPoint start;
 	int16_t str = 85, sta = 110, cha = 75, dex = 75, int_ = 75, agi = 80, wis = 75;
 	uint8_t face = 0;
+	// The Luclin features (EQ_PC +0x152e..0x1533), what FinalizeNewPCAndSendToWorld leaves there.
+	uint8_t hair_style = 0, hair_color = 0, beard = 0, beard_color = 0, eye_color1 = 0, eye_color2 = 0;
 };
 
 const char *ClassName(uint8_t class_id);

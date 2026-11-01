@@ -214,12 +214,30 @@ no rules of its own.
    opens and closes the compass, which is up on every zone-in until then.
 7. **Map window.** Draw the line maps from `../Maps` with our position and nearby spawns.
 8. **Loading screen** while zoning, with progress.
+23. ~~**Character select**~~: done (`frontend/frontend.cpp`, `frontend/charselect_view.*`, eqgame's
+    CCharacterSelect and CEverQuest::DoCharacterSelection @0053b9cf): explore mode
+    (`EnterExplorationMode`, `LeaveExplorationMode`, `ExploreModeWindow`, the other characters
+    round us, walking through `PlayerMovement`, F9's first person and chase camera, a click on one
+    selecting it, Enter and Esc), Delete's eqstr 10019 in the confirmation dialog with the buttons
+    off and the option file deleted, Up and Down wrapping round, eqstr 1947 on empty slots, eqstr
+    1954 back from an unavailable zone, "Newbie" with nobody selected, the user light and the
+    room's hour lighting the scene, load2's switches, and the old load zone's places. Character
+    creation's messages are the confirmation dialog, and the face picker cycles a Luclin model's
+    hair, beard, eyes and woad (`CFacePick::CycleThroughFHEB`), sent in `OP_CharacterCreate`.
+    Still to do:
+    - Explore mode's animations are only standing, walking, running, jumping and falling (not all of
+      `ProcessAnimation`: swimming, crouching, the shuffle turning on the spot), and there's no mouse
+      wheel zoom, footsteps, or clicking a door (`CEverQuest_ClickedSwitch`); what
+      `CExploreModeWnd::Activate` does to EXW_ExploreModeWindow3 (`CXWnd::_`) isn't known.
+    - load2's particle effects: its switches of type 53 (`CRATEG`, the parameter the effect), which
+      `ZoneDoors` doesn't do.
+    - The face picker in the zone (`/face`: CFacePick's Accept sends 0x4225 with the face, hair and
+      beard, and says eqstr 0x2efc).
 
 ## Rendering / presentation
 
 9. ~~**Nameplates**~~: done (`frontend/name_sprites.*`, eqgame's name sprites), lit as
-   renderNameTag does (the world's ambient light +0.4, `NameSpriteLit`). Still to do: the
-   character select name sprite isn't lit (its scene's light is our own guess), the trader tag in the Bazaar,
+   renderNameTag does (the world's ambient light +0.4, `NameSpriteLit`). Still to do: the trader tag in the Bazaar,
    the names eqgame hides in some animations (skeletons, gargoyles and mimics lying or feigning:
    animations 0x10, 0x21, 0x26), `/shownpcnames`, Zeal's raid shownames, and the guild list in packet logs (replays show "Unknown Guild"). An HP
    bar over heads isn't eqgame's; leave it to an option if ever.
@@ -274,8 +292,6 @@ no rules of its own.
     from `CreatePlayerActor`. Still to do:
     - `PlayAnimationTrack2`'s Luclin speeds: idles, sitting and standing (and a woman's 17) at
       half speed, socials at three quarters, at the normal speed.
-    - Character creation's Luclin choices (hair style and color, beard, eye colors) in the face
-      picker, and sending them in the create packet; the preview and the new character get 0s.
     - A body slot's material of 200 and up on a Luclin model (`CDisplay::HandleMaterialEx`: IT<material>
       on the slot's point through `CDisplay_UpdateItemSlot2`, plate under it).
     - Turning the models on and off in game (an options page); only my-client.ini, read at start.

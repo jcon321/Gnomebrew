@@ -130,6 +130,14 @@ public:
 	Screen CurrentScreen() const { return m_screen; }
 	bool DialogOpen() const { return m_dialog.open; }
 	const std::string &DialogText() const { return m_dialog.text; }
+	// The confirmation dialog over character select and creation (CConfirmationDialog).
+	bool ConfirmationOpen() const { return m_confirm.open; }
+	std::string ConfirmationText() const
+	{
+		const SidlWindow::Control *output = m_confirm.window.Find("TextOutput");
+		return output ? output->text : std::string();
+	}
+	bool Exploring() const { return m_exploring; }
 	const std::vector<CharacterSlot> &Characters() const { return m_world.Characters(); }
 	int SelectedCharacter() const { return m_selected_slot; }
 	int LastCharacter() const { return m_config.last_character; } // the slot to remember (LastCharSel)
@@ -172,6 +180,13 @@ private:
 	void EnterLogin();
 	void EnterServerSelect();
 
+	// CConfirmationDialog::Activate over character select and creation (ConfirmationDialogBox):
+	// category 0x1d is a message with OK, the rest ask Yes or No. It closes as No after timeout_ms
+	// (0: never). A second one closes the first as No.
+	void ShowConfirmation(int category, uint32_t timeout_ms, const std::string &text,
+		std::function<void(bool)> on_close = nullptr);
+	void CloseConfirmation(bool yes);
+	bool ConfirmationEvent(const InputEvent &event); // a click on it; true if it took the event
 	void ShowMessage(const std::string &text, std::function<void(bool)> on_close = nullptr);
 	void ShowQuestion(const std::string &text, std::function<void(bool)> on_close);
 	void CloseDialog(bool result);
@@ -198,6 +213,13 @@ private:
 	void RefreshCharacterButtons();
 	void SelectSlot(int slot);
 	void EnterWorldSelected();
+	// CCharacterSelect::SetButtonsEnabledState: the character, Explore, Enter World and Delete buttons.
+	void SetButtonsEnabledState(bool enabled);
+	void DeleteSelected(); // CCharacterSelect::DeleteCharacter (and CEverQuest_RemoveCharacterOptionFile)
+	void EnterExplorationMode();
+	void LeaveExplorationMode();
+	void ExploreEvent(const InputEvent &event); // explore mode's keys and mouse
+	std::string CharacterNameTag(int slot) const; // SetNameSpriteState's "%s [%d %s]\n%s"
 	void LeaveWorld(); // close the world session and go back to the start screen
 	// zoning: arriving through a zone line, which keeps the chat.
 	void EnterZoneScreen(bool zoning = false);
@@ -293,6 +315,18 @@ private:
 	// character select
 	GameData m_ui;
 	SidlWindow m_charselect;
+	SidlWindow m_explore_window; // ExploreModeWindow (CExploreModeWnd)
+	bool m_exploring = false;
+	bool m_buttons_enabled = true; // SetButtonsEnabledState's
+	struct Confirmation
+	{
+		SidlWindow window;
+		bool built = false, open = false;
+		int category = 0;
+		uint64_t until_ms = 0; // 0: no timeout
+		std::function<void(bool)> on_close;
+	};
+	Confirmation m_confirm;
 	int m_selected_slot = -1;
 	bool m_entering_world = false;
 	std::unique_ptr<CharacterSelectView> m_charselect_view;

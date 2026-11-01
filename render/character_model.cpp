@@ -307,6 +307,69 @@ namespace render
 		return m_old_skeletons && code == "SKE" && (source.name == "global6_chr" || source.name == "global6_chr2");
 	}
 
+	unsigned LuclinAttachmentOffset(uint16_t race, uint8_t gender)
+	{
+		return AttachmentOffset(race, gender);
+	}
+
+	bool CharacterModels::FindSkeleton(uint16_t race, uint8_t gender, std::string &code, WldSkeleton &skeleton)
+	{
+		for (const std::string &tag : {ActorTag(race, gender), ActorTag(75, gender)})
+			for (auto &candidate : m_sources) {
+				if (Skipped(*candidate, tag))
+					continue;
+				int actor = candidate->wld.Find(tag + "_ACTORDEF");
+				if (actor >= 0 && candidate->wld.ActorSkeleton(actor) >= 0) {
+					code = tag;
+					return candidate->wld.ReadSkeleton(candidate->wld.ActorSkeleton(actor), skeleton);
+				}
+			}
+		return false;
+	}
+
+	bool CharacterModels::HasPoint(uint16_t race, uint8_t gender, const std::string &point)
+	{
+		std::string code;
+		WldSkeleton skeleton;
+		if (!FindSkeleton(race, gender, code, skeleton))
+			return false;
+		for (const auto &bone : skeleton.bones)
+			if (Upper(bone.name) == code + point)
+				return true;
+		return false;
+	}
+
+	bool CharacterModels::IsLuclin(uint16_t race, uint8_t gender)
+	{
+		// initializeHierarchicalSprite: a model with a <tag>TUNIC_POINT_DAG is a Luclin one.
+		return HasPoint(race, gender, "TUNIC_POINT_DAG");
+	}
+
+	bool CharacterModels::HasItemModel(unsigned it) const
+	{
+		std::string tag = "IT" + std::to_string(it);
+		for (const auto *list : {&m_items, &m_sources})
+			for (const auto &from : *list) {
+				int index = from->wld.Find(tag + "_HS_DEF");
+				if (index >= 0 && from->wld.Fragments()[index].type == 0x10)
+					return true;
+				index = from->wld.Find(tag + "_DMSPRITEDEF");
+				if (index >= 0 && from->wld.Fragments()[index].type == 0x36)
+					return true;
+			}
+		return false;
+	}
+
+	bool CharacterModels::HasMaterial(const std::string &name) const
+	{
+		WldMaterial found;
+		for (const auto *list : {&m_sources, &m_items})
+			for (const auto &from : *list)
+				if (from->wld.FindMaterial(name, found))
+					return true;
+		return false;
+	}
+
 	bool CharacterModels::Open(const std::string &eq_dir, std::string &error, bool creatures, bool velious_textures,
 		const LuclinModels &luclin)
 	{

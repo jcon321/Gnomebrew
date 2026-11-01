@@ -70,6 +70,9 @@ namespace render
 	// Three-letter model code for a playable race ("HUM", "IKF", ...), or empty.
 	std::string RaceModelCode(uint16_t race, uint8_t gender);
 	float RaceHeight(uint16_t race); // a player race's default height
+	// CDisplay_GetRaceOffsetForAttachmentITs: where a race's Luclin items start (IT1000 + this is its
+	// hair, IT2000 + this its beard, IT5000 + this its helms); women's 30 on.
+	unsigned LuclinAttachmentOffset(uint16_t race, uint8_t gender);
 
 	struct ModelLighting
 	{
@@ -207,6 +210,16 @@ namespace render
 		// no animations (something on the ground). Null when there's no such item model.
 		std::unique_ptr<CharacterModel> BuildItem(const std::string &actor, std::string &error);
 
+		// What CFacePick asks of a race's model, as CDisplay::SetFHEB and SetFHEB_Color find it out:
+		// whether it's a Luclin one (ActorInfo's model, +0x3b0), whether it has a point bone
+		// ("HAIR_POINT_DAG", "BEARD_POINT_DAG": the dag SetHairOrBeard changes), whether there's an
+		// item model IT<n> (what ChangeDag hangs there; n with the race's AttachmentOffset already
+		// in), and whether there's a material (CDisplay_SetEyeMaterial's CHR_EYE<n>_MDF).
+		bool IsLuclin(uint16_t race, uint8_t gender);
+		bool HasPoint(uint16_t race, uint8_t gender, const std::string &point);
+		bool HasItemModel(unsigned it) const;
+		bool HasMaterial(const std::string &name) const;
+
 	private:
 		struct Source
 		{
@@ -233,6 +246,8 @@ namespace render
 		bool m_velious_textures = false;
 		bool m_old_skeletons = true;
 		bool Skipped(const Source &source, const std::string &code) const; // LoadOldSkeletons
+		// The race's skeleton as Build finds it (race 75's when it has none); false for none.
+		bool FindSkeleton(uint16_t race, uint8_t gender, std::string &code, WldSkeleton &skeleton);
 		std::map<std::string, std::shared_ptr<const std::map<std::string, SkeletonAnimation>>> m_animation_sets; // by model code and variant ("KEMD")
 	};
 }

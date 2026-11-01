@@ -217,6 +217,71 @@ void FrontEnd::EnterServerSelect()
 
 // ---------------------------------------------------------------- dialogs
 
+void FrontEnd::ShowConfirmation(int category, uint32_t timeout_ms, const std::string &text, std::function<void(bool)> on_close)
+{
+	// CConfirmationDialog::Activate: one already up goes as No first (its timeout handler); Yes and
+	// No, or OK alone for 0x1d; the text; centered on the screen.
+	if (!m_ui.definitions) {
+		ShowMessage(text, on_close);
+		return;
+	}
+	if (!m_confirm.built) {
+		std::string error;
+		if (!m_confirm.window.Build(*m_ui.definitions, "ConfirmationDialogBox", error)) {
+			Log("confirmation dialog: " + error);
+			ShowMessage(text, on_close);
+			return;
+		}
+		m_confirm.built = true;
+	}
+	if (m_confirm.open)
+		CloseConfirmation(false);
+	SidlWindow &window = m_confirm.window;
+	for (const char *id : {"Yes_Button", "No_Button"})
+		if (SidlWindow::Control *button = window.Find(id))
+			button->visible = category != 0x1d;
+	if (SidlWindow::Control *ok = window.Find("OK_Button"))
+		ok->visible = category == 0x1d;
+	if (SidlWindow::Control *output = window.Find("TextOutput")) {
+		output->text = text;
+		output->scroll_pos = 0;
+	}
+	Rect r = window.Bounds();
+	r.x = (m_game_width - r.w) / 2;
+	r.y = (m_game_height - r.h) / 2;
+	window.Move(r);
+	m_confirm.category = category;
+	m_confirm.until_ms = timeout_ms ? m_now_ms + timeout_ms : 0;
+	m_confirm.on_close = std::move(on_close);
+	m_confirm.open = true;
+}
+
+void FrontEnd::CloseConfirmation(bool yes)
+{
+	// ProcessYes or ProcessNo for its category, then Deactivate.
+	if (!m_confirm.open)
+		return;
+	m_confirm.open = false;
+	auto on_close = std::move(m_confirm.on_close);
+	m_confirm.on_close = nullptr;
+	if (on_close)
+		on_close(yes);
+}
+
+bool FrontEnd::ConfirmationEvent(const InputEvent &event)
+{
+	if (!m_confirm.open || !event.IsMouse())
+		return false;
+	const Rect &r = m_confirm.window.Bounds();
+	bool over = event.x >= r.x && event.y >= r.y && event.x < r.x + r.w && event.y < r.y + r.h;
+	std::string clicked = m_confirm.window.OnMouse(event);
+	if (clicked == "Yes_Button" || clicked == "OK_Button")
+		CloseConfirmation(true);
+	else if (clicked == "No_Button")
+		CloseConfirmation(false);
+	return over || !clicked.empty();
+}
+
 void FrontEnd::ShowMessage(const std::string &text, std::function<void(bool)> on_close)
 {
 	m_dialog = Dialog{};
@@ -638,6 +703,9 @@ void FrontEnd::HandleSessionEvents(const std::vector<LoginSession::Event> &event
 void FrontEnd::Update(uint64_t now_ms)
 {
 	m_now_ms = now_ms;
+	// CConfirmationDialog's timeout: No.
+	if (m_confirm.open && m_confirm.until_ms && now_ms >= m_confirm.until_ms)
+		CloseConfirmation(false);
 	std::vector<LoginSession::Event> events;
 	m_session.Pump(0, events);
 	if (!events.empty())
@@ -966,9 +1034,9 @@ void FrontEnd::HandleWorldEvents(const std::vector<WorldSession::Event> &events)
 			break;
 		case Type::CharacterCreated: {
 			// The new list is already in; character select starts on the new character.
+			// HandleNameApprovalResponse(1): the dialog goes.
 			m_creating = false;
-			if (m_dialog.open)
-				CloseDialog(true);
+			CloseConfirmation(false);
 			const auto &slots = m_world.Characters();
 			for (int i = 0; i < static_cast<int>(slots.size()); ++i)
 				if (slots[i].name == event.text)
@@ -979,18 +1047,19 @@ void FrontEnd::HandleWorldEvents(const std::vector<WorldSession::Event> &events)
 			if (m_creating && m_creation) {
 				// HandleNameApprovalResponse: "Name has been rejected", back to the first screen.
 				m_creating = false;
-				if (m_dialog.open)
-					CloseDialog(true);
 				m_creation->NameRejected();
-				ShowMessage(m_creation->RejectedText());
+				ShowConfirmation(0x1d, 45000, m_creation->RejectedText());
 			}
 			else
 				ShowMessage("Character creation failed: " + event.text);
 			break;
 		case Type::ZoneUnavailable:
+			// 0x8005: back in character select, eqstr 1954 in the confirmation dialog (0x1d, 4 s).
 			m_entering_world = false;
+			if (m_charselect_view)
+				m_charselect_view->SetUserLight(true);
 			RefreshCharacterButtons();
-			ShowMessage("That zone is unavailable right now.\n\n" + event.text);
+			ShowConfirmation(0x1d, 4000, EqString(1954, "That zone is unavailable."));
 			break;
 		case Type::Error:
 			m_entering_world = false;
@@ -1029,24 +1098,32 @@ void FrontEnd::EnterCharacterSelect()
 		m_sound->SetMusicSelection(audio::EqSound::CharacterSelect, true);
 	}
 
-	// CCharacterSelect::AlternateBackgroundAvailable: Rotate starts checked.
+	// CCharacterSelect::AlternateBackgroundAvailable: Rotate starts checked, not exploring. The
+	// buttons are as the window made them (a new window: SetButtonsEnabledState's left behind).
 	if (auto *rotate = m_charselect.Find("Rotate_Button"))
 		rotate->checked = true;
 	if (m_charselect_view) {
 		m_charselect_view->SetRotate(true);
 		m_charselect_view->SetCloseUp(false);
+		m_charselect_view->SetUserLight(true);
+		if (m_charselect_view->Exploring())
+			m_charselect_view->LeaveExplore();
 	}
+	m_exploring = false;
+	m_buttons_enabled = true;
+	if (m_explore_window.Empty() && !m_explore_window.Build(*m_ui.definitions, "ExploreModeWindow", error))
+		Log("explore window: " + error);
 
-	// Start on the remembered slot (LastCharSel), else the first character.
+	// SelectCharacter(1002): the remembered slot (LastCharSel), else the first; none when the first
+	// is empty.
 	m_selected_slot = -1;
 	const auto &slots = m_world.Characters();
+	auto filled = [&](int i) { return i >= 0 && i < CharacterButtons && i < static_cast<int>(slots.size()) && !slots[i].Empty(); };
 	int last = m_config.last_character;
-	if (last >= 0 && last < CharacterButtons && last < static_cast<int>(slots.size()) && !slots[last].Empty())
+	if (filled(last))
 		m_selected_slot = last;
-	for (int i = 0; m_selected_slot < 0 && i < CharacterButtons && i < static_cast<int>(slots.size()); ++i) {
-		if (!slots[i].Empty())
-			m_selected_slot = i;
-	}
+	else if (filled(0))
+		m_selected_slot = 0;
 	if (m_selected_slot >= 0)
 		m_config.last_character = m_selected_slot;
 	RefreshCharacterButtons();
@@ -1058,28 +1135,37 @@ void FrontEnd::RefreshCharacterButtons()
 	if (m_selected_slot >= 0 && (m_selected_slot >= static_cast<int>(slots.size()) || slots[m_selected_slot].Empty()))
 		m_selected_slot = -1;
 
+	// UpdateButtonNames: a character's name, or eqstr 1947 for an empty slot.
+	std::string create = EqString(1947, "Create a New Character");
 	for (int i = 0; i < CharacterButtons; ++i) {
 		SidlWindow::Control *button = m_charselect.Find(SlotButton(i));
 		if (!button)
 			continue;
 		bool filled = i < static_cast<int>(slots.size()) && !slots[i].Empty();
-		button->text = filled ? slots[i].name : button->def->text; // empty slots keep "Create New Character"
+		button->text = filled ? slots[i].name : create;
 		button->checked = i == m_selected_slot;
-		button->enabled = !m_entering_world;
+		button->enabled = m_buttons_enabled && !m_entering_world;
 	}
 
 	bool have_character = m_selected_slot >= 0 && !m_entering_world;
 	if (auto *enter = m_charselect.Find("Enter_World_Button"))
-		enter->enabled = have_character;
+		enter->enabled = m_buttons_enabled && have_character;
 	if (auto *del = m_charselect.Find("Delete_Button"))
-		del->enabled = have_character;
+		del->enabled = m_buttons_enabled && have_character;
+	if (auto *explore = m_charselect.Find("Explore_Button"))
+		explore->enabled = m_buttons_enabled && !m_entering_world;
 	if (auto *quit = m_charselect.Find("Quit_Button"))
 		quit->enabled = !m_entering_world;
 
 	if (m_charselect_view) {
+		// SelectCharacter: the model takes the character's look, class, deity and zone; with none
+		// selected it's "Newbie" (eqstr 4000), a level 1 warrior, looking as it did (at first
+		// initializeNetworkGame's human man).
+		render::CharacterAppearance appearance;
+		uint8_t class_id = 1;
+		uint16_t deity = 0;
 		if (m_selected_slot >= 0) {
 			const CharacterSlot &c = slots[m_selected_slot];
-			render::CharacterAppearance appearance;
 			appearance.race = c.race;
 			appearance.gender = c.gender;
 			appearance.face = c.face;
@@ -1094,38 +1180,81 @@ void FrontEnd::RefreshCharacterButtons()
 				appearance.equip[k] = c.equip[k];
 				appearance.tint[k] = c.tint[k];
 			}
-			m_charselect_view->SetCharacter(&appearance, c.class_id);
+			class_id = c.class_id;
+			deity = c.deity;
 		}
-		else
-			m_charselect_view->SetCharacter(nullptr, 0);
+		else if (const render::CharacterAppearance *shown = m_charselect_view->Shown())
+			appearance = *shown;
+		else {
+			appearance.race = 1;
+			appearance.gender = 0;
+		}
+		if (m_selected_slot < 0)
+			appearance.class_id = 1;
+		m_charselect_view->SetCharacter(&appearance, class_id, deity);
 	}
+}
+
+void FrontEnd::SetButtonsEnabledState(bool enabled)
+{
+	m_buttons_enabled = enabled;
+	RefreshCharacterButtons();
 }
 
 void FrontEnd::SelectSlot(int slot)
 {
+	// CCharacterSelect::SelectCharacter: nothing while the selected one's button is off; exploring,
+	// it leaves explore mode and comes back into it with the new character.
 	const auto &slots = m_world.Characters();
-	if (slot < 0 || slot >= CharacterButtons)
+	if (slot < 0 || slot >= CharacterButtons || !m_buttons_enabled)
 		return;
 	if (slot >= static_cast<int>(slots.size()) || slots[slot].Empty()) {
-		// An empty slot is "Create New Character".
+		// An empty slot is "Create New Character" (WndNotification).
+		if (m_exploring)
+			LeaveExplorationMode();
 		RefreshCharacterButtons();
 		EnterCharacterCreate();
 		return;
 	}
+	bool exploring = m_exploring;
+	if (exploring)
+		LeaveExplorationMode();
 	m_selected_slot = slot;
 	m_config.last_character = slot; // DoCharacterSelection writes LastCharSel when the selection changes
 	RefreshCharacterButtons();
+	if (exploring)
+		EnterExplorationMode();
 }
 
 void FrontEnd::EnterWorldSelected()
 {
+	// CCharacterSelect::EnterWorld: with a character selected, the user light goes and
+	// DoCharacterSelection sends the name (0x8001).
 	const auto &slots = m_world.Characters();
 	if (m_entering_world || m_selected_slot < 0 || m_selected_slot >= static_cast<int>(slots.size()))
 		return;
+	if (m_exploring)
+		LeaveExplorationMode();
 	if (m_world.EnterWorld(slots[m_selected_slot].name)) {
 		m_entering_world = true;
+		if (m_charselect_view)
+			m_charselect_view->SetUserLight(false);
 		RefreshCharacterButtons();
 	}
+}
+
+void FrontEnd::DeleteSelected()
+{
+	// CCharacterSelect::DeleteCharacter (ProcessYes, category 0x1b): the character's option file
+	// (CEverQuest_RemoveCharacterOptionFile: <name>_<server>.ini, our hot buttons and socials) and
+	// 0x405a with the name; the world answers with the new list.
+	const auto &slots = m_world.Characters();
+	if (m_selected_slot < 0 || m_selected_slot >= static_cast<int>(slots.size()))
+		return;
+	std::string name = slots[m_selected_slot].name;
+	if (!m_config.ui_dir.empty())
+		std::remove((m_config.ui_dir + "/" + name + "_" + m_config.login_host.substr(0, 7) + ".ini").c_str());
+	m_world.DeleteCharacter(name);
 }
 
 void FrontEnd::LeaveWorld()
@@ -1134,21 +1263,170 @@ void FrontEnd::LeaveWorld()
 	EnterStart();
 }
 
+std::string FrontEnd::CharacterNameTag(int slot) const
+{
+	// CDisplay::SetNameSpriteState with the character select window up: "%s [%d %s]\n%s" (name,
+	// level, GetClassDesc, GetFullZoneName). Nobody selected: "Newbie", level 1, a warrior, in the
+	// load zone.
+	const auto &slots = m_world.Characters();
+	if (slot >= 0 && slot < static_cast<int>(slots.size()) && !slots[slot].Empty()) {
+		const CharacterSlot &c = slots[slot];
+		return c.name + " [" + std::to_string(c.level) + " " + GameValues::ClassDesc(m_ui.eqstr, c.class_id) + "]\n" +
+		       FullZoneName(c.zone, m_ui.eqstr);
+	}
+	uint32_t zone = m_charselect_view && m_charselect_view->ZoneName() == "load" ? 184 : 185;
+	return EqString(4000, "Newbie") + " [1 " + GameValues::ClassDesc(m_ui.eqstr, 1) + "]\n" + FullZoneName(zone, m_ui.eqstr);
+}
+
+void FrontEnd::EnterExplorationMode()
+{
+	// CCharacterSelect::EnterExplorationMode: the window goes for ExploreModeWindow (its label the
+	// character: eqstr 6681 "%1 [%2 %3] in %4"), the default camera, the other characters round us.
+	if (!m_charselect_view || !m_charselect_view->Loaded())
+		return;
+	m_exploring = true;
+	std::vector<CharacterSelectView::ExploreCharacter> others;
+	const auto &slots = m_world.Characters();
+	for (int i = 0; i < CharacterButtons && i < static_cast<int>(slots.size()); ++i) {
+		if (i == m_selected_slot || slots[i].Empty())
+			continue;
+		const CharacterSlot &c = slots[i];
+		CharacterSelectView::ExploreCharacter other;
+		other.slot = i;
+		other.class_id = static_cast<uint8_t>(c.class_id);
+		render::CharacterAppearance &a = other.appearance;
+		a.race = c.race;
+		a.gender = c.gender;
+		a.face = c.face;
+		a.class_id = other.class_id;
+		a.hair_style = c.hair_style;
+		a.hair_color = c.hair_color;
+		a.beard = c.beard;
+		a.beard_color = c.beard_color;
+		a.eye_color1 = c.eye_color1;
+		a.eye_color2 = c.eye_color2;
+		for (int k = 0; k < render::EquipSlots; ++k) {
+			a.equip[k] = c.equip[k];
+			a.tint[k] = c.tint[k];
+		}
+		others.push_back(other);
+	}
+	m_charselect_view->EnterExplore(others);
+	if (SidlWindow::Control *label = m_explore_window.Find("EXW_CharInfoLabel")) {
+		std::string tag = CharacterNameTag(m_selected_slot);
+		size_t newline = tag.find('\n');
+		std::string first = tag.substr(0, newline);
+		std::string name = first.substr(0, first.find(" ["));
+		std::string inside = first.substr(first.find('[') + 1);
+		inside = inside.substr(0, inside.size() - 1);
+		std::string level = inside.substr(0, inside.find(' '));
+		std::string class_desc = inside.substr(inside.find(' ') + 1);
+		std::string zone = newline == std::string::npos ? "" : tag.substr(newline + 1);
+		label->text = m_ui.eqstr ? m_ui.eqstr->Format(6681, {name, level, class_desc, zone})
+		                         : name + " [" + level + " " + class_desc + "] in " + zone;
+	}
+}
+
+void FrontEnd::LeaveExplorationMode()
+{
+	// LeaveExplorationMode: the explore window goes, the others too, the character back in place and
+	// the window back.
+	m_exploring = false;
+	m_keys = HeldKeys{};
+	m_mouse_turn = m_mouse_grabbed = false;
+	if (m_charselect_view)
+		m_charselect_view->LeaveExplore();
+}
+
+void FrontEnd::ExploreEvent(const InputEvent &event)
+{
+	// ProcessNewUICharacterSelectKeys exploring: Escape leaves, Enter enters the world, the rest
+	// are ProcessMovementKeys' (the movement keys, F9's view). The right button looks around
+	// (ProcessControls' mouse look), a left click on another character selects it (LeftClickedOnPlayer).
+	switch (event.type) {
+	case InputEvent::Type::Key:
+		if (event.key == InputEvent::Key::Escape)
+			LeaveExplorationMode();
+		else if (event.key == InputEvent::Key::Enter)
+			EnterWorldSelected();
+		else if (event.key == InputEvent::Key::F9) {
+			if (m_charselect_view)
+				m_charselect_view->ToggleCamera();
+		}
+		else if (event.key == InputEvent::Key::Space)
+			m_jump_requested = true;
+		else
+			SetZoneKey(event.key, true, false);
+		return;
+	case InputEvent::Type::RightDown:
+		m_look_x = event.x;
+		m_look_y = event.y;
+		m_mouse_turn = true;
+		return;
+	case InputEvent::Type::MouseMove:
+		if (m_mouse_turn && m_charselect_view) {
+			int moved_x = event.x - m_look_x, moved_y = event.y - m_look_y;
+			if (moved_x == 0 && moved_y == 0)
+				return; // the host putting the cursor back
+			m_mouse_grabbed = true;
+			m_charselect_view->Turn(-0.6f * static_cast<float>(moved_x));
+			m_charselect_view->Pitch(-0.25f * static_cast<float>(moved_y));
+		}
+		return;
+	case InputEvent::Type::MouseUp:
+		if (m_charselect_view) {
+			int slot = m_charselect_view->PickCharacter(event.x, event.y);
+			if (slot >= 0)
+				SelectSlot(slot);
+		}
+		return;
+	default:
+		return;
+	}
+}
+
 void FrontEnd::CharacterSelectEvent(const InputEvent &event)
 {
+	// The confirmation dialog takes clicks on it; the rest go on as usual.
+	if (ConfirmationEvent(event))
+		return;
+	if (m_exploring) {
+		ExploreEvent(event);
+		return;
+	}
 	if (event.type == InputEvent::Type::Key) {
+		// ProcessNewUICharacterSelectKeys: Escape is Quit (ActivateBackButton), Enter enters the
+		// world, Up and Down step through the characters round the ends (SelectCharacter 1001
+		// and 1000).
+		const auto &slots = m_world.Characters();
+		auto filled = [&](int i) { return i >= 0 && i < CharacterButtons && i < static_cast<int>(slots.size()) && !slots[i].Empty(); };
 		switch (event.key) {
 		case InputEvent::Key::Up:
 		case InputEvent::Key::Down: {
-			// Step to the previous/next filled slot.
-			const auto &slots = m_world.Characters();
-			int step = event.key == InputEvent::Key::Up ? -1 : 1;
-			for (int i = m_selected_slot + step; i >= 0 && i < CharacterButtons && i < static_cast<int>(slots.size()); i += step) {
-				if (!slots[i].Empty()) {
-					SelectSlot(i);
-					break;
+			// 1001: the one before; from the first, the last filled slot (else 0). 1000: the one
+			// after, or the first past the last or an empty one. Then none if the first is empty.
+			int slot;
+			if (event.key == InputEvent::Key::Up) {
+				slot = m_selected_slot - 1;
+				if (slot < 0) {
+					slot = CharacterButtons - 1;
+					while (slot > 0 && !filled(slot))
+						--slot;
 				}
 			}
+			else {
+				slot = m_selected_slot + 1;
+				if (slot > CharacterButtons - 1 || !filled(slot))
+					slot = 0;
+			}
+			if (slot == 0 && !filled(0))
+				slot = -1;
+			if (!m_buttons_enabled || slot == m_selected_slot)
+				break;
+			m_selected_slot = filled(slot) ? slot : -1;
+			if (m_selected_slot >= 0)
+				m_config.last_character = m_selected_slot;
+			RefreshCharacterButtons();
 			break;
 		}
 		case InputEvent::Key::Enter:
@@ -1194,19 +1472,22 @@ void FrontEnd::CharacterSelectEvent(const InputEvent &event)
 	if (clicked == "Enter_World_Button")
 		EnterWorldSelected();
 	else if (clicked == "Delete_Button") {
+		// WndNotification: eqstr 10019 in the confirmation dialog (0x1b, 10 s), the buttons off.
 		const auto &slots = m_world.Characters();
 		if (m_selected_slot < 0 || m_selected_slot >= static_cast<int>(slots.size()))
 			return;
 		std::string name = slots[m_selected_slot].name;
-		ShowQuestion("Delete " + name + "?\n\nThis can't be undone.", [this, name](bool yes) {
+		std::string text = m_ui.eqstr ? m_ui.eqstr->Format(10019, {name}) : "Are you absolutely sure you want to delete " + name + "?";
+		ShowConfirmation(0x1b, 10000, text, [this](bool yes) {
 			if (yes)
-				m_world.DeleteCharacter(name);
+				DeleteSelected();
 		});
+		SetButtonsEnabledState(false);
 	}
 	else if (clicked == "Quit_Button")
 		LeaveWorld();
 	else if (clicked == "Explore_Button")
-		ShowMessage(m_strings.Get("SISATEXT_NOT_IMPLEMENTED"));
+		EnterExplorationMode();
 	else if (clicked == "Rotate_Button" && m_charselect_view) {
 		if (auto *rotate = m_charselect.Find("Rotate_Button"))
 			m_charselect_view->SetRotate(rotate->checked);
@@ -1217,21 +1498,30 @@ void FrontEnd::RenderCharacterSelect(Canvas &canvas, uint64_t now_ms)
 {
 	// The zone and the selected character in 3D behind the window (CharacterSelectView).
 	const auto &slots = m_world.Characters();
+	if (m_exploring && m_charselect_view) {
+		// ProcessControls, before the frame.
+		MoveControls controls;
+		controls.forward = m_keys.up || m_keys.w;
+		controls.back = m_keys.down || m_keys.s;
+		controls.left = m_keys.left || m_keys.a;
+		controls.right = m_keys.right || m_keys.d;
+		controls.strafe = m_mouse_turn;
+		controls.jump = m_jump_requested;
+		controls.run = m_run;
+		m_jump_requested = false;
+		m_charselect_view->Explore(controls, now_ms);
+	}
 	RenderScene(canvas, now_ms);
 	bool scene = m_charselect_view && m_charselect_view->Loaded() && m_charselect_view->Error().empty();
 	if (scene) {
-		// TurnCharacterNameSpritesOn: the name sprite over the character's head. With the
-		// character select window up, CDisplay::SetNameSpriteState writes "%s [%d %s]\n%s" (name,
-		// level, GetClassDesc, GetFullZoneName) and CDisplay_SetNameSpriteTint makes it yellow.
-		int x, y;
-		float depth, focal;
-		if (m_selected_slot >= 0 && m_selected_slot < static_cast<int>(slots.size()) &&
-			m_charselect_view->NamePosition(x, y, depth, focal)) {
-			const CharacterSlot &c = slots[m_selected_slot];
-			std::string text = c.name + " [" + std::to_string(c.level) + " " + GameValues::ClassDesc(m_ui.eqstr, c.class_id) +
-			                   "]\n" + FullZoneName(c.zone, m_ui.eqstr);
-			DrawNameSprite(canvas, x, y, depth, focal, text, 0xffff00);
-		}
+		// TurnCharacterNameSpritesOn: the name sprites over the heads, ours and (exploring) the
+		// others'. CDisplay_SetNameSpriteTint makes them yellow, and renderNameTag lights them as in
+		// a zone: the room's ambient + 0.4.
+		const render::Vec3 &light = m_charselect_view->Ambient();
+		uint32_t color = NameSpriteLit(0xffff00, light.x, light.y, light.z);
+		for (const auto &tag : m_charselect_view->NameTags())
+			DrawNameSprite(canvas, tag.x, tag.y, tag.depth, tag.focal, CharacterNameTag(tag.slot < 0 ? m_selected_slot : tag.slot),
+				color);
 	}
 	else {
 		if (m_selected_slot >= 0 && m_selected_slot < static_cast<int>(slots.size())) {
@@ -1252,8 +1542,11 @@ void FrontEnd::RenderCharacterSelect(Canvas &canvas, uint64_t now_ms)
 	if (m_entering_world)
 		m_text.Draw(canvas, m_charselect.Bounds().Right() + 20, 20, "Entering world...", 14, 0xffffff);
 
-	m_charselect.Draw(canvas, m_text, *m_ui.textures, now_ms);
-	if (m_anim_window && scene) {
+	if (m_exploring)
+		m_explore_window.Draw(canvas, m_text, *m_ui.textures, now_ms);
+	else
+		m_charselect.Draw(canvas, m_text, *m_ui.textures, now_ms);
+	if (m_anim_window && scene && !m_exploring) {
 		// The list follows the model shown: another character, or the same one rebuilt.
 		if (m_anim_serial != m_charselect_view->ModelSerial() + 1) {
 			m_anim_window->SetAnimations(m_charselect_view->Animations());
@@ -1262,6 +1555,8 @@ void FrontEnd::RenderCharacterSelect(Canvas &canvas, uint64_t now_ms)
 		m_anim_window->Place(canvas.Width(), canvas.Height());
 		m_anim_window->Draw(canvas, m_text, *m_ui.textures, now_ms);
 	}
+	if (m_confirm.open)
+		m_confirm.window.Draw(canvas, m_text, *m_ui.textures, now_ms);
 }
 
 // ---------------------------------------------------------------- character creation (eqgame)
@@ -1280,7 +1575,9 @@ void FrontEnd::EnterCharacterCreate()
 	// DoNewCharacterCreation: CCharacterCreation::Activate over the character select scene.
 	m_rules.SetServerType(m_world.ServerType());
 	m_rules.SetStrictNames(m_world.StrictNames());
-	m_creation->Activate(m_game_width, m_game_height, m_world.Expansions());
+	m_creation->SetModels(m_charselect_view ? m_charselect_view->Models() : nullptr);
+	m_creation->Activate(m_game_width, m_game_height, m_world.Expansions(),
+		m_charselect_view ? m_charselect_view->Shown() : nullptr);
 	m_creating = false;
 	m_screen = Screen::CharacterCreate;
 	ShowCreatedCharacter();
@@ -1310,6 +1607,9 @@ void FrontEnd::ShowCreatedCharacter()
 
 void FrontEnd::CharacterCreateEvent(const InputEvent &event)
 {
+	// Its messages are the confirmation dialog's (OK, category 0x1d), which takes clicks on it.
+	if (ConfirmationEvent(event))
+		return;
 	if (m_creating)
 		return;
 	switch (m_creation->OnEvent(event)) {
@@ -1317,17 +1617,17 @@ void FrontEnd::CharacterCreateEvent(const InputEvent &event)
 		ReturnToCharacterSelect();
 		return;
 	case CharacterCreation::Action::Message:
-		ShowMessage(m_creation->Message());
+		ShowConfirmation(0x1d, m_creation->MessageMs(), m_creation->Message());
 		break;
 	case CharacterCreation::Action::Submit: {
-		// SubmitNameToWorld: OP_ApproveName, then (approved) OP_CharacterCreate.
+		// SubmitNameToWorld: OP_ApproveName (eqstr 0x62c up for 45 s), then (approved) OP_CharacterCreate.
 		NewCharacter character = m_creation->Character();
 		if (m_world.CreateCharacter(character)) {
 			m_creating = true;
-			ShowMessage(m_creation->SubmittingText());
+			ShowConfirmation(0x1d, 45000, m_creation->SubmittingText());
 		}
 		else
-			ShowMessage(m_creation->RejectedText());
+			ShowConfirmation(0x1d, 45000, m_creation->RejectedText());
 		break;
 	}
 	case CharacterCreation::Action::None:
@@ -1338,9 +1638,12 @@ void FrontEnd::CharacterCreateEvent(const InputEvent &event)
 
 bool FrontEnd::ControlCenter(const std::string &screen_id, int &x, int &y) const
 {
-	const SidlWindow *window = m_screen == Screen::CharacterSelect                 ? &m_charselect
+	const SidlWindow *window = m_screen == Screen::CharacterSelect && m_exploring  ? &m_explore_window
+	                           : m_screen == Screen::CharacterSelect               ? &m_charselect
 	                           : m_screen == Screen::CharacterCreate && m_creation ? &m_creation->Window()
 	                                                                               : nullptr;
+	if (m_confirm.open && m_confirm.window.Find(screen_id))
+		window = &m_confirm.window;
 	const SidlWindow::Control *control = window ? window->Find(screen_id) : nullptr;
 	if (!control || !window->Shown(*control))
 		return false;
@@ -1366,6 +1669,8 @@ void FrontEnd::RenderCharacterCreate(Canvas &canvas, uint64_t now_ms)
 {
 	RenderScene(canvas, now_ms);
 	m_creation->Draw(canvas, m_text, *m_ui.textures, now_ms);
+	if (m_confirm.open)
+		m_confirm.window.Draw(canvas, m_text, *m_ui.textures, now_ms);
 }
 
 // ---------------------------------------------------------------- zone (eqgame's world display)

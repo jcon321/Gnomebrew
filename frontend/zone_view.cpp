@@ -13,20 +13,6 @@
 
 namespace
 {
-	// CDisplay::SetAmbientLight: the ambient light's red, green and blue for each hour 1..24
-	// (eqgame.exe 0x621be8, 0x621c48, 0x621ca8), between which it moves minute by minute.
-	const float AmbientRed[24] = {0, 0, 0, 0.1f, 0.35f, 0.6f, 0.6f, 0.6f, 0.6f, 0.7f, 0.8f, 0.9f, 0.9f, 0.8f, 0.7f, 0.6f, 0.6f,
-		0.6f, 0.6f, 0.35f, 0.1f, 0, 0, 0};
-	const float AmbientGreen[24] = {0, 0, 0, 0.1f, 0.2f, 0.3f, 0.4f, 0.5f, 0.6f, 0.7f, 0.8f, 0.9f, 0.9f, 0.8f, 0.7f, 0.6f, 0.5f,
-		0.4f, 0.3f, 0.2f, 0.1f, 0, 0, 0};
-	const float AmbientBlue[24] = {0.3f, 0.3f, 0.3f, 0.3f, 0.3f, 0.3f, 0.4f, 0.5f, 0.6f, 0.7f, 0.8f, 0.9f, 0.9f, 0.8f, 0.7f,
-		0.6f, 0.5f, 0.4f, 0.3f, 0.3f, 0.3f, 0.3f, 0.3f, 0.3f};
-	// The sky's brightness over its 60 day periods (0x621af8): 14 is noon, 44 the dead of night.
-	const float SkyLight[60] = {0.5f, 0.58f, 0.58f, 0.62f, 0.62f, 0.74f, 0.74f, 0.78f, 0.78f, 0.84f, 0.84f, 0.92f, 0.92f, 1, 1,
-		0.96f, 0.92f, 0.92f, 0.92f, 0.84f, 0.84f, 0.78f, 0.78f, 0.78f, 0.7f, 0.7f, 0.6f, 0.54f, 0.54f, 0.54f, 0.44f, 0.4f, 0.38f,
-		0.38f, 0.3f, 0.28f, 0.24f, 0.2f, 0.18f, 0.14f, 0.1f, 0.08f, 0.04f, 0.02f, 0, 0.02f, 0.04f, 0.08f, 0.1f, 0.14f, 0.18f, 0.2f,
-		0.28f, 0.28f, 0.38f, 0.38f, 0.38f, 0.44f, 0.44f, 0.5f};
-
 	uint32_t ScaleColor(uint32_t color, const render::Vec3 &scale)
 	{
 		auto channel = [](uint32_t c, float s) { return static_cast<uint32_t>(std::clamp(c * s, 0.0f, 255.0f)); };
@@ -80,40 +66,9 @@ ZoneView::Vision ZoneView::OwnVision() const
 
 ZoneView::DayLight ZoneView::Lighting() const
 {
-	DayLight light;
 	if (!m_have_time)
-		return light;
-	// CDisplay_GetGameTimeInfo: zones that don't follow the time of day are at midnight.
-	bool outdoors = m_info.time_type == 1 || m_info.time_type == 2 || m_info.time_type == 5;
-	int hour = outdoors ? std::clamp(m_hour, 1, 24) : 0;
-	float minute = outdoors ? m_minute : 0;
-
-	// SetAmbientLight: the hour's color toward the next hour's; 0.1 where time doesn't pass
-	// (0.5 for time type 4); then no less than the minimum below.
-	if (outdoors) {
-		int a = hour - 1, b = hour % 24;
-		float t = minute / 60;
-		light.ambient = {AmbientRed[a] + (AmbientRed[b] - AmbientRed[a]) * t, AmbientGreen[a] + (AmbientGreen[b] - AmbientGreen[a]) * t,
-			AmbientBlue[a] + (AmbientBlue[b] - AmbientBlue[a]) * t};
-	}
-	else {
-		float level = m_info.time_type == 4 ? 0.5f : 0.1f;
-		light.ambient = {level, level, level};
-	}
-	// SetSunLight: the sun, a directional light the same color (unclamped), none where time
-	// doesn't pass. Its angle (ProcessSky / SetSkyBackground) turns 128 every 6 hours: 320 at 3:00,
-	// overhead (0) at noon, 256 at midnight; it shines along (0, sin(512 - angle), -cos(512 - angle)).
-	if (outdoors) {
-		light.sun_color = light.ambient;
-		float angle = 320 + ((hour * 60 + minute) - 180) / 360 * 128;
-		float a = render::HeadingToRadians(512 - angle);
-		light.sun_direction = {0, std::sin(a), -std::cos(a)};
-	}
-	// SetAmbientLight keeps each channel between CDisplay's minimum ambient (0.18, set at 0x3c by
-	// its constructor, which TAKP's list calls CEverQuest::loadOptions @0049ec7e) and 0.99.
-	const float least = 0.18f;
-	light.ambient = {std::clamp(light.ambient.x, least, 0.99f), std::clamp(light.ambient.y, least, 0.99f),
-		std::clamp(light.ambient.z, least, 0.99f)};
+		return DayLight();
+	DayLight light = TimeOfDayLight(m_hour, m_minute, m_info.time_type);
 
 	// Infravision and ultravision raise the ambient to their color, and add it as the world's
 	// special ambient the less exposed we stand (CEverQuest_EnterZone2's colors, dimmer in Vex
@@ -131,21 +86,6 @@ ZoneView::DayLight ZoneView::Lighting() const
 	if (vision == Vision::Infravision && m_infravision_glow)
 		light.glow = {100 / 256.0f, 0, 0};
 
-	// SetSkyBackground / ProcessSky: the day period, in steps of 12 game minutes. Night until
-	// 3:00, dawn to 9:00 (periods 44, 45 .. 59, 0 .. 13), day to 15:00 (14), dusk to 20:48 (14 .. 43).
-	float u = (hour * 60 + minute) / 12;
-	float period;
-	if (u < 15 || u > 104)
-		period = 44;
-	else if (u < 45)
-		period = std::fmod(u + 29, 60.0f);
-	else if (u < 75)
-		period = 14;
-	else
-		period = u - 61;
-	int p = static_cast<int>(period);
-	float f = period - p;
-	light.sky = SkyLight[p % 60] + (SkyLight[(p + 1) % 60] - SkyLight[p % 60]) * f;
 	// A thunder clap's frame: the ambient light at 0.99, infravision off.
 	if (WeatherShown() && m_weather.flash) {
 		light.ambient = {0.99f, 0.99f, 0.99f};

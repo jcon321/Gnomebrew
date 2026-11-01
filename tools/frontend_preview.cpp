@@ -612,7 +612,14 @@ int main(int argc, char **argv)
 	FrontEndConfig config;
 	config.ui_dir = argv[2];
 	bool stop_at_charselect = argc == 7 && std::string(argv[6]) == "charselect";
-	bool create = argc == 7 && std::string(argv[6]) == "create";
+	bool explore = argc == 7 && std::string(argv[6]) == "explore";
+	// createluclin: the same with every Luclin model on, a dwarf warrior whose face picker cycles
+	// each feature (printing what the model has) before it's created.
+	bool create_luclin = argc == 7 && std::string(argv[6]) == "createluclin";
+	bool create = argc == 7 && (std::string(argv[6]) == "create" || create_luclin);
+	if (create_luclin)
+		for (auto &race : config.luclin_models.use)
+			race[0] = race[1] = true;
 	bool shop = argc == 7 && std::string(argv[6]) == "shop";
 	bool ground = argc == 7 && std::string(argv[6]) == "ground";
 	bool commands = argc == 7 && std::string(argv[6]) == "commands";
@@ -1870,13 +1877,43 @@ int main(int argc, char **argv)
 			}
 			h.RunUntil([] { return false; }, 300);
 			h.Snapshot("c0-random");
-			h.ClickId("CC0_Race3_Button");  // Erudite
-			h.ClickId("CC0_Class14_Button"); // Wizard
-			h.ClickId("CC0_Female_Button");
+			if (create_luclin) {
+				h.ClickId("CC0_Race2_Button");   // Dwarf
+				h.ClickId("CC0_Class13_Button"); // Warrior
+				h.ClickId("CC0_Male_Button");
+			}
+			else {
+				h.ClickId("CC0_Race3_Button");  // Erudite
+				h.ClickId("CC0_Class14_Button"); // Wizard
+				h.ClickId("CC0_Female_Button");
+			}
 			h.ClickId("CC0_Face_Button");
 			h.RunUntil([] { return false; }, 200);
 			h.Snapshot("c0-face");
+			auto features = [&](const char *what) {
+				render::CharacterAppearance a = frontend.Creation()->Appearance();
+				printf("[preview] %-22s face %u hair %u/%u beard %u/%u eyes %u/%u\n", what, a.face, a.hair_style, a.hair_color,
+					a.beard, a.beard_color, a.eye_color1, a.eye_color2);
+			};
+			{
+				std::string rows;
+				for (const char *row : {"Face", "Hair", "Hair_Color", "Eyes", "Beard", "Beard_Color", "Wode"}) {
+					const auto *control = frontend.Creation()->Window().Find(std::string(row) + "_Up_Button");
+					if (control && control->visible)
+						rows += std::string(rows.empty() ? "" : ", ") + row;
+				}
+				printf("[preview] face picker rows: %s\n", rows.c_str());
+			}
+			features("picker opened");
+			for (const char *button : {"Face_Up_Button", "Hair_Up_Button", "Hair_Up_Button", "Hair_Up_Button", "Hair_Up_Button",
+					 "Hair_Color_Up_Button", "Hair_Color_Down_Button", "Eyes_Up_Button", "Eyes_Down_Button", "Beard_Up_Button",
+					 "Beard_Up_Button", "Beard_Color_Up_Button", "Random_Button"})
+				if (h.ClickId(button))
+					features(button);
 			h.ClickId("Face_Up_Button");
+			features("Face_Up_Button");
+			h.RunUntil([] { return false; }, 200);
+			h.Snapshot("c0-face-picked");
 			h.ClickId("Accept_Button");
 			h.ClickId("CC0_Stat0_Up_Button");
 			h.ClickId("CC0_Stat5_Button"); // the rest into intelligence, up to its maximum
@@ -1887,8 +1924,9 @@ int main(int argc, char **argv)
 				h.RunUntil([] { return false; }, 200);
 				h.Snapshot("c0-erudite-wizard");
 				h.ClickId("CC_Next_Button");
-				if (frontend.DialogOpen()) {
-					printf("[preview] dialog: %s\n", frontend.DialogText().c_str());
+				if (frontend.DialogOpen() || frontend.ConfirmationOpen()) {
+					printf("[preview] dialog: %s\n",
+						(frontend.DialogOpen() ? frontend.DialogText() : frontend.ConfirmationText()).c_str());
 					return 1;
 				}
 				h.Snapshot("c1-deity");
@@ -1901,13 +1939,18 @@ int main(int argc, char **argv)
 				const StartPoint start = frontend.Creation()->Character().start;
 				printf("[preview] creating %s, start zone %u at %.0f, %.0f, %.0f\n", name.c_str(), start.zone, start.y, start.x,
 					start.z);
+				NewCharacter sent = frontend.Creation()->Character();
+				printf("[preview] sending face %u hair %u/%u beard %u/%u eyes %u/%u\n", sent.face, sent.hair_style, sent.hair_color,
+					sent.beard, sent.beard_color, sent.eye_color1, sent.eye_color2);
 				h.ClickId("CC_Next_Button");
 				h.RunUntil([&] { return frontend.CurrentScreen() == Screen::CharacterSelect; }, 10000);
 				if (frontend.CurrentScreen() == Screen::CharacterSelect)
 					created = name;
 				else {
-					printf("[preview] dialog: %s\n", frontend.DialogText().c_str());
-					h.Key(InputEvent::Key::Enter);
+					printf("[preview] dialog: %s\n",
+						(frontend.DialogOpen() ? frontend.DialogText() : frontend.ConfirmationText()).c_str());
+					if (!h.ClickId("OK_Button"))
+						h.Key(InputEvent::Key::Enter);
 				}
 			}
 			if (created.empty())
@@ -1916,12 +1959,14 @@ int main(int argc, char **argv)
 			h.Snapshot("c4-created");
 			for (const auto &c : frontend.Characters())
 				if (!c.Empty())
-					printf("[preview] character: %s level %u %s %s zone %u\n", c.name.c_str(), c.level, RaceName(c.race),
-						ClassName(c.class_id), c.zone);
+					printf("[preview] character: %s level %u %s %s zone %u face %u hair %u/%u beard %u/%u eyes %u/%u\n", c.name.c_str(),
+						c.level, RaceName(c.race), ClassName(c.class_id), c.zone, c.face, c.hair_style, c.hair_color, c.beard,
+						c.beard_color, c.eye_color1, c.eye_color2);
 			// Clean up: delete it again.
 			if (frontend.SelectedCharacter() >= 0 && frontend.Characters()[frontend.SelectedCharacter()].name == created) {
 				h.ClickId("Delete_Button");
-				h.Key(InputEvent::Key::Enter); // yes
+				printf("[preview] delete asks: %s\n", frontend.ConfirmationText().c_str());
+				h.ClickId("Yes_Button");
 				h.RunUntil([&] {
 					for (const auto &c : frontend.Characters())
 						if (c.name == created)
@@ -1930,6 +1975,59 @@ int main(int argc, char **argv)
 				}, 5000);
 				printf("[preview] deleted %s\n", created.c_str());
 			}
+			h.Key(InputEvent::Key::Escape);
+			return 0;
+		}
+
+		if (explore) {
+			// Explore mode: in, the chase camera, a walk forward, a click on another character,
+			// then out with Escape.
+			h.RunUntil([&] { return frontend.CharacterScene() && frontend.CharacterScene()->Loaded(); }, 20000);
+			h.Snapshot("x0-select");
+			const CharacterSelectView *view = frontend.CharacterScene();
+			printf("[preview] doors: %zu\n", view->DoorCount());
+			h.ClickId("Explore_Button");
+			printf("[preview] exploring: %d\n", frontend.Exploring());
+			h.Snapshot("x1-explore");
+			auto frames = [&](int ms) {
+				uint64_t end = NowMs() + static_cast<uint64_t>(ms);
+				int w = frontend.ScreenWidth(), hh = frontend.ScreenHeight();
+				std::vector<uint32_t> pixels(static_cast<size_t>(w) * hh);
+				Canvas canvas(pixels.data(), w, hh, w);
+				while (NowMs() < end) {
+					frontend.Update(NowMs());
+					frontend.Render(canvas, NowMs());
+				}
+			};
+			h.Key(InputEvent::Key::F9);
+			frames(300);
+			h.Snapshot("x2-chase");
+			for (const auto &tag : view->NameTags())
+				printf("[preview] name tag: slot %d at %d, %d\n", tag.slot, tag.x, tag.y);
+			int selected = frontend.SelectedCharacter();
+			for (const auto &tag : view->NameTags())
+				if (tag.slot >= 0) {
+					// On the body, under the name.
+					for (int dy = 20; dy <= 120 && frontend.SelectedCharacter() == selected; dy += 10)
+						h.Click(tag.x, tag.y + dy);
+					break;
+				}
+			printf("[preview] selected slot %d -> %d, exploring %d\n", selected, frontend.SelectedCharacter(), frontend.Exploring());
+			frames(300);
+			render::Vec3 before = view->Position();
+			h.Key(InputEvent::Key::Up);
+			frames(1500);
+			h.KeyUp(InputEvent::Key::Up);
+			frames(300);
+			render::Vec3 after = view->Position();
+			printf("[preview] walked from %.1f, %.1f, %.1f to %.1f, %.1f, %.1f\n", before.x, before.y, before.z, after.x,
+				after.y, after.z);
+			h.Snapshot("x3-walked");
+			h.Snapshot("x4-clicked");
+			h.Key(InputEvent::Key::Escape);
+			printf("[preview] after Escape exploring: %d\n", frontend.Exploring());
+			frames(300);
+			h.Snapshot("x5-left");
 			h.Key(InputEvent::Key::Escape);
 			return 0;
 		}

@@ -13,6 +13,7 @@
 #include "actor_sound.h"
 #include "canvas.h"
 #include "character_model.h"
+#include "day_light.h"
 #include "missiles.h"
 #include "particles.h"
 #include "player_movement.h"
@@ -149,16 +150,7 @@ public:
 
 	// Norrath's time (ZoneSession::GameTime): the ambient light, the sky and the fog follow it.
 	void SetGameTime(int hour, float minute);
-	struct DayLight
-	{
-		render::Vec3 ambient{0.6f, 0.6f, 0.6f}; // added to the zone's baked lighting
-		float sky = 1;                           // the sky's brightness
-		render::Vec3 sun_direction{0, 0, -1};    // the way the sun shines (SetSunLight)
-		render::Vec3 sun_color;                  // 0 where the time of day doesn't pass
-		// Infravision and ultravision (SetAmbientLight): the world's special ambient, added to
-		// everything, and the glow infravision gives warm-blooded spawns at night.
-		render::Vec3 special, glow;
-	};
+	using DayLight = ::DayLight;
 	DayLight Lighting() const;
 
 	// For the sound: where we hear from (our character's center, where the client puts its 3D
