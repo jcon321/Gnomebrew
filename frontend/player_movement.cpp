@@ -204,24 +204,27 @@ void PlayerMovement::Tick(float t, const render::ZoneScene &scene)
 			m_velocity.y = 0;
 	}
 
-	// Across, stopping at walls, then onto the floor (CheckForUnderFloor keeps the feet on it).
+	// CDisplay::MovePlayer: the actor's sphere, lifted by the step height, sweeps from where we
+	// were to where the velocity takes us, sliding along what it meets; then the feet go onto
+	// the floor below the lifted center (DoFloorCheck, PutPlayerOnFloor). So anything lower than
+	// the sphere's bottom is walked onto, and a wall doesn't take the velocity: pressed against a
+	// ledge we keep pushing at it, and a jump or a swim jump carries us over once we clear it.
 	render::Vec3 before = m_feet;
-	render::Vec3 feet = MoveHorizontally(m_feet, {m_velocity.x * t, m_velocity.y * t, 0}, scene);
-	// A wall that stopped or turned the move takes that much of the velocity with it.
-	m_velocity.x = (feet.x - before.x) / t;
-	m_velocity.y = (feet.y - before.y) / t;
-	float step_up = std::max(1.0f, m_height * 0.4f);
+	render::Vec3 lift{0, 0, m_height * BodyHeight + StepHeight()};
+	render::Vec3 center = Sweep(m_feet + lift, m_velocity * t, scene);
+	render::Vec3 feet = center - lift;
 	float floor_z;
-	if (!scene.FloorBelow({feet.x, feet.y, feet.z + step_up}, 1000, floor_z)) {
+	if (!FloorUnder(center, scene, floor_z)) {
 		// Nothing below at all: off the edge of the world. Stay put.
 		feet = before;
 		m_velocity.x = m_velocity.y = 0;
-		if (!scene.FloorBelow({feet.x, feet.y, feet.z + step_up}, 1000, floor_z))
+		if (!FloorUnder(before + lift, scene, floor_z))
 			floor_z = -1e30f;
 	}
-	float z = feet.z + m_velocity.z * t;
+	float z = feet.z;
 	// Walking down a slope or a step keeps us on the ground instead of falling off each edge.
-	if (m_on_ground && !swimming && m_velocity.z <= 0 && floor_z >= feet.z - step_up)
+	float step_down = std::max(1.0f, m_height * 0.4f);
+	if (m_on_ground && !swimming && m_velocity.z <= 0 && floor_z >= z - step_down)
 		z = floor_z;
 	if (z <= floor_z + 0.001f) {
 		z = floor_z;
@@ -284,42 +287,73 @@ bool PlayerMovement::CanSwimJump(const render::ZoneScene &scene) const
 	return region < 0 || scene.Regions().EnvironmentAt(ahead) == render::Environment::Dry;
 }
 
-render::Vec3 PlayerMovement::MoveHorizontally(const render::Vec3 &start, render::Vec3 move, const render::ZoneScene &scene) const
+float PlayerMovement::StepHeight() const
 {
-	const float radius = std::clamp(m_height * 0.15f, 0.5f, 2.0f);
-	const float heights[2] = {std::max(1.0f, m_height * 0.4f) + 0.2f, m_height * 0.8f};
-	render::Vec3 feet = start;
-	for (int attempt = 0; attempt < 3; ++attempt) {
-		float length = render::Length(move);
-		if (length < 1e-4f)
-			break;
-		render::Vec3 direction = move * (1 / length);
-		float nearest = 1;
-		render::Vec3 wall;
-		for (float height : heights) {
-			render::Vec3 from = feet + render::Vec3{0, 0, height};
-			float fraction;
-			render::Vec3 normal;
-			// Walkable slopes (normals pointing mostly up) aren't walls; the floor check climbs them.
-			if (scene.SegmentHit(from, from + direction * (length + radius), fraction, &normal) && normal.z < 0.7f &&
-				fraction < nearest) {
-				nearest = fraction;
-				wall = normal;
-			}
-		}
-		float allowed = nearest < 1 ? std::clamp(nearest * (length + radius) - radius, 0.0f, length) : length;
-		feet += direction * allowed;
-		if (nearest >= 1)
-			break;
-		// Slide along the wall with what's left.
-		render::Vec3 rest = move * (1 - allowed / length);
-		wall.z = 0;
-		wall = render::Normalize(wall);
-		if (render::Length(wall) == 0)
-			break;
-		move = rest - wall * render::Dot(rest, wall);
+	// MovePlayer's lift: none ducking (a standing jump's wind-up too); barbarians, trolls and
+	// ogres half their ModelHeightOffset, the rest three quarters, and 5.4375 at most.
+	if (m_crouching)
+		return 0;
+	float offset = m_height * BodyHeight;
+	if (m_race == 2 || m_race == 9 || m_race == 10)
+		return offset * 0.5f;
+	return offset < 7.25f ? offset * 0.75f : 5.4375f;
+}
+
+float PlayerMovement::Radius() const
+{
+	// CreatePlayerActor: a player's sphere is half its ModelHeightOffset, wider for the short races.
+	float radius = m_height * BodyHeight * 0.5f;
+	switch (m_race) {
+	case 8:  // dwarf
+	case 11: // halfling
+		return radius * 1.5f;
+	case 9: // troll
+		return radius * 0.9f;
+	case 10: // ogre
+		return radius * 0.8f;
+	case 12:  // gnome
+	case 216: // horse
+		return radius * 2;
+	default:
+		return radius;
 	}
-	return feet;
+}
+
+render::Vec3 PlayerMovement::Sweep(const render::Vec3 &start, render::Vec3 move, const render::ZoneScene &scene) const
+{
+	// s3dCollideActorWithWorld, then ...AlongUnitDirection with what's left along the surface
+	// (once in the client; a corner can take a second).
+	const float radius = Radius();
+	render::Vec3 center = start;
+	for (int attempt = 0; attempt < 3; ++attempt) {
+		if (render::Length(move) < 1e-5f)
+			break;
+		float fraction;
+		render::Vec3 normal;
+		if (!scene.SphereHit(center, center + move, radius, fraction, &normal)) {
+			center += move;
+			break;
+		}
+		// Up to the touch, just off it (the client nudges by 0.001), and slide with the rest.
+		center += move * fraction + normal * 0.01f;
+		render::Vec3 rest = move * (1 - fraction);
+		move = rest - normal * render::Dot(rest, normal);
+	}
+	return center;
+}
+
+bool PlayerMovement::FloorUnder(const render::Vec3 &center, const render::ZoneScene &scene, float &floor_z) const
+{
+	// GetPlayerFloorHeight: a sphere a quarter of the ModelHeightOffset across, dropped from half a
+	// unit over the lifted center; the floor is where its bottom comes to rest.
+	float radius = std::max(m_height * BodyHeight * 0.25f, 0.1f);
+	render::Vec3 from = center + render::Vec3{0, 0, 0.5f};
+	render::Vec3 to = from - render::Vec3{0, 0, 1000};
+	float fraction;
+	if (!scene.SphereHit(from, to, radius, fraction))
+		return false;
+	floor_z = from.z - 1000 * fraction - radius + 0.001f;
+	return true;
 }
 
 float PlayerMovement::TakeLanding(bool &in_water)

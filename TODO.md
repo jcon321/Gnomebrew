@@ -282,6 +282,16 @@ no rules of its own.
     - Zone `_chr` files are searched before the global ones (ours); eqgame keeps the first loaded,
       the globals.
 
+22. **Player collision.** Done as `CDisplay::MovePlayer` does it (`frontend/player_movement.*`,
+    `ZoneScene::SphereHit`): the actor's sphere (`CreatePlayerActor`'s radius) lifted by the step
+    height sweeps the move and slides once more along the surface, then `GetPlayerFloorHeight`'s
+    sphere drop and `PutPlayerOnFloor`. Still to do:
+    - `CanIFitHere`: the move is undone where floor to ceiling (`GetCeilingHeight`) is under twice
+      the `ModelHeightOffset` + 0.5, and a duck stands back up when there's room again.
+    - `DoFloorCheck` with no floor below keeps the last one and we fall; we stay put instead.
+    - MovePlayer's other branch (mounts, boats and races 72/73/114/141, no lift, the vehicle
+      moves), and `MovementSpeedZ` held to -1 when the move didn't change our height.
+
 ## Infrastructure / tooling
 
 16. ~~**Packet record and replay.**~~ Done: `[Debug] RecordPackets=1` (GUI) or `--record DIR`

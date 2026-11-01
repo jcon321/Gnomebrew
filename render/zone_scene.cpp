@@ -55,6 +55,109 @@ namespace render
 			return t >= 0;
 		}
 
+		// A sphere of radius `r` swept from `p` along `d` (0..1) against a triangle, both sides, as
+		// detectSphereCollision does: the first touch of the face, an edge or a corner, and the unit
+		// normal from what it touches to the sphere's center. Already touching counts only when the
+		// move goes further in, so a sphere can always slide or back away.
+		bool SweepSphere(const Vec3 &p, const Vec3 &d, float r, const Vec3 &a, const Vec3 &b, const Vec3 &c, float &t_out,
+			Vec3 &n_out)
+		{
+			Vec3 n = Cross(b - a, c - a);
+			float n_length = Length(n);
+			if (n_length < 1e-8f)
+				return false;
+			n = n * (1 / n_length);
+			const Vec3 wound = n; // the winding's side, for the inside test
+			float dist = Dot(p - a, n);
+			if (dist < 0) {
+				n = n * -1.0f;
+				dist = -dist;
+			}
+			if (dist >= r + Length(d))
+				return false; // never comes near the plane
+			auto inside = [&](const Vec3 &q) {
+				return Dot(Cross(b - a, q - a), wound) >= 0 && Dot(Cross(c - b, q - b), wound) >= 0 &&
+				       Dot(Cross(a - c, q - c), wound) >= 0;
+			};
+			float dn = Dot(d, n);
+			if (dist < r) {
+				if (inside(p - n * dist)) {
+					if (dn >= -1e-6f)
+						return false;
+					t_out = 0;
+					n_out = n;
+					return true;
+				}
+			}
+			else if (dn < 0) {
+				float t = (dist - r) / -dn;
+				if (t <= 1 && inside(p + d * t - n * r)) {
+					t_out = t;
+					n_out = n;
+					return true; // the face comes before its edges
+				}
+			}
+			bool found = false;
+			float best = 1;
+			Vec3 best_n;
+			auto keep = [&](float t, const Vec3 &touch) {
+				Vec3 away = p + d * t - touch;
+				float length = Length(away);
+				if (length < 1e-6f)
+					return;
+				away = away * (1 / length);
+				if (t == 0 && Dot(d, away) >= -1e-6f)
+					return; // touching, but moving off it
+				if (!found || t < best) {
+					best = t;
+					best_n = away;
+					found = true;
+				}
+			};
+			float dd = Dot(d, d);
+			const Vec3 *corners[3] = {&a, &b, &c};
+			for (int i = 0; i < 3; ++i) {
+				// The edge: a cylinder about it, where the touch falls between its ends.
+				const Vec3 &e0 = *corners[i], &e1 = *corners[(i + 1) % 3];
+				Vec3 edge = e1 - e0, m = p - e0;
+				float ee = Dot(edge, edge), ed = Dot(edge, d), em = Dot(edge, m);
+				if (ee < 1e-8f)
+					continue;
+				float qa = ee * dd - ed * ed, qb = ee * Dot(m, d) - em * ed, qc = ee * (Dot(m, m) - r * r) - em * em;
+				if (qc < 0) {
+					float s = em / ee;
+					if (s >= 0 && s <= 1)
+						keep(0, e0 + edge * s);
+				}
+				else if (qa > 1e-8f) {
+					float disc = qb * qb - qa * qc;
+					if (disc >= 0) {
+						float t = (-qb - std::sqrt(disc)) / qa;
+						float s = (em + t * ed) / ee;
+						if (t >= 0 && t <= 1 && s >= 0 && s <= 1)
+							keep(t, e0 + edge * s);
+					}
+				}
+				// The corner.
+				float vb = Dot(m, d), vc = Dot(m, m) - r * r;
+				if (vc < 0)
+					keep(0, e0);
+				else if (dd > 1e-8f) {
+					float disc = vb * vb - dd * vc;
+					if (disc >= 0) {
+						float t = (-vb - std::sqrt(disc)) / dd;
+						if (t >= 0 && t <= 1)
+							keep(t, e0);
+					}
+				}
+			}
+			if (found) {
+				t_out = best;
+				n_out = best_n;
+			}
+			return found;
+		}
+
 		bool BoxesMeet(const Vec3 &low1, const Vec3 &high1, const Vec3 &low2, const Vec3 &high2)
 		{
 			return low1.x <= high2.x && low2.x <= high1.x && low1.y <= high2.y && low2.y <= high1.y && low1.z <= high2.z &&
@@ -529,6 +632,42 @@ namespace render
 					if (Dot(*normal, d) > 0)
 						*normal = *normal * -1.0f;
 				}
+			}
+		};
+		for (uint32_t triangle : nearby)
+			test(&m_collision[triangle * 3]);
+		if (doors)
+			for (const Door &door : m_doors) {
+				if (!BoxesMeet(low, high, door.low, door.high))
+					continue;
+				for (size_t t = 0; t * 3 < door.placed_collision.size(); ++t)
+					test(&door.placed_collision[t * 3]);
+			}
+		return found;
+	}
+
+	bool ZoneScene::SphereHit(const Vec3 &from, const Vec3 &to, float radius, float &fraction, Vec3 *normal, bool doors) const
+	{
+		Vec3 d = to - from;
+		Vec3 r{radius, radius, radius};
+		Vec3 low = Vec3{std::min(from.x, to.x), std::min(from.y, to.y), std::min(from.z, to.z)} - r;
+		Vec3 high = Vec3{std::max(from.x, to.x), std::max(from.y, to.y), std::max(from.z, to.z)} + r;
+		thread_local std::vector<uint32_t> nearby;
+		Candidates(low.x, low.y, high.x, high.y, nearby);
+		bool found = false;
+		fraction = 1;
+		auto test = [&](const Vec3 *triangle) {
+			const Vec3 &a = triangle[0], &b = triangle[1], &c = triangle[2];
+			if (std::max({a.x, b.x, c.x}) < low.x || std::min({a.x, b.x, c.x}) > high.x || std::max({a.y, b.y, c.y}) < low.y ||
+				std::min({a.y, b.y, c.y}) > high.y || std::max({a.z, b.z, c.z}) < low.z || std::min({a.z, b.z, c.z}) > high.z)
+				return;
+			float t;
+			Vec3 n;
+			if (SweepSphere(from, d, radius, a, b, c, t, n) && (!found || t < fraction)) {
+				fraction = t;
+				found = true;
+				if (normal)
+					*normal = n;
 			}
 		};
 		for (uint32_t triangle : nearby)

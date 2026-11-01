@@ -30,8 +30,10 @@
 // The real client applies the damping once per frame; here it's scaled to the frame's length,
 // which gives the same speeds (about 30 units a second running) at any frame rate.
 //
-// Collision is ours: the feet follow the floor below (stepping up to 40% of the character's
-// height), walls are found with segments at knee and chest height, and the move slides along them.
+// CDisplay::MovePlayer's collision: a sphere (half the ModelHeightOffset, wider for the short
+// races) lifted three quarters of the ModelHeightOffset over the body sweeps along the move and
+// slides on what it meets, so we walk onto anything under its bottom (about 3/4 of the height);
+// the feet then go onto the floor under it. Walls don't take the velocity away.
 // World space is the WLD frame (x = the server's y, y = the server's x).
 
 #include "math3d.h"
@@ -59,6 +61,7 @@ public:
 	void Place(const render::Vec3 &feet, float heading, float height, float walk_speed, float run_speed, float gravity);
 	void SetEyeHeight(float eye) { m_eye = eye; } // above the feet (CameraHeightOffset)
 	void SetSwimSkill(int skill) { m_swim_skill = skill; }
+	void SetRace(int race) { m_race = race; } // the collision sphere's size and lift
 	// ActorInfo's MovementSpeedModifier (our buffs'): added to the speed forward, taken from it
 	// back; below -1000 we're rooted.
 	void SetSpeedModifier(float modifier) { m_speed_modifier = modifier; }
@@ -77,6 +80,8 @@ public:
 	bool Crouching() const { return m_crouching; } // a standing jump winding up (stance 111)
 	float RunSpeed() const { return m_run_speed; }
 	float Height() const { return m_height; }
+	float Radius() const; // the actor's collision sphere, and where it is
+	render::Vec3 SphereCenter() const { return m_feet + render::Vec3{0, 0, m_height * 0.625f + StepHeight()}; }
 	render::Environment FeetEnvironment() const { return m_feet_environment; }
 	render::Environment BodyEnvironment() const { return m_body_environment; } // SwimmingWaterType
 	render::Environment HeadEnvironment() const { return m_head_environment; } // IsSwimmingUnderwater
@@ -91,7 +96,9 @@ private:
 	void Tick(float ticks, const render::ZoneScene &scene);
 	void UpdateEnvironment(const render::ZoneScene &scene);
 	bool CanSwimJump(const render::ZoneScene &scene) const;
-	render::Vec3 MoveHorizontally(const render::Vec3 &feet, render::Vec3 move, const render::ZoneScene &scene) const;
+	float StepHeight() const; // how far over the body MovePlayer lifts the sphere
+	render::Vec3 Sweep(const render::Vec3 &center, render::Vec3 move, const render::ZoneScene &scene) const;
+	bool FloorUnder(const render::Vec3 &center, const render::ZoneScene &scene, float &floor_z) const;
 
 	render::Vec3 m_feet;
 	float m_heading = 0;
@@ -107,6 +114,7 @@ private:
 	bool m_on_ground = true;
 
 	float m_eye = 5.4f;
+	int m_race = 1;
 	int m_swim_skill = 0;
 	float m_speed_modifier = 0;
 	float m_pitch = 0;

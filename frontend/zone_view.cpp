@@ -328,6 +328,7 @@ void ZoneView::PlacePlayer()
 		m_feet.z = floor_z;
 	if (m_distance <= 0)
 		m_distance = height * 2 + 6;
+	m_movement.SetRace(m_appearance ? m_appearance->race : 1);
 	m_movement.Place(m_feet, m_heading, height, m_walk_speed, m_run_speed, m_info.gravity);
 	m_movement.SetEyeHeight(m_model ? (m_model->HeadZ() - m_model->MinZ()) * 1.05f : height * 0.9f);
 	m_placed = true;
@@ -1224,7 +1225,23 @@ void ZoneView::DrawDebugOverlays(Canvas &canvas) const
 		m_renderer->DrawEdges(pixels, stride, 0x40a060);
 	}
 	if (m_debug_draw.walls && m_placed) {
-		// What MoveHorizontally stops at: solid triangles steeper than a walkable slope, within reach.
+		// The steep solid triangles within reach, and the sphere that collides with the world
+		// (PlayerMovement::Sweep): we walk onto what's under its bottom.
+		{
+			render::Vec3 center = m_movement.SphereCenter();
+			float radius = m_movement.Radius();
+			render::Vec3 last_ring, last_upright;
+			for (int i = 0; i <= 32; ++i) {
+				float a = i * (2 * render::Pi / 32), c = std::cos(a) * radius, s = std::sin(a) * radius;
+				render::Vec3 ring = center + render::Vec3{c, s, 0}, upright = center + render::Vec3{c, 0, s};
+				if (i > 0) {
+					line(last_ring, ring, 0x40c0ff);
+					line(last_upright, upright, 0x40c0ff);
+				}
+				last_ring = ring;
+				last_upright = upright;
+			}
+		}
 		const float reach = 40;
 		const auto &solid = m_zone.SolidTriangles();
 		for (size_t i = 0; i + 2 < solid.size(); i += 3) {

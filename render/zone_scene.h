@@ -61,6 +61,11 @@ namespace render
 		// The first solid surface on the segment from `from` to `to`, as a fraction of its length,
 		// and that surface's unit normal (facing `from`). `doors`: the doors count too.
 		bool SegmentHit(const Vec3 &from, const Vec3 &to, float &fraction, Vec3 *normal = nullptr, bool doors = true) const;
+		// A sphere swept from `from` to `to` (s3dCollideSphereWithWorld): the fraction of the way it
+		// gets before it touches a solid surface, and the unit normal from the touch to its center.
+		// Touching already stops it only going further in.
+		bool SphereHit(const Vec3 &from, const Vec3 &to, float radius, float &fraction, Vec3 *normal = nullptr,
+			bool doors = true) const;
 
 		// Doors and other switches (CDisplay::CreateActor's "<name>_ACTORDEF" from the zone's
 		// _obj.s3d), drawn and solid where they are, lit like the zone's objects where they're

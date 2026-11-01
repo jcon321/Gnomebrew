@@ -376,7 +376,7 @@ additions of ours, or ones taken from TAKP's eqgame.dll or Zeal rather than stoc
   fallback when D3D11 isn't there), `VSync` on or off, and any `Width`x`Height`. The real client
   draws through eqgfx_dx8 (Direct3D 8).
 - **Debug menu** (F11): the stat card with its folding sections, the 2D radar, the RENDER toggles
-  (wireframe, no fog, collision walls, floor marker, no occlusion culling, no clip plane, no
+  (wireframe, no fog, collision walls and our sphere, floor marker, no occlusion culling, no clip plane, no
   weather effects, Luclin spell effects, VSync, vision) and the SOUND switches, kept in `[Debug]`.
 - **Packet record and replay:** `RecordPackets=1` writes each zone session to an `.eqr`, and
   `--replay` plays one back with no server (GUI, `eqclient` and `frontend_preview`).
@@ -826,9 +826,22 @@ Not yet: the real client's messages use `CConfirmationDialog`; these use the fro
   `GetTickCount64`, whose 16 ms steps did that at vsync rates, so it uses `steady_clock`.
   Sitting, `ProcessControls` takes no movement keys or Space and the right button doesn't turn us.
   Forward stands us up, closing the spellbook, and we move off at once while getting up (`P02`
-  backwards) plays out. In first person the view follows the head bone down and up. The
-  collision is ours: the feet follow the floor (stepping up to 40% of the character's height) and moves
-  slide along walls, tested at knee and chest height.
+  backwards) plays out. In first person the view follows the head bone down and up.
+- **Collision** (`frontend/player_movement.cpp`, `render/zone_scene.cpp`), as `CDisplay::MovePlayer`
+  (@00504765) does it: the body (`ModelHeightOffset`, `MHO`, 5/8 of the height, over the feet) is
+  lifted by a step height (`MHO * 0.75`, 5.4375 at most; barbarians, trolls and ogres `MHO * 0.5`;
+  none ducking, which a standing jump's wind-up is), and the actor's sphere there sweeps from where we
+  were to where the velocity takes us (`s3dCollideActorWithWorld` into eqgfx's
+  `s3dCollideSphereWithWorld`), then once more along the surface it met with what was left
+  (`...AlongUnitDirection`). `CreatePlayerActor` makes a player's sphere `MHO * 0.5` across, times
+  1.5 for dwarves and halflings, 0.9 trolls, 0.8 ogres, 2 gnomes (a human: 1.875, its bottom 4.7 over
+  the feet). `DoFloorCheck` then drops a sphere `MHO * 0.25` across from half a unit over the lifted
+  center (`GetPlayerFloorHeight`), the lift comes off, and `PutPlayerOnFloor` raises the feet onto
+  that floor. So anything lower than the sphere's bottom is walked onto in a step, and a swimmer
+  whose body is at the surface comes out onto a bank up to about a unit over the water. The walls
+  never touch the velocity (`MovementSpeedX/Y`): pressed against a ledge we run in place, and a jump
+  or `DoSwimJump` carries us over once the sphere clears it. Ours: up to three slides in a corner
+  (eqgame does one), and keeping the feet on the floor walking down slopes and steps.
 - **Water** (`render/zone_regions.cpp`): `<zone>.wld`'s BSP tree (0x21) finds the region (0x22) a point
   is in (`t3dGetRegionNumberFromWorldAndXYZ`: back when `n . p < -d`), and the region groups (0x29) say
   what regions are. A group's type is its name, or its user data when the name is under 20 characters
