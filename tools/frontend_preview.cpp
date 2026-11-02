@@ -1860,8 +1860,8 @@ int main(int argc, char **argv)
 		h.Snapshot("7-character-select");
 		for (const auto &c : frontend.Characters())
 			if (!c.Empty())
-				printf("[preview] character: %s level %u %s %s zone %u\n", c.name.c_str(), c.level, RaceName(c.race),
-					ClassName(c.class_id), c.zone);
+				printf("[preview] character: %s level %u %s %s zone %u, holding %u and %u\n", c.name.c_str(), c.level, RaceName(c.race),
+					ClassName(c.class_id), c.zone, c.equip[7], c.equip[8]);
 
 		if (create) {
 			// Character creation from the first empty slot: an Erudite wizard with a random name,
@@ -1878,6 +1878,18 @@ int main(int argc, char **argv)
 			h.RunUntil([] { return false; }, 300);
 			h.Snapshot("c0-random");
 			if (create_luclin) {
+				// Each race and gender in turn: what the model wears before any face is picked.
+				for (int race = 0; race < 14; ++race)
+					for (const char *gender : {"CC0_Male_Button", "CC0_Female_Button"}) {
+						h.ClickId("CC0_Race" + std::to_string(race) + "_Button");
+						h.ClickId(gender);
+						h.RunUntil([] { return false; }, 50);
+						render::CharacterAppearance a = frontend.Creation()->Appearance();
+						printf("[preview] race %u gender %u: face %u hair %u/%u beard %u/%u eyes %u/%u\n", a.race, a.gender, a.face,
+							a.hair_style, a.hair_color, a.beard, a.beard_color, a.eye_color1, a.eye_color2);
+						if (race == 0 && gender[8] == 'M')
+							h.Snapshot("c0-human-male");
+					}
 				h.ClickId("CC0_Race2_Button");   // Dwarf
 				h.ClickId("CC0_Class13_Button"); // Warrior
 				h.ClickId("CC0_Male_Button");
@@ -1965,7 +1977,8 @@ int main(int argc, char **argv)
 			// Clean up: delete it again.
 			if (frontend.SelectedCharacter() >= 0 && frontend.Characters()[frontend.SelectedCharacter()].name == created) {
 				h.ClickId("Delete_Button");
-				printf("[preview] delete asks: %s\n", frontend.ConfirmationText().c_str());
+				printf("[preview] delete asks: %s (buttons %s)\n", frontend.ConfirmationText().c_str(),
+					frontend.ButtonsEnabled() ? "on" : "off");
 				h.ClickId("Yes_Button");
 				h.RunUntil([&] {
 					for (const auto &c : frontend.Characters())
@@ -1974,6 +1987,8 @@ int main(int argc, char **argv)
 					return true;
 				}, 5000);
 				printf("[preview] deleted %s\n", created.c_str());
+				h.RunUntil([] { return false; }, 100);
+				printf("[preview] buttons after the dialog: %s\n", frontend.ButtonsEnabled() ? "on" : "off");
 			}
 			h.Key(InputEvent::Key::Escape);
 			return 0;
@@ -2024,6 +2039,14 @@ int main(int argc, char **argv)
 				after.y, after.z);
 			h.Snapshot("x3-walked");
 			h.Snapshot("x4-clicked");
+			// The wheel: 4 notches out, then 30 in (back to first person).
+			frontend.OnEvent({InputEvent::Type::Wheel, 400, 300, -4});
+			frames(100);
+			h.Snapshot("x4-zoomed-out");
+			printf("[preview] wheel out 4: first person %d\n", view->FirstPerson());
+			frontend.OnEvent({InputEvent::Type::Wheel, 400, 300, 30});
+			frames(100);
+			printf("[preview] wheel in 30: first person %d\n", view->FirstPerson());
 			h.Key(InputEvent::Key::Escape);
 			printf("[preview] after Escape exploring: %d\n", frontend.Exploring());
 			frames(300);
@@ -2035,6 +2058,13 @@ int main(int argc, char **argv)
 		if (stop_at_charselect) {
 			h.RunUntil([] { return false; }, 2000);
 			h.Snapshot("7-character-select-turned");
+			// Down to the next character, with what it holds (its emitters: a torch's flame).
+			h.Key(InputEvent::Key::Down);
+			h.RunUntil([] { return false; }, 2000);
+			h.Snapshot("7-character-select-next");
+			if (const CharacterSelectView *scene = frontend.CharacterScene(); scene && scene->Model())
+				printf("[preview] next character: %s, %zu emitters, holding %u and %u\n", scene->Model()->Code().c_str(),
+					scene->Model()->Emitters().size(), scene->Shown() ? scene->Shown()->equip[7] : 0, scene->Shown() ? scene->Shown()->equip[8] : 0);
 			if (const CharSelectAnimWindow *anims = frontend.AnimationsWindow()) {
 				// The Animations window: the second row double clicked plays it; then Play on the
 				// third, and All + emotes.

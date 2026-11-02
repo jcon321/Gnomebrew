@@ -39,11 +39,8 @@ class ZoneView
 {
 public:
 	enum class CameraView { FirstPerson, Chase };
-	// EQ_Character's Vision1 (infravision) and Vision2 (ultravision), which win over Vision1.
-	enum class Vision : uint8_t { None, Infravision, Ultravision };
-	// EQ_Character::InitInnates: the dark elf sees in ultravision; the human, barbarian and
-	// erudite in neither; everyone else in infravision.
-	static Vision RaceVision(uint16_t race);
+	using Vision = ::Vision; // day_light.h
+	static Vision RaceVision(uint16_t race) { return ::RaceVision(race); }
 
 	// renderer: the GPU one, or nullptr for the software Rasterizer.
 	ZoneView(std::string eq_dir, std::unique_ptr<render::Renderer> renderer = nullptr);

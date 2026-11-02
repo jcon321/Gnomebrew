@@ -69,3 +69,30 @@ DayLight TimeOfDayLight(int hour, float minute, int time_type)
 	light.sky = SkyLight[p % 60] + (SkyLight[(p + 1) % 60] - SkyLight[p % 60]) * f;
 	return light;
 }
+
+Vision RaceVision(uint16_t race)
+{
+	switch (race) {
+	case 1:  // human
+	case 2:  // barbarian
+	case 3:  // erudite
+		return Vision::None;
+	case 6:  // dark elf
+		return Vision::Ultravision;
+	default:
+		return Vision::Infravision;
+	}
+}
+
+void ApplyVision(DayLight &light, Vision vision, float exposure, bool glow, bool vexthal)
+{
+	if (vision == Vision::None)
+		return;
+	render::Vec3 color = vision == Vision::Ultravision ? (vexthal ? render::Vec3{25, 25, 50} : render::Vec3{82, 55, 164})
+	                                                   : (vexthal ? render::Vec3{25, 13, 13} : render::Vec3{75, 38, 38});
+	color = color * (1.0f / 255);
+	light.ambient = {std::max(light.ambient.x, color.x), std::max(light.ambient.y, color.y), std::max(light.ambient.z, color.z)};
+	light.special = color * (1 - exposure);
+	if (vision == Vision::Infravision && glow)
+		light.glow = {100 / 256.0f, 0, 0};
+}

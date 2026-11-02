@@ -219,15 +219,17 @@ no rules of its own.
     (`EnterExplorationMode`, `LeaveExplorationMode`, `ExploreModeWindow`, the other characters
     round us, walking through `PlayerMovement`, F9's first person and chase camera, a click on one
     selecting it, Enter and Esc), Delete's eqstr 10019 in the confirmation dialog with the buttons
-    off and the option file deleted, Up and Down wrapping round, eqstr 1947 on empty slots, eqstr
+    off while it's up and the option file deleted, Up and Down wrapping round, eqstr 1947 on empty slots, eqstr
     1954 back from an unavailable zone, "Newbie" with nobody selected, the user light and the
-    room's hour lighting the scene, load2's switches, and the old load zone's places. Character
-    creation's messages are the confirmation dialog, and the face picker cycles a Luclin model's
-    hair, beard, eyes and woad (`CFacePick::CycleThroughFHEB`), sent in `OP_CharacterCreate`.
+    room's hour lighting the scene with the race's infravision or ultravision, load2's switches,
+    and the old load zone's places. Explore mode's others hold their torches' flames, and the
+    wheel zooms its camera (ours). Character creation's messages are the confirmation dialog, the
+    face picker cycles a Luclin model's hair, beard, eyes and woad (`CFacePick::CycleThroughFHEB`),
+    sent in `OP_CharacterCreate`, and the random features are rolled for the new race (ours).
     Still to do:
     - Explore mode's animations are only standing, walking, running, jumping and falling (not all of
-      `ProcessAnimation`: swimming, crouching, the shuffle turning on the spot), and there's no mouse
-      wheel zoom, footsteps, or clicking a door (`CEverQuest_ClickedSwitch`); what
+      `ProcessAnimation`: swimming, crouching, the shuffle turning on the spot), and there are no
+      footsteps or clicking a door (`CEverQuest_ClickedSwitch`); what
       `CExploreModeWnd::Activate` does to EXW_ExploreModeWindow3 (`CXWnd::_`) isn't known.
     - load2's particle effects: its switches of type 53 (`CRATEG`, the parameter the effect), which
       `ZoneDoors` doesn't do.

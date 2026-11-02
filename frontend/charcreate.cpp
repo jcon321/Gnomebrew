@@ -96,7 +96,12 @@ void CharacterCreation::RandomizeFacialFeatures()
 {
 	// A face 0..7 for the new character, put on the model, which then rolls the rest of its
 	// features (SetDefaultFacialFeaturesByFace(-1, 1, 1)); a Luclin model's go to the new
-	// character too. The model is still the one from before a race button changed the race.
+	// character too. In eqgame the model is still the one from before a race or gender button
+	// changed it, so it rolls by the old race's rules: from a model without hair (an Iksar, a Vah
+	// Shir, an Erudite, a troll or ogre man) the new one comes up bald. Ours (see README, Custom
+	// changes): the model takes the new race and gender first, so it rolls by theirs.
+	m_model_race = m_race;
+	m_model_gender = m_gender;
 	m_pc.face = static_cast<uint8_t>(Roll(8));
 	SwapFace(m_pc.face);
 	SetDefaultFacialFeaturesByFace(-1, true, true);

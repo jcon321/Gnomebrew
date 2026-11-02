@@ -247,14 +247,32 @@ void CharacterSelectView::PlaceCharacter()
 		m_hour = m_class == 7 || m_class == 8 || m_class == 9 || m_class == 11 || m_class == 12 ? 23 : 16;
 		m_clip_plane = m_class == 6 ? 2.2f : 1.2f;
 	}
-	// SetDayPeriod and SetSunLight at that hour, minute 0, time passing (time type 1).
-	m_daylight = TimeOfDayLight(m_hour, 0, 1);
 	m_animation = render::Anim::Idle;
 
 	// EQPlayer::PositionOnFloor: drop to the surface below.
-	float floor_z;
-	if (m_zone.FloorBelow({m_position.x, m_position.y, m_position.z + 5}, 200, floor_z))
+	float floor_z, exposure = 1;
+	if (m_zone.FloorBelow({m_position.x, m_position.y, m_position.z + 5}, 200, floor_z, &exposure))
 		m_position.z = floor_z;
+	else
+		exposure = 1;
+	// SetDayPeriod and SetSunLight at that hour, minute 0, time passing (time type 1). SetAmbientLight
+	// gives the character's race's vision (SwitchModel's InitInnates) with SetDefaultGameValues'
+	// colors: the ambient raised to its color, and that color times 1 - the exposure it follows, the
+	// first time taken as it is and after that 0.01 closer each call (ours: our floor's). Infravision's
+	// glow is on in the dark rooms' night (the sky's light under 0.53), off by day (over 0.7).
+	m_daylight = TimeOfDayLight(m_hour, 0, 1);
+	if (m_vision_exposure < 0)
+		m_vision_exposure = exposure;
+	else if (exposure > m_vision_exposure)
+		m_vision_exposure = std::min(m_vision_exposure + 0.01f, exposure);
+	else if (exposure < m_vision_exposure)
+		m_vision_exposure = std::max(m_vision_exposure - 0.01f, exposure);
+	Vision vision = RaceVision(m_appearance ? m_appearance->race : 1);
+	if (vision == Vision::Infravision && m_daylight.sky < 0.53f)
+		m_infravision_glow = true;
+	else if (vision != Vision::Infravision || m_daylight.sky > 0.7f)
+		m_infravision_glow = false;
+	ApplyVision(m_daylight, vision, m_vision_exposure, m_infravision_glow);
 	if (!m_rotate)
 		m_camera_heading = m_heading;
 	if (m_exploring) {
@@ -491,6 +509,33 @@ void CharacterSelectView::ToggleCamera()
 	}
 }
 
+void CharacterSelectView::Zoom(int notches)
+{
+	constexpr float MinDistance = 3, MaxDistance = 200; // ZoneView's
+	if (!m_exploring || notches == 0)
+		return;
+	if (m_explore_distance <= 0) {
+		float height = m_model ? m_model->MaxZ() - m_model->MinZ() : 6;
+		m_explore_distance = height * 2 + 6;
+	}
+	if (m_first_person) {
+		if (notches >= 0)
+			return;
+		m_first_person = false;
+		m_pitch = 0;
+		m_explore_distance = MinDistance;
+		++notches;
+	}
+	float distance = m_explore_distance * std::pow(0.85f, static_cast<float>(notches));
+	if (distance < MinDistance) {
+		m_first_person = true;
+		m_pitch = 0;
+		m_explore_distance = MinDistance;
+		return;
+	}
+	m_explore_distance = std::min(distance, MaxDistance);
+}
+
 void CharacterSelectView::ChooseExploreAnimation(uint64_t now_ms)
 {
 	// What the character is doing picks the animation, as EQPlayer's animation tracks do: L01 walk
@@ -527,7 +572,7 @@ render::Camera CharacterSelectView::ExploreCamera(float aspect) const
 	if (m_first_person)
 		camera.position = target;
 	else {
-		float reach = height * 2 + 6;
+		float reach = m_explore_distance > 0 ? m_explore_distance : height * 2 + 6;
 		float fraction = 1;
 		if (m_zone.SegmentHit(target, target - look * (reach + 1), fraction))
 			reach = std::max(0.5f, fraction * (reach + 1) - 1);
@@ -693,6 +738,8 @@ void CharacterSelectView::Render(Canvas &canvas, uint64_t now_ms)
 		std::string animation = render::AnimationCode(other.animation);
 		bool loop = other.animation == render::Anim::Idle;
 		other.model->Draw(*m_renderer, other.placement, lighting, now_ms - other.animation_start_ms, animation, loop);
+		other.held.Draw(*m_renderer, *other.model, other.placement, now_ms - other.animation_start_ms, animation, loop, now_ms,
+			lighting.ambient);
 	}
 	// In first person our own model isn't drawn.
 	if (m_model && !(m_exploring && m_first_person)) {
@@ -732,13 +779,14 @@ void CharacterSelectView::Render(Canvas &canvas, uint64_t now_ms)
 render::ModelLighting CharacterSelectView::ModelLightingAt(const render::Vec3 &center, const render::PointLight *user)
 {
 	// As in a zone (s3dGetActorScaledAmbient): the ambient and the sun times the exposure of the
-	// floor under the character, the world's constant ambient, and its 3 brightest lights: the
+	// floor under the character, the world's constant and special ambient, infravision's glow (all
+	// players are warm-blooded; CreatePlayerActor gives it the others too), and its 3 brightest lights: the
 	// zone's own (lights.wld) and the user light.
 	float floor_z, exposure = 1;
 	if (!m_zone.FloorBelow(center, 400, floor_z, &exposure))
 		exposure = 1;
 	render::ModelLighting lighting;
-	lighting.ambient = m_daylight.ambient * exposure + m_zone.ConstantAmbient() + m_daylight.special;
+	lighting.ambient = m_daylight.ambient * exposure + m_zone.ConstantAmbient() + m_daylight.special + m_daylight.glow;
 	lighting.sun_direction = m_daylight.sun_direction;
 	lighting.sun_color = m_daylight.sun_color * exposure;
 	int region = m_zone.Regions().Empty() ? -1 : m_zone.Regions().RegionAt(center);

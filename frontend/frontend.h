@@ -132,6 +132,7 @@ public:
 	const std::string &DialogText() const { return m_dialog.text; }
 	// The confirmation dialog over character select and creation (CConfirmationDialog).
 	bool ConfirmationOpen() const { return m_confirm.open; }
+	bool ButtonsEnabled() const { return m_buttons_enabled; } // SetButtonsEnabledState's
 	std::string ConfirmationText() const
 	{
 		const SidlWindow::Control *output = m_confirm.window.Find("TextOutput");

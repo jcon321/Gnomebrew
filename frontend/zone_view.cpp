@@ -40,20 +40,6 @@ void ZoneView::SetGameTime(int hour, float minute)
 	m_minute = minute;
 }
 
-ZoneView::Vision ZoneView::RaceVision(uint16_t race)
-{
-	switch (race) {
-	case 1:  // human
-	case 2:  // barbarian
-	case 3:  // erudite
-		return Vision::None;
-	case 6:  // dark elf
-		return Vision::Ultravision;
-	default:
-		return Vision::Infravision;
-	}
-}
-
 ZoneView::Vision ZoneView::CurrentVision() const
 {
 	return m_debug_draw.vision >= 0 ? static_cast<Vision>(m_debug_draw.vision) : OwnVision();
@@ -70,21 +56,8 @@ ZoneView::DayLight ZoneView::Lighting() const
 		return DayLight();
 	DayLight light = TimeOfDayLight(m_hour, m_minute, m_info.time_type);
 
-	// Infravision and ultravision raise the ambient to their color, and add it as the world's
-	// special ambient the less exposed we stand (CEverQuest_EnterZone2's colors, dimmer in Vex
-	// Thal); infravision's glow is a constant red on the warm-blooded (CDisplay's 0x2e10).
-	Vision vision = CurrentVision();
-	if (vision != Vision::None) {
-		bool vexthal = m_info.short_name == "vexthal";
-		render::Vec3 color = vision == Vision::Ultravision ? (vexthal ? render::Vec3{25, 25, 50} : render::Vec3{82, 55, 164})
-		                                                   : (vexthal ? render::Vec3{25, 13, 13} : render::Vec3{75, 38, 38});
-		color = color * (1.0f / 255);
-		light.ambient = {std::max(light.ambient.x, color.x), std::max(light.ambient.y, color.y),
-			std::max(light.ambient.z, color.z)};
-		light.special = color * (1 - m_vision_exposure);
-	}
-	if (vision == Vision::Infravision && m_infravision_glow)
-		light.glow = {100 / 256.0f, 0, 0};
+	// Infravision and ultravision (SetAmbientLight).
+	ApplyVision(light, CurrentVision(), m_vision_exposure, m_infravision_glow, m_info.short_name == "vexthal");
 
 	// A thunder clap's frame: the ambient light at 0.99, infravision off.
 	if (WeatherShown() && m_weather.flash) {

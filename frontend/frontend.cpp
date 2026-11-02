@@ -706,6 +706,10 @@ void FrontEnd::Update(uint64_t now_ms)
 	// CConfirmationDialog's timeout: No.
 	if (m_confirm.open && m_confirm.until_ms && now_ms >= m_confirm.until_ms)
 		CloseConfirmation(false);
+	// CCharacterSelect's frame (vtable +0xac, @0040f23b): with the confirmation dialog gone and the
+	// first character button off (Delete's), SetButtonsEnabledState(1).
+	if (m_screen == Screen::CharacterSelect && !m_confirm.open && !m_buttons_enabled)
+		SetButtonsEnabledState(true);
 	std::vector<LoginSession::Event> events;
 	m_session.Pump(0, events);
 	if (!events.empty())
@@ -1099,7 +1103,7 @@ void FrontEnd::EnterCharacterSelect()
 	}
 
 	// CCharacterSelect::AlternateBackgroundAvailable: Rotate starts checked, not exploring. The
-	// buttons are as the window made them (a new window: SetButtonsEnabledState's left behind).
+	// buttons start on.
 	if (auto *rotate = m_charselect.Find("Rotate_Button"))
 		rotate->checked = true;
 	if (m_charselect_view) {
@@ -1342,7 +1346,8 @@ void FrontEnd::ExploreEvent(const InputEvent &event)
 {
 	// ProcessNewUICharacterSelectKeys exploring: Escape leaves, Enter enters the world, the rest
 	// are ProcessMovementKeys' (the movement keys, F9's view). The right button looks around
-	// (ProcessControls' mouse look), a left click on another character selects it (LeftClickedOnPlayer).
+	// (ProcessControls' mouse look), a left click on another character selects it (LeftClickedOnPlayer),
+	// and the wheel zooms the camera (ours, as in a zone).
 	switch (event.type) {
 	case InputEvent::Type::Key:
 		if (event.key == InputEvent::Key::Escape)
@@ -1372,6 +1377,10 @@ void FrontEnd::ExploreEvent(const InputEvent &event)
 			m_charselect_view->Turn(-0.6f * static_cast<float>(moved_x));
 			m_charselect_view->Pitch(-0.25f * static_cast<float>(moved_y));
 		}
+		return;
+	case InputEvent::Type::Wheel:
+		if (m_charselect_view)
+			m_charselect_view->Zoom(event.wheel);
 		return;
 	case InputEvent::Type::MouseUp:
 		if (m_charselect_view) {

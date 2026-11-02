@@ -166,8 +166,9 @@ namespace
 			view.Render(canvas, 1000 + f);
 			total += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
 			if (f == 0 && view.Model())
-				printf("model %s: %zu triangles, z %.2f..%.2f, head %.2f\n", view.Model()->Code().c_str(),
-					view.Model()->TriangleCount(), view.Model()->MinZ(), view.Model()->MaxZ(), view.Model()->HeadZ());
+				printf("model %s: %zu triangles, z %.2f..%.2f, head %.2f, %zu emitters\n", view.Model()->Code().c_str(),
+					view.Model()->TriangleCount(), view.Model()->MinZ(), view.Model()->MaxZ(), view.Model()->HeadZ(),
+					view.Model()->Emitters().size());
 		}
 		printf("%zu triangles drawn, %.1f ms per frame\n", view.TrianglesDrawn(), total / frames);
 		if (!WritePng(out, pixels, Width, Height)) {

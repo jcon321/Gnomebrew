@@ -13,6 +13,8 @@
 
 #include "math3d.h"
 
+#include <cstdint>
+
 struct DayLight
 {
 	render::Vec3 ambient{0.6f, 0.6f, 0.6f}; // added to the zone's baked lighting
@@ -27,3 +29,14 @@ struct DayLight
 // The light at `hour` (1..24) and `minute` in a zone of `time_type` (EQZoneInfo's), before vision
 // and weather.
 DayLight TimeOfDayLight(int hour, float minute, int time_type);
+
+// EQ_Character's Vision1 (infravision) and Vision2 (ultravision), which win over Vision1.
+enum class Vision : uint8_t { None, Infravision, Ultravision };
+// EQ_Character::InitInnates: the dark elf sees in ultravision; the human, barbarian and erudite in
+// neither; everyone else in infravision.
+Vision RaceVision(uint16_t race);
+// SetAmbientLight's vision: the ambient raised to its color (SetDefaultGameValues' and
+// CEverQuest_EnterZone2's, dimmer in Vex Thal), which is also added as the world's special ambient
+// the less `exposure` (the camera's actor's, followed) there is. Infravision's glow (`glow`: on while
+// the sky's light is under 0.53, off over 0.7) is a constant red on the warm-blooded (CDisplay's 0x2e10).
+void ApplyVision(DayLight &light, Vision vision, float exposure, bool glow, bool vexthal = false);

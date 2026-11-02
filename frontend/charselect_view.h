@@ -68,6 +68,9 @@ public:
 	void Turn(float delta);      // mouse look: 512ths of a turn
 	void Pitch(float degrees);   // the view up (+) or down
 	void ToggleCamera();         // CDisplay_ToggleView between first person and the chase camera
+	// The mouse wheel (ours, as in a zone): out of first person into the chase camera, then 0.85 of
+	// the distance a notch in, out to 200; in past 3 back to first person.
+	void Zoom(int notches);
 	bool FirstPerson() const { return m_first_person; }
 	// LeftClickedOnPlayer in explore mode: the slot of the other character under (x, y), or -1.
 	int PickCharacter(int x, int y) const;
@@ -165,6 +168,8 @@ private:
 	int m_hour = 24;
 	float m_clip_plane = 1;
 	DayLight m_daylight = TimeOfDayLight(24, 0, 1); // the hour's (CEverQuest's time type 1)
+	float m_vision_exposure = -1; // SetAmbientLight's followed exposure (-1: not yet)
+	bool m_infravision_glow = false;
 	bool m_user_light = true;
 	std::vector<render::PointLight> m_lights_for; // the model's, this frame
 
@@ -180,6 +185,7 @@ private:
 	bool m_first_person = true; // CDisplay's default camera (DAT_0063b8ec), as F9 last left it
 	PlayerMovement m_movement;
 	float m_pitch = 0;
+	float m_explore_distance = 0; // the chase camera's (0: from the character's height)
 	float m_explore_heading = 0;
 	uint64_t m_last_move_ms = 0;
 	int m_walk_animation = -1; // what the moving character plays (-1: the random picks)
@@ -192,6 +198,7 @@ private:
 		int animation = 32;
 		uint64_t animation_start_ms = 0, next_animation_ms = 0;
 		render::Transform placement; // last drawn
+		render::HeldParticles held;  // its torch's flame, a weapon's fire
 	};
 	std::vector<Other> m_others;
 	std::vector<ExploreCharacter> m_pending_others; // EnterExplore's, placed on the next frame

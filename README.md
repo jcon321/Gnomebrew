@@ -380,12 +380,17 @@ additions of ours, or ones taken from TAKP's eqgame.dll or Zeal rather than stoc
   weather effects, Luclin spell effects, VSync, vision) and the SOUND switches, kept in `[Debug]`.
 - **Packet record and replay:** `RecordPackets=1` writes each zone session to an `.eqr`, and
   `--replay` plays one back with no server (GUI, `eqclient` and `frontend_preview`).
-- **Mouse wheel camera zoom:** the wheel zooms from first person out to 200 units and back.
+- **Mouse wheel camera zoom:** the wheel zooms from first person out to 200 units and back, in a zone
+  and in character select's explore mode.
 - **Emotes in character select's random animations** (`CharSelectEmotes=1`): eqgame's
   `DoClassRandomAnimation` picks only from its class's combat moves, casting and the fidget. With
   this on, half its picks are a social instead (`S01`..`S29`, of those the model has).
 - **Character select Animations window** (`CharSelectAnimWindow`): ours, not eqgame's. It plays any
   animation the model has, by name, and switches between Combat only and All + emotes.
+- **Character creation's random faces by the new race:** eqgame's `RandomizeFacialFeatures` rolls the
+  hair, beard and eyes on the model before a race or gender button switches it, by the old race's
+  rules, so a Luclin model coming from one without hair (Iksar, Vah Shir, Erudite, a troll or ogre
+  man) is bald. Ours rolls them for the race and gender being switched to, so nobody starts bald.
 - **Character select field of view:** widened by the aspect ratio (88 degrees at 16:9) as Zeal's
   `SetCameraLens` hook does, rather than eqgfx's 63.3.
 - **Extended nameplate distance** (`EnableExtendedNameplateDistance=1`): names show as far as the zone
@@ -583,10 +588,10 @@ do:
   dialog (category 0x1b, 10 s) and turns the character, Explore, Enter World and Delete buttons off
   (`SetButtonsEnabledState(0)`). Yes (`ProcessYes`, `CCharacterSelect::DeleteCharacter` @0040f93e)
   deletes the character's option file (`CEverQuest_RemoveCharacterOptionFile` @0053b149:
-  `<name>_<server>.ini`, ours the hot buttons and socials) and sends `0x405a` with the name. Nothing
-  in eqgame turns the buttons back on, and `SelectCharacter` does nothing while the selected one's
-  is off, so after Delete, Yes or No, character select is stuck until the window is made again
-  (ours: each time character select is entered).
+  `<name>_<server>.ini`, ours the hot buttons and socials) and sends `0x405a` with the name. The
+  window's per-frame function (vtable +0xac, @0040f23b, which the decompile misses) turns them back
+  on: when the confirmation dialog isn't up and the first character button is off, it calls
+  `SetButtonsEnabledState(1)`. So they're off only while the dialog is.
 - **Quit** (`ActivateBackButton`, Escape) sends `0x4023`. **Rotate** turns the camera's turning on
   and off; off, it follows the character's heading.
 - **Explore** (`EnterExplorationMode` @0040f3f2) hides the window for `ExploreModeWindow`, whose
@@ -650,7 +655,13 @@ does the same, from these decompiled functions:
   wizard's rooms; `SetLoadZoneWeather` and the old load zone 24) and `SetSunLight`, which give the
   ambient light, the sun and the sky's brightness as in a zone (`frontend/day_light.cpp`). The zone is
   its baked light plus the ambient over its vertices' exposure; the character is lit as in a zone
-  (its floor's exposure, the zone's lights). `SelectCharacter` gives it a light
+  (its floor's exposure, the zone's lights). `SetAmbientLight` gives it its race's vision too:
+  `SwitchModel`'s `SetHeights` runs `EQ_Character::InitInnates` on the PC for the selected race, and
+  `DoCharacterSelection`'s `SetDefaultGameValues` sets the infravision and ultravision colors, so as in
+  a zone the ambient rises to the vision's color and the world gets it as special ambient times
+  1 - the exposure (the first call takes the exposure as it is, each later one moves it 0.01;
+  ours: the character's floor), and infravision's glow is on in the 23:00 rooms and the old load zone's
+  midnight (`CreatePlayerActor` gives it the explore mode characters too). `SelectCharacter` gives it a light
   (`CDisplay::CreateUserLight`: smlantern's color, radius 75), which `MovePlayer`'s `MoveLight`
   keeps 2 in front of it and 4 over its center and `EnterWorld` takes away.
 - **Switches:** `CCharacterSelect::Activate` in load2 loads `load2_switches.dat`
