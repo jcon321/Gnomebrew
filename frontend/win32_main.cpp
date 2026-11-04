@@ -161,15 +161,21 @@ namespace
 		case 'S': return InputEvent::Key::S;
 		case 'D': return InputEvent::Key::D;
 		case 'R': return InputEvent::Key::R;
+		// Alt let go after Alt+key comes as WM_KEYUP, not WM_SYSKEYUP.
+		case VK_MENU: return InputEvent::Key::Alt;
 		default: return InputEvent::Key::None;
 		}
 	}
 
-	InputEvent KeyEvent(InputEvent::Key key)
+	// lparam: the key message's, for its scan code (bits 16..23, extended bit 24: DirectInput's
+	// DIK_ codes are the scan code with 0x80 for an extended key) and whether it's a repeat (bit 30).
+	InputEvent KeyEvent(InputEvent::Key key, LPARAM lparam)
 	{
 		InputEvent event;
 		event.type = InputEvent::Type::Key;
 		event.key = key;
+		event.scan = static_cast<int>((lparam >> 16) & 0xff) | ((lparam & (1 << 24)) ? 0x80 : 0);
+		event.repeat = (lparam & (1 << 30)) != 0;
 		event.x = g_app.mouse_x;
 		event.y = g_app.mouse_y;
 		event.shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
@@ -254,27 +260,37 @@ namespace
 			Send(event);
 			return 0;
 		}
+		case WM_SYSCHAR:
+			// Alt+letter's character: the keymap had the key, so no menu (and no beep) for it.
+			if (wparam != ' ')
+				return 0;
+			break;
 		case WM_SYSKEYDOWN:
 		case WM_SYSKEYUP:
-			// Alt alone comes as a system key: ours (the spell gems' tooltips), and it doesn't open the
-			// system menu. Alt with another key (Alt+F4) goes on to Windows.
+			// Alt alone comes as a system key: ours (the spell gems' tooltips, the keymap's Alt), and
+			// it doesn't open the system menu. Alt+F4 and Alt+Space go on to Windows; the other Alt
+			// keys and F10 are the keymap's.
 			if (wparam == VK_MENU) {
-				InputEvent event = KeyEvent(InputEvent::Key::Alt);
+				InputEvent event = KeyEvent(InputEvent::Key::Alt, lparam);
 				if (message == WM_SYSKEYUP)
 					event.type = InputEvent::Type::KeyUp;
 				Send(event);
 				return 0;
 			}
-			break;
+			if (wparam == VK_F4 || wparam == VK_SPACE)
+				break;
+			[[fallthrough]];
 		case WM_KEYDOWN:
 		case WM_KEYUP: {
-			InputEvent::Key key = TranslateKey(wparam);
-			if (key != InputEvent::Key::None) {
-				InputEvent event = KeyEvent(key);
-				if (message == WM_KEYUP)
-					event.type = InputEvent::Type::KeyUp;
+			InputEvent event = KeyEvent(TranslateKey(wparam), lparam);
+			if (wparam == VK_NUMLOCK)
+				event.scan = 0x45; // its scan code comes extended, but DirectInput's is 0x45
+			else if (wparam == VK_PAUSE)
+				event.scan = 0xc5;
+			if (message == WM_KEYUP || message == WM_SYSKEYUP)
+				event.type = InputEvent::Type::KeyUp;
+			if (event.key != InputEvent::Key::None || event.scan != 0)
 				Send(event);
-			}
 			return 0;
 		}
 		case WM_KILLFOCUS: {

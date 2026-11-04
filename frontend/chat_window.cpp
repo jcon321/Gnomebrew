@@ -305,3 +305,18 @@ bool ChatWindow::OnKey(const InputEvent &event, std::string &line)
 		return false;
 	}
 }
+
+void ChatWindow::History(bool up)
+{
+	// CChatWindow::ScrollChatHistoryUp and HandleKeyboardInput's down: back through what was sent,
+	// newest first; past the newest, an empty line.
+	SidlWindow::Control *input = Input();
+	if (!input || !Typing() || m_history.empty())
+		return;
+	int count = static_cast<int>(m_history.size());
+	if (up)
+		m_history_pos = m_history_pos < 0 ? count - 1 : std::max(m_history_pos - 1, 0);
+	else if (m_history_pos >= 0)
+		m_history_pos = m_history_pos + 1 < count ? m_history_pos + 1 : -1;
+	input->text = m_history_pos >= 0 ? m_history[m_history_pos] : "";
+}

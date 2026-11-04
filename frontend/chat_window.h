@@ -3,8 +3,8 @@
 // eqgame's CChatWindow, on the "ChatWindow" SIDL screen (EQUI_ChatWindow.xml): the output
 // (CW_ChatOutput, an STML box with a scrollbar) keeps the last 400 lines, wrapped to its width and
 // kept scrolled to the bottom unless scrolled up (AddOutputText); the input (CW_ChatInput) takes up
-// to 512 characters, with the last 40 lines sent a press of Up or Down away (AddHistory,
-// HandleKeyboardInput). Every channel goes to this one window so far. Item tags (item_tags.h) in
+// to 512 characters, with the last 40 lines sent a press of the keymap's History up or down away
+// (AddHistory, HandleKeyboardInput; Shift+Up and Shift+Down by default). Every channel goes to this one window so far. Item tags (item_tags.h) in
 // a line are links, and the input takes them (CEditWnd::AddItemTag).
 
 #include "item_tags.h"
@@ -38,6 +38,8 @@ public:
 	void Close();
 	// A key while it's open; true when it took it. A line sent with Enter comes back in `line`.
 	bool OnKey(const InputEvent &event, std::string &line);
+	// The keymap's History, up and down, while it's open: a line sent before into the input.
+	void History(bool up);
 	void OnChar(uint32_t ch);
 	// CEditWnd::AddItemTag: an item's tag on the end of the input, which opens for it; not past
 	// ten of them, or what the line takes.
@@ -98,7 +100,7 @@ private:
 	int m_font = 14;
 	int m_weight = 0;
 	std::vector<std::string> m_history; // newest last
-	int m_history_pos = -1;             // Up/Down: which one is showing, -1 none
+	int m_history_pos = -1;             // History: which one is showing, -1 none
 	uint32_t m_link_rgb = 0xff00ff;
 	LinkAt m_hover, m_pressed;
 };

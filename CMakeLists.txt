@@ -136,6 +136,8 @@ add_library(eqfrontend STATIC
     frontend/item_display.cpp
     frontend/name_sprites.cpp
     frontend/settings_file.cpp
+    frontend/key_map.cpp
+    frontend/options_window.cpp
 )
 target_include_directories(eqfrontend PUBLIC frontend)
 target_link_libraries(eqfrontend PUBLIC eqcore eqrender eqaudio)

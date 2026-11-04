@@ -138,7 +138,7 @@ no rules of its own.
      (EQType 7) and the zone's answers (OP_MemorizeSpell 3's recast and recovery, OP_ManaChange
      ending the cast, OP_TokenText's fizzles and interrupts), with the gems dim while anything's
      cast or recovering; a bard's song stops on a gem click (an empty OP_ManaChange). Still to do:
-     - casting: the hotkeys for the gems, stuns and divine aura (OP_Stun), the AA and focus cast time and range modifiers, items'
+     - casting: stuns and divine aura (OP_Stun), the AA and focus cast time and range modifiers, items'
        click effects (OP_CastSpell's inventory slot) and abilities (gem 9), and a bard being hit
        (StopSpellCast 1);
      - the spell info display: alt+click (or the right button held) on a book slot or a gem shows
@@ -170,9 +170,8 @@ no rules of its own.
      a social's lines go to InterpretCommand as typed, without eqgame's switch to the main chat
      window's channel while it runs.
    - ~~Compass~~: done (`frontend/compass.*`, eqgame's CCompassWnd): the strips slide by our
-     heading, and the needle wanders with a Sense Heading under 200. Still to do: TOGGLE_COMPASSWIN
-     to open and close it (the keymap, 6; it's up on every zone-in until then), and the skill's use
-     pointing it true for 5 s (CCompassWnd::SenseHeading from EQ_Character::UseSkill; there's no
+     heading, and the needle wanders with a Sense Heading under 200, and Toggle Compass (Alt+D)
+     opens and closes it. Still to do: the skill's use pointing it true for 5 s (CCompassWnd::SenseHeading from EQ_Character::UseSkill; there's no
      /doability or skill use yet).
    - ~~Selector bar~~: done (`SelectorToggles` in `frontend/frontend.cpp`): its buttons open and
      close their windows.
@@ -205,13 +204,37 @@ no rules of its own.
    TooltipReference or what its window sets: an inventory slot's item name (an empty worn slot's
    name), a spell gem's "1) Spell", and Alt held shows every gem's (DrawSpellButtonTooltips).
    The buff window's: the spell's name. Still to do: the key bound to a
-   button after its text (SetKeyTooltip, UpdateTooltipText; needs the keymap), the help texts
+   button after its text (SetKeyTooltip, UpdateTooltipText, from CDisplay_KeyMapUpdated), the help texts
    FindWnd's other hit codes ask for (GetHelpTextFromStringTable), and the slots of windows we
    don't have yet (the world container's).
-5. **Options / Escape menu.** Graphics, sound and display settings, mouse sensitivity, the keymap.
-6. **A configurable keymap.** `InputEvent::Key` is a hard-coded list of about 18 keys; make it an
-   EQ-style keymap with primary and alternate bindings. Then TOGGLE_COMPASSWIN (ExecuteCmd 0x6c)
-   opens and closes the compass, which is up on every zone-in until then.
+5. **Options window.** The Keyboard page is done (`frontend/options_window.*`, COptionsWnd's
+   keyboard page; see 6), with a combo box (CComboWnd) in `frontend/sidl.*`. Still to do: the
+   General, Display, Mouse, Filters and Colors pages, which show empty (SyncGeneralPage,
+   SyncDisplayPage, InitKeyboardAssignments' mouse settings, SyncChatPage, the color page and
+   SaveColors); the Keyboard page's temporary Implemented column and the wider window it needs come
+   out once every command is done. A combo box's list doesn't go when the click is outside its
+   window, and has no scrollbar when ListHeight cuts it short (CListWnd's style 1).
+6. ~~**A configurable keymap**~~: done (`frontend/key_map.*`, eqgame's two maps,
+   `default_key_bindings` with W A S D, `ProcessMovementKeys`, `ProcessKeyUp`, ExecuteCmd's
+   typed-character rule, `[KeyMaps]` in my-client.ini as `_writeKeyMapToIni` writes eqclient.ini's;
+   `InputEvent::scan` carries the DirectInput code). Still to do:
+   - ExecuteCmd's commands not done yet (the page's "No"): Toggle mouse look, Autoattack
+     (no auto attack yet), Duck, Use centerscreen, Center view, Zoom in and out held
+     (ProcessControls' camera distance at 2 units a frame unit), Toggle UI Display (ScreenMode 3),
+     Target party member 1..5 and a second press of Target myself taking the pet
+     (setTargetBasedOnIndex), Target nearest PC and NPC (CDisplay::GetNearestPlayerInView, 500
+     units), Toggle netstat, Send tell, Reply, Cycle reply and Send tell to target (the chat line
+     opened with `/tell `, `/tell <last> `, `/rtarget <last> `; eqstr 12364 and 12365 with no
+     tells), Toggle last two targets, Who, Invite/follow, Disband, the clip plane, voice input,
+     screenshots, the chat line's cursor and page up and down (CChatWindow::ScrollChatWindowUp),
+     Command mode say and emote (`'` and `:`), the AA, bazaar, bazaar search, raid and music player
+     windows, and the six camera moves (ExecuteCmd 0x6f..0x74, ProcessControls).
+   - Look up and down tilt 5 degrees a press with Windows' key repeat; ProcessControls speeds the
+     pitch up while the key's held (DAT_0079974c up to 12 a frame unit, to 128).
+   - CDisplay_KeyMapUpdated: the buttons' key tooltips (CXWnd::SetKeyTooltip,
+     CActionsWnd::KeyMapUpdated_UpdateActionWindowKeyTooltips, CSelectorWnd::KeyMapUpdated).
+   - Character select's explore mode takes only the movement, Jump and Toggle camera view
+     commands from the keymap (ProcessNewUICharacterSelectKeys runs ProcessMovementKeys).
 7. **Map window.** Draw the line maps from `../Maps` with our position and nearby spawns.
 8. **Loading screen** while zoning, with progress.
 23. ~~**Character select**~~: done (`frontend/frontend.cpp`, `frontend/charselect_view.*`, eqgame's

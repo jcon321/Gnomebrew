@@ -149,7 +149,11 @@ namespace
 		"; lines it doesn't change (comments too) are kept as they are.\n"
 		";\n"
 		"; [TextColors] (optional): the chat's text color n, 1..72 as eqgame's, as User_<n>_Red,\n"
-		"; User_<n>_Green and User_<n>_Blue, 0..255. All three, or the built-in color.\n";
+		"; User_<n>_Green and User_<n>_Blue, 0..255. All three, or the built-in color.\n"
+		";\n"
+		"; [KeyMaps] (written as you bind keys on the Options window's Keyboard page): eqgame's\n"
+		"; KEYMAP_<command>=key and KEYMAP_<command>_2=alternate, e.g. KEYMAP_FORWARD=w or\n"
+		"; KEYMAP_HOT1=SHIFT+CONTROL+F1, NOKEY for none. A command with no key here has its default.\n";
 }
 
 bool WriteDefaultSettings(const std::string &path, std::string &error)

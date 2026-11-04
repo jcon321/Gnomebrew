@@ -21,6 +21,7 @@
 #include "eqtext.h"
 #include "game_values.h"
 #include "game_windows.h"
+#include "key_map.h"
 #include "name_sprites.h"
 #include "login_client.h"
 #include "sidl.h"
@@ -31,6 +32,7 @@
 #include "ground_items.h"
 #include "loot_window.h"
 #include "merchant_window.h"
+#include "options_window.h"
 #include "trade_window.h"
 #include "spell_book.h"
 #include "spell_cast.h"
@@ -199,8 +201,16 @@ private:
 	void CharacterSelectEvent(const InputEvent &event);
 	void CharacterCreateEvent(const InputEvent &event);
 	void ZoneEvent(const InputEvent &event);
-	bool SetZoneKey(InputEvent::Key key, bool down, bool typing); // false: not a movement key
+	// ProcessKeyDown and ProcessKeyUp in the zone: a key's commands from the keymap, run or let go.
+	void ZoneKey(const InputEvent &event);
+	// CEverquest_ExecuteCmd: a command of the keymap's, its key down or let go; `typed` is the
+	// character the key types (ConvertScanCodeToChar), which runs nothing while the chat has the keys.
+	void ExecuteCmd(int cmd, bool down, int typed);
+	uint32_t KeyWithModifiers(const InputEvent &event) const; // the scan code and Shift, Ctrl, Alt bits
+	void SaveKeyBinding(int id, bool alternate, uint32_t key); // _writeKeyMapToIni
+	void ResetKeyBindings();                                   // DeleteKeyBindingFromConfig for all
 	MoveControls ZoneControls();
+	bool ZoneCanMove() const; // in the zone, with no dialog up
 
 	void SubmitLogin();
 	void PlaySelected();
@@ -236,6 +246,7 @@ private:
 	void SaveCustom(); // CEverQuest_saveCustom: the hot buttons and the socials changed
 	void SaveDebugSettings(); // the debug menu's, to my-client.ini's [Debug]
 	void HandleWindowClicks();
+	void ActionsClick(const std::string &control); // an Actions window button, clicked or on a hot button
 	// CEverQuest::RightClickedOnPlayer: a corpse's loot, a banker's bank, a merchant's shop, or else
 	// /consider (of our target).
 	void RightClickedOnPlayer(uint16_t spawn);
@@ -357,11 +368,19 @@ private:
 	bool m_windows_built = false;
 	std::string m_ui_layout_path;
 	std::string m_hot_buttons_path;
+	// The movement commands held down (ExecuteCmd 3..6's Zeal_KeyInput, DAT_007ce05c and the
+	// turns'), until their key comes up.
 	struct HeldKeys
 	{
-		bool up = false, down = false, left = false, right = false, w = false, a = false, s = false, d = false;
+		bool forward = false, back = false, left = false, right = false;
 	};
 	HeldKeys m_keys;
+	// Autorun (ExecuteCmd 1's DAT_00798600): on and off with its key, off with Move forward or
+	// back, any change of our stance (EQPlayer::ChangeStance) and a new zone (EnterZone).
+	bool m_autorun = false;
+	uint8_t m_autorun_stance = 0; // our stance when it was last looked at, to see it change
+	KeyBindings m_key_bindings; // the keymap, from my-client.ini's [KeyMaps]
+	OptionsWindow m_options;
 	bool m_alt_down = false; // the Alt key (GetKeyboardFlags' 4), for the gems' tooltips
 	bool m_run = true;
 	GameWindowState m_window_state; // the socials, the hot buttons, the button on the cursor

@@ -199,6 +199,9 @@ struct GameWindowState
 std::string GameWindowClick(WindowManager &windows, GameWindowState &state, const std::string &window, const std::string &control);
 // A button held down: onto the cursor.
 void GameWindowHold(WindowManager &windows, GameWindowState &state, const std::string &window, const std::string &control);
+// CHotButtonWnd::DoHotButton from the keymap: the showing page's button `slot` (0..9) run as a
+// click on it with nothing on the cursor would; what it returns is as GameWindowClick's.
+std::string DoHotButton(WindowManager &windows, GameWindowState &state, int slot);
 // A button right clicked: a social's opens the social editor on it.
 void GameWindowRightClick(WindowManager &windows, GameWindowState &state, const std::string &window, const std::string &control);
 // CInvSlot::SetItem: an InvSlot showing `item` (null: none), its icon, its stack's count and its tooltip.

@@ -28,6 +28,7 @@
 // display's item from its icon.
 
 #include "animations.h"
+#include "ini_file.h"
 #include "eqstr.h"
 #include "spell_file.h"
 #include "frontend.h"
@@ -585,13 +586,204 @@ namespace
 	}
 }
 
+namespace
+{
+	// Replay "options": the Options window's keyboard page, and keys through the keymap.
+	int OptionsTest(FrontEnd &frontend, Harness &h, const std::string &settings_ini)
+	{
+		WindowManager &windows = frontend.Windows();
+		auto key = [&](int scan, bool shift = false, bool ctrl = false, bool alt = false, bool up = false) {
+			InputEvent event;
+			event.type = up ? InputEvent::Type::KeyUp : InputEvent::Type::Key;
+			event.scan = scan;
+			event.shift = shift;
+			event.ctrl = ctrl;
+			event.alt = alt;
+			frontend.OnEvent(event);
+			frontend.Update(NowMs());
+		};
+		auto press = [&](int scan, bool shift = false, bool ctrl = false, bool alt = false) {
+			key(scan, shift, ctrl, alt);
+			key(scan, shift, ctrl, alt, true);
+		};
+		size_t chat_seen = frontend.Chat().Lines().size();
+		auto chat = [&] {
+			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
+				printf("[preview] chat: %s\n", frontend.Chat().Lines()[chat_seen].text.c_str());
+		};
+		auto click = [&](int x, int y) {
+			frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+			frontend.OnEvent({InputEvent::Type::MouseDown, x, y});
+			frontend.OnEvent({InputEvent::Type::MouseUp, x, y});
+			frontend.Update(NowMs());
+		};
+		// Alt+O: Toggle options window.
+		printf("[preview] options before Alt+O: %s\n", windows.Shown("OptionsWindow") ? "shown" : "hidden");
+		press(0x18, false, false, true);
+		printf("[preview] options after Alt+O: %s\n", windows.Shown("OptionsWindow") ? "shown" : "hidden");
+		SidlWindow *options = windows.Find("OptionsWindow");
+		if (!options)
+			return 1;
+		printf("[preview] OptionsWindow %dx%d\n", options->Bounds().w, options->Bounds().h);
+		SidlWindow::Control *tabs = options->Find("OPTW_OptionsSubwindows");
+		for (int page : tabs->children) {
+			int shown = 0;
+			for (int piece : options->Item(page).children)
+				shown += options->Item(piece).visible;
+			printf("[preview] page %s: %d pieces shown\n", options->Item(page).def->screen_id.c_str(), shown);
+		}
+		options->SelectTab(*tabs, 3);
+		SidlWindow::Control *list = options->Find("OKP_KeyboardAssignmentList");
+		SidlWindow::Control *combo = options->Find("OKP_KeyboardFilterCombobox");
+		auto dump = [&](const char *what) {
+			printf("[preview] %s: combo '%s', %zu rows\n", what,
+				combo->choice >= 0 ? combo->choices[combo->choice].c_str() : "", list->rows.size());
+			for (const auto &row : list->rows)
+				printf("[preview]   %-28s | %-12s | %-12s | %s\n", row[0].c_str(), row[1].c_str(), row[2].c_str(),
+					row[3].c_str());
+		};
+		dump("keyboard page");
+		h.Snapshot("o1-keyboard");
+		// The combo box: its list down, then "All".
+		click(combo->rect.x + combo->rect.w / 2, combo->rect.y + combo->rect.h / 2);
+		printf("[preview] combo list open: %d\n", combo->list_open);
+		h.Snapshot("o2-combo-open");
+		int line = 15; // font 3's height
+		const Rect &r = combo->rect;
+		click(r.x + 20, r.Bottom() + 4 + line * 8 + line / 2 - 2); // the ninth choice, All (inside the border)
+		printf("[preview] combo after pick: open %d, choice %d (%s), %zu rows\n", combo->list_open, combo->choice,
+			combo->choice >= 0 ? combo->choices[combo->choice].c_str() : "", list->rows.size());
+		// Back to Movement, then bind Move forward's alternate to Shift+F.
+		combo->choice = 0;
+		frontend.Windows().Find("OptionsWindow");
+		click(combo->rect.x + 20, combo->rect.y + 5);
+		click(r.x + 20, r.Bottom() + 4 + line / 2); // Movement
+		Rect content = options->ContentRect(*list);
+		int header = 15 + 4, row_h = 15 + 2;
+		auto cell = [&](int row, int column) {
+			int x = content.x;
+			for (int c = 0; c < column; ++c)
+				x += list->columns[c].width;
+			click(x + 10, content.y + header + row * row_h + row_h / 2);
+		};
+		cell(2, 2); // Move forward, Alternate
+		printf("[preview] clicked forward alt: '%s'\n", list->rows[2][2].c_str());
+		key(0x2a, true);       // Shift alone: still waiting
+		printf("[preview] after Shift alone: '%s'\n", list->rows[2][2].c_str());
+		press(0x21, true);     // Shift+F
+		printf("[preview] after Shift+F: '%s'\n", list->rows[2][2].c_str());
+		cell(0, 1); // Autorun/walk, Keypress: Escape unbinds it
+		press(0x01);
+		printf("[preview] Autorun after Escape: '%s'\n", list->rows[0][1].c_str());
+		cell(1, 1); // Jump: Enter can't be bound
+		press(0x1c);
+		chat();
+		printf("[preview] Jump after Enter: '%s'\n", list->rows[1][1].c_str());
+		IniFile ini;
+		ini.Load(settings_ini);
+		printf("[preview] ini: FORWARD_2=%s AUTORUN=%s JUMP=%s\n", ini.Get("KeyMaps", "KEYMAP_FORWARD_2").c_str(),
+			ini.Get("KeyMaps", "KEYMAP_AUTORUN").c_str(), ini.Get("KeyMaps", "KEYMAP_JUMP").c_str());
+		h.Snapshot("o3-assigned");
+		// Reload defaults: the question, then Yes.
+		if (const SidlWindow::Control *button = options->Find("OKP_DefaultKeysButton"))
+			click(button->rect.x + 5, button->rect.y + 5);
+		printf("[preview] confirmation: %s\n", windows.Shown("ConfirmationDialogBox") ? "shown" : "hidden");
+		if (SidlWindow *dialog = windows.Find("ConfirmationDialogBox"))
+			if (const SidlWindow::Control *yes = dialog->Find("Yes_Button"))
+				click(yes->rect.x + 5, yes->rect.y + 5);
+		ini = IniFile{};
+		ini.Load(settings_ini);
+		printf("[preview] after defaults: forward alt '%s', autorun '%s', ini FORWARD_2 '%s'\n", list->rows[2][2].c_str(),
+			list->rows[0][1].c_str(), ini.Get("KeyMaps", "KEYMAP_FORWARD_2", "(none)").c_str());
+		// The keymap in the zone.
+		press(0x18, false, false, true); // Alt+O closes it
+		printf("[preview] options after Alt+O: %s\n", windows.Shown("OptionsWindow") ? "shown" : "hidden");
+		{
+			// As Windows sends Alt+O: Alt down a system key, O with Alt, then Alt let go as a plain
+			// key up (no Key::Alt, just its scan code). W after it isn't Alt+W (the selector).
+			InputEvent alt;
+			alt.type = InputEvent::Type::Key;
+			alt.key = InputEvent::Key::Alt;
+			frontend.OnEvent(alt);
+			press(0x18, false, false, true);
+			InputEvent alt_up;
+			alt_up.type = InputEvent::Type::KeyUp;
+			alt_up.scan = 0x38;
+			frontend.OnEvent(alt_up);
+			bool selector = windows.Shown("SelectorWindow");
+			press(0x11);
+			printf("[preview] Alt+O, Alt up, W: options %s, selector %s -> %s\n",
+				windows.Shown("OptionsWindow") ? "shown" : "hidden", selector ? "shown" : "hidden",
+				windows.Shown("SelectorWindow") ? "shown" : "hidden");
+			key(0x11, false, false, false, true);
+			press(0x18, false, false, true);
+		}
+		press(0x13, false, true); // Ctrl+R
+		chat();
+		bool compass = windows.Shown("CompassWindow");
+		press(0x20, false, false, true); // Alt+D
+		printf("[preview] compass %s -> %s\n", compass ? "shown" : "hidden", windows.Shown("CompassWindow") ? "shown" : "hidden");
+		press(0x17); // I: inventory
+		printf("[preview] inventory after I: %s\n", windows.Shown("InventoryWindow") ? "shown" : "hidden");
+		press(0x30, false, true); // Ctrl+B: spellbook
+		printf("[preview] spellbook after Ctrl+B: %s\n", windows.Shown("SpellBookWnd") ? "shown" : "hidden");
+		press(0x30, false, true);
+		printf("[preview] spellbook after Ctrl+B again: %s\n", windows.Shown("SpellBookWnd") ? "shown" : "hidden");
+		press(0x18, false, true); // Ctrl+O: actions social page
+		if (SidlWindow *actions = windows.Find("ActionsWindow"))
+			printf("[preview] actions %s, page %d\n", windows.Shown("ActionsWindow") ? "shown" : "hidden",
+				actions->Find("ACTW_ActionsSubwindows")->tab);
+		press(0x04, true); // Shift+3: hot button page 3
+		if (SidlWindow *hot = windows.Find("HotButtonWnd"))
+			frontend.Update(NowMs()), printf("[preview] hot page label '%s'\n", hot->Find("HB_CurrentPageLabel")->text.c_str());
+		press(0x3b); // F1
+		printf("[preview] target after F1: %u (me %u)\n", frontend.Target(), frontend.Zone().MySpawnId());
+		// W held: moving; let go: stopped. Typing: W goes into the chat line, and Shift+Up brings back what was sent.
+		ZoneView *view = frontend.ZoneScene();
+		key(0x11);
+		h.RunUntil([] { return false; }, 400);
+		printf("[preview] W held: speed %.2f\n", view ? view->Movement().speed : -1.0f);
+		key(0x11, false, false, false, true);
+		h.RunUntil([] { return false; }, 400);
+		printf("[preview] W let go: speed %.2f\n", view ? view->Movement().speed : -1.0f);
+		// Num Lock: autorun on and off; on again, Move back (S) ends it.
+		auto autorun = [&](const char *what) {
+			h.RunUntil([] { return false; }, 400);
+			printf("[preview] %s: speed %.2f\n", what, view ? view->Movement().speed : -1.0f);
+		};
+		key(0x45), key(0x45, false, false, false, true);
+		autorun("Num Lock");
+		key(0x45), key(0x45, false, false, false, true);
+		autorun("Num Lock again");
+		key(0x45), key(0x45, false, false, false, true);
+		autorun("Num Lock a third time");
+		key(0x1f), key(0x1f, false, false, false, true);
+		autorun("then S tapped");
+		h.Key(InputEvent::Key::Enter);
+		h.Type("/loc");
+		h.Key(InputEvent::Key::Enter);
+		frontend.Update(NowMs());
+		chat();
+		h.Key(InputEvent::Key::Enter);
+		key(0x11);
+		h.Type("w");
+		key(0x11, false, false, false, true);
+		press(0xc8, true); // Shift+Up
+		frontend.Update(NowMs());
+		if (SidlWindow *chat_window = windows.Find("ChatWindow"))
+			printf("[preview] chat input after W and Shift+Up: '%s'\n", chat_window->Find("CWChatInput")->text.c_str());
+		h.Snapshot("o4-done");
+		return 0;
+	}
+}
+
 int main(int argc, char **argv)
 {
 	bool replay = argc >= 5 && std::string(argv[3]) == "--replay";
 	if (!replay && argc != 3 && argc != 6 && argc != 7) {
 		fprintf(stderr,
 			"usage: %s EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create]]\n"
-			"       %s EQDIR OUTDIR --replay FILE [SECONDS]\n",
+			"       %s EQDIR OUTDIR --replay FILE [SECONDS [options]]\n",
 			argv[0], argv[0]);
 		return 2;
 	}
@@ -611,6 +803,8 @@ int main(int argc, char **argv)
 
 	FrontEndConfig config;
 	config.ui_dir = argv[2];
+	if (replay && argc >= 7 && std::string(argv[6]) == "options")
+		config.settings_ini = std::string(argv[2]) + "/my-client.ini"; // the keymap's saves
 	bool stop_at_charselect = argc == 7 && std::string(argv[6]) == "charselect";
 	bool explore = argc == 7 && std::string(argv[6]) == "explore";
 	// createluclin: the same with every Luclin model on, a dwarf warrior whose face picker cycles
@@ -696,6 +890,8 @@ int main(int argc, char **argv)
 		};
 		printf("[preview] %d windows, layout %s\n", windows.Count(), frontend.UiLayoutPath().c_str());
 		h.Key(InputEvent::Key::F11); // the debug menu out of the way
+		if (argc >= 7 && std::string(argv[6]) == "options")
+			return OptionsTest(frontend, h, config.settings_ini);
 		if (const SidlWindow *selector = where("SelectorWindow")) {
 			const Rect &title = selector->Root().title;
 			drag(title.x + 20, title.y + title.h / 2, title.x + 220, title.y + title.h / 2 + 120);

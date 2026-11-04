@@ -295,6 +295,11 @@ void SidlDefinitions::ReadElement(const XmlNode &node)
 		return;
 	}
 
+	if (node.name == "ButtonDrawTemplate") {
+		m_button_templates[item] = ReadButtonTemplate(node);
+		return;
+	}
+
 	if (node.name == "SliderDrawTemplate") {
 		SidlSliderTemplate t;
 		if (const XmlNode *thumb = node.Child("Thumb"))
@@ -358,6 +363,12 @@ void SidlDefinitions::ReadElement(const XmlNode &node)
 	}
 	for (const XmlNode *column : node.Children("Columns"))
 		p.columns.push_back({column->ChildText("Heading"), column->ChildInt("Width", 0)});
+	if (p.type == "Combobox") {
+		for (const XmlNode *choice : node.Children("Choices"))
+			p.choices.push_back(choice->text);
+		p.list_height = node.ChildInt("ListHeight", 0);
+		p.combo_button = node.ChildText("Button");
+	}
 	p.animation = node.ChildText("Animation");
 	p.slider_art = node.ChildText("SliderArt");
 	if (p.type == "InvSlot")
@@ -409,6 +420,12 @@ const SidlAnimation *SidlDefinitions::Animation(const std::string &name) const
 {
 	auto it = m_animations.find(name);
 	return it != m_animations.end() ? &it->second : nullptr;
+}
+
+const SidlButtonTemplate *SidlDefinitions::ButtonTemplate(const std::string &name) const
+{
+	auto it = m_button_templates.find(name);
+	return it != m_button_templates.end() ? &it->second : nullptr;
 }
 
 const SidlWindowTemplate *SidlDefinitions::WindowTemplate(const std::string &name) const
@@ -562,6 +579,8 @@ int SidlWindow::Add(const SidlPiece &piece, int parent)
 	control.text = piece.text;
 	control.tooltip = piece.tooltip;
 	control.text_color = piece.text_color;
+	control.columns = piece.columns;
+	control.choices = piece.choices;
 	if (!piece.draw_template.empty())
 		control.frame = m_defs->WindowTemplate(piece.draw_template);
 	m_controls.push_back(control);
@@ -804,8 +823,10 @@ bool SidlWindow::InteractiveAt(int x, int y) const
 	for (const auto &control : m_controls) {
 		const std::string &type = control.def->type;
 		if ((type == "Button" || type == "Editbox" || type == "InvSlot" || type == "SpellGem" || type == "Slider" ||
-		     control.clickable) &&
+		     type == "Combobox" || type == "Listbox" || control.clickable) &&
 		    control.enabled && HitTest(control, x, y))
+			return true;
+		if (type == "Combobox" && control.list_open && ComboListRect(control).Contains(x, y))
 			return true;
 		if (HasScrollbar(control) && LayoutScrollbar(control).bar.Contains(x, y) && HitTest(control, x, y))
 			return true;
@@ -977,7 +998,8 @@ void SidlWindow::DrawTab(const Control &tab_box, int index, Canvas &canvas, Text
 	uint64_t now_ms, const Rect &clip) const
 {
 	// CTabWnd::DrawTab: the tab border, the page's TabIcon (TabIconActive on the current tab) in
-	// its top left corner inside the border, and its TabText centered in the rest.
+	// its top left corner inside the border, and its TabText centered across the rest at its top
+	// (DrawWrappedText's flags 0x15 don't have 0x20, renderTextWithWordWrap's vertical centering).
 	if (index < 0 || index >= static_cast<int>(tab_box.children.size()))
 		return;
 	const SidlPiece &page = *m_controls[tab_box.children[index]].def;
@@ -1014,7 +1036,7 @@ void SidlWindow::DrawTab(const Control &tab_box, int index, Canvas &canvas, Text
 	if (!page.tab_text.empty()) {
 		int height = SidlFontHeight(tab_box.def->font), weight = SidlFontWeight(tab_box.def->font);
 		TextSize size = text.Measure(page.tab_text, height, weight);
-		text.Draw(canvas, inside.x + (inside.w - size.w) / 2, inside.y + (inside.h - size.h) / 2, page.tab_text, height,
+		text.Draw(canvas, inside.x + (inside.w - size.w) / 2, inside.y, page.tab_text, height,
 			current ? page.tab_text_active_color : page.tab_text_color, weight);
 	}
 }
@@ -1188,6 +1210,13 @@ void SidlWindow::Draw(Canvas &canvas, TextRenderer &text, SidlTextures &textures
 		return;
 	Rect clip = canvas.Clip();
 	DrawControl(0, canvas, text, textures, now_ms, clip);
+	// A combo box's list is a window of its own over everything (HandleComboWindowClick's
+	// BringWndToTop).
+	int open = OpenCombo();
+	if (open >= 0 && !m_minimized && Shown(m_controls[open])) {
+		canvas.SetClip(clip);
+		DrawComboList(m_controls[open], canvas, text, textures, now_ms);
+	}
 	canvas.SetClip(clip);
 }
 
@@ -1361,6 +1390,9 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 	else if (def.type == "Listbox") {
 		DrawListbox(control, canvas, text);
 	}
+	else if (def.type == "Combobox") {
+		DrawCombo(control, canvas, text, textures, now_ms);
+	}
 	else if (def.type == "Editbox") {
 		// The end of the text, as much as fits, with the caret after it. An item tag shows its name,
 		// in the link color (CEditWnd::RenderEditWindowText).
@@ -1408,6 +1440,56 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 
 std::string SidlWindow::OnMouse(const InputEvent &event)
 {
+	// A list's row and a combo box's choice are picked as the button goes down; their window hears
+	// of it as the button comes up, as it does of a button's click.
+	std::string clicked = Press(event);
+	bool down = event.type == InputEvent::Type::MouseDown || event.type == InputEvent::Type::DoubleClick;
+	if (down) {
+		m_pressed_pick = clicked;
+		return clicked;
+	}
+	if (event.type == InputEvent::Type::MouseUp) {
+		if (clicked.empty())
+			clicked = m_pressed_pick;
+		m_pressed_pick.clear();
+	}
+	return clicked;
+}
+
+std::string SidlWindow::Press(const InputEvent &event)
+{
+	// A combo box's list while it's down: a press on a choice picks it, one anywhere else puts the
+	// list away (CListWnd's notification to CComboWnd, HandleComboWindowClick).
+	if (int open = OpenCombo(); open >= 0) {
+		Control &combo = m_controls[open];
+		if (event.type != InputEvent::Type::MouseDown && event.type != InputEvent::Type::DoubleClick)
+			return "";
+		combo.list_open = false;
+		Rect list = ComboListRect(combo);
+		if (!list.Contains(event.x, event.y))
+			return "";
+		Rect inside = list;
+		if (combo.frame) {
+			int left = 0, top = 0, right = 0, bottom = 0;
+			ComboListInsets(combo, left, top, right, bottom);
+			inside = {list.x + left, list.y + top, list.w - left - right, list.h - top - bottom};
+		}
+		int row = (event.y - inside.y) / std::max(SidlFontHeight(combo.def->font), 1);
+		if (event.y < inside.y || row < 0 || row >= static_cast<int>(combo.choices.size()))
+			return "";
+		combo.choice = row;
+		return combo.def->screen_id;
+	}
+	// A press on a combo box drops its list down (HandleComboWindowClick).
+	if (event.type == InputEvent::Type::MouseDown || event.type == InputEvent::Type::DoubleClick)
+		for (int i = static_cast<int>(m_controls.size()) - 1; i >= 0; --i) {
+			Control &control = m_controls[i];
+			if (control.def->type == "Combobox" && control.enabled && Shown(control) && HitTest(control, event.x, event.y)) {
+				control.list_open = !control.choices.empty();
+				return "";
+			}
+		}
+
 	// Scrollbars: the arrows step a row, the gutter a page, the thumb drags.
 	m_scroll_hover = -1;
 	m_scroll_hover_part = ScrollPart::None;
@@ -1501,6 +1583,16 @@ std::string SidlWindow::OnMouse(const InputEvent &event)
 			if (row >= static_cast<int>(control.rows.size()))
 				return "";
 			control.selected_row = row;
+			// CListWnd::GetCurCol: the column under the click, by the columns' widths.
+			control.selected_column = -1;
+			int x = content.x;
+			for (size_t c = 0; c < control.columns.size(); ++c) {
+				if (event.x >= x && event.x < x + control.columns[c].width) {
+					control.selected_column = static_cast<int>(c);
+					break;
+				}
+				x += control.columns[c].width;
+			}
 			return control.def->screen_id;
 		}
 
@@ -1722,7 +1814,7 @@ void SidlWindow::DrawGauge(const Control &control, Canvas &canvas, TextRenderer 
 int SidlWindow::ListHeaderHeight(const Control &control) const
 {
 	// CListWnd::CListWnd: its font's height and 4, when it has columns.
-	return control.def->columns.empty() ? 0 : SidlFontHeight(control.def->font) + 4;
+	return control.columns.empty() ? 0 : SidlFontHeight(control.def->font) + 4;
 }
 
 int SidlWindow::ListRowHeight(const Control &control) const
@@ -1791,9 +1883,10 @@ void SidlWindow::DrawListbox(const Control &control, Canvas &canvas, TextRendere
 	};
 	int header = ListHeaderHeight(control);
 	int x = content.x;
-	for (size_t i = 0; i < def.columns.size(); ++i) {
-		draw(def.columns[i].heading, static_cast<int>(i), x, def.columns[i].width, content.y, header, control.header_color);
-		x += def.columns[i].width;
+	for (size_t i = 0; i < control.columns.size(); ++i) {
+		draw(control.columns[i].heading, static_cast<int>(i), x, control.columns[i].width, content.y, header,
+			control.header_color);
+		x += control.columns[i].width;
 	}
 	int row_height = ListRowHeight(control);
 	int y = content.y + header;
@@ -1806,13 +1899,113 @@ void SidlWindow::DrawListbox(const Control &control, Canvas &canvas, TextRendere
 		}
 		x = content.x;
 		for (size_t i = 0; i < row.size(); ++i) {
-			int width = i < def.columns.size() ? def.columns[i].width : content.Right() - x;
+			int width = i < control.columns.size() ? control.columns[i].width : content.Right() - x;
 			draw(row[i], static_cast<int>(i), x, width, y, row_height, control.row_color);
 			x += width;
 		}
 		y += row_height;
 	}
 	canvas.SetClip(clip);
+}
+
+// ---------------------------------------------------------------- combo boxes
+
+int SidlWindow::OpenCombo() const
+{
+	for (int i = 0; i < static_cast<int>(m_controls.size()); ++i)
+		if (m_controls[i].list_open)
+			return i;
+	return -1;
+}
+
+void SidlWindow::CloseCombos()
+{
+	for (auto &control : m_controls)
+		control.list_open = false;
+}
+
+Rect SidlWindow::ComboButtonRect(const Control &combo) const
+{
+	// GetButtonRect: down the right of the client area, as wide as the button's Normal.
+	const SidlButtonTemplate *button = m_defs->ButtonTemplate(combo.def->combo_button);
+	int width = button ? AnimationSize(button->normal).w : 0;
+	const Rect &c = combo.client;
+	return {c.Right() - width, c.y, width, c.h};
+}
+
+Rect SidlWindow::ComboListRect(const Control &combo) const
+{
+	// GetListRect and InsertChoice: from the combo box's bottom, as wide as it is left of the
+	// button, half a line and a line for each choice tall, no taller than ListHeight.
+	int line = SidlFontHeight(combo.def->font);
+	int height = line / 2 + line * static_cast<int>(combo.choices.size());
+	if (combo.def->list_height > 0)
+		height = std::min(height, combo.def->list_height);
+	Rect button = ComboButtonRect(combo);
+	return {combo.rect.x, combo.rect.Bottom(), button.x - combo.rect.x, height};
+}
+
+void SidlWindow::ComboListInsets(const Control &combo, int &left, int &top, int &right, int &bottom) const
+{
+	left = top = right = bottom = 0;
+	if (!combo.frame || !combo.def->style_border)
+		return;
+	auto size_of = [&](int piece, bool width) {
+		const SidlAnimation *a = m_defs->Animation(combo.frame->border[piece]);
+		const SidlFrame *f = a ? a->FrameAt(0) : nullptr;
+		return f ? (width ? f->source.w : f->source.h) : 0;
+	};
+	left = size_of(Left, true);
+	right = size_of(Right, true);
+	top = size_of(Top, false);
+	bottom = size_of(Bottom, false);
+}
+
+void SidlWindow::DrawCombo(const Control &combo, Canvas &canvas, TextRenderer &text, SidlTextures &textures,
+	uint64_t now_ms) const
+{
+	// CComboWnd::Draw: the choice in white (grey when it's disabled), down the middle of the room
+	// left of the button, then the button: Pressed while the list is down, else Normal (Disabled).
+	const SidlPiece &def = *combo.def;
+	int height = SidlFontHeight(def.font), weight = SidlFontWeight(def.font);
+	Rect button = ComboButtonRect(combo);
+	if (combo.choice >= 0 && combo.choice < static_cast<int>(combo.choices.size())) {
+		const std::string &shown = combo.choices[combo.choice];
+		TextSize size = text.Measure(shown, height, weight);
+		Rect clip = canvas.Clip();
+		canvas.SetClip(Intersect({combo.client.x, combo.client.y, button.x - combo.client.x, combo.client.h}, clip));
+		text.Draw(canvas, combo.client.x, combo.client.y + (combo.client.h - size.h) / 2, shown, height,
+			combo.enabled ? 0xffffff : 0x808080, weight);
+		canvas.SetClip(clip);
+	}
+	if (const SidlButtonTemplate *look = m_defs->ButtonTemplate(def.combo_button)) {
+		const std::string &name = combo.list_open ? look->pressed : combo.enabled ? look->normal : look->disabled;
+		DrawAnimation(canvas, textures, name.empty() ? look->normal : name, button, now_ms);
+	}
+}
+
+void SidlWindow::DrawComboList(const Control &combo, Canvas &canvas, TextRenderer &text, SidlTextures &textures,
+	uint64_t now_ms) const
+{
+	// Its CListWnd: the combo box's DrawTemplate around it, a line a choice, the choice showing
+	// highlighted (CListWnd's current selection; ours the same dark blue as a list's selected row).
+	Control list = combo;
+	list.rect = ComboListRect(combo);
+	int left, top, right, bottom;
+	ComboListInsets(combo, left, top, right, bottom);
+	list.client = {list.rect.x + left, list.rect.y + top, list.rect.w - left - right, list.rect.h - top - bottom};
+	canvas.SetClip(Intersect(list.rect, canvas.Clip()));
+	DrawFrame(list, canvas, textures, now_ms);
+	const SidlPiece &def = *combo.def;
+	int height = SidlFontHeight(def.font), weight = SidlFontWeight(def.font);
+	canvas.SetClip(Intersect(list.client, canvas.Clip()));
+	int y = list.client.y;
+	for (int i = 0; i < static_cast<int>(combo.choices.size()) && y < list.client.Bottom(); ++i, y += height) {
+		if (i == combo.choice)
+			canvas.Fill({list.client.x, y, list.client.w, height}, 0x203c6c);
+		TextSize size = text.Measure(combo.choices[i], height, weight);
+		text.Draw(canvas, list.client.x + 2, y + (height - size.h) / 2, combo.choices[i], height, 0xffffff, weight);
+	}
 }
 
 // ---------------------------------------------------------------- scrollbars

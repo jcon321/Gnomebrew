@@ -22,6 +22,10 @@ struct InputEvent
 	int wheel = 0;        // notches, positive = away from the user
 	uint32_t ch = 0;      // Char: the character (Latin-1 range is all the login fields accept)
 	Key key = Key::None;  // Key
+	// Key and KeyUp: the DirectInput key code (DIK_*: the scan code, 0x80 more for an extended
+	// key), as eqgame's keymap has it; 0 when the host doesn't know it.
+	int scan = 0;
+	bool repeat = false; // Key: the key's auto-repeat, not its press
 	bool shift = false;
 	bool ctrl = false;
 	bool alt = false;

@@ -79,7 +79,7 @@ All settings live in `my-client.ini` next to `eqclient_gui.exe`. The EQ folder i
 assets; its `eqclient.ini` is never used. The first run writes the file with a comment on every
 setting (`frontend/settings_file.cpp` has them all, with their defaults). Later runs add any
 missing keys the same way, and keep the rest of the file, your own `;` comments too. Every
-setting is listed except the optional `[TextColors]`. Without the comments, it looks like this:
+setting is listed except the optional `[TextColors]` and `[KeyMaps]`. Without the comments, it looks like this:
 
 ```ini
 [Paths]
@@ -229,6 +229,10 @@ WeatherSounds=1
 - `[TextColors]` is optional and isn't written for you: the chat's text colors, keyed as eqgame's
   (`User_<n>_Red`, `User_<n>_Green`, `User_<n>_Blue`, n 1..72; all three, 0..255, or the built-in
   color). For example `User_1_Red=255` with Green and Blue makes says red.
+- `[KeyMaps]` isn't written for you either: the keys you bind on the Options window's Keyboard page
+  go there as you bind them, in eqclient.ini's format (`KEYMAP_FORWARD=w`,
+  `KEYMAP_FORWARD_2=SHIFT+CONTROL+UP`, `NOKEY` for none; see Keymap below), and Reload defaults
+  takes them out again. A command with no key there has its default.
 
 In the zone, the game's own SIDL windows come up as eqgame's do on a first login (player, target,
 group, buffs, spell gems, hotbuttons, chat and the selector, whose buttons open and close the
@@ -274,7 +278,8 @@ eqgame's `OP_MoveItem`.
   `CGaugeWnd::Draw` does it, bars sliding to a new value at a full bar a second.
 - The chat window keeps the last 400 lines in eqgame's colors (from `[TextColors]` in
   `my-client.ini`, or the built-in ones), with a scrollbar and the wheel. Enter or `/` opens its
-  input line, Up and Down bring back the last 40 lines sent. Commands are looked up in eqgame's own
+  input line, and the keymap's History up and down (Shift+Up and Shift+Down) bring back the last 40
+  lines sent. Commands are looked up in eqgame's own
   table, in its order, so abbreviations work as they do there (`/g` is /gsay, `/s` is /split).
   So far: /say (or no slash, or `'`), /tell (/msg, /send), /reply, /gsay, /guildsay, /shout,
   /auction, /ooc, /emote (`:`, /me), /hail, /target, /assist, /consider, /location, /time,
@@ -313,7 +318,9 @@ eqgame's `OP_MoveItem`.
   exe's two switches: the sent one Ghidra recovers; the echo's jump table (0x535d63) it doesn't.
   `DoPercentConvert` (%t and the rest) isn't applied.
 - The Actions window's tabs (Main, Abilities, Combat, Socials) switch pages, drawn as `CTabWnd`
-  draws them, and its Camp, Run and Walk buttons work; Run or Walk, Sit or Stand and Invite or
+  draws them (`DrawTab` @00593f80: the label centered across the tab inside its border, at the top
+  of it, not centered down it: `DrawWrappedText`'s flags 0x15 lack eqgfx's 0x20, so a tall
+  letter's tail is cut off by the tab's bottom), and its Camp, Run and Walk buttons work; Run or Walk, Sit or Stand and Invite or
   Follow show as eqgame picks them. The socials page and the hot button window page through ten
   sets with their arrows, round from the last to the first.
 - Socials work as eqgame's do: the first page starts with its twelve (Afk, Anon, ... Wave), a
@@ -354,8 +361,8 @@ eqgame's `OP_MoveItem`.
   (`CalculateCompassNeedleVariation`: `rand() % span - span / 2`, span `(200 - skill) * 512 / 200`,
   at least `51 - skill / 5` either way) at 80 heading units a second, 160 when it's more than 50
   off, and on reaching it from below picks another; it's kept within -256..256. Using the skill
-  (`SenseHeading`) points it true for 5 s. eqgame opens it only with `TOGGLE_COMPASSWIN`, which has
-  no default key; until there's a keymap we put it up on every zone-in.
+  (`SenseHeading`) points it true for 5 s. It's up when the layout last had it up, and Toggle
+  Compass (`TOGGLE_COMPASSWIN`, Alt+D) opens and closes it.
 - The inventory, skills, item display, spellbook, casting, buff, quantity and compass windows are
   filled in (below, under Spells and Items and stats). Others are still empty frames.
 
@@ -375,7 +382,18 @@ additions of ours, or ones taken from TAKP's eqgame.dll or Zeal rather than stoc
 - **Renderer:** Direct3D 11 by default, or our software rasterizer (`Renderer=d3d11|software`, with a
   fallback when D3D11 isn't there), `VSync` on or off, and any `Width`x`Height`. The real client
   draws through eqgfx_dx8 (Direct3D 8).
-- **Debug menu** (F11): the stat card with its folding sections, the 2D radar, the RENDER toggles
+- **Movement keys on W, A, S and D:** the keymap's defaults move with W, S, D and A (the arrows their
+  alternates), Autoattack is Q and Duck F. eqgame's `default_key_bindings` moves with the numpad
+  (8, 2, 6, 4; the arrows the alternates), Autoattack on A and Duck on D. Everything else is
+  eqgame's. Because ExecuteCmd runs nothing whose own key types a character while the chat line is
+  open (see Keymap), the arrows don't move you while you type with these defaults; with the arrows
+  as the keys and W A S D as the alternates, they would.
+- **Options window's Implemented column:** for now the Keyboard page has a fourth column saying
+  whether my-client does what each command does, and the window is widened to fit it. The other
+  pages show empty.
+- **Look up and Look down** tilt the view 5 degrees a press and keep going with Windows' key repeat;
+  eqgame's `ProcessControls` speeds the tilt up while the key's held.
+- **Debug menu** (F11, ahead of the keymap's Toggle netstat): the stat card with its folding sections, the 2D radar, the RENDER toggles
   (wireframe, no fog, collision walls and our sphere, floor marker, no occlusion culling, no clip plane, no
   weather effects, Luclin spell effects, VSync, vision) and the SOUND switches, kept in `[Debug]`.
 - **Packet record and replay:** `RecordPackets=1` writes each zone session to an `.eqr`, and
@@ -1076,6 +1094,75 @@ the rejection).
 
 The zone screen fills the window: the 3D view under the SIDL windows; with the debug menu open, our
 details and the nearest spawns at the top left and the radar at the top right.
+
+## Keymap
+
+`frontend/key_map.*` and `frontend/options_window.*`, from eqgame's keyboard handling:
+
+- **Commands** are `CEverquest_ExecuteCmd`'s numbers, 1 (`AUTORUN`) to 116 (`PITCHDOWN_CAM`) in the
+  Options window (more past them are dev keys). Each has a key and an alternate:
+  `instKeypressHandler` @007cd84c and the alternate map @007cdc4c, 256 entries each; a third array
+  @007ce04c holds what's held down (zoom, camera moves). A key is DirectInput's code (the scan code,
+  0x80 more when extended) plus 0x10000000 Shift, 0x20000000 Ctrl, 0x40000000 Alt; `0xffffffff` is
+  none. The ini names are `__BindList` (@00611220, `*NULL*` first).
+- **Defaults** (`default_key_bindings` @0055a83b, ours on W A S D, see Custom changes): Space jumps,
+  F9 toggles the camera, F1 targets yourself and F2..F6 the group, F7 and F8 the nearest PC and
+  NPC, 1..0 the hot buttons, Shift+1..0 their pages, Alt+1..8 the gems, Ctrl+B the book, Ctrl+A,
+  C, O and M the Actions pages, Ctrl+S sit, Ctrl+R run, Ctrl+X camp, I inventory, C consider, H
+  hail, Tab both Cycle reply and Toggle last two targets, Alt+letters the windows (Alt+O options,
+  Alt+D compass). The chat line's history and cursor take Shift with a numpad key or an arrow, the
+  camera moves Alt; Page Up and Down look up and down. A flag (`DAT_008092d8`) adds dev keys past 116.
+- **A key down** (`ProcessKeyDown` @00525b04): Escape is `ExecuteCmd(200)`, Enter `ExecuteCmd(0xce)`
+  (the chat line), neither bindable. The rest goes to `ProcessMovementKeys` (@005257fa): Move
+  right, left, back and forward match the key without Ctrl (`& 0xd00000ff`), Zoom in and out without
+  Alt (`& 0xb00000ff`); then every command 0..0x82 with exactly that key or alternate runs, unless
+  the key is Cursor left's or right's. While the chat line has the keys, a key that types a
+  character (`ConvertScanCodeToChar`, the US table @006253e8: digits, letters, punctuation, Space)
+  runs nothing. And `ExecuteCmd` itself runs nothing, down or up, whose own key (the first map's,
+  whichever key was pressed) types one while the chat line is open. Ctrl+W runs Move forward and
+  Who both. With an edit box other than the chat's focused, only Escape, Delete and the arrows
+  (no Shift) get past it (`ProcessKeyboardInput` @0055afe2). The right Shift, Ctrl and Alt count as
+  the left ones.
+- **A key up** (`ProcessKeyUp` @0052462a): the moves, zooms and camera moves stop when their key
+  comes up whatever's held; then every command with that key and the modifiers held now gets
+  `ExecuteCmd(n, 0)`.
+- **What a command does** is `ExecuteCmd`'s switch. Hot button n is `CHotButtonWnd::DoHotButton(n)`
+  on the page showing (whatever's on the cursor), a page `Activate_HotkeyPage`, a gem
+  `CCastSpellWnd::HandleSpellLeftClick`, the window commands toggle their windows, Toggle inventory
+  waits while a mouse button's down on the world or a transaction is, and the spellbook toggles.
+  Autorun (Num Lock) flips `DAT_00798600` on its key down when we can move (not stunned, not
+  frozen), and turned on it lets go of Move back; Move forward's or back's key down turns it off,
+  as do `EQPlayer::ChangeStance` of ourselves (sitting, ducking, any stance the server gives us)
+  and `EnterZone`. `ProcessControls` runs us forward while Move forward's held, autorun's on or
+  both mouse buttons are down.
+  Of the 111, my-client does the movement, Autorun, Jump, Look up and down, Toggle camera view, Consider,
+  Say hail, Camp, Sit/stand, Run/walk, Target myself, the hot buttons and pages, the gems,
+  History up and down, the spellbook, inventory, Actions pages and the window toggles it has
+  windows for (`implemented` in `frontend/key_map.cpp`).
+- **The Keyboard page** (`COptionsWnd`): `initkeyboardassignments` (@0042a9d7) names each command
+  (eqstr 6500..6697, 3144, 3150, 3153, 5107) and gives its categories (1 Movement, 2 Commands, 4
+  Spell casting, 8 Target, 0x10 Camera, 0x20 Chat, 0x40 UI, 0x80 Macros). The combo box picks
+  them (`UpdateKeyboardCategoryList`: choice n is bit n, All is 0xff) and the list shows those
+  commands in number order with `GetKeypressDescription`'s text: `Shift `, `Ctrl `, `Alt `,
+  `ShCtl `, `ShAlt `, `CtlAlt `, `ShCtlAlt ` then the key's character in capitals or its name
+  (`NPAD 8`, `PGUP`, `F12`), `-------` for none. A click on a Keypress or Alternate cell shows eqstr
+  6598 ("Press a key") there (`KeyboardPageWndNotification`); the next key binds it
+  (`KeyboardPageHandleKeyboardMsg`): Shift, Ctrl and Alt alone are waited past, Escape unbinds, and
+  Enter, `/` and the Windows keys can't be bound (`CEverQuest_IsValidKeyMap`: eqstr 12092
+  in chat color 15, the key stays). The key goes ahead of everything else. Clicking another cell,
+  changing page or closing the window puts the old text back. Reload defaults asks eqstr 6602 for
+  20 s (`CConfirmationDialog::Activate(0x1c, 20000)`), then `ResetKeysToDefault` takes every
+  command's keys out of the ini.
+- **The ini** (`_writeKeyMapToIni` @0052505a, `readKeyMapFromIni` @00525520): `[KeyMaps]`
+  `KEYMAP_<name>` and `KEYMAP_<name>_2`, the value `SHIFT+`, `CONTROL+`, `ALT+` in that order, then
+  the key's lowercase character or its name (`NUMPAD8`, `LCONTROL`, `SPACE`, `PGUP`), `NOKEY` for
+  none. Reading takes the prefixes in any order, a single character only from the 47 the table
+  @00611420 has, and anything it doesn't know as no key; a missing key keeps the default.
+- **Combo boxes** (`CComboWnd`): the choice in white (grey disabled) down the middle of the client
+  area left of the button, which is as wide as its `Button` template's Normal and drawn Pressed
+  while the list is down. The list hangs from the box's bottom, as wide as the box left of the
+  button and half a line plus a line a choice tall, `ListHeight` at most (`GetListRect`,
+  `InsertChoice`). A press on the box drops it; a press on a choice picks it.
 
 ## Spells
 

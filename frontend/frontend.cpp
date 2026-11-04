@@ -90,8 +90,10 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 	if (!m_config.settings_ini.empty()) {
 		m_chat_colors.Load(m_config.settings_ini);
 		IniFile ini;
-		if (ini.Load(m_config.settings_ini))
+		if (ini.Load(m_config.settings_ini)) {
 			m_debug.Load(ini);
+			m_key_bindings.Load(ini); // CEverQuest_loadOptions' readKeyMapFromIni
+		}
 	}
 	m_game_values.zone = &m_zone;
 	EnterStart();
@@ -341,20 +343,58 @@ void FrontEnd::DialogEvent(const InputEvent &event)
 
 // ---------------------------------------------------------------- input
 
-void FrontEnd::OnEvent(const InputEvent &event)
+namespace
 {
+	// The DirectInput code of a key a host gave without one (the preview tools').
+	int ScanOf(InputEvent::Key key)
+	{
+		using Key = InputEvent::Key;
+		switch (key) {
+		case Key::Enter: return 0x1c;
+		case Key::Escape: return 0x01;
+		case Key::Tab: return 0x0f;
+		case Key::Backspace: return 0x0e;
+		case Key::Up: return 0xc8;
+		case Key::Down: return 0xd0;
+		case Key::Left: return 0xcb;
+		case Key::Right: return 0xcd;
+		case Key::PageUp: return 0xc9;
+		case Key::PageDown: return 0xd1;
+		case Key::F1: return 0x3b;
+		case Key::F9: return 0x43;
+		case Key::F11: return 0x57;
+		case Key::W: return 0x11;
+		case Key::A: return 0x1e;
+		case Key::S: return 0x1f;
+		case Key::D: return 0x20;
+		case Key::R: return 0x13;
+		case Key::Space: return 0x39;
+		case Key::Delete: return 0xd3;
+		case Key::Alt: return 0x38;
+		default: return 0;
+		}
+	}
+}
+
+void FrontEnd::OnEvent(const InputEvent &given)
+{
+	InputEvent event = given;
+	if ((event.type == InputEvent::Type::Key || event.type == InputEvent::Type::KeyUp) && event.scan == 0)
+		event.scan = ScanOf(event.key);
 	if (event.IsMouse()) {
 		m_mouse_x = event.x;
 		m_mouse_y = event.y;
 	}
 
 	// Held movement keys are let go even while a dialog has the input.
-	if (event.key == InputEvent::Key::Alt && (event.type == InputEvent::Type::Key || event.type == InputEvent::Type::KeyUp)) {
+	bool alt_key = event.key == InputEvent::Key::Alt || event.scan == 0x38 || event.scan == 0xb8;
+	if (alt_key && (event.type == InputEvent::Type::Key || event.type == InputEvent::Type::KeyUp)) {
 		m_alt_down = event.type == InputEvent::Type::Key;
 		return;
 	}
+	// ProcessKeyUp: what the key's bound to lets go, even while a dialog has the input.
 	if (event.type == InputEvent::Type::KeyUp) {
-		SetZoneKey(event.key, false, false);
+		ZoneKey(event);
 		return;
 	}
 	if (event.type == InputEvent::Type::FocusLost) {
@@ -771,6 +811,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		m_loot.Frame(now_ms);
 		m_trade.Frame(now_ms);
 		m_ground.Frame(now_ms);
+		m_options.Frame(now_ms);
 		m_spell_book.Frame(now_ms);
 		m_spell_cast.Frame(now_ms);
 		m_buffs.Frame(now_ms);
@@ -1354,14 +1395,11 @@ void FrontEnd::ExploreEvent(const InputEvent &event)
 			LeaveExplorationMode();
 		else if (event.key == InputEvent::Key::Enter)
 			EnterWorldSelected();
-		else if (event.key == InputEvent::Key::F9) {
-			if (m_charselect_view)
-				m_charselect_view->ToggleCamera();
-		}
-		else if (event.key == InputEvent::Key::Space)
-			m_jump_requested = true;
-		else
-			SetZoneKey(event.key, true, false);
+		else if (event.scan != 0 && !event.repeat)
+			for (int cmd : m_key_bindings.Down(KeyWithModifiers(event)))
+				if (cmd == KeyMap::Forward || cmd == KeyMap::Back || cmd == KeyMap::Left || cmd == KeyMap::Right ||
+				    cmd == KeyMap::Jump || cmd == KeyMap::ToggleCam)
+					ExecuteCmd(cmd, true, 0);
 		return;
 	case InputEvent::Type::RightDown:
 		m_look_x = event.x;
@@ -1510,10 +1548,10 @@ void FrontEnd::RenderCharacterSelect(Canvas &canvas, uint64_t now_ms)
 	if (m_exploring && m_charselect_view) {
 		// ProcessControls, before the frame.
 		MoveControls controls;
-		controls.forward = m_keys.up || m_keys.w;
-		controls.back = m_keys.down || m_keys.s;
-		controls.left = m_keys.left || m_keys.a;
-		controls.right = m_keys.right || m_keys.d;
+		controls.forward = m_keys.forward;
+		controls.back = m_keys.back;
+		controls.left = m_keys.left;
+		controls.right = m_keys.right;
 		controls.strafe = m_mouse_turn;
 		controls.jump = m_jump_requested;
 		controls.run = m_run;
@@ -1768,6 +1806,7 @@ void FrontEnd::EnterZoneScreen(bool zoning)
 	m_debug.Reset();
 	m_mouse_turn = m_mouse_pan = m_mouse_grabbed = false;
 	m_keys = HeldKeys{};
+	m_autorun = false;
 	m_jump_requested = m_crouch_sent = false;
 	m_main_loop_started = false;
 	if (!zoning) {
@@ -1869,9 +1908,8 @@ void FrontEnd::BuildZoneWindows()
 			LoadSocials(custom, m_window_state);
 		}
 	}
-	// CDisplay_ActivateMainUI activates the compass if it was up. eqgame opens it only with
-	// TOGGLE_COMPASSWIN (no default key); until there's a keymap it's always up (ours).
-	m_windows.Show("CompassWindow", true);
+	// CDisplay_ActivateMainUI activates the compass if it was up; Toggle Compass (Alt+D) opens and
+	// closes it.
 	m_compass.Activate(m_zone.Profile().skills[40]);
 	m_windows.TakeChanged();
 	SpellBook::Host host;
@@ -1932,6 +1970,12 @@ void FrontEnd::BuildZoneWindows()
 	ground_host.open_world_container = [this](const ZoneWorldContainer &world) { m_containers.OpenWorld(world, m_now_ms); };
 	m_ground.Attach(m_windows, m_zone, m_window_state, m_game_values, std::move(ground_host));
 	m_ground.fast_drop = m_config.fast_drop;
+	OptionsWindow::Host options_host;
+	options_host.eqstr = [this](uint32_t id, const std::string &fallback) { return EqString(id, fallback); };
+	options_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
+	options_host.saved = [this](int id, bool alternate, uint32_t key) { SaveKeyBinding(id, alternate, key); };
+	options_host.reset = [this] { ResetKeyBindings(); };
+	m_options.Attach(m_windows, m_key_bindings, std::move(options_host));
 	m_windows.TakeChanged();
 }
 
@@ -1999,6 +2043,9 @@ void FrontEnd::HandleWindowClicks()
 	for (const auto &release : m_windows.TakeRightReleases())
 		GameWindowRightRelease(m_windows, release.window, release.control);
 	for (WindowManager::Click click : m_windows.TakeClicks()) {
+		// The Options window's keyboard page, and the question about its defaults.
+		if (m_options.Click(click.window, click.control, m_now_ms))
+			continue;
 		// Alt+click on a slot shows its item and does nothing else (CInvSlot::HandleLButtonUp).
 		if (click.alt && ShowItemDisplay(m_windows, m_game_values, m_window_state, click.window, click.control))
 			continue;
@@ -2070,17 +2117,8 @@ void FrontEnd::HandleWindowClicks()
 			for (const auto &toggle : SelectorToggles)
 				if (click.control == toggle.button)
 					m_windows.Toggle(toggle.screen);
-		// The Actions window's main page: what the slash commands do.
-		if (click.window == "ActionsWindow") {
-			if (click.control == "AMP_CampButton")
-				InterpretCommand("/camp");
-			else if (click.control == "AMP_SitButton" || click.control == "AMP_StandButton")
-				Sit();
-			else if (click.control == "AMP_RunButton" || click.control == "AMP_WalkButton") {
-				m_run = click.control == "AMP_RunButton";
-				AddZoneLog(m_run ? "You are now running." : "You are now walking.", ZoneGrey);
-			}
-		}
+		if (click.window == "ActionsWindow")
+			ActionsClick(click.control);
 	}
 	if (m_window_state.hot_buttons_changed || m_window_state.socials_changed)
 		SaveCustom();
@@ -2089,6 +2127,19 @@ void FrontEnd::HandleWindowClicks()
 		for (const auto &toggle : SelectorToggles)
 			if (SidlWindow::Control *button = selector->Find(toggle.button))
 				button->checked = m_windows.Shown(toggle.screen);
+}
+
+void FrontEnd::ActionsClick(const std::string &control)
+{
+	// The Actions window's main page: what the slash commands do.
+	if (control == "AMP_CampButton")
+		InterpretCommand("/camp");
+	else if (control == "AMP_SitButton" || control == "AMP_StandButton")
+		Sit();
+	else if (control == "AMP_RunButton" || control == "AMP_WalkButton") {
+		m_run = control == "AMP_RunButton";
+		AddZoneLog(m_run ? "You are now running." : "You are now walking.", ZoneGrey);
+	}
 }
 
 void FrontEnd::AddZoneLog(const std::string &text, uint32_t color)
@@ -2527,37 +2578,222 @@ void FrontEnd::HandleZoneLine(const std::string &type)
 	m_zone.RequestZoneChange(zone);
 }
 
-bool FrontEnd::SetZoneKey(InputEvent::Key key, bool down, bool typing)
+uint32_t FrontEnd::KeyWithModifiers(const InputEvent &event) const
 {
-	// Movement keys: the arrows always, W A S D when the chat line is closed (and always let go).
-	bool *held = nullptr;
-	switch (key) {
-	case InputEvent::Key::Up: held = &m_keys.up; break;
-	case InputEvent::Key::Down: held = &m_keys.down; break;
-	case InputEvent::Key::Left: held = &m_keys.left; break;
-	case InputEvent::Key::Right: held = &m_keys.right; break;
-	case InputEvent::Key::W: held = &m_keys.w; break;
-	case InputEvent::Key::A: held = &m_keys.a; break;
-	case InputEvent::Key::S: held = &m_keys.s; break;
-	case InputEvent::Key::D: held = &m_keys.d; break;
-	default: return false;
+	// ProcessKeyboardInput: the right Shift, Ctrl and Alt count as the left ones.
+	int scan = event.scan == 0x36 ? 0x2a : event.scan == 0x9d ? 0x1d : event.scan == 0xb8 ? 0x38 : event.scan;
+	return static_cast<uint32_t>(scan) | (event.shift ? KeyMap::Shift : 0) | (event.ctrl ? KeyMap::Ctrl : 0) |
+	       (event.alt || m_alt_down ? KeyMap::Alt : 0);
+}
+
+void FrontEnd::ZoneKey(const InputEvent &event)
+{
+	if (event.scan == 0)
+		return;
+	uint32_t key = KeyWithModifiers(event);
+	if (event.type == InputEvent::Type::KeyUp) {
+		for (int cmd : m_key_bindings.Up(key))
+			ExecuteCmd(cmd, false, 0);
+		return;
 	}
-	bool letter = key == InputEvent::Key::W || key == InputEvent::Key::A || key == InputEvent::Key::S || key == InputEvent::Key::D;
-	if (down && letter && typing)
-		return false;
-	*held = down;
-	return true;
+	// ProcessKeyDown: while the chat has the keys, a key that types a character runs nothing.
+	int typed = KeyMap::TypedChar(event.scan);
+	if (m_chat.Typing() && typed)
+		return;
+	for (int cmd : m_key_bindings.Down(key)) {
+		// Windows repeats a held key; DirectInput doesn't. Only Look up and down go on with it
+		// (ours: they tilt 5 degrees a press, not eqgame's speeding up while held).
+		if (event.repeat && cmd != KeyMap::PitchUp && cmd != KeyMap::PitchDown)
+			continue;
+		ExecuteCmd(cmd, true, typed);
+	}
+}
+
+void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
+{
+	(void)typed;
+	// While the chat has the keys, nothing runs whose own key types a character
+	// (isCharacterAllowed of ConvertScanCodeToChar of the command's key).
+	if (m_chat.Typing() && KeyMap::TypedChar(static_cast<int>(m_key_bindings.Get(cmd, false) & 0xff)))
+		return;
+	bool in_zone = m_screen == Screen::Zone;
+	auto toggle = [&](const char *screen) {
+		if (down && in_zone)
+			m_windows.Toggle(screen);
+	};
+	switch (cmd) {
+	case KeyMap::Forward:
+		// Forward stands us up from sitting, closing the book (Zeal's movement binds; the other
+		// movement keys do nothing sitting).
+		if (down && in_zone && m_zone.Self().stance == 110)
+			ChangeStance(100);
+		m_keys.forward = down;
+		if (down)
+			m_autorun = false;
+		break;
+	case KeyMap::Back:
+		m_keys.back = down;
+		if (down)
+			m_autorun = false;
+		break;
+	case KeyMap::Autorun:
+		// On and off with the key down; turned on, it lets go of Move back.
+		if (down && in_zone && ZoneCanMove()) {
+			m_autorun = !m_autorun;
+			if (m_autorun)
+				m_keys.back = false;
+		}
+		break;
+	case KeyMap::Right:
+		m_keys.right = down;
+		break;
+	case KeyMap::Left:
+		m_keys.left = down;
+		break;
+	case KeyMap::Jump:
+		if (down)
+			m_jump_requested = true;
+		break;
+	case KeyMap::ToggleCam:
+		// CDisplay_ToggleView: first person and the chase camera.
+		if (down && in_zone && m_zone_view)
+			m_zone_view->CycleCamera();
+		else if (down && m_exploring && m_charselect_view)
+			m_charselect_view->ToggleCamera();
+		break;
+	default:
+		break;
+	}
+	if (!down || !in_zone)
+		return;
+	switch (cmd) {
+	case KeyMap::PitchUp:
+	case KeyMap::PitchDown:
+		if (m_zone_view)
+			m_zone_view->Pitch(cmd == KeyMap::PitchUp ? 5.0f : -5.0f);
+		break;
+	case KeyMap::Consider:
+		InterpretCommand("/consider");
+		break;
+	case KeyMap::Hail:
+		InterpretCommand("/hail");
+		break;
+	case KeyMap::TargetMe:
+		// setTargetBasedOnIndex: ourselves (the pet on a second press isn't done).
+		SetTarget(m_zone.MySpawnId());
+		break;
+	case KeyMap::Camp:
+		StartCamp();
+		break;
+	case KeyMap::SitStand:
+		Sit();
+		break;
+	case KeyMap::RunWalk:
+		m_run = !m_run;
+		AddZoneLog(m_run ? "You are now running." : "You are now walking.", ZoneGrey);
+		break;
+	case KeyMap::HistoryUp:
+	case KeyMap::HistoryDown:
+		m_chat.History(cmd == KeyMap::HistoryUp);
+		break;
+	case KeyMap::SpellBook:
+		// The book opened, or closed when it's open (DeactivateSpellBook through the window's 0x88).
+		if (m_spell_book.Activated())
+			m_spell_book.Deactivate();
+		else
+			m_spell_book.Activate(m_now_ms);
+		break;
+	case KeyMap::Inventory:
+		// Not while a mouse button's down on the world or a transaction waits (DAT_007d0254).
+		if (!m_mouse_turn && !m_mouse_pan && !m_window_state.busy)
+			m_windows.Toggle("InventoryWindow");
+		break;
+	case KeyMap::Abilities:
+	case KeyMap::Combat:
+	case KeyMap::Socials:
+	case KeyMap::Main:
+		// CActionsWnd::Activate at its page.
+		if (SidlWindow *actions = m_windows.Find("ActionsWindow")) {
+			const char *page = cmd == KeyMap::Main ? "ActionsMainPage" : cmd == KeyMap::Abilities ? "ActionsAbilitiesPage"
+			                   : cmd == KeyMap::Combat ? "ActionsCombatPage" : "ActionsSocialsPage";
+			if (SidlWindow::Control *tabs = actions->Find("ACTW_ActionsSubwindows"))
+				for (int i = 0; i < static_cast<int>(tabs->children.size()); ++i)
+					if (actions->Item(tabs->children[i]).def->screen_id == page)
+						actions->SelectTab(*tabs, i);
+			m_windows.Show("ActionsWindow", true);
+			m_windows.Raise("ActionsWindow");
+		}
+		break;
+	case KeyMap::TogglePlayerWin: toggle("PlayerWindow"); break;
+	case KeyMap::TogglePartyWin: toggle("GroupWindow"); break;
+	case KeyMap::ToggleTargetWin: toggle("TargetWindow"); break;
+	case KeyMap::ToggleSpellsWin: toggle("CastSpellWnd"); break;
+	case KeyMap::ToggleBuffWin: toggle("BuffWindow"); break;
+	case KeyMap::ToggleHotboxWin: toggle("HotButtonWnd"); break;
+	case KeyMap::ToggleMainMenuWin: toggle("ActionsWindow"); break;
+	case KeyMap::ToggleFriendsWin: toggle("FriendsWindow"); break;
+	case KeyMap::TogglePetInfoWin: toggle("PetInfoWindow"); break;
+	case KeyMap::ToggleOptionsWin: toggle("OptionsWindow"); break;
+	case KeyMap::ToggleSelectorWin: toggle("SelectorWindow"); break;
+	case KeyMap::ToggleCompassWin: toggle("CompassWindow"); break;
+	default:
+		if (cmd >= KeyMap::Hot1 && cmd <= KeyMap::Hot10) {
+			// CHotButtonWnd::DoHotButton: the button of the page showing.
+			std::string action = DoHotButton(m_windows, m_window_state, cmd - KeyMap::Hot1);
+			if (!action.empty())
+				ActionsClick(action);
+		}
+		else if (cmd >= KeyMap::HotPage1 && cmd <= KeyMap::HotPage10)
+			m_window_state.hot_button_page = cmd - KeyMap::HotPage1; // Activate_HotkeyPage
+		else if (cmd >= KeyMap::Cast1 && cmd <= KeyMap::Cast8)
+			m_spell_book.GemLeftClick(cmd - KeyMap::Cast1, m_now_ms); // CCastSpellWnd::HandleSpellLeftClick
+		break;
+	}
+}
+
+void FrontEnd::SaveKeyBinding(int id, bool alternate, uint32_t key)
+{
+	if (m_config.settings_ini.empty())
+		return;
+	IniFile ini;
+	ini.Load(m_config.settings_ini); // keep the rest
+	KeyBindings::Store(ini, id, alternate, key);
+	if (!ini.Save(m_config.settings_ini))
+		Log("keymap: couldn't write " + m_config.settings_ini);
+}
+
+void FrontEnd::ResetKeyBindings()
+{
+	if (m_config.settings_ini.empty())
+		return;
+	IniFile ini;
+	ini.Load(m_config.settings_ini);
+	for (const KeyMap::Command &command : KeyMap::List())
+		KeyBindings::Remove(ini, command.id);
+	if (!ini.Save(m_config.settings_ini))
+		Log("keymap: couldn't write " + m_config.settings_ini);
+}
+
+bool FrontEnd::ZoneCanMove() const
+{
+	return !m_dialog.open && m_zone.GetState() == ZoneSession::State::InZone;
 }
 
 MoveControls FrontEnd::ZoneControls()
 {
 	MoveControls controls;
-	bool can_move = !m_dialog.open && m_zone.GetState() == ZoneSession::State::InZone;
+	bool can_move = ZoneCanMove();
+	// EQPlayer::ChangeStance: any change of our stance, ours or the server's, ends autorun.
+	uint8_t stance = m_zone.Self().stance;
+	if (stance != m_autorun_stance)
+		m_autorun = false;
+	m_autorun_stance = stance;
 	if (can_move) {
-		controls.forward = m_keys.up || m_keys.w || (m_mouse_turn && m_mouse_pan); // both buttons run
-		controls.back = m_keys.down || m_keys.s;
-		controls.left = m_keys.left || m_keys.a;
-		controls.right = m_keys.right || m_keys.d;
+		// ProcessControls: forward with the key, autorun, or both mouse buttons.
+		controls.forward = m_keys.forward || m_autorun || (m_mouse_turn && m_mouse_pan);
+		controls.back = m_keys.back;
+		controls.left = m_keys.left;
+		controls.right = m_keys.right;
 		controls.strafe = m_mouse_turn;
 		controls.jump = m_jump_requested;
 	}
@@ -2704,6 +2940,9 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 	}
 	if (event.type != InputEvent::Type::Key)
 		return;
+	// The options' keyboard page waiting for a key takes it ahead of everything (ProcessKeyboardInput).
+	if (m_options.Assigning() && m_options.Key(event.scan, event.shift, event.ctrl, event.alt))
+		return;
 	// Typing into the social editor: Enter does nothing, Escape closes it (below). Into the
 	// quantity window's box, Enter is its Accept.
 	if (editing && event.key == InputEvent::Key::Enter && editor == quantity) {
@@ -2715,7 +2954,11 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 	}
 	if (editing && (editor->OnKey(event) || event.key == InputEvent::Key::Enter))
 		return;
-	bool typing = m_chat.Typing() || editing;
+	// ProcessKeyboardInput: with an edit box other than the chat's taking the keys, only Escape,
+	// Delete and the arrows (without Shift) go on to ProcessKeyDown.
+	if (editing && !(!event.shift && (event.scan == 0x01 || event.scan == 0xd3 || event.scan == 0xc8 ||
+	                                  event.scan == 0xd0 || event.scan == 0xcb || event.scan == 0xcd)))
+		return;
 	if (m_chat.Typing()) {
 		std::string line;
 		if (m_chat.OnKey(event, line)) {
@@ -2727,49 +2970,19 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 	// The open spellbook's page keys (HandleKeys, ahead of the movement keys) and Delete.
 	if (m_spell_book.Key(event.key, m_now_ms))
 		return;
-	// Forward stands us up from sitting, closing the book (Zeal's movement binds; the other
-	// movement keys do nothing sitting).
-	if (m_zone.Self().stance == 110 &&
-	    (event.key == InputEvent::Key::Up || (event.key == InputEvent::Key::W && !typing)))
-		ChangeStance(100);
-	if (SetZoneKey(event.key, true, typing))
+	// F11 is the debug menu's, ahead of the keymap (ours: the keymap's Toggle netstat has it too).
+	if (event.key == InputEvent::Key::F11) {
+		m_debug.open = !m_debug.open;
+		SaveDebugSettings();
 		return;
+	}
 	switch (event.key) {
 	case InputEvent::Key::Enter:
+		// ProcessKeyDown's Enter: ExecuteCmd 0xce, the chat's input line.
 		if (m_chat.Attached()) {
 			m_windows.Show("ChatWindow", true);
 			m_chat.Open();
 		}
-		break;
-	case InputEvent::Key::Space:
-		if (!typing)
-			m_jump_requested = true;
-		break;
-	case InputEvent::Key::R:
-		// Ctrl+R toggles running and walking.
-		if (event.ctrl) {
-			m_run = !m_run;
-			AddZoneLog(m_run ? "You are now running." : "You are now walking.", ZoneGrey);
-		}
-		break;
-	// The camera: F9 switches first person and the chase camera (CDisplay's camera views),
-	// Page Up / Page Down tilt it.
-	case InputEvent::Key::F9:
-		if (m_zone_view)
-			m_zone_view->CycleCamera();
-		break;
-	// setTargetBasedOnIndex(16): F1 targets ourselves (F2..F6 the group, which we haven't yet).
-	case InputEvent::Key::F1:
-		SetTarget(m_zone.MySpawnId());
-		break;
-	case InputEvent::Key::F11:
-		m_debug.open = !m_debug.open;
-		SaveDebugSettings();
-		break;
-	case InputEvent::Key::PageUp:
-	case InputEvent::Key::PageDown:
-		if (m_zone_view)
-			m_zone_view->Pitch(event.key == InputEvent::Key::PageUp ? 5.0f : -5.0f);
 		break;
 	case InputEvent::Key::Escape: {
 		// A button on the cursor goes, and that's all (CDisplay_NewUIProcessEscape's RemoveAttachment).
@@ -2831,6 +3044,8 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 	default:
 		break;
 	}
+	// Then whatever the key's bound to (ProcessMovementKeys).
+	ZoneKey(event);
 }
 
 void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)

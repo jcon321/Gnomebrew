@@ -5,7 +5,7 @@
 // pieces character select, creation and the in-game windows use so far:
 // Ui2DAnimation, ButtonDrawTemplate, WindowDrawTemplate (with its vertical
 // scrollbar), FrameTemplate, Screen (nested too), TabBox and its Pages, Button,
-// Label, StaticAnimation, Editbox, STMLbox, Gauge, Listbox, InvSlot, Slider, and the empty
+// Label, StaticAnimation, Editbox, STMLbox, Gauge, Listbox, Combobox, InvSlot, Slider, and the empty
 // look of SpellGem, with AutoStretch anchors. Schema defaults come from uifiles/default/SIDL.xml.
 
 #include "canvas.h"
@@ -132,6 +132,12 @@ struct SidlPiece
 	};
 	std::vector<Column> columns;
 
+	// Combobox (CComboWnd): its Choices, how tall its list may grow (ListHeight), and its button's
+	// ButtonDrawTemplate (Button, a template's item name).
+	std::vector<std::string> choices;
+	int list_height = 0;
+	std::string combo_button;
+
 	// StaticAnimation
 	std::string animation;
 
@@ -211,6 +217,7 @@ public:
 	const SidlWindowTemplate *WindowTemplate(const std::string &name) const;
 	const SidlFrameTemplate *FrameTemplate(const std::string &name) const;
 	const SidlSliderTemplate *SliderTemplate(const std::string &name) const;
+	const SidlButtonTemplate *ButtonTemplate(const std::string &name) const; // a named ButtonDrawTemplate
 	const SidlPiece *Piece(const std::string &item) const;
 	const std::string &Directory() const { return m_dir; }
 	const std::vector<std::string> &Warnings() const { return m_warnings; }
@@ -224,6 +231,7 @@ private:
 	std::map<std::string, SidlWindowTemplate> m_window_templates;
 	std::map<std::string, SidlFrameTemplate> m_frame_templates;
 	std::map<std::string, SidlSliderTemplate> m_slider_templates;
+	std::map<std::string, SidlButtonTemplate> m_button_templates;
 	std::map<std::string, SidlPiece> m_pieces;
 	std::vector<std::string> m_warnings;
 };
@@ -319,9 +327,19 @@ public:
 		std::vector<int> justification;
 		int row_height = 0;
 		uint32_t row_color = 0xffffff, header_color = 0xffffff;
-		// The row clicked last, drawn highlighted; -1 none. A click on a row reports the list's
-		// ScreenID as a button's would.
+		// The row clicked last, drawn highlighted, and the column the click was in
+		// (CListWnd::GetCurCol); -1 none. A click on a row reports the list's ScreenID as a button's
+		// would.
 		int selected_row = -1;
+		int selected_column = -1;
+		// Its columns: the Listbox's own to start with; its window can add more.
+		std::vector<SidlPiece::Column> columns;
+		// Combobox: its choices (its Choices to start with), the one showing (-1 none:
+		// CComboWnd::GetCurChoice), and its list dropped down under it. Picking one reports the
+		// combo box's ScreenID as a button's click would.
+		std::vector<std::string> choices;
+		int choice = 0;
+		bool list_open = false;
 		// Style_VScroll: the content's scroll position in rows, how far it goes, and a page of it.
 		// Whoever fills the control sets max and page (an STML box its own, as it wraps its text to
 		// draw it); the scrollbar, the wheel and the owner move pos.
@@ -355,6 +373,7 @@ public:
 	void SetSlider(Control &slider, int value);
 
 	Control *Find(const std::string &screen_id);
+	Control &Item(int index) { return m_controls[index]; } // by index (a Control's children, parent)
 	const Control *Find(const std::string &screen_id) const;
 	// Radio group handling: checks this one, unchecks the rest of its group.
 	void Check(const std::string &screen_id);
@@ -406,6 +425,9 @@ public:
 	const Control *ControlAt(int x, int y) const;
 	// A held button let go of without being clicked (after CXWndManager's left button hold).
 	void CancelPress();
+	// Whether a combo box's list is down, and putting it away.
+	bool ComboOpen() const { return OpenCombo() >= 0; }
+	void CloseCombos();
 
 private:
 	int Add(const SidlPiece &piece, int parent);
@@ -436,6 +458,15 @@ private:
 		uint64_t now_ms, const Rect &clip) const;
 	void DrawGauge(const Control &control, Canvas &canvas, TextRenderer &text, SidlTextures &textures, uint64_t now_ms) const;
 	void DrawListbox(const Control &control, Canvas &canvas, TextRenderer &text) const;
+	// CComboWnd: its button down the right (GetButtonRect), and the list under the rest of it
+	// (GetListRect: as tall as half a line and a line a choice, ListHeight at most).
+	Rect ComboButtonRect(const Control &combo) const;
+	Rect ComboListRect(const Control &combo) const;
+	void DrawCombo(const Control &combo, Canvas &canvas, TextRenderer &text, SidlTextures &textures, uint64_t now_ms) const;
+	void DrawComboList(const Control &combo, Canvas &canvas, TextRenderer &text, SidlTextures &textures, uint64_t now_ms) const;
+	int OpenCombo() const; // the combo box whose list is down, or -1
+	std::string Press(const InputEvent &event); // OnMouse, but for the press's pick
+	void ComboListInsets(const Control &combo, int &left, int &top, int &right, int &bottom) const; // its border
 	void DrawStml(const Control &control, Canvas &canvas, TextRenderer &text) const;
 	int ListHeaderHeight(const Control &control) const;
 	int ListRowHeight(const Control &control) const;
@@ -474,6 +505,7 @@ private:
 	int m_scroll_grab_y = 0, m_scroll_grab_pos = 0;
 	int m_scroll_hover = -1;
 	int m_slider = -1; // a slider being moved
+	std::string m_pressed_pick; // a list row or combo choice picked by the press, for the release
 	ScrollPart m_scroll_hover_part = ScrollPart::None;
 	bool m_minimized = false;
 	TitleBox m_box_hover = TitleBox::None, m_box_pressed = TitleBox::None;

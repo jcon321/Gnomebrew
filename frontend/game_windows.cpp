@@ -606,12 +606,8 @@ std::string GameWindowClick(WindowManager &windows, GameWindowState &state, cons
 	if (slot < 0)
 		return "";
 	HotButton &button = PageButton(state, slot);
-	if (state.cursor.type == HotButton::Empty) {
-		// DoHotButton: of what we can do so far, the main page's buttons and socials.
-		if (button.type == HotButton::Social && ValidSocial(button.value) && state.current_social < 0)
-			StartSocial(state, button.value);
-		return button.type == HotButton::Action ? ActionButton(windows, button.value) : "";
-	}
+	if (state.cursor.type == HotButton::Empty)
+		return DoHotButton(windows, state, slot);
 	// What's on the cursor goes on the button, and what was on it onto the cursor.
 	HotButton was = button;
 	button = state.cursor;
@@ -620,6 +616,17 @@ std::string GameWindowClick(WindowManager &windows, GameWindowState &state, cons
 		Attach(windows, state, was);
 	state.hot_buttons_changed = true;
 	return "";
+}
+
+std::string DoHotButton(WindowManager &windows, GameWindowState &state, int slot)
+{
+	// Of what we can do so far, the main page's buttons and socials.
+	if (slot < 0 || slot >= HotButtonsPerPage)
+		return "";
+	HotButton &button = PageButton(state, slot);
+	if (button.type == HotButton::Social && ValidSocial(button.value) && state.current_social < 0)
+		StartSocial(state, button.value);
+	return button.type == HotButton::Action ? ActionButton(windows, button.value) : "";
 }
 
 void GameWindowHold(WindowManager &windows, GameWindowState &state, const std::string &window, const std::string &control)
