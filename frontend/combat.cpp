@@ -13,9 +13,6 @@ namespace
 	// The chat color types of hits, misses and deaths.
 	constexpr int MyHits = 0x109, HitsOnMe = 0x10a, MyMisses = 0x10b, MissesOnMe = 0x10c, OthersHits = 0x117,
 	              OthersMisses = 0x118, MyDeath = 0x115, OtherDeath = 0x116;
-	// /filter (CEverQuest_loadOptions' defaults): DAT_00798c0c, c10, c14, c18, and DAT_00799670.
-	constexpr bool ShowMyMisses = true, ShowOthersMisses = false, ShowOthersHits = true, ShowMissesOnMe = true;
-	constexpr bool HideDamageShields = false;
 	// EqSoundManager's waves.
 	constexpr int FallHit = 115, SwordBlock = 120, ShieldBlock = 125, StaffBlock = 132, FleshHit1 = 147,
 	              FleshHit2 = 148;
@@ -160,6 +157,12 @@ void Combat::ReportHit(const ZoneCast &hit, bool told, const ZoneSession &zone, 
 	report.victim = hit.target;
 	const uint8_t type = hit.type;
 	const int32_t damage = hit.damage;
+	// /filter: DAT_00798c0c, c10, c14, c18, and DAT_00799670.
+	static const ChatFilters defaults;
+	const ChatFilters &filters = m_filters ? *m_filters : defaults;
+	const bool ShowMyMisses = filters.my_misses != 0, ShowOthersMisses = filters.others_misses != 0;
+	const bool ShowOthersHits = filters.others_hits != 0, ShowMissesOnMe = filters.misses_me != 0;
+	const bool HideDamageShields = filters.damage_shields != 0;
 
 	// Who's who, and the line's color.
 	std::string attacker_name, victim_name;
@@ -336,6 +339,12 @@ void Combat::ReportHit(const ZoneCast &hit, bool told, const ZoneSession &zone, 
 		}
 		else {
 			line_color = victim_me ? HitsOnMe : attacker_me ? MyHits : OthersHits;
+			if (victim == &zone.Self()) { // IWasHit
+				report.hit_me = true;
+				report.force = hit.force;
+				report.heading = hit.heading;
+				report.pitch = hit.pitch;
+			}
 			// A hard hit on a race with a flesh hit sound.
 			audio::ActorSounds sounds = SoundsOf(*victim);
 			int first = sounds.slot[audio::ActorSounds::GetHit1];

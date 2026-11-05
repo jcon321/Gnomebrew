@@ -320,6 +320,22 @@ int Buffs::FindAffectSlot(int id, const SpellInfo &spell, const Caster &caster)
 	return found;
 }
 
+bool Buffs::RemoveAffect(int spa)
+{
+	for (int slot = 0; slot < Slots; ++slot) {
+		const ZoneBuff &b = m_slots[slot];
+		const SpellInfo *spell = b.type != 0 ? Spell(b.spell) : nullptr;
+		if (!spell)
+			continue;
+		for (int i = 0; i < 12; ++i)
+			if (spell->spas[i] == spa) {
+				Remove(slot, true);
+				return true;
+			}
+	}
+	return false;
+}
+
 void Buffs::Remove(int slot, bool tell)
 {
 	ZoneBuff old = m_slots[slot];

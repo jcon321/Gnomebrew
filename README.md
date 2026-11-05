@@ -146,6 +146,26 @@ CombatMusic=1
 LootNoDrop=0
 FastDrop=0
 
+[Filters]
+DamageShields=0
+NpcSpells=0
+PcSpells=0
+BardSongs=0
+ServerFilter=0
+GuildSay=1
+Socials=1
+GroupSay=1
+Shouts=1
+Auctions=1
+Ooc=1
+MyMisses=1
+OthersMisses=0
+OthersHits=1
+AttackerMissesMe=1
+CriticalSpells=0
+CriticalMelee=0
+BadWords=0
+
 [Debug]
 RecordPackets=0
 MenuOpen=1
@@ -220,6 +240,11 @@ WeatherSounds=1
   for what you can't use, `2` never (eqgame's `DAT_00799674`, kept in its `eqOptions2.opt`).
   `FastDrop` is `/fastdrop`: `1` drops an item clicked onto the ground at once, `0` asks first,
   `-1` never drops it (`DAT_0079966c`). Both are kept as they change.
+- `[Filters]` are `/filter`'s switches and `/serverfilter`, kept as they change (eqgame keeps them in
+  `eqOptions1.opt` and `eqOptions2.opt`): `DamageShields` and `NpcSpells` 0 shown, 1 hidden; `PcSpells`
+  0 all, 1 off, 2 the group's; `BardSongs` 0 all, 1 ours, 2 the group's, 3 off; `GuildSay` through
+  `AttackerMissesMe` 1 shown, 0 hidden; `CriticalSpells` and `CriticalMelee` 0 all, 1 ours, 2 off;
+  `BadWords` 0 the bad word filter on.
 
 - `RecordPackets=1` writes each zone session's packets to `replays\<char>-<time>.eqr` next to the exe.
   `--replay FILE` plays one back: the GUI goes straight into that zone with no server, the recorded
@@ -287,8 +312,8 @@ eqgame's `OP_MoveItem`.
   So far: /say (or no slash, or `'`), /tell (/msg, /send), /reply, /gsay, /guildsay, /shout,
   /auction, /ooc, /emote (`:`, /me), /hail, /target, /assist, /consider, /location, /time,
   /played, /motd, /afk, /anonymous, /shownames, /sit, /stand, /book, /cast, /camp, /clearchat,
-  /random, /lootnodrop, /fastdrop, /attack, /combatmusic and the socials (/smile, /wave and the
-  other 86).
+  /random, /lootnodrop, /fastdrop, /attack, /combatmusic, /doability, /filter, /serverfilter and
+  the socials (/smile, /wave and the other 86).
   The rest say they aren't supported yet; a GM's commands act as if they weren't there for
   anyone else.
 - `/consider` sends `OP_Consider` (`OP_ConsiderCorpse` on a corpse) and prints the answer as
@@ -466,6 +491,7 @@ build/eqclient -u USER -p PASS [options]
   --attack NAME         with --zone: target the nearest NPC whose name starts with NAME, turn auto attack
                         on and walk at it (facing it, 30 units a second), printing the OP_Damage and
                         OP_Death packets and our own swings
+  --skill N             with --attack: use combat skill N on it too (OP_CombatAbility), every 9 s in reach
   --idle SECONDS        without --char, stay at character select this long (default 0)
   --record DIR          with --zone: write each zone session's packets to DIR/<char>-<time>.eqr
   --replay FILE         play a recorded zone session back (no server): stay --zone seconds (default
@@ -504,7 +530,10 @@ character has none) and moves an item in and out, stands by a banker, right clic
 moves an item and coins into the bank, and gives an NPC coins and then an item through the give
 window (the replay answers as the zone does for an NPC), Give once and Cancel once. It also turns
 auto attack on and off with Q, /attack and /sit, printing whether it's on, the last chat line and
-how many frames draw the player window's lasso, and snapshots it on (`q1-auto-attack-lasso`).
+how many frames draw the player window's lasso, and snapshots it on (`q1-auto-attack-lasso`). On the
+Actions window's combat page it right clicks the first skill button, prints what SkillsSelectWindow
+lists, puts Kick on it (`s1-combat-skill-button`), targets the nearest NPC, stands in front of it
+and uses Kick twice and by `/doability 7`, then types `/filter` and `/serverfilter` lines.
 
 ```
 build/scene_preview EQDIR OUT.png --char RACE GENDER CLASS [--face F] [--equip M,M,...] [--velious 0|1] [--camera H] [--frames N] [--size WxH]
@@ -1309,12 +1338,85 @@ details and the nearest spawns at the top left and the radar at the top right.
   burning (-6), in `0x115`; anyone else 12113 "You have slain %1!", 12114 "%1 has been slain by
   %2!", 12112 "%1 died.", 12115, 12109..12111, in `0x116` and told as the blow is (an NPC killing
   itself says nothing).
-- **Filters:** `/filter`'s switches are fixed at `CEverQuest_loadOptions`' defaults: our misses,
-  misses of us and others' hits shown, others' misses not (`DAT_00798c10` 0), damage shields shown.
+- **What a hit does to us** (`EQPlayer::IWasHit` @0050b408): a melee hit with damage takes off our
+  invisibility (the first buffs with SPA 12, 28 and 29, `RemovePCAffect`) and pushes us: the
+  hit's `force` (EQMacEmu: 0.05 to 2.5 by the attacker's size, 0 for none) along its `heading`
+  (512ths; the X push by its sine, Y by its cosine) and up by its `pitch`'s sine, onto our motion.
+- **Our death** (`EQPlayer::IDied` @0050b637, `ReportDeath_ClearOutRentables`): auto attack off, we
+  fall (`D05`, held), the death music plays (track 8), and nothing moves us (stance 120:
+  `ProcessControls` takes the movement keys only standing or crouching) until the zone moves us
+  on.
+- **Filters** (`frontend/filters.*`, `/filter` @004fbc3a): `badword`, `guildsay`, `social`, `gsay`,
+  `shout`, `auction`, `ooc`, `mymisses`, `othersmisses`, `othershits` and `atkmissesme` toggle;
+  `npcspells` and `dmgshield` toggle the other way (0 shown); `pcspells` steps all, off, group;
+  `bardsongs` all, me, group, off; `critspells` and `critmelee` all, me, off. Each says "%1 *ON*"
+  (eqstr 1351), `*OFF*` (1348), `*ALL*` (1347), `*GRP*` (1349) or `*ME*` (1350) with its label in
+  color `0x111`; anything else prints the usage (1354..1360). `/serverfilter` (@004fecba) takes
+  `off` or `on` (its texts are the exe's). `CEverQuest_send_update_filters` sends them all as
+  `OP_SetServerFilter` (0x41ff, `UpdateFilters_Struct`: damage shields, NPC spells, PC spells, bard
+  songs, the server filter, the six channels, my misses, others' misses, others' hits, misses of
+  me, critical spells, critical melee), as `msg_stat_change` gets our spawn id and at every change;
+  EQMacEmu stops sending what's filtered. The client side reads the four melee switches and
+  damage shields (`ReportSuccessfulHit`).
 - Checked against a live server: a level 1 warrior fighting a level 3 sewer rat in South Qeynos
   (`eqclient --attack a_sewer_rat --record`), then the recording through `frontend_preview`: "You
   try to punch a sewer rat, but miss!", "A sewer rat bites YOU for 8 points of damage.", "You punch
   a sewer rat for 1 point of damage.", "You have been slain by a sewer rat!".
+
+## Skills and abilities
+
+- **The skill table** (`frontend/skills.*`, `InitializeSkillData` @004d0e88's `__SkillDict`): each
+  skill's name (eqstr), reuse time, whether it's used from a button (+9), its type (+10: 0 passive,
+  1 an ability, 2 a combat skill on the combat timer), DoAttack's combat field (+0x8c), and each
+  class's level to get it (+0xd) and cap (+0x4e). Taken from the exe by compiling the decompiled
+  function and running it for skills 0..73. The combat skills: backstab 8 (10 s), bash 10 (8 s),
+  dragon punch 21 (6.2 s), eagle strike 23 (6 s), flying kick 26 (8.5 s), kick 30 (8 s), round
+  kick 38 (8.5 s), tiger claw 52 (5.5 s).
+- **HasSkill** (`EQ_Character::HasSkill` @004b9f08): a value of 254 or 255, or a class cap of 0, is
+  the race's own (`GetInherentRacialSkillLevel`: wood elves and Iksar forage, dark elves hide,
+  dwarves sense heading, halflings and Vah Shir sneak, gnomes tinker, Vah Shir safe fall, all 50;
+  Iksar swim 100); at the class's level or over, our value (1 for one at 0); else 0.
+- **The buttons** (`frontend/abilities.*`, `CActionsWnd`): the abilities page's six (`DAT_007d026c`)
+  and the combat page's four skill buttons (`__DoAbilityList`), kept as `[Abilities] Ability1..6`
+  and `[CombatSkills] CombatSkill1..4` in `<character>_<server>.ini` (saveCustom,
+  loadCustomFromINI); loadCustom drops a skill we don't have and the hot buttons that held it. A
+  button shows its skill's name (`UpdateButtonText`) and is drawn down while it isn't ready
+  (`UpdateAbilityButtonStates`). The right button opens `SkillsSelectWindow`
+  (`SKSW_SkillSelectorList`), listing the skills we have that are used from a button: on the combat
+  page those that aren't passive (`SetTypesToDisplay(2)`), on the abilities page all of them (3); a
+  click puts one on the button. A left click, the hot button, or `/doability 1..10` (1..6 the
+  abilities page's, 7..10 the combat page's; else eqstr 13256, 13257) uses it.
+- **Timers** (`DoPassageOfTime`): an ability is ready (`__DoAbilityAvailable`) once its reuse time
+  has gone by since its last use (`DAT_007cd650`); mend at its own time (`DAT_007cd6d0`). The combat
+  skills share one timer (ActorInfo +0x164: the last one's reuse from its use), `__AltTimerReady`.
+  `EQPlayer::ModifyAttackSpeed` (@0050a039) hastens a delay: `delay / (haste * 0.01)` with haste
+  SPA 11's total (100 none); a bow's also drops `delay * weight reduction * 0.0025 + 1` with a
+  quiver in a pack slot, when that leaves over 1000.
+- **UseSkill** (@004bdf2f): nothing at 0 HP or for a skill at 254 and up; stance 102 says 12368. A
+  combat skill turns `__AltTimerReady` off; bash needs a shield in the secondary hand (or primary
+  11050, 10099, 14383; trolls, ogres and barbarians bash with anything), else 12394. Then
+  `EQPlayer::DoAttack(100, skill, target)`: not while casting, our invisibility goes (SPA 12, 28,
+  29, 94), the skill must be a combat one we have, a backstab needs a piercer (12874), the combat
+  timer must be up, and then it restarts with this skill's reuse even if what follows fails:
+  standing (12368, 12369), `CanIHitTarget`, and `DoMissileHit` sends `OP_CombatAbility`
+  `{u16 target, u16, u32 100, u32 skill}`. The zone swings it (`OPCombatAbility`; checked live: a
+  kick's OP_Damage of type 30 and the kick animation, 1). Anything else must be ready, and its
+  timer starts: forage (`OP_Forage`, standing and not attacking, else 148 or 149 and the timer
+  back), mend (`OP_Mend`), disarm traps (`OP_DisarmTraps`), sense traps (`OP_SenseTraps`), sense
+  heading (a 1..100 roll, under 8 as 0, against the skill, over 95 failing: 12426; else the compass
+  true for 5 s, "You think you are heading %1." with North..NorthWest by 64ths of our heading, and
+  `OP_SenseHeading`), intimidation (`OP_InstillDoubt`; 12398, 12691, 12400), taunt (an NPC within
+  melee range, not races 141, 72, 73: 12397 and `OP_Taunt {target}`; 12395, 386, 12396) and disarm
+  (within 15, `CanIHitTarget`, `OP_Disarm {us, target, skill, 0xff}`; 12416..12419).
+- **CanIHitTarget** (`EQPlayer::CanIHitTarget` @00509e09): not with divine aura (SPA 40: 12695), at
+  ourselves (12696) or nobody (12697), `AllowedToAttack` (@0050996a: never at or as races 72, 141,
+  73, nor as 114; an NPC or an NPC's pet yes; a player or a player's pet only both PvP, within 4
+  levels, both 6 and up), in sight (`CastRay`: else eqstr 123), from foot to foot (3D) within
+  `get_melee_range` plus the weapon's extra (else 124 in color `0x12f`), and the bearing to it
+  within 80 of our heading (256 between players, with eqgame's wrap at north; else 108).
+  `get_melee_range` (@004f3898): both models' `t3dGetScaledActorBoundingRadius` (the skeleton's
+  bounding radius, flag 2 of the 0x10 fragment, times the model's scale) times 0.75, at least 14,
+  plus the difference of their `ModelHeightOffset`s, plus 2, at most 75.
 
 ## Items and stats
 

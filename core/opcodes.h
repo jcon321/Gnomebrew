@@ -97,6 +97,20 @@ namespace ZoneOp
 	// {u32 on}: our auto attack (EverQuestinfo's __Attack) changed; DoPassageOfTime sends both, 2 first.
 	constexpr uint16_t AutoAttack = 0x4151;
 	constexpr uint16_t AutoAttack2 = 0x4161;
+	// EQ_Character::UseSkill's: CombatAbility_Struct {u16 target, u16, u32 attack (100), u32 skill}
+	// (DoMissileHit); Taunt {u16 target}; Disarm_Struct {i16 us, i16 target, i16 skill, u8 0xff, u8};
+	// the rest empty.
+	constexpr uint16_t CombatAbility = 0x4160;
+	// UpdateFilters_Struct (68 bytes, 17 i32s): the /filter switches (CEverQuest_send_update_filters).
+	constexpr uint16_t SetServerFilter = 0x41ff;
+	constexpr uint16_t Taunt = 0x413b;
+	constexpr uint16_t Disarm = 0x40aa;
+	constexpr uint16_t Forage = 0x4094;
+	constexpr uint16_t Mend = 0x419d;
+	constexpr uint16_t SenseHeading = 0x4187;
+	constexpr uint16_t SenseTraps = 0x4188;
+	constexpr uint16_t DisarmTraps = 0x41f3;
+	constexpr uint16_t InstillDoubt = 0x419c; // intimidation
 	constexpr uint16_t Animation = 0x40a1;
 	constexpr uint16_t WearChange = 0x4092;
 	constexpr uint16_t LevelUpdate = 0x4198;
@@ -268,6 +282,16 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::Death, "OP_Death"},
 	{ZoneOp::AutoAttack, "OP_AutoAttack"},
 	{ZoneOp::AutoAttack2, "OP_AutoAttack2"},
+	{ZoneOp::CombatAbility, "OP_CombatAbility"},
+	{ZoneOp::SetServerFilter, "OP_SetServerFilter"},
+	{ZoneOp::Taunt, "OP_Taunt"},
+	{ZoneOp::Disarm, "OP_Disarm"},
+	{ZoneOp::Forage, "OP_Forage"},
+	{ZoneOp::Mend, "OP_Mend"},
+	{ZoneOp::SenseHeading, "OP_SenseHeading"},
+	{ZoneOp::SenseTraps, "OP_SenseTraps"},
+	{ZoneOp::DisarmTraps, "OP_DisarmTraps"},
+	{ZoneOp::InstillDoubt, "OP_InstillDoubt"},
 	{ZoneOp::Animation, "OP_Animation"},
 	{ZoneOp::WearChange, "OP_WearChange"},
 	{ZoneOp::LevelUpdate, "OP_LevelUpdate"},

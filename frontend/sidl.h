@@ -395,6 +395,8 @@ public:
 	Rect ContentRect(const Control &control) const;
 	// A list box's scroll range and page, from its rows and size; whoever fills it calls this.
 	void UpdateListScroll(Control &control) const;
+	// Where a list box's row is drawn (scrolled), as a press on it finds it (for tools).
+	Rect ListRowRect(const Control &control, int row) const;
 	bool Shown(const Control &control) const; // it and every parent visible
 	const Rect &Bounds() const { return m_controls.front().rect; }
 	const SidlPiece &Def() const { return *m_controls.front().def; }

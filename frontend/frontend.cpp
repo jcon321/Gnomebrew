@@ -66,6 +66,7 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 	m_world.SetLogger([this](const std::string &line) { Log(line); });
 	m_zone.SetLogger([this](const std::string &line) { Log(line); });
 	m_combat.SetStrings(m_ui.eqstr);
+	m_combat.SetFilters(&m_filters);
 	m_zone.SetStringTable(m_ui.eqstr);
 	m_zone.SetSpellFile(m_ui.spells);
 	m_zone.SetRecordDir(config.record_dir);
@@ -94,8 +95,10 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 		if (ini.Load(m_config.settings_ini)) {
 			m_debug.Load(ini);
 			m_key_bindings.Load(ini); // CEverQuest_loadOptions' readKeyMapFromIni
+			m_filters.Load(ini);
 		}
 	}
+	m_zone.SetServerFilters(m_filters.Packet());
 	m_game_values.zone = &m_zone;
 	EnterStart();
 }
@@ -784,7 +787,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		MoveControls controls = ZoneControls();
 		// Sitting nothing moves us, a jump included (ProcessControls takes the keys only standing or
 		// crouching). Forward stands us up (ZoneEvent), and we go at once.
-		if (m_zone.Self().stance == 110) {
+		if (m_zone.Self().stance == 110 || m_dead) {
 			controls.forward = controls.back = controls.left = controls.right = false;
 			controls.strafe = controls.jump = false;
 		}
@@ -815,6 +818,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		m_options.Frame(now_ms);
 		m_spell_book.Frame(now_ms);
 		m_spell_cast.Frame(now_ms);
+		m_abilities.Frame(now_ms);
 		m_buffs.Frame(now_ms);
 		if (m_zone_view)
 			m_zone_view->SetSpeedModifier(m_buffs.SpeedModifier(m_zone.Self().run_speed));
@@ -1852,6 +1856,7 @@ namespace
 		{"SkillsWindow", false}, {"ItemDisplayWindow", false}, {"QuantityWnd", false}, {"SpellBookWnd", false},
 		{"ConfirmationDialogBox", false}, {"CastingWindow", false}, {"BankWnd", false},
 		{"MerchantWnd", false}, {"LootWnd", false}, {"TradeWnd", false}, {"GiveWnd", false},
+		{"SkillsSelectWindow", false},
 	};
 
 	// The selector's buttons (EQUI_SelectorWnd.xml) and the windows they open and close.
@@ -1910,10 +1915,28 @@ void FrontEnd::BuildZoneWindows()
 		Log("UI: " + std::to_string(m_windows.Count()) + " windows, layout " + m_ui_layout_path);
 		// CEverQuest::CreateIniFilenames: the character's own ini is the layout's name without UI_.
 		m_hot_buttons_path = m_config.ui_dir + "/" + suffix;
+	}
+	Abilities::Host abilities_host;
+	abilities_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
+	abilities_host.target = [this] { return m_game_values.target; };
+	abilities_host.attacking = [this] { return m_attack; };
+	abilities_host.casting = [this] { return m_spell_cast.Casting() && m_zone.Profile().class_id != 8; };
+	abilities_host.hp = [this] { return m_game_values.CurHp(); };
+	abilities_host.haste = [this] { return m_buffs.Total(11); };
+	abilities_host.can_hit = [this](uint16_t id) { return CanIHitTarget(id); };
+	abilities_host.melee_range = [this](uint16_t id) { return MeleeRange(id); };
+	abilities_host.distance = [this](uint16_t id) { return GroundDistance(id); };
+	abilities_host.heading = [this] { return m_zone.Profile().heading; };
+	abilities_host.sense_heading = [this] { m_compass.SenseHeading(); };
+	abilities_host.remove_affect = [this](int spa) { m_buffs.RemoveAffect(spa); };
+	m_abilities.Attach(m_windows, m_window_state, m_zone, m_ui.eqstr, std::move(abilities_host));
+	m_abilities.Reset();
+	if (!m_hot_buttons_path.empty()) {
 		IniFile custom;
 		if (custom.Load(m_hot_buttons_path)) {
 			LoadHotButtons(custom, m_window_state);
 			LoadSocials(custom, m_window_state);
+			m_abilities.Load(custom);
 		}
 	}
 	// CDisplay_ActivateMainUI activates the compass if it was up; Toggle Compass (Alt+D) opens and
@@ -2008,6 +2031,7 @@ void FrontEnd::SaveCustom()
 	ini.Load(m_hot_buttons_path); // keep the rest of the character's ini
 	StoreHotButtons(ini, m_window_state);
 	StoreSocials(ini, m_window_state);
+	m_abilities.Store(ini);
 	if (!ini.Save(m_hot_buttons_path))
 		Log("UI: couldn't write " + m_hot_buttons_path);
 }
@@ -2032,6 +2056,8 @@ void FrontEnd::HandleWindowClicks()
 	for (const auto &click : m_windows.TakeRightClicks()) {
 		if (m_spell_book.RightClick(click.window, click.control))
 			continue;
+		if (m_abilities.RightClick(click.window, click.control)) // the skill select window
+			continue;
 		// A corpse's slot: into the inventory (RequestLootSlot's auto loot).
 		if (m_loot.RightClick(click.window, click.control, m_now_ms))
 			continue;
@@ -2052,6 +2078,8 @@ void FrontEnd::HandleWindowClicks()
 	for (const auto &release : m_windows.TakeRightReleases())
 		GameWindowRightRelease(m_windows, release.window, release.control);
 	for (WindowManager::Click click : m_windows.TakeClicks()) {
+		if (click.window == "SkillsSelectWindow" && m_abilities.Click(click.window, click.control, m_now_ms))
+			continue;
 		// The Options window's keyboard page, and the question about its defaults.
 		if (m_options.Click(click.window, click.control, m_now_ms))
 			continue;
@@ -2129,7 +2157,7 @@ void FrontEnd::HandleWindowClicks()
 		if (click.window == "ActionsWindow")
 			ActionsClick(click.control);
 	}
-	if (m_window_state.hot_buttons_changed || m_window_state.socials_changed)
+	if (m_abilities.TakeChanged() | m_window_state.hot_buttons_changed | m_window_state.socials_changed)
 		SaveCustom();
 	// The selector's buttons stay down while their window is open.
 	if (SidlWindow *selector = m_windows.Find("SelectorWindow"))
@@ -2140,6 +2168,9 @@ void FrontEnd::HandleWindowClicks()
 
 void FrontEnd::ActionsClick(const std::string &control)
 {
+	// The abilities and combat pages' skill buttons (and their hot buttons).
+	if (m_abilities.Click("ActionsWindow", control, m_now_ms))
+		return;
 	// The Actions window's main page: what the slash commands do.
 	if (control == "AMP_CampButton")
 		InterpretCommand("/camp");
@@ -2318,6 +2349,13 @@ void FrontEnd::ApplyCombat(const Combat::Report &report)
 		SetTarget(report.target);
 	if (report.my_damage != 0)
 		m_zone.ModifyHp(-report.my_damage); // EQ_Character::ModifyCurHP
+	if (report.hit_me) {
+		// EQPlayer::IWasHit: no more invisible (or hidden, or sneaking), and pushed.
+		for (int spa : {12, 28, 29})
+			m_buffs.RemoveAffect(spa);
+		if (m_zone_view && report.force != 0)
+			m_zone_view->Push(report.force, report.heading, report.pitch);
+	}
 	if (report.close_book && m_spell_book.Activated())
 		m_spell_book.Deactivate();
 	if (report.hurt_me) {
@@ -2337,6 +2375,18 @@ void FrontEnd::ApplyCombat(const Combat::Report &report)
 	if (m_zone_view)
 		for (const Combat::Sound &sound : report.sounds)
 			m_zone_view->PlayActorSound(sound.spawn, sound.wave);
+}
+
+void FrontEnd::FiltersChanged()
+{
+	m_zone.SetServerFilters(m_filters.Packet());
+	if (m_config.settings_ini.empty())
+		return;
+	IniFile ini;
+	ini.Load(m_config.settings_ini); // keep the rest
+	m_filters.Store(ini);
+	if (!ini.Save(m_config.settings_ini))
+		Log("filters: couldn't write " + m_config.settings_ini);
 }
 
 void FrontEnd::SpellDamaged(const ZoneCast &cast)
@@ -2361,6 +2411,110 @@ void FrontEnd::SpellDamaged(const ZoneCast &cast)
 	ApplyCombat(report);
 }
 
+bool FrontEnd::AllowedToAttack(const ZoneSpawn &target) const
+{
+	// Never at (or as) these races; an NPC, or a pet of one; a player (or a player's pet) only in PvP:
+	// both PvP, within 4 levels, both level 6 and up. (Duels, the server's PvP types 2 and 4, and
+	// being in different water aren't ours yet.)
+	const ZoneSpawn &me = m_zone.Self();
+	auto never = [](uint16_t race) { return race == 72 || race == 141 || race == 73; };
+	if (never(target.race) || never(me.race) || me.race == 114)
+		return false;
+	const ZoneSpawn *other = &target;
+	if (target.npc == 1 && target.pet_owner != 0) {
+		auto owner = m_zone.Spawns().find(target.pet_owner);
+		if (owner != m_zone.Spawns().end() && owner->second.npc == 0)
+			other = &owner->second;
+		else if (target.pet_owner == m_zone.MySpawnId())
+			other = &me;
+	}
+	if (other->npc == 1)
+		return true;
+	int my_level = m_zone.Profile().level, level = other->level;
+	return other->pvp != 0 && me.pvp != 0 && std::abs(my_level - level) <= 4 && my_level >= 6 && level >= 6;
+}
+
+float FrontEnd::MeleeRange(uint16_t id) const
+{
+	// The two models' bounding radii (t3dGetScaledActorBoundingRadius) times 0.75, at least 14, plus
+	// how far apart their centers sit over their feet, plus 2; at most 75. 14 without the models.
+	if (!m_zone_view)
+		return 14;
+	uint16_t me = m_zone.MySpawnId();
+	float mine = m_zone_view->BoundingRadius(me), theirs = m_zone_view->BoundingRadius(id);
+	if (mine < 0 || theirs < 0)
+		return 14;
+	float range = std::max(14.0f, (mine + theirs) * 0.75f);
+	range += std::fabs(m_zone_view->CenterHeight(me) - m_zone_view->CenterHeight(id)) + 2;
+	return std::min(range, 75.0f);
+}
+
+float FrontEnd::GroundDistance(uint16_t id) const
+{
+	auto it = m_zone.Spawns().find(id);
+	if (it == m_zone.Spawns().end())
+		return 0;
+	const ZoneProfile &me = m_zone.Profile();
+	return std::hypot(it->second.x - me.x, it->second.y - me.y);
+}
+
+bool FrontEnd::CanIHitTarget(uint16_t id, float extra)
+{
+	if (m_buffs.Total(40) >= 1) { // divine aura
+		ChatOut(EqString(12695, "You can't attack while invulnerable!"), ChatType::Default);
+		return false;
+	}
+	if (id != 0 && id == m_zone.MySpawnId()) {
+		ChatOut(EqString(12696, "Try attacking someone other than yourself, it's more productive."), ChatType::Red);
+		return false;
+	}
+	auto it = m_zone.Spawns().find(id);
+	if (id == 0 || it == m_zone.Spawns().end()) {
+		ChatOut(EqString(12697, "You must first click on the being you wish to attack!"), ChatType::Red);
+		return false;
+	}
+	const ZoneSpawn &target = it->second;
+	if (!AllowedToAttack(target) || !m_zone_view)
+		return false;
+	if (!CanSee(id)) {
+		ChatOut(EqString(123, "You can't hit them from here."), ChatType::Red);
+		return false;
+	}
+	// get_range_squared: from foot to foot.
+	const ZoneProfile &me = m_zone.Profile();
+	uint16_t my_id = m_zone.MySpawnId();
+	float dx = target.x - me.x, dy = target.y - me.y;
+	float dz = (target.z - m_zone_view->CenterHeight(id)) - (me.z - m_zone_view->CenterHeight(my_id));
+	float range = MeleeRange(id) + extra;
+	if (dx * dx + dy * dy + dz * dz > range * range) {
+		ChatOut(EqString(124, "Your target is too far away, get closer!"), 0x12f);
+		return false;
+	}
+	// get_bearing to it against our heading: within 80 of 512 (256 between players), its wrap at
+	// north as eqgame's.
+	float bearing = std::atan2(dx, dy) * 512.0f / (2 * 3.14159265f);
+	if (bearing < 0)
+		bearing += 512;
+	float heading = me.heading;
+	if (bearing > 472 && heading < 40)
+		bearing = heading;
+	if (bearing < 40 && heading >= 472)
+		bearing = heading;
+	float limit = 80;
+	if (target.npc == 0) {
+		limit = 256;
+		if (bearing > 350 && heading < 150)
+			bearing = heading;
+		if (bearing < 150 && heading >= 350)
+			bearing = heading;
+	}
+	if (std::fabs(bearing - heading) > limit) {
+		ChatOut(EqString(108, "You cannot see your target."), ChatType::Red);
+		return false;
+	}
+	return true;
+}
+
 void FrontEnd::StartCamp()
 {
 	if (m_zone.GetState() != ZoneSession::State::InZone)
@@ -2377,6 +2531,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 		case Type::ZoneInfo: {
 			AddZoneLog("You have entered " + m_zone.Info().long_name + ".", ZoneYellow);
 			SetAutoAttack(false); // CEverQuest_EnterZone
+			m_dead = false;
 			if (!m_windows_built)
 				BuildZoneWindows();
 			m_buffs.Reset(m_now_ms); // the profile's, which came first
@@ -2564,8 +2719,16 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 				SetTarget(0);
 				SetAutoAttack(false);
 			}
-			if (victim == m_zone.MySpawnId())
+			if (victim == m_zone.MySpawnId()) {
 				SetAutoAttack(false); // CEverQuest_ReportDeath_ClearOutRentables
+				// EQPlayer::IDied: we fall and lie there, still, to the death music.
+				m_dead = true;
+				m_autorun = false;
+				if (m_zone_view)
+					m_zone_view->SetDead(true);
+				if (m_sound)
+					m_sound->SetMusicSelection(audio::EqSound::Death, true);
+			}
 			Combat::Report report = m_combat.Died(event, m_zone, m_game_values.target, m_game_values.CurHp());
 			if (event.cast.type == 231) {
 				std::vector<SpellCasting::Line> lines;

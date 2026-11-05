@@ -379,6 +379,14 @@ void ZoneView::SpawnSounds(SpawnView &view, const ZoneSpawn &spawn, uint16_t id,
 	view.sound.Follow(*m_sound, actor);
 }
 
+void ZoneView::Push(float force, float heading, float pitch)
+{
+	// MovementSpeedY and X by the heading's cosine and sine, Z by the pitch's sine; the server's x
+	// and y are our y and x.
+	float a = render::HeadingToRadians(heading), p = render::HeadingToRadians(pitch);
+	m_movement.Push({std::cos(a) * force, std::sin(a) * force, std::sin(p) * force});
+}
+
 void ZoneView::SetSitting(bool sitting)
 {
 	if (sitting == m_sitting)
@@ -407,6 +415,19 @@ void ZoneView::PlayAnimation(int id)
 
 void ZoneView::ChooseAnimation(float ms)
 {
+	if (m_dead && m_model && m_model->HasAnimation("D05")) {
+		// Dead: the fall, held on its last frame.
+		m_action.clear();
+		if (m_animation != "D05") {
+			m_animation = "D05";
+			m_animation_ms = 0;
+		}
+		m_animation_reversed = false;
+		m_animation_rate = 1;
+		m_animation_ms = std::min(m_animation_ms + ms, static_cast<double>(m_model->AnimationMs("D05")));
+		m_eye_drop = 0;
+		return;
+	}
 	if (!m_action.empty()) {
 		bool cut = !m_movement.OnGround() || m_movement.Swimming() || m_movement.Crouching() || m_sitting || m_standing_up;
 		if (!cut && m_model && m_animation == m_action && m_animation_ms + ms < m_model->AnimationMs(m_action)) {
@@ -771,8 +792,18 @@ bool ZoneView::PickGroundItem(int x, int y, uint16_t me, uint32_t &drop_id) cons
 
 float ZoneView::CenterHeight(uint16_t id) const
 {
+	if (id != 0 && id == m_my_id)
+		return m_height / 5 * 3.125f;
 	auto it = m_actors.find(id);
 	return it != m_actors.end() ? it->second.center_height : 0;
+}
+
+float ZoneView::BoundingRadius(uint16_t id) const
+{
+	if (id != 0 && id == m_my_id)
+		return m_model ? m_model->BoundingRadius() : -1;
+	auto it = m_actors.find(id);
+	return it != m_actors.end() && it->second.model ? it->second.model->BoundingRadius() : -1;
 }
 
 uint16_t ZoneView::PickSpawn(int x, int y, uint16_t me) const
@@ -935,7 +966,7 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 		m_player_time_ms = time;
 		// Jumps, falls and the crouch stop at the end.
 		m_player_loops = !(m_animation == "L03" || m_animation == "L04" || m_animation == "L05" || m_animation == "L08" ||
-		                   m_animation == "P02");
+		                   m_animation == "P02" || m_animation == "D05");
 	}
 	if (m_model_shown) {
 		render::Transform placement;

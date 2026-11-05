@@ -2,6 +2,7 @@
 
 #include "inventory.h"
 #include "login_client.h"
+#include "opcodes.h"
 #include "world_client.h"
 #include "zone_session.h"
 
@@ -46,6 +47,7 @@ namespace
 			"                        the zone's answers. Repeatable: each 3 s after the zone ends the one before\n"
 			"  --attack NAME         with --zone, once in, target the nearest NPC whose name starts with NAME, turn\n"
 			"                        auto attack on and walk at it, printing the hits and the death\n"
+			"  --skill N             with --attack, use combat skill N on it too (OP_CombatAbility), every 9 s\n"
 			"  --record DIR          with --zone, write each zone session's packets to DIR/<char>-<time>.eqr\n"
 			"  --replay FILE         play a recorded zone session back (no server): stay --zone seconds\n"
 			"                        (default 10), print what's around, then camp out\n"
@@ -128,6 +130,8 @@ namespace
 	std::string g_pickup;             // --pickup: a drop id or "far"
 	std::string g_attack;             // --attack: the name of an NPC to fight
 	uint16_t g_attack_id = 0;         // whom we're fighting (0 nobody)
+	int g_skill = -1;                 // --skill: a combat skill to use on them too
+	uint64_t g_skill_at = 0;          // when it's next ready
 
 	// --attack: the nearest NPC whose name starts with g_attack, targeted, auto attack on.
 	void StartAttack(ZoneSession &zone)
@@ -173,6 +177,17 @@ namespace
 		float heading = std::atan2(dx, dy) * 512.0f / (2 * 3.14159265f);
 		m.heading = heading < 0 ? heading + 512 : heading;
 		zone.SetMovement(m);
+		// --skill: OP_CombatAbility {target, 0, 100, skill} as DoMissileHit sends it, every 9 s in reach.
+		if (g_skill >= 0 && d <= 10 && NowMs() >= g_skill_at) {
+			g_skill_at = NowMs() + 9000;
+			uint8_t body[12] = {};
+			uint32_t attack = 100, skill = static_cast<uint32_t>(g_skill);
+			memcpy(body, &g_attack_id, 2);
+			memcpy(body + 4, &attack, 4);
+			memcpy(body + 8, &skill, 4);
+			printf("[attack] using skill %d\n", g_skill);
+			zone.SendSkill(ZoneOp::CombatAbility, body, sizeof(body));
+		}
 	}
 
 	float GroundDistance(const ZoneSession &zone, const ZoneGroundItem &item)
@@ -509,6 +524,8 @@ int main(int argc, char **argv)
 			g_pickup = next();
 		else if (arg == "--attack")
 			g_attack = next();
+		else if (arg == "--skill")
+			g_skill = atoi(next().c_str());
 		else if (arg == "--click-link")
 			g_click_link = atoi(next().c_str());
 		else if (arg == "--zone-to")

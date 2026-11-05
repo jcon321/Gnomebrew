@@ -104,6 +104,8 @@ namespace render
 		float OriginOverFeet() const { return m_origin_over_feet; }
 		const std::string &Code() const { return m_code; }
 		float Scale() const { return m_scale; } // model units -> world
+		// t3dGetScaledActorBoundingRadius: the skeleton's bounding radius, scaled (0 without one).
+		float BoundingRadius() const { return m_skeleton.bounding_radius * m_scale; }
 		size_t TriangleCount() const;
 
 		// A bone by its name ("HUMCH_DAG", any case); -1 when the model has none.

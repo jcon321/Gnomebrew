@@ -9,6 +9,7 @@
 // input events in window pixels, calls Update/Render with a canvas the size of the
 // window (the game resolution), and presents it.
 
+#include "abilities.h"
 #include "art.h"
 #include "charcreate.h"
 #include "charselect_anim_window.h"
@@ -288,6 +289,16 @@ private:
 	// tells it): someone's detrimental spell on us makes them our target, its damage the victim's
 	// get-hit sound and our standing up, and our hit points.
 	void SpellDamaged(const ZoneCast &cast);
+	// A /filter switch changed: the zone's told (CEverQuest_send_update_filters) and they're kept
+	// (saveOptions).
+	void FiltersChanged();
+	// EQPlayer::CanIHitTarget (@00509e09) from us: not invulnerable, a target that isn't us,
+	// AllowedToAttack, in sight (CastRay), within get_melee_range plus `extra` and in front of us;
+	// says why not.
+	bool CanIHitTarget(uint16_t id, float extra = 0);
+	bool AllowedToAttack(const ZoneSpawn &target) const; // EQPlayer::AllowedToAttack (@0050996a), melee
+	float MeleeRange(uint16_t id) const;  // get_melee_range (@004f3898) between us and a spawn
+	float GroundDistance(uint16_t id) const; // CDisplay::PlayerDistance(us, spawn, 0): across the ground
 
 	// EqSoundManager::GiveTime's callers (character select and the world display): the listener and
 	// the emitters' surroundings from the zone, then the sound's frame.
@@ -405,7 +416,10 @@ private:
 	SpellBook m_spell_book;         // and the spell gems
 	SpellCast m_spell_cast;         // our casting from them
 	Combat m_combat;                // what hits, misses and deaths say and do
+	ChatFilters m_filters;          // /filter's switches, in my-client.ini's [Filters]
+	Abilities m_abilities;          // the ability and combat skill buttons, and using skills
 	bool m_attack = false;          // auto attack (__Attack)
+	bool m_dead = false;            // we died in this zone (EQPlayer::IDied's stance 120): nothing moves us
 	bool m_attack_sent = false;     // what OP_AutoAttack last said (DAT_0063db29)
 	Buffs m_buffs;                  // the spells on us
 	CompassWindow m_compass;

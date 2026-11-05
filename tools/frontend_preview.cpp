@@ -2015,6 +2015,103 @@ int main(int argc, char **argv)
 			h.Key(InputEvent::Key::Enter);
 			attack_report("after /attack off");
 		}
+		// The combat page's skill buttons: the right button on the first lists what it can take
+		// (SkillsSelectWindow), Kick (if we have it) goes on it, and a click uses it: the combat
+		// timer, CanIHitTarget's say, OP_CombatAbility. /doability 7 is the same button.
+		if (SidlWindow *actions = frontend.Windows().Find("ActionsWindow")) {
+			WindowManager &windows = frontend.Windows();
+			windows.Show("ActionsWindow", true);
+			windows.MoveTo("ActionsWindow", 20, 20);
+			windows.Raise("ActionsWindow");
+			if (SidlWindow::Control *tabs = actions->Find("ACTW_ActionsSubwindows"))
+				for (int i = 0; i < static_cast<int>(tabs->children.size()); ++i)
+					if (actions->Item(tabs->children[i]).def->screen_id == "ActionsCombatPage")
+						actions->SelectTab(*tabs, i);
+			frontend.Update(NowMs());
+			auto press = [&](const Rect &r, bool right) {
+				Rect area = frontend.ScreenArea();
+				int x = area.x + r.x + r.w / 2, y = area.y + r.y + r.h / 2;
+				frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+				frontend.OnEvent({right ? InputEvent::Type::RightDown : InputEvent::Type::MouseDown, x, y});
+				frontend.OnEvent({right ? InputEvent::Type::RightUp : InputEvent::Type::MouseUp, x, y});
+				frontend.Update(NowMs());
+			};
+			size_t seen = frontend.Chat().Lines().size();
+			auto new_chat = [&](const char *when) {
+				for (; seen < frontend.Chat().Lines().size(); ++seen)
+					printf("[preview] skills %s chat: %s\n", when, frontend.Chat().Lines()[seen].text.c_str());
+			};
+			// Whatever drag an earlier step left going (it keeps the mouse from the windows) ends.
+			frontend.OnEvent({InputEvent::Type::RightUp, 1, 1});
+			frontend.OnEvent({InputEvent::Type::MouseUp, 1, 1});
+			frontend.Update(NowMs());
+			if (const SidlWindow::Control *button = actions->Find("ACP_FirstAbilityButton")) {
+				printf("[preview] combat button at %d,%d %dx%d, shown %d, window shown %d\n", button->rect.x, button->rect.y,
+					button->rect.w, button->rect.h, actions->Shown(*button), windows.Shown("ActionsWindow"));
+				printf("[preview] combat button enabled %d\n", button->enabled);
+				press(button->rect, true);
+				SidlWindow *select = windows.Find("SkillsSelectWindow");
+				SidlWindow::Control *list = select ? select->Find("SKSW_SkillSelectorList") : nullptr;
+				printf("[preview] skill select shown %d:", windows.Shown("SkillsSelectWindow"));
+				int kick = -1;
+				if (list)
+					for (size_t r = 0; r < list->rows.size(); ++r) {
+						printf(" '%s'", list->rows[r][0].c_str());
+						if (list->rows[r][0] == "Kick")
+							kick = static_cast<int>(r);
+					}
+				printf("\n");
+				if (list && kick >= 0) {
+					press(select->ListRowRect(*list, kick), false);
+					printf("[preview] first combat button now '%s', select shown %d\n", button->text.c_str(),
+						windows.Shown("SkillsSelectWindow"));
+					h.Snapshot("s1-combat-skill-button");
+					// The nearest NPC (not an invisible camp marker) as the target, and us stood 6 in
+					// front of it facing it.
+					const ZoneSession &zone = frontend.Zone();
+					const ZoneSpawn *npc = nullptr;
+					float best = 0;
+					for (const auto &[id, spawn] : zone.Spawns()) {
+						float d = std::hypot(spawn.x - zone.Profile().x, spawn.y - zone.Profile().y);
+						if (spawn.npc == 1 && spawn.race != 127 && spawn.race != 240 && (!npc || d < best))
+							npc = &spawn, best = d;
+					}
+					ZoneView *view = frontend.ZoneScene();
+					if (npc && view && frontend.Zone().Profile().cur_hp > 0) {
+						h.Key(InputEvent::Key::Enter);
+						h.Type("/target " + npc->name);
+						h.Key(InputEvent::Key::Enter);
+						h.RunUntil([] { return false; }, 300);
+						printf("[preview] target %u (%s)\n", frontend.Target(), npc->DisplayName().c_str());
+						view->SetPlayerPosition(npc->x, npc->y - 6, npc->z, 0);
+						h.RunUntil([] { return false; }, 1000);
+					}
+					press(button->rect, false);
+					printf("[preview] kick used: button down %d\n", button->checked);
+					new_chat("first use");
+					press(button->rect, false); // still on its timer: nothing
+					new_chat("second use");
+					h.Key(InputEvent::Key::Enter);
+					h.Type("/doability 7");
+					h.Key(InputEvent::Key::Enter);
+					new_chat("/doability 7");
+					h.Key(InputEvent::Key::Enter);
+					h.Type("/doability");
+					h.Key(InputEvent::Key::Enter);
+					new_chat("/doability");
+					// /filter: a toggle, a three-way, the bard songs' four, the usage; /serverfilter.
+					for (const char *line : {"/filter othersmisses", "/filter othersmisses", "/filter pcspells",
+						     "/filter bardsongs", "/filter dmgshield", "/filter nonsense", "/serverfilter on",
+						     "/serverfilter off", "/filter dmgshield", "/filter pcspells", "/filter pcspells",
+						     "/filter bardsongs", "/filter bardsongs", "/filter bardsongs"}) {
+						h.Key(InputEvent::Key::Enter);
+						h.Type(line);
+						h.Key(InputEvent::Key::Enter);
+						new_chat(line);
+					}
+				}
+			}
+		}
 		// Sitting: /sit lowers the first person view with our head; Space, the back key and turning
 		// with the right button do nothing; W stands us up and we run at once, getting up playing out.
 		if (ZoneView *view = frontend.ZoneScene()) {

@@ -6,6 +6,7 @@
 #include "ini_file.h"
 #include "inventory.h"
 #include "item_display.h"
+#include "skills.h"
 #include "spell_file.h"
 #include "window_manager.h"
 #include "zone_session.h"
@@ -158,13 +159,7 @@ namespace
 			control->text = text;
 	}
 
-	// InitializeSkillData (@004d0e88): each skill's name, eqstr ids by skill number.
-	constexpr uint32_t SkillNames[74] = {13855, 13856, 13857, 13858, 13859, 13861, 13862, 13863, 13864, 13866, 13867,
-		13871, 13872, 13874, 13875, 13876, 13877, 13878, 13879, 13880, 13881, 13882, 13883, 13884, 13885, 13886, 13888,
-		13889, 13890, 13891, 13893, 13894, 13895, 13896, 13897, 13899, 13900, 13903, 13904, 13905, 13906, 13908, 13909,
-		13910, 13911, 13912, 13913, 13914, 13915, 13916, 13917, 13919, 13920, 13921, 13923, 13854, 13853, 13852, 13851,
-		13850, 13865, 13918, 13907, 13870, 13887, 13873, 13860, 13868, 13892, 13901, 13898, 13922, 13869, 13902};
-	constexpr int SkillCount = 74;
+	constexpr int SkillCount = Skills::Count;
 
 	// CSkillsWnd::UpdateSkill's ranks (@005fe3ec, @005fe418): the first whose limit the value is
 	// within, "Awful" (eqstr 3224) to "Master" (3234).
@@ -922,7 +917,7 @@ std::string SkillName(const EqStr *eqstr, int skill)
 	// Past them, InitializeSkillData's default: "None" (eqstr 1216).
 	if (skill < 0 || skill >= SkillCount)
 		return EqText(eqstr, 1216, "None");
-	return EqText(eqstr, SkillNames[skill], "Skill " + std::to_string(skill));
+	return EqText(eqstr, Skills::Get(skill).name, "Skill " + std::to_string(skill));
 }
 
 void DrawCursorAttachment(Canvas &canvas, TextRenderer &text, const WindowManager &windows, const GameWindowState &state,

@@ -608,6 +608,20 @@ bool ZoneSession::SendAnimation(int animation)
 	return Send(ZoneOp::Animation, body, sizeof(body), "OP_Animation " + std::to_string(animation));
 }
 
+void ZoneSession::SetServerFilters(const std::vector<uint8_t> &filters)
+{
+	m_server_filters = filters;
+	if (m_my_id != 0 && (m_state == State::Entering || m_state == State::InZone) && !filters.empty())
+		Send(ZoneOp::SetServerFilter, filters.data(), filters.size(), "OP_SetServerFilter");
+}
+
+bool ZoneSession::SendSkill(uint16_t opcode, const void *body, size_t size)
+{
+	if (m_state != State::InZone)
+		return false;
+	return Send(opcode, body, size, ZoneOpcodeName(opcode));
+}
+
 bool ZoneSession::SendAutoAttack(bool on)
 {
 	if (m_state != State::InZone)
@@ -2093,6 +2107,9 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		if (type == AppearanceSpawnId) {
 			m_my_id = static_cast<uint16_t>(Read<uint32_t>(data, 4));
 			Log("[zone]    my spawn id " + std::to_string(m_my_id));
+			// msg_stat_change: our /filter switches, as we get our id.
+			if (!m_server_filters.empty())
+				Send(ZoneOp::SetServerFilter, m_server_filters.data(), m_server_filters.size(), "OP_SetServerFilter");
 		}
 		else if (type == AppearanceInvis || type == AppearancePvp || type == AppearanceLinkdead || type == AppearanceGm ||
 		         type == AppearanceAnonymous || type == AppearanceGuild || type == AppearanceAfk) {
@@ -2248,6 +2265,11 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		e.cast.type = data[4];
 		e.cast.spell = Read<int16_t>(data, 6);
 		e.cast.damage = Read<int32_t>(data, 8);
+		if (data.size() >= 24) {
+			e.cast.force = Read<float>(data, 12);
+			e.cast.heading = Read<float>(data, 16);
+			e.cast.pitch = Read<float>(data, 20);
+		}
 		events.push_back(e);
 		break;
 	}

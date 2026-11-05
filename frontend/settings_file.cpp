@@ -118,6 +118,30 @@ namespace
 			"/fastdrop: 1 drops an item clicked onto the ground at once, 0 asks first, -1 never drops it.\n"
 			"Kept on exit."},
 
+		{"Filters", "DamageShields", "0",
+			"/filter's switches, kept as they change and sent to the zone (OP_SetServerFilter).\n"
+			"DamageShields, NpcSpells: 0 shown, 1 hidden. PcSpells: 0 all, 1 off, 2 your group's.\n"
+			"BardSongs: 0 all, 1 yours, 2 your group's, 3 off. ServerFilter: /serverfilter. GuildSay\n"
+			"through AttackerMissesMe: 1 shown, 0 hidden. CriticalSpells, CriticalMelee: 0 all, 1\n"
+			"yours, 2 off. BadWords: 0 the bad word filter on."},
+		{"Filters", "NpcSpells", "0", ""},
+		{"Filters", "PcSpells", "0", ""},
+		{"Filters", "BardSongs", "0", ""},
+		{"Filters", "ServerFilter", "0", ""},
+		{"Filters", "GuildSay", "1", ""},
+		{"Filters", "Socials", "1", ""},
+		{"Filters", "GroupSay", "1", ""},
+		{"Filters", "Shouts", "1", ""},
+		{"Filters", "Auctions", "1", ""},
+		{"Filters", "Ooc", "1", ""},
+		{"Filters", "MyMisses", "1", ""},
+		{"Filters", "OthersMisses", "0", ""},
+		{"Filters", "OthersHits", "1", ""},
+		{"Filters", "AttackerMissesMe", "1", ""},
+		{"Filters", "CriticalSpells", "0", ""},
+		{"Filters", "CriticalMelee", "0", ""},
+		{"Filters", "BadWords", "0", ""},
+
 		{"Debug", "RecordPackets", "0",
 			"1: each zone session's packets go to replays\\<character>-<time>.eqr next to the exe, to\n"
 			"play back with --replay."},

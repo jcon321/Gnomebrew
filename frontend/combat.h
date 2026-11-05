@@ -32,13 +32,14 @@
 //              (12114), "You have been slain by %1!" (12107), "%1 died." (12112), falling (-4),
 //              choking (-5), burning (-6) and the unseen hand's (no killer we know): 0x115 our death,
 //              0x116 the rest (told as the blow is). An NPC killing itself says nothing.
-// The hit modes (pinstCChatManager's MyHitsMode and the rest) are their 0, the whole line. The
-// /filter switches are eqgame's defaults (loadOptions): our misses, misses of us and others' hits
-// shown, others' misses not; damage shields shown.
-// Not done: the blood spurt of our hits (SpurtBloodOnDag), IWasHit's push back and its breaking our
-// invisibility, hide and sneak, a duel's end, the group window's member HP on a death, and the
-// tracking window.
+// The hit modes (pinstCChatManager's MyHitsMode and the rest) are their 0, the whole line. /filter's
+// switches (ChatFilters) say which misses and hits are told, and whether others' damage shields are.
+// A melee hit on us (EQPlayer::IWasHit) takes off our invisibility (SPA 12, 28, 29 buffs) and pushes
+// us along the hit's heading by its force.
+// Not done: the blood spurt of our hits (SpurtBloodOnDag), hide and sneak, a duel's end, the group
+// window's member HP on a death, and the tracking window.
 
+#include "filters.h"
 #include "zone_session.h"
 
 #include <cstdint>
@@ -52,6 +53,7 @@ class Combat
 public:
 	explicit Combat(const EqStr *eqstr = nullptr) : m_eqstr(eqstr) {}
 	void SetStrings(const EqStr *eqstr) { m_eqstr = eqstr; }
+	void SetFilters(const ChatFilters *filters) { m_filters = filters; } // /filter's (unset: the defaults)
 
 	struct Line
 	{
@@ -72,6 +74,9 @@ public:
 		uint16_t target = 0;  // the attacker becomes our target (we had none); 0 not
 		bool hurt_me = false; // we took damage: the book closes, sitting or kneeling stands us up
 		bool close_book = false; // msg_successful_hit's for someone else's spell on us: only the book closes
+		// EQPlayer::IWasHit on us (a melee hit): our invisibility, hide and sneak go, and its push.
+		bool hit_me = false;
+		float force = 0, heading = 0, pitch = 0;
 		int32_t my_damage = 0; // what to take off our hit points now (ModifyCurHP)
 		bool told = true;      // Died: whether the killing blow is told (for a spell's, SpellCasting's)
 	};
@@ -98,5 +103,6 @@ private:
 	int Rand(); // RandNbr
 
 	const EqStr *m_eqstr;
+	const ChatFilters *m_filters = nullptr;
 	uint32_t m_random = 0x2545f491u;
 };

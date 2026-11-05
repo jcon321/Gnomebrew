@@ -66,6 +66,9 @@ public:
 	void Frame(uint64_t now_ms); // ProcessAffects, every 6 s
 	// RemoveMyAffect: false (and why in the chat) when it can't be.
 	bool ClickOff(int slot);
+	// EQ_Character::GetPCSpellAffect then RemovePCAffect: the first buff with the effect goes (its
+	// fading text, the zone told); false for none.
+	bool RemoveAffect(int spa);
 
 	const ZoneBuff &Slot(int slot) const;
 	// IsValidAffect: a buff there of a spell we know.

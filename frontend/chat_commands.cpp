@@ -16,7 +16,7 @@ namespace
 	{
 		None, Say, Tell, Group, Shout, Auction, Ooc, Guild, Reply, Emote, Hail, Location, Target, Camp,
 		ClearChat, ShowNames, Sit, Stand, Book, Cast, Consider, Played, Motd, Time, Afk, Anonymous, Assist,
-		Random, LootNoDrop, FastDrop, Social, Attack, CombatMusic,
+		Random, LootNoDrop, FastDrop, Social, Attack, CombatMusic, DoAbility, Filter, ServerFilter,
 	};
 
 	struct CommandEntry
@@ -30,7 +30,7 @@ namespace
 	constexpr CommandEntry Commands[] = {
 		{"/who", 0, Command::None}, {"/consider", 0, Command::Consider}, {"/feedback", 0, Command::None},
 		{"/consent", 0, Command::None}, {"/played", 0, Command::Played}, {"/ignore", 0, Command::None},
-		{"/anonymous", 0, Command::Anonymous}, {"/afk", 0, Command::Afk}, {"/filter", 0, Command::None},
+		{"/anonymous", 0, Command::Anonymous}, {"/afk", 0, Command::Afk}, {"/filter", 0, Command::Filter},
 		{"/assist", 0, Command::Assist}, {"/duel", 0, Command::None}, {"/decline", 0, Command::None},
 		{"/split", 0, Command::None}, {"/autosplit", 0, Command::None}, {"/quit", 0, Command::None},
 		{"/stopsong", 0, Command::None}, {"/friends", 0, Command::None}, {"/shield", 0, Command::None},
@@ -93,7 +93,7 @@ namespace
 		{"/fastdrop", 0, Command::FastDrop}, {"/trackplayers", 0, Command::None}, {"/help", 0, Command::None},
 		{"/lfg", 0, Command::None}, {"/approval", 4, Command::None}, {"/sit", 0, Command::Sit},
 		{"/stand", 0, Command::Stand}, {"/book", 0, Command::Book}, {"/cast", 0, Command::Cast},
-		{"/doability", 0, Command::None}, {"/whotarget", 0, Command::None}, {"/language", 0, Command::None},
+		{"/doability", 0, Command::DoAbility}, {"/whotarget", 0, Command::None}, {"/language", 0, Command::None},
 		{"/target", 0, Command::Target}, {"/camp", 0, Command::Camp}, {"/attack", 0, Command::Attack},
 		{"/invite", 0, Command::None}, {"/disband", 0, Command::None}, {"/note", 0, Command::None},
 		{"/wincolor", 0, Command::None}, {"/usercolor", 0, Command::None}, {"/resetwindows", 0, Command::None},
@@ -101,7 +101,7 @@ namespace
 		{"/dynamiclights", 0, Command::None}, {"/chatfontsize", 0, Command::None}, {"/lootnodrop", 0, Command::LootNoDrop},
 		{"/reversesound", 0, Command::None}, {"/emotezone", 4, Command::None}, {"/invwinlabels", 0, Command::None},
 		{"/tracksort", 0, Command::None}, {"/trackfilter", 0, Command::None}, {"/mousespeed", 0, Command::None},
-		{"/gems", 0, Command::None}, {"/inspect", 0, Command::None}, {"/serverfilter", 0, Command::None},
+		{"/gems", 0, Command::None}, {"/inspect", 0, Command::None}, {"/serverfilter", 0, Command::ServerFilter},
 		{"/showspelleffects", 0, Command::None}, {"/combatmusic", 0, Command::CombatMusic}, {"/mixahead", 0, Command::None},
 		{"/guildmotd", 0, Command::None}, {"/charinfo", 0, Command::None}, {"/safelock", 0, Command::None},
 		{"/alternateadv", 0, Command::None}, {"/targetgroupbuff", 0, Command::None}, {"/tgb", 0, Command::None},
@@ -566,6 +566,96 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 			SetAutoAttack(true);
 		else
 			SetAutoAttack(!m_attack);
+		break;
+	case Command::Filter: {
+		// /filter (@004fbc3a): a switch by its name (any case), toggled or stepped round, and said as
+		// "%1 *ON*" and the like; anything else, the usage. Then the zone's told and they're kept.
+		struct Switch
+		{
+			uint32_t name, label;
+			const char *name_text, *label_text;
+			int32_t ChatFilters::*value;
+			int steps;      // 2 a toggle; 3 and 4 step round
+			bool on_when_0; // a toggle said *ON* at 0
+		};
+		static const Switch switches[] = {
+			{1315, 1316, "badword", "Bad Words Filter", &ChatFilters::bad_words, 2, true},
+			{1317, 1318, "guildsay", "Guild Say", &ChatFilters::guild, 2, false},
+			{1319, 1320, "social", "Socials", &ChatFilters::socials, 2, false},
+			{1321, 1322, "gsay", "Group Say", &ChatFilters::group, 2, false},
+			{1323, 1325, "shout", "Shouts", &ChatFilters::shouts, 2, false},
+			{1326, 1324, "auction", "Auctions", &ChatFilters::auctions, 2, false},
+			{1327, 1328, "ooc", "OOC", &ChatFilters::ooc, 2, false},
+			{1329, 1330, "mymisses", "My Misses", &ChatFilters::my_misses, 2, false},
+			{1331, 1332, "othersmisses", "Others Misses", &ChatFilters::others_misses, 2, false},
+			{1352, 1353, "othershits", "Others Hits", &ChatFilters::others_hits, 2, false},
+			{1333, 1334, "atkmissesme", "Attacker Misses Me", &ChatFilters::misses_me, 2, false},
+			{1336, 1335, "pcspells", "PC Spells", &ChatFilters::pc_spells, 3, false},
+			{1337, 1338, "npcspells", "NPC Spells", &ChatFilters::npc_spells, 2, true},
+			{1339, 1340, "bardsongs", "Bard Songs", &ChatFilters::bard_songs, 4, false},
+			{1341, 1342, "dmgshield", "Damage Shields", &ChatFilters::damage_shields, 2, true},
+			{1343, 1344, "critspells", "Critical Spells", &ChatFilters::critical_spells, 3, false},
+			{1345, 1346, "critmelee", "Critical Melee", &ChatFilters::critical_melee, 3, false},
+		};
+		const Switch *found = nullptr;
+		for (const Switch &s : switches)
+			if (Lower(args) == Lower(format(s.name, s.name_text, {})))
+				found = &s;
+		if (!found) {
+			static const std::pair<uint32_t, const char *> usage[] = {{1354, "Usage: /filter <name>"},
+				{1355, "Toggle text filters on or off."}, {1356, "<name> can be one of the following:"},
+				{1357, "badword, guildsay, social, gsay (for group say),"},
+				{1358, "shout, auction, ooc, mymisses, othersmisses,"},
+				{1359, "othershits, atkmissesme, pcspells, npcspells,"},
+				{1360, "bardsongs, dmgshield, critspells, critmelee"}};
+			for (const auto &[id, text] : usage)
+				ChatOut(format(id, text, {}), ChatType::Default);
+			break;
+		}
+		int32_t &value = m_filters.*(found->value);
+		value = found->steps == 2 ? value ^ 1 : (value + 1) % found->steps;
+		// The state: a toggle's *ON* or *OFF*; pcspells *ALL*, *OFF*, *GRP*; bardsongs *ALL*, *ME*,
+		// *GRP*, *OFF*; the criticals *ALL*, *ME*, *OFF*.
+		uint32_t state;
+		const char *state_text;
+		if (found->steps == 2) {
+			bool on = found->on_when_0 ? value == 0 : value != 0;
+			state = on ? 1351 : 1348, state_text = on ? "%1 *ON*" : "%1 *OFF*";
+		}
+		else {
+			static const uint32_t pc[] = {1347, 1348, 1349}, bard[] = {1347, 1350, 1349, 1348}, crit[] = {1347, 1350, 1348};
+			const uint32_t *ids = found->steps == 4 ? bard : found->value == &ChatFilters::pc_spells ? pc : crit;
+			state = ids[value];
+			state_text = state == 1347 ? "%1 *ALL*" : state == 1348 ? "%1 *OFF*" : state == 1349 ? "%1 *GRP*" : "%1 *ME*";
+		}
+		ChatOut(format(state, state_text, {format(found->label, found->label_text, {})}), ChatType::Default);
+		FiltersChanged();
+		break;
+	}
+	case Command::ServerFilter:
+		// /serverfilter (@004fecba): "off" (3 letters) or "on" (2), kept and sent; else its format.
+		if (MatchesPrefix(args, "off", 3)) {
+			m_filters.server_filter = 0;
+			ChatOut("Server side MSG filtering is *OFF*", ChatType::Default);
+		}
+		else if (MatchesPrefix(args, "on", 2)) {
+			m_filters.server_filter = 1;
+			ChatOut("Server side MSG filtering is *ON*", ChatType::Default);
+		}
+		else {
+			ChatOut("Format: /serverfilter <on/off>", ChatType::Default);
+			ChatOut("This command will prevent you from receiving spell messages and combat hits. Previously these "
+			        "messages were only filtered on the client, now they can be filtered on the server. This should "
+			        "provide better performance for those with slower connections.",
+				ChatType::Red);
+			break;
+		}
+		FiltersChanged();
+		break;
+	case Command::DoAbility:
+		// /doability (@004fd260): the abilities page's 1..6, the combat page's skills 7..10.
+		if (allow())
+			m_abilities.DoAbility(args, m_now_ms);
 		break;
 	case Command::CombatMusic:
 		// /combatmusic (@004fa035): with nothing after it, the format; "off" or anything else, set

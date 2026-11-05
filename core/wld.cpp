@@ -376,8 +376,10 @@ bool WldFile::ReadSkeleton(int index, WldSkeleton &skeleton) const
 	size_t p = f.offset + 12;
 	if (flags & 1)
 		p += 12;
-	if (flags & 2)
+	if (flags & 2) {
+		skeleton.bounding_radius = Get<float>(p);
 		p += 4;
+	}
 	skeleton.bones.resize(count);
 	for (auto &bone : skeleton.bones) {
 		bone.name = String(Get<int32_t>(p));

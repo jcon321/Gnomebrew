@@ -171,6 +171,7 @@ struct ZoneCast
 	int level = 0;               // Action: the caster's level for a potion's (spells 1252..1266, 1..60)
 	uint8_t type = 0;            // Action and Damage: 231 a spell
 	uint8_t flags = 0;           // Action: 4 it landed
+	float force = 0, heading = 0, pitch = 0; // Damage: the hit's push (IWasHit), heading in 512ths
 };
 
 // OP_Projectile (Arrow_Struct): a missile someone let go, an arrow, a thrown weapon or a bolt
@@ -501,6 +502,11 @@ public:
 	// DoPassageOfTime: our auto attack went on or off (EverQuestinfo's __Attack): OP_AutoAttack2 and
 	// OP_AutoAttack, {u32 on} each.
 	bool SendAutoAttack(bool on);
+	// EQ_Character::UseSkill's packets: one of ZoneOp's ability opcodes with its body (none for most).
+	bool SendSkill(uint16_t opcode, const void *body = nullptr, size_t size = 0);
+	// The /filter switches (UpdateFilters_Struct): sent as OP_SetServerFilter as the zone gives us our
+	// spawn id (msg_stat_change), and at once when they change in the zone.
+	void SetServerFilters(const std::vector<uint8_t> &filters);
 	// /random: OP_RandomReq {low, high}. Everyone near, us too, hears the roll (OP_RandomReply's
 	// two lines as Message events).
 	bool Random(uint32_t low, uint32_t high);
@@ -696,6 +702,7 @@ private:
 	uint32_t m_worn_color[9] = {};
 	bool m_worn_known = false;
 	int32_t m_hp = 0, m_max_hp = 0;
+	std::vector<uint8_t> m_server_filters;
 	std::map<int16_t, ZoneItem> m_items;
 	ZoneItem m_linked_item;
 	int16_t m_loot_slots[30] = {}; // -1 empty (ClearLoot, from Reset on)

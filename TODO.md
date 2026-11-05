@@ -121,8 +121,8 @@ no rules of its own.
      other windows (loot, trade, merchants), and the item+0xdc check WndNotification makes
      before linking (unknown field).
    - Skills window: the skills the server says we have (not 254 or 255) and our languages, with
-     their ranks, kept up to date by OP_SkillUpdate. Still to do: racial skills the server marks
-     255 (eqgame's HasSkill table), selecting rows.
+     their ranks, kept up to date by OP_SkillUpdate. Still to do: the racial skills the server marks
+     255 (`Skills::HasSkill` has eqgame's table now; the window doesn't use it), selecting rows.
    - Spellbook and spell gems: done (`frontend/spell_book.*`, eqgame's CSpellBookWnd and
      CCastSpellWnd): the book opens from the gems' book button or /book (casters only, sitting us
      down), pages and page keys, a scroll on the cursor scribed into an empty slot, a book spell
@@ -160,16 +160,14 @@ no rules of its own.
    - Hotbuttons: the Actions window's buttons and socials go on them and come off by holding
      them, and they're kept in `<char>_<server>.ini` (`frontend/game_windows.*`). Still to do:
      items, spells, pet commands and AA abilities on them, whether an ability's ready (checked
-     while it isn't), and right-click on anything but a social (picking a combat or ability
-     button's skill).
+     while it isn't), and right-click on anything but a social.
    - Socials: done (defaults, the editor, running them with `/pause`, `[Socials]`). Still to do:
      the edit boxes take typing only at their end (no caret to move, no Tab between them), and
      a social's lines go to InterpretCommand as typed, without eqgame's switch to the main chat
      window's channel while it runs.
    - ~~Compass~~: done (`frontend/compass.*`, eqgame's CCompassWnd): the strips slide by our
      heading, and the needle wanders with a Sense Heading under 200, and Toggle Compass (Alt+D)
-     opens and closes it. Still to do: the skill's use pointing it true for 5 s (CCompassWnd::SenseHeading from EQ_Character::UseSkill; there's no
-     /doability or skill use yet).
+     opens and closes it, and using Sense Heading points it true for 5 s (CCompassWnd::SenseHeading).
    - ~~Selector bar~~: done (`SelectorToggles` in `frontend/frontend.cpp`): its buttons open and
      close their windows.
 3. ~~**A real chat window**~~: done (`frontend/chat_window.*`, `chat_text.*`, `chat_commands.cpp`).
@@ -267,21 +265,37 @@ no rules of its own.
     target, a hit on us closing the book, standing us up and taking its HP at once. OP_Death:
     ReportDeath's killing blow and death lines, closing a dead partner's trade, merchant or bank.
     Checked live against a sewer rat in South Qeynos (`eqclient --attack`) and through its replay.
+    Skills (`frontend/abilities.*`, `frontend/skills.*`): InitializeSkillData's table (taken from the
+    exe by running its decompile), HasSkill, the Actions window's ability and combat skill buttons
+    ([Abilities], [CombatSkills]) and SkillsSelectWindow to pick them, /doability, the ability
+    timers and the combat timer (hastened), UseSkill's combat skills through DoAttack 100 and
+    CanIHitTarget to OP_CombatAbility (checked live: a kick), and forage, sense heading, mend, taunt,
+    intimidation, disarm, disarm traps and sense traps. /filter and /serverfilter
+    (`frontend/filters.*`, [Filters]) sent to the zone as OP_SetServerFilter. A melee hit on us
+    takes off our invisibility and pushes us (IWasHit); our death lays us down (D05) to the death
+    music, and nothing moves us.
     Still to do:
-    - range attacks: the Range button and the hot button's (DoAttack 0xb: HandleAmmo, DoMissileHit,
-      OP 0x4147, the ammo used up), throwing (0xe), and ProcessControls' `__RangeAttackReady`
-      auto fire; DoAttack's own checks (stunned eqstr 0x7d, standing, CanIHitTarget, the fatigue)
-      for them;
-    - the combat abilities: the combat page's skill buttons and /doability (EQ_Character::UseSkill:
-      kick, bash, backstab, taunt..., OP_CombatAbility), SelectSkillForCombatBtn;
-    - /filter (DAT_00798c0c..c18: our misses, others' misses and hits, misses on us; DAT_00799670
-      damage shields; CEverQuest_send_update_filters) and the hit modes (CChatManager's MyHitsMode
-      and the rest: eqstr 2130's short form, the number only); fixed at eqgame's defaults;
-    - IWasHit on us: the push of the hit's force along its heading and pitch, and breaking
-      invisibility, hide and sneak (SPA 12, 28, 29 buffs taken off);
+    - range attacks: the Range button and the hot button's (CombatPageWndNotification's
+      `__RangeAttackReady`, DoAttack 0xb: the bow's delay and a quiver's haste, too close (12698),
+      too far above or below (12699), the bow's and arrow's range in CanIHitTarget, HandleAmmo,
+      DoMissileHit's OP_CombatAbility {target, 11, skill}, OP_DeleteCharge 0x4147 or OP_MoveItem
+      for what's used up, the bow in the hand while shooting), and throwing; the zone's
+      RangedAttack wants the ammo it's told of;
+    - ProcessControls' own swings while auto attack's on (DoAttack 0xd primary, 0xe the off hand,
+      on `__RangeAttackReady` and DAT_007cd845): their timers, the fatigue, CanIHitTarget's says
+      ("too far away") as well as the zone's;
+    - UseSkill's sneak, hide (DAT_00798780 and its breaking on moving, 12682), feign death (stance
+      115), bind wound, begging, pick pockets, tracking (CTrackingWnd), fishing; the AA abilities
+      (105, 107, 111) and the timers' AA reductions (GetAbility 0x79, 100), being on a horse
+      (12393), stunned (125), AllowedToAttack's duels, the server's PvP types and the water;
+    - /filter's client side: the spell lines by PC spells, NPC spells and bard songs
+      (ReportSuccessfulHit's spell branch, StartCasting), the chat channels and the bad word filter
+      (msg_new_text), and the hit modes (/hitsmode, CChatManager's MyHitsMode and the rest: eqstr
+      2130's short form, the number only);
     - the blood of our crushing, slashing, piercing, backstab and bash hits (SpurtBloodOnDag);
-    - ReportDeath's duel ending (eqstr 12100, 12101), a group member's HP, the tracking window,
-      and our own death (ReportDeath_ClearOutRentables' windows, the death music, EQPlayer::IDied);
+    - ReportDeath's duel ending (eqstr 12100, 12101), a group member's HP, the tracking window; our
+      death's first person view (still standing height), KnockedOut's "You have been knocked
+      unconscious!" (12877) and ClearOutRentables' temporary items;
     - being hit on a mount (DeacSpellScreen, ChangeStance), and the guildmaster window turning auto
       attack off (pinstActiveGMaster) once there is one.
 

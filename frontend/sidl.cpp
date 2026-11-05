@@ -1204,6 +1204,14 @@ void SidlWindow::DrawTitleBox(Canvas &canvas, SidlTextures &textures, TitleBox b
 	DrawAnimation(canvas, textures, name.empty() ? look.normal : name, r, now_ms);
 }
 
+Rect SidlWindow::ListRowRect(const Control &control, int row) const
+{
+	Rect content = ContentRect(control);
+	int height = ListRowHeight(control);
+	int top = content.y + ListHeaderHeight(control) + (row - std::max(control.scroll_pos, 0)) * height;
+	return {content.x, top, content.w, height};
+}
+
 void SidlWindow::Draw(Canvas &canvas, TextRenderer &text, SidlTextures &textures, uint64_t now_ms) const
 {
 	if (m_controls.empty())

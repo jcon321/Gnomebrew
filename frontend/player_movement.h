@@ -76,6 +76,8 @@ public:
 	float HeadingSpeed() const { return m_heading_speed; } // MovementSpeedHeading
 	float Strafe() const { return m_strafe; }              // sideways push: + left, - right
 	const render::Vec3 &Velocity() const { return m_velocity; } // per tick, world space
+	// EQPlayer::IWasHit's push: added to our motion (per tick, world space).
+	void Push(const render::Vec3 &push) { m_velocity = m_velocity + push; }
 	bool OnGround() const { return m_on_ground; }
 	bool Crouching() const { return m_crouching; } // a standing jump winding up (stance 111)
 	float RunSpeed() const { return m_run_speed; }

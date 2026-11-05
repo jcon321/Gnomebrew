@@ -129,6 +129,9 @@ struct WldSkeleton
 	};
 	std::string name;
 	std::vector<Bone> bones;
+	// The hierarchical sprite's bounding radius (flag 2), unscaled; 0 without one
+	// (t3dGetScaledActorBoundingRadius scales it).
+	float bounding_radius = 0;
 	std::vector<int> meshes; // fragment indices of the 0x36 meshes
 };
 

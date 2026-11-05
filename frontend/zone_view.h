@@ -77,6 +77,10 @@ public:
 	// and up with our head.
 	void SetSitting(bool sitting);
 	bool StandingUp() const { return m_standing_up; } // getting up: P02 backwards hasn't finished
+	// EQPlayer::IWasHit: a hit's push on us, `force` along `heading` (512ths) and up at `pitch`.
+	void Push(float force, float heading, float pitch);
+	// EQPlayer::IDied for us: we fall (D05) and lie there, nothing else played.
+	void SetDead(bool dead) { m_dead = dead; }
 	// One of the client's own one-shot animations on us (a spell's casting or its hit, a swing the
 	// zone sends; PlayAnimationTrack's id), played once while we stand or move on the ground, with
 	// its sound; a jump, a fall, the water, crouching or sitting cut it short.
@@ -218,7 +222,10 @@ public:
 	// item in front of it); 0 for none. In the chase view our own model is one of them, as `me`.
 	uint16_t PickSpawn(int x, int y, uint16_t me) const;
 	// A spawn's ModelHeightOffset (its center over its feet, server units); 0 before its model's in.
+	// Ours for our own id.
 	float CenterHeight(uint16_t id) const;
+	// t3dGetScaledActorBoundingRadius of a spawn's model, or ours for our own id; -1 with no model.
+	float BoundingRadius(uint16_t id) const;
 	// Things on the ground (OP_GroundSpawn's EQItemList): CreateActor's "<tag>_ACTORDEF", set on
 	// the floor under where the zone put it (GetFloorHeight from 1 over it, then 0.5 up), turned
 	// to its heading. Server coordinates. Drawn from when the zone's models are in.
@@ -352,6 +359,7 @@ private:
 	std::string m_action; // PlayAnimation's, while it plays
 	bool m_sitting = false, m_standing_up = false;
 	float m_eye_drop = 0; // how far below standing our head is now (sitting down, getting up)
+	bool m_dead = false;
 
 	// Other spawns: models shared by everyone who looks the same, built once they're in range.
 	struct SpawnView
