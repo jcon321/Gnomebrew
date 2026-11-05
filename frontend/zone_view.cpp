@@ -400,6 +400,9 @@ void ZoneView::PlayAnimation(int id)
 	m_action = code;
 	m_animation = code;
 	m_animation_ms = 0;
+	// CDisplay_PlayAnimationSound, as PlayAnimationTrack2 starts it (a swing's whoosh, a kick).
+	if (m_sound)
+		m_my_sound.Animation(*m_sound, MyActor(), id, m_last_move_ms);
 }
 
 void ZoneView::ChooseAnimation(float ms)
@@ -1235,7 +1238,7 @@ void ZoneView::StartSpellEffect(const SpellEffects::Request &request)
 	m_spell_effects.Start(request, [this](uint16_t id, SpellEffects::Actor &actor) { return FindActor(id, actor); });
 }
 
-void ZoneView::PlaySpellSound(const SpellEffects::Request &request, uint16_t on, int slot)
+bool ZoneView::PlayActorSound(uint16_t on, int slot)
 {
 	// EQPlayer::PlaySoundA from the spawn's center: ours on our own channel.
 	ActorSound::Actor actor;
@@ -1244,12 +1247,19 @@ void ZoneView::PlaySpellSound(const SpellEffects::Request &request, uint16_t on,
 	else {
 		auto it = m_actors.find(on);
 		if (it == m_actors.end())
-			return;
+			return false;
 		actor.height = it->second.size;
 		actor.center = it->second.Feet() + render::Vec3{0, 0, it->second.center_height};
 	}
 	if (m_sound)
 		m_sound->PlayActorSound(slot, {actor.center.x, actor.center.y, actor.center.z}, actor.height, actor.ours);
+	return true;
+}
+
+void ZoneView::PlaySpellSound(const SpellEffects::Request &request, uint16_t on, int slot)
+{
+	if (!PlayActorSound(on, slot))
+		return;
 	if (m_spell_sounds.size() >= 8)
 		m_spell_sounds.erase(m_spell_sounds.begin());
 	m_spell_sounds.push_back({m_spell_effects.Now(), slot, request.spell, request.stage, on});

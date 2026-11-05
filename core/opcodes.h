@@ -91,7 +91,12 @@ namespace ZoneOp
 	constexpr uint16_t Emote = 0x4015;
 	constexpr uint16_t RandomReq = 0x41e7;   // {u32 low, u32 high}: /random
 	constexpr uint16_t RandomReply = 0x4016; // RandomReply_Struct {u32 low, u32 high, u32 result, char name[64]}
+	// Death_Struct (20 bytes): {u16 spawn, u16 killer, u16 corpse, u8 level, u8, i16 spell @8, u8 attack
+	// skill @10, u8, i32 damage @12, u8 is_pc, u8[3]}: CEverQuest::ReportDeath
 	constexpr uint16_t Death = 0x404a;
+	// {u32 on}: our auto attack (EverQuestinfo's __Attack) changed; DoPassageOfTime sends both, 2 first.
+	constexpr uint16_t AutoAttack = 0x4151;
+	constexpr uint16_t AutoAttack2 = 0x4161;
 	constexpr uint16_t Animation = 0x40a1;
 	constexpr uint16_t WearChange = 0x4092;
 	constexpr uint16_t LevelUpdate = 0x4198;
@@ -261,6 +266,8 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::RandomReq, "OP_RandomReq"},
 	{ZoneOp::RandomReply, "OP_RandomReply"},
 	{ZoneOp::Death, "OP_Death"},
+	{ZoneOp::AutoAttack, "OP_AutoAttack"},
+	{ZoneOp::AutoAttack2, "OP_AutoAttack2"},
 	{ZoneOp::Animation, "OP_Animation"},
 	{ZoneOp::WearChange, "OP_WearChange"},
 	{ZoneOp::LevelUpdate, "OP_LevelUpdate"},

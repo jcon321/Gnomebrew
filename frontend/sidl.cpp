@@ -1210,6 +1210,11 @@ void SidlWindow::Draw(Canvas &canvas, TextRenderer &text, SidlTextures &textures
 		return;
 	Rect clip = canvas.Clip();
 	DrawControl(0, canvas, text, textures, now_ms, clip);
+	const Control &root = m_controls.front();
+	if (root.lasso != 0 && root.visible && !m_minimized) {
+		canvas.SetClip(Intersect(root.client, clip));
+		canvas.Frame(root.client, root.lasso);
+	}
 	// A combo box's list is a window of its own over everything (HandleComboWindowClick's
 	// BringWndToTop).
 	int open = OpenCombo();

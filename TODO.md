@@ -47,8 +47,8 @@ no rules of its own.
      change into others there) and the inventory with it; Done, Escape, the close box and walking
      more than 20 away (checked every 500 ms) close it with "Come back soon!", the inventory if it
      opened it, the quantity window if it was the bank's, and every bag window. Alt shows every
-     slot's tooltip. Still to do: Activate's MakeMeVisible, auto attack off (none yet) and
-     SetMusicSelection(3); Deactivate's SavePC.
+     slot's tooltip. Still to do: Activate's MakeMeVisible and SetMusicSelection(3);
+     Deactivate's SavePC.
    - Merchant window: done (`frontend/merchant_window.*`, eqgame's CMerchantWnd): the right button
      on a merchant asks for its shop (OP_ShopRequest), the answer opens it with its items
      (OP_ShopInventoryPacket, OP_ShopDelItem) in the scrolling slots, a
@@ -58,8 +58,7 @@ no rules of its own.
      the close box, Escape and walking away (OP_ShopEnd). Checked live against the server for
      opening, the prices and the welcome; buying and selling only through their refusals (the
      test character has no coins or anything worth selling). Still to do: a Bazaar trader's
-     (Type 0: OP_TraderShop, OP_TraderBuy), MakeMeVisible, auto attack off on the request and
-     SetMusicSelection(6), and the item display of a merchant's item (the slots' alt+click goes
+     (Type 0: OP_TraderShop, OP_TraderBuy), MakeMeVisible and SetMusicSelection(6), and the item display of a merchant's item (the slots' alt+click goes
      through the selection now).
    - Loot window: done (`frontend/loot_window.*`, eqgame's CLootWnd): the right button on a corpse
      in reach asks to loot it (CEverQuest_LootCorpse, OP_LootRequest); OP_MoneyOnCorpse's answer
@@ -68,7 +67,7 @@ no rules of its own.
      the inventory (OP_LootItem, a NO DROP item from another's corpse asking first), the slots
      locked until the zone answers; Done, the close box, Escape and walking away end it
      (OP_EndLootRequest), and the zone's answer, or the corpse gone, closes it. Not checked
-     against a server yet (no corpse to loot: there's no auto attack). /lootnodrop sets whether a
+     against a server yet (the test character hasn't killed anything of its own to loot). /lootnodrop sets whether a
      NO DROP item asks first (`LootNoDrop`). Still to do: /autosplit's "as your split" (12071), the
      items in a corpse's bags (shown only to GMs and on player corpses past the eighth), the
      PvP item (Loot_Request_Type 5), MakeMeVisible, and the dead or mounted checks.
@@ -82,7 +81,7 @@ no rules of its own.
      Give (OP_TradeAcceptClick), OP_FinishTrade closing it, Cancel, Escape, the close box and
      walking off cancelling (OP_CancelTrade). The give window checked through the replay (an
      NPC's answers as the zone gives them); a trade with another player not yet. Still to do:
-     /trade's setting (DAT_00798ad8: nobody 'b', group only 'c'), auto attack's "busy", the
+     /trade's setting (DAT_00798ad8: nobody 'b', group only 'c'), the
      bags in a trade window (BagTrade1..16 open, but their contents aren't checked), OP_TradeReset,
      and Deactivate's second OP_CancelTrade and "You have cancelled the trade." after the zone's
      cancel (ours leaves them out).
@@ -145,10 +144,9 @@ no rules of its own.
        the spell in the item display (CItemDisplayWnd::SetSpell @00425957);
      - spell hot buttons: a gem held onto the cursor (CCursorAttachment type 9) and the book button
        (type 5); a spell on the cursor clicked on a hot button;
-     - what the book doesn't do yet: on a mount, turning auto attack off as it opens ("Auto
-       attack is off."; there's no auto attack yet), a bard's AA 0x7b doubling memorizing, being
-       hit closing it (msg_successful_hit), the spell bar locking other things while it waits
-       (DAT_007d0254 also blocks casting);
+     - what the book doesn't do yet: on a mount (Activate's own branch), a bard's AA 0x7b doubling
+       memorizing, the spell bar locking other things while it waits (DAT_007d0254 also blocks
+       casting);
      - spellsets and memorizing a whole page are later eras (the default UI's "Mem. This Page"
        buttons are zero-sized and eqgame ignores them).
    - Our own stance: /sit, /stand and the Actions window's Sit and Stand (EQPlayer::ChangeStance),
@@ -158,8 +156,7 @@ no rules of its own.
      the book) and we move off at once, getting up playing out all the same. In first person the
      view goes down and up with our head. Still to do: sitting's idle and fidgets (P07, the sitting
      fidget), kneeling (105), feign death,
-     meditating's regen, being hit standing us up (msg_successful_hit), and the zone putting us in
-     a stance (stunned, knocked out).
+     meditating's regen, and the zone putting us in a stance (stunned, knocked out).
    - Hotbuttons: the Actions window's buttons and socials go on them and come off by holding
      them, and they're kept in `<char>_<server>.ini` (`frontend/game_windows.*`). Still to do:
      items, spells, pet commands and AA abilities on them, whether an ability's ready (checked
@@ -188,9 +185,8 @@ no rules of its own.
    (OP_RandomReq and OP_RandomReply), /lootnodrop, /fastdrop, and the 88 socials
    (CEverQuest_send_social: OP_Emote, OP_Animation and our echo). Still to do:
    - /afk: answering tells with its message, and the chat server's "/afk on silent";
-   - /assist: AttackOnAssist turning auto attack on (there's no auto attack yet), and
-     allowslashcommand's other checks (/safelock, stance 0x66, the windows that block commands:
-     IsNoSlashWnd), also wanted by the other commands that call it;
+   - allowslashcommand's other checks (/safelock's eqstr 12095, the windows that block commands:
+     IsNoSlashWnd and eqstr 12084), for /assist, /attack and the other commands that call it;
    - /played: the alarm's time left (no alarm window yet);
    - /consider: under the deity PvP rules (pvpcon 4) NotOnSameDeity lets a GM off, read here as
      our `gm` flag; EQPlayer+0x109 isn't checked to be IsGameMaster.
@@ -218,8 +214,7 @@ no rules of its own.
    `default_key_bindings` with W A S D, `ProcessMovementKeys`, `ProcessKeyUp`, ExecuteCmd's
    typed-character rule, `[KeyMaps]` in my-client.ini as `_writeKeyMapToIni` writes eqclient.ini's;
    `InputEvent::scan` carries the DirectInput code). Still to do:
-   - ExecuteCmd's commands not done yet (the page's "No"): Toggle mouse look, Autoattack
-     (no auto attack yet), Duck, Use centerscreen, Center view, Zoom in and out held
+   - ExecuteCmd's commands not done yet (the page's "No"): Toggle mouse look, Duck, Use centerscreen, Center view, Zoom in and out held
      (ProcessControls' camera distance at 2 units a frame unit), Toggle UI Display (ScreenMode 3),
      Target party member 1..5 and a second press of Target myself taking the pet
      (setTargetBasedOnIndex), Target nearest PC and NPC (CDisplay::GetNearestPlayerInView, 500
@@ -258,6 +253,37 @@ no rules of its own.
       `ZoneDoors` doesn't do.
     - The face picker in the zone (`/face`: CFacePick's Accept sends 0x4225 with the face, hair and
       beard, and says eqstr 0x2efc).
+24. **Auto attack and melee.** Done (`frontend/combat.*`, `FrontEnd::ToggleAutoAttack`): auto attack
+    (`__Attack`) goes on and off by the Autoattack key, the Actions window's Attack button
+    (CombatPageWndNotification) and /attack (ExecuteCmd 8's checks and eqstr 12368..12371), off
+    sitting or otherwise not standing (DoPassageOfTime), opening a bank or asking a merchant (1466),
+    entering a zone, our target dying or going and our death; on with AttackOnAssist; DoPassageOfTime
+    sends OP_AutoAttack2 and OP_AutoAttack as it changes. The combat music follows it
+    (/combatmusic, `CombatMusic`); the player window's red lasso blinks (UpdatePlayerWindowState); a
+    trade asked meanwhile is busy (msg_req_trade). The zone's swings of ours play on our model with
+    their sound. OP_Damage that isn't a spell's: ReportSuccessfulHit's hits, misses and defences,
+    the skill's or race's verb, the environment's damage, their colors, the victim's D02 (or the
+    environment's animation) and get-hit, flesh-hit and block sounds, the attacker becoming our
+    target, a hit on us closing the book, standing us up and taking its HP at once. OP_Death:
+    ReportDeath's killing blow and death lines, closing a dead partner's trade, merchant or bank.
+    Checked live against a sewer rat in South Qeynos (`eqclient --attack`) and through its replay.
+    Still to do:
+    - range attacks: the Range button and the hot button's (DoAttack 0xb: HandleAmmo, DoMissileHit,
+      OP 0x4147, the ammo used up), throwing (0xe), and ProcessControls' `__RangeAttackReady`
+      auto fire; DoAttack's own checks (stunned eqstr 0x7d, standing, CanIHitTarget, the fatigue)
+      for them;
+    - the combat abilities: the combat page's skill buttons and /doability (EQ_Character::UseSkill:
+      kick, bash, backstab, taunt..., OP_CombatAbility), SelectSkillForCombatBtn;
+    - /filter (DAT_00798c0c..c18: our misses, others' misses and hits, misses on us; DAT_00799670
+      damage shields; CEverQuest_send_update_filters) and the hit modes (CChatManager's MyHitsMode
+      and the rest: eqstr 2130's short form, the number only); fixed at eqgame's defaults;
+    - IWasHit on us: the push of the hit's force along its heading and pitch, and breaking
+      invisibility, hide and sneak (SPA 12, 28, 29 buffs taken off);
+    - the blood of our crushing, slashing, piercing, backstab and bash hits (SpurtBloodOnDag);
+    - ReportDeath's duel ending (eqstr 12100, 12101), a group member's HP, the tracking window,
+      and our own death (ReportDeath_ClearOutRentables' windows, the death music, EQPlayer::IDied);
+    - being hit on a mount (DeacSpellScreen, ChangeStance), and the guildmaster window turning auto
+      attack off (pinstActiveGMaster) once there is one.
 
 ## Rendering / presentation
 
@@ -298,8 +324,7 @@ no rules of its own.
     the server sends `IT68`), the static kind 9 missiles' checks on who walks into them (MoveMissile's
     sentinel and trap spells), our own archery and throwing making their missile (DoAttack), the options'
     spell particle density and opacity (fixed at eqgame's 1 and 1), the chat filters for PC and NPC
-    spells and bard songs, melee's OP_Damage (hit messages, the D02 hit and its sounds), being hit
-    standing us up, and OP 0x4265 (destroy a cast's emitters; this server never sends it).
+    spells and bard songs, and OP 0x4265 (destroy a cast's emitters; this server never sends it).
 13. **The other camera modes F9 cycles through:** overhead and the two user-set cameras, plus zoom
     and field of view.
 14. **Graphics options:** fullscreen or windowed, resolution changes, gamma, anisotropic filtering,

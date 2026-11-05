@@ -381,6 +381,11 @@ public:
 			CastBegan,      // cast: OP_BeginCast
 			SpellAction,    // cast: OP_Action
 			Damaged,        // cast: OP_Damage
+			// cast: OP_Death (CEverQuest::ReportDeath): target the spawn, caster the killer (0 none), type
+			// the attack skill, spell and damage the killing blow's; text: the spawn's name before it
+			// became its corpse. A SpawnChanged follows for the corpse.
+			Died,
+			OwnAnimation,   // value: OP_Animation for us (our own swings, as the zone has them), played once
 			MissileLaunched, // missile: OP_Projectile
 			BuffChanged,    // OP_Buff: buff, id its slot, value how (ZoneOp::Buff)
 			Considered,     // consider: OP_Consider's answer
@@ -493,6 +498,9 @@ public:
 	// OP_Animation for us (Animation_Struct {u16 spawn, pad, i32 animation, float 1}): a social's,
 	// played for everyone near.
 	bool SendAnimation(int animation);
+	// DoPassageOfTime: our auto attack went on or off (EverQuestinfo's __Attack): OP_AutoAttack2 and
+	// OP_AutoAttack, {u32 on} each.
+	bool SendAutoAttack(bool on);
 	// /random: OP_RandomReq {low, high}. Everyone near, us too, hears the roll (OP_RandomReply's
 	// two lines as Message events).
 	bool Random(uint32_t low, uint32_t high);
@@ -592,6 +600,9 @@ public:
 	// Our hit points as OP_HPUpdate gives them: `hp` leaves out what worn items add (the client
 	// adds that), `max_hp` is the total. Both 0 until the zone has sent them.
 	int32_t BaseHp() const { return m_hp; }
+	// EQ_Character::ModifyCurHP: a hit on us takes its damage at once (msg_successful_hit); the
+	// zone's OP_HPUpdate sets it again.
+	void ModifyHp(int32_t delta) { m_hp += delta; }
 	int32_t MaxHp() const { return m_max_hp; }
 	// The items we have (OP_CharInventory, then each OP_ItemPacket), by slot.
 	const std::map<int16_t, ZoneItem> &Items() const { return m_items; }

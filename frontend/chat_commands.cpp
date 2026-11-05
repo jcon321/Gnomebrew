@@ -16,7 +16,7 @@ namespace
 	{
 		None, Say, Tell, Group, Shout, Auction, Ooc, Guild, Reply, Emote, Hail, Location, Target, Camp,
 		ClearChat, ShowNames, Sit, Stand, Book, Cast, Consider, Played, Motd, Time, Afk, Anonymous, Assist,
-		Random, LootNoDrop, FastDrop, Social,
+		Random, LootNoDrop, FastDrop, Social, Attack, CombatMusic,
 	};
 
 	struct CommandEntry
@@ -94,7 +94,7 @@ namespace
 		{"/lfg", 0, Command::None}, {"/approval", 4, Command::None}, {"/sit", 0, Command::Sit},
 		{"/stand", 0, Command::Stand}, {"/book", 0, Command::Book}, {"/cast", 0, Command::Cast},
 		{"/doability", 0, Command::None}, {"/whotarget", 0, Command::None}, {"/language", 0, Command::None},
-		{"/target", 0, Command::Target}, {"/camp", 0, Command::Camp}, {"/attack", 0, Command::None},
+		{"/target", 0, Command::Target}, {"/camp", 0, Command::Camp}, {"/attack", 0, Command::Attack},
 		{"/invite", 0, Command::None}, {"/disband", 0, Command::None}, {"/note", 0, Command::None},
 		{"/wincolor", 0, Command::None}, {"/usercolor", 0, Command::None}, {"/resetwindows", 0, Command::None},
 		{"/mcicontrol", 0, Command::None}, {"/popmail", 0, Command::None}, {"/audiodebug", 0, Command::None},
@@ -102,7 +102,7 @@ namespace
 		{"/reversesound", 0, Command::None}, {"/emotezone", 4, Command::None}, {"/invwinlabels", 0, Command::None},
 		{"/tracksort", 0, Command::None}, {"/trackfilter", 0, Command::None}, {"/mousespeed", 0, Command::None},
 		{"/gems", 0, Command::None}, {"/inspect", 0, Command::None}, {"/serverfilter", 0, Command::None},
-		{"/showspelleffects", 0, Command::None}, {"/combatmusic", 0, Command::None}, {"/mixahead", 0, Command::None},
+		{"/showspelleffects", 0, Command::None}, {"/combatmusic", 0, Command::CombatMusic}, {"/mixahead", 0, Command::None},
 		{"/guildmotd", 0, Command::None}, {"/charinfo", 0, Command::None}, {"/safelock", 0, Command::None},
 		{"/alternateadv", 0, Command::None}, {"/targetgroupbuff", 0, Command::None}, {"/tgb", 0, Command::None},
 		{"/hotbutton", 0, Command::None}, {"/particledensity", 0, Command::None}, {"/facepick", 0, Command::None},
@@ -339,6 +339,19 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 		return FormatEqString(m_ui.eqstr, id, fallback, args);
 	};
 	const ZoneProfile &me = m_zone.Profile();
+	// allowslashcommand (@004f3cbb): not while casting (but a bard's songs), nor while we've no control
+	// of ourselves (stance 102). (/safelock and the windows that block commands aren't ours yet.)
+	auto allow = [&] {
+		uint32_t why = 0;
+		const char *text = "";
+		if (m_zone.Self().stance == 102)
+			why = 12368, text = "You do not have control of yourself right now.";
+		else if (m_spell_cast.Casting() && me.class_id != 8)
+			why = 12938, text = "You can't use that command while casting...";
+		if (why != 0)
+			ChatOut(format(why, text, {}), ChatType::Default);
+		return why == 0;
+	};
 	const auto &spawns = m_zone.Spawns();
 	auto target = spawns.find(Target());
 	bool npc_target = target != spawns.end() && target->second.npc == 1;
@@ -542,6 +555,31 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 		ChatOut(format(12389, "Earth Time: %1", {CTime(std::time(nullptr))}), ChatType::Default);
 		break;
 	}
+	case Command::Attack:
+		// /attack (@004fd3da): off, on, or toggled; nothing said (DoPassageOfTime turns it off again
+		// with "Auto attack is off." unless we're standing).
+		if (!allow())
+			break;
+		if (MatchesPrefix(args, format(12946, "off", {}), 3))
+			SetAutoAttack(false);
+		else if (MatchesPrefix(args, format(12947, "on", {}), 2))
+			SetAutoAttack(true);
+		else
+			SetAutoAttack(!m_attack);
+		break;
+	case Command::CombatMusic:
+		// /combatmusic (@004fa035): with nothing after it, the format; "off" or anything else, set
+		// (kept as CombatMusic). Either way, the setting said.
+		if (args.empty())
+			ChatOut(format(7523, "FORMAT: /combatmusic <ON | OFF> (default is ON)", {}), ChatType::Default);
+		else {
+			m_config.combat_music = Lower(args) != Lower(format(12946, "off", {}));
+			if (m_attack)
+				SetAutoAttack(true); // the music follows
+		}
+		ChatOut(m_config.combat_music ? format(7524, "Combat music is now ON", {}) : format(7525, "Combat music is now OFF", {}),
+			ChatType::Default);
+		break;
 	case Command::Afk: {
 		// /afk (@004fb489): off, on with a message to answer tells with, or toggled. The zone hears
 		// SpawnAppearance 24 (the chat server's "/afk on silent" isn't ours).
@@ -588,10 +626,8 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 		// songs). Our target's target, or the nearest one whose name starts with what's typed; "on"
 		// and "off" set AttackOnAssist (and are still looked up as names). The zone answers with
 		// their target (Assisted).
-		if (m_spell_cast.Casting() && me.class_id != 8) {
-			ChatOut(format(12938, "You can't use that command while casting...", {}), ChatType::Default);
+		if (!allow())
 			break;
-		}
 		uint16_t id = 0;
 		if (args.empty()) {
 			if (Target() == 0) {

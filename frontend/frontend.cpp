@@ -65,6 +65,7 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 	m_session.SetLogger([this](const std::string &line) { Log(line); });
 	m_world.SetLogger([this](const std::string &line) { Log(line); });
 	m_zone.SetLogger([this](const std::string &line) { Log(line); });
+	m_combat.SetStrings(m_ui.eqstr);
 	m_zone.SetStringTable(m_ui.eqstr);
 	m_zone.SetSpellFile(m_ui.spells);
 	m_zone.SetRecordDir(config.record_dir);
@@ -817,11 +818,18 @@ void FrontEnd::Update(uint64_t now_ms)
 		m_buffs.Frame(now_ms);
 		if (m_zone_view)
 			m_zone_view->SetSpeedModifier(m_buffs.SpeedModifier(m_zone.Self().run_speed));
+		// DoPassageOfTime: auto attack goes off once we're not standing (ExecuteCmd 8), and the zone's
+		// told whenever it's changed.
+		if (m_attack && m_zone.Self().stance != 100)
+			ToggleAutoAttack();
+		if (m_attack != m_attack_sent && m_zone.GetState() == ZoneSession::State::InZone)
+			m_attack_sent = m_zone.SendAutoAttack(m_attack) ? m_attack : m_attack_sent;
 		// DoPassageOfTime: the social going's next line.
 		std::string social_line = SocialStep(m_window_state, now_ms);
 		if (!social_line.empty())
 			InterpretCommand(social_line);
 		m_game_values.running = m_run;
+		m_game_values.attacking = m_attack;
 		m_game_values.now_ms = now_ms;
 		if (m_zone_view)
 			m_game_values.heading = m_zone_view->Movement().heading;
@@ -1961,7 +1969,8 @@ void FrontEnd::BuildZoneWindows()
 	trade_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
 	trade_host.set_target = [this](uint16_t id) { m_game_values.target = id; };
 	trade_host.height = [this](uint16_t id) { return m_zone_view ? m_zone_view->CenterHeight(id) : 0.0f; };
-	trade_host.ok_to_transact = [this] { return IsOkToTransact(); };
+	// msg_req_trade: busy too while auto attack's on.
+	trade_host.ok_to_transact = [this] { return IsOkToTransact() && !m_attack; };
 	m_trade.Attach(m_windows, m_zone, m_window_state, m_game_values, std::move(trade_host));
 	GroundItems::Host ground_host;
 	ground_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
@@ -2140,6 +2149,9 @@ void FrontEnd::ActionsClick(const std::string &control)
 		m_run = control == "AMP_RunButton";
 		AddZoneLog(m_run ? "You are now running." : "You are now walking.", ZoneGrey);
 	}
+	// The combat page's Attack button (CombatPageWndNotification: ExecuteCmd 8).
+	else if (control == "ACP_MeleeAttackButton")
+		ToggleAutoAttack();
 }
 
 void FrontEnd::AddZoneLog(const std::string &text, uint32_t color)
@@ -2238,11 +2250,14 @@ void FrontEnd::RightClickedOnPlayer(uint16_t spawn)
 		return;
 	constexpr int Banker = 16, Merchant = 32;
 	if (who.npc < 2 && who.class_id == Merchant && m_zone.SpawnDistance(spawn) <= 20) {
+		AutoAttackOff(1466); // "Auto attack off."
 		m_merchant.Request(spawn);
 		return;
 	}
 	if (who.npc < 2 && who.class_id == Banker && m_zone.SpawnDistance(spawn) <= 20) {
 		m_bank.Activate(spawn);
+		if (m_bank.Active()) // CBankWnd::Activate, after the banker's welcome
+			AutoAttackOff(1466);
 		return;
 	}
 	// Anything else: _consider with nothing typed, which considers our target (not who was clicked).
@@ -2257,6 +2272,93 @@ void FrontEnd::Sit()
 		ChangeStance(110);
 	else
 		ChangeStance(100);
+}
+
+void FrontEnd::SetAutoAttack(bool on)
+{
+	m_attack = on;
+	if (m_sound)
+		m_sound->SetMusicSelection(audio::EqSound::Combat, on && m_config.combat_music);
+}
+
+void FrontEnd::ToggleAutoAttack()
+{
+	if (m_screen != Screen::Zone)
+		return;
+	if (m_spell_book.Activated() && !m_attack) {
+		ChatOut(EqString(9027, "You can't attack with your spell book open."), ChatType::Red);
+		return;
+	}
+	if (m_merchant.Active() || m_bank.Active())
+		return; // pinstActiveMerchant, pinstActiveBanker (and the guildmaster's, when there's one)
+	uint8_t stance = m_zone.Self().stance;
+	if (stance == 100 || m_attack) {
+		SetAutoAttack(!m_attack);
+		ChatOut(m_attack ? EqString(12370, "Auto attack is on.") : EqString(12371, "Auto attack is off."), ChatType::Red);
+	}
+	else if (stance == 102)
+		ChatOut(EqString(12368, "You do not have control of yourself right now."), ChatType::Red);
+	else
+		ChatOut(EqString(12369, "You must be standing to attack!"), ChatType::Red);
+}
+
+void FrontEnd::AutoAttackOff(uint32_t said)
+{
+	if (!m_attack)
+		return;
+	SetAutoAttack(false);
+	ChatOut(EqString(said, said == 1466 ? "Auto attack off." : "Auto attack is off."), ChatType::Red);
+}
+
+void FrontEnd::ApplyCombat(const Combat::Report &report)
+{
+	for (const Combat::Line &line : report.lines)
+		ChatOut(line.text, line.type);
+	if (report.target != 0 && m_game_values.target == 0)
+		SetTarget(report.target);
+	if (report.my_damage != 0)
+		m_zone.ModifyHp(-report.my_damage); // EQ_Character::ModifyCurHP
+	if (report.close_book && m_spell_book.Activated())
+		m_spell_book.Deactivate();
+	if (report.hurt_me) {
+		// Hit: the book closes, and sitting or kneeling we stand up.
+		if (m_spell_book.Activated())
+			m_spell_book.Deactivate();
+		uint8_t stance = m_zone.Self().stance;
+		if (stance == 110 || stance == 105)
+			ChangeStance(100);
+	}
+	if (report.animation >= 0 && report.victim != 0) {
+		if (report.victim != m_zone.MySpawnId())
+			m_zone.PlayAnimation(report.victim, report.animation);
+		else if (m_zone_view)
+			m_zone_view->PlayAnimation(report.animation);
+	}
+	if (m_zone_view)
+		for (const Combat::Sound &sound : report.sounds)
+			m_zone_view->PlayActorSound(sound.spawn, sound.wave);
+}
+
+void FrontEnd::SpellDamaged(const ZoneCast &cast)
+{
+	const SpellInfo *spell = m_ui.spells ? m_ui.spells->Find(cast.spell) : nullptr;
+	if (!spell)
+		return;
+	uint16_t me = m_zone.MySpawnId();
+	Combat::Report report;
+	if (cast.target == me && cast.caster != me) {
+		auto it = m_zone.Spawns().find(cast.caster);
+		if (it != m_zone.Spawns().end() && m_game_values.target == 0 && it->second.body_type < 65 &&
+			spell->good_effect == 0)
+			report.target = cast.caster;
+		if (cast.damage > 0)
+			report.close_book = true;
+		else if (cast.damage < 0)
+			report.my_damage = cast.damage; // ModifyCurHP of the negative: it gives
+	}
+	if (spell->good_effect == 0)
+		m_combat.SpellHurt(cast.target, cast.damage, m_zone, report);
+	ApplyCombat(report);
 }
 
 void FrontEnd::StartCamp()
@@ -2274,6 +2376,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 		switch (event.type) {
 		case Type::ZoneInfo: {
 			AddZoneLog("You have entered " + m_zone.Info().long_name + ".", ZoneYellow);
+			SetAutoAttack(false); // CEverQuest_EnterZone
 			if (!m_windows_built)
 				BuildZoneWindows();
 			m_buffs.Reset(m_now_ms); // the profile's, which came first
@@ -2422,6 +2525,13 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			[[fallthrough]];
 		case Type::SpellAction:
 		case Type::Damaged: {
+			if (event.type == Type::Damaged && event.cast.type != 231) {
+				// Melee and the environment (msg_successful_hit).
+				ApplyCombat(m_combat.Damaged(event.cast, m_zone, m_game_values.target, m_game_values.CurHp()));
+				break;
+			}
+			if (event.type == Type::Damaged)
+				SpellDamaged(event.cast);
 			m_buffs.ZoneEvent(event); // IWasHit: one landing on us
 			std::vector<SpellCasting::Line> lines;
 			std::vector<SpellCasting::Animation> animations;
@@ -2440,6 +2550,38 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 					m_zone_view->StartSpellEffect(effect);
 			break;
 		}
+		case Type::Died: {
+			// CEverQuest::ReportDeath: whoever it was with goes (the trade, the merchant, the bank),
+			// our target with auto attack, then the killing blow and the death are told.
+			uint16_t victim = event.cast.target;
+			if (m_trade.Active() && m_trade.Target() == victim)
+				m_trade.Deactivate();
+			if (victim == m_merchant.Merchant())
+				m_merchant.Deactivate();
+			if (victim == m_bank.Banker())
+				m_bank.Deactivate(false);
+			if (victim == m_game_values.target) {
+				SetTarget(0);
+				SetAutoAttack(false);
+			}
+			if (victim == m_zone.MySpawnId())
+				SetAutoAttack(false); // CEverQuest_ReportDeath_ClearOutRentables
+			Combat::Report report = m_combat.Died(event, m_zone, m_game_values.target, m_game_values.CurHp());
+			if (event.cast.type == 231) {
+				std::vector<SpellCasting::Line> lines;
+				std::vector<SpellCasting::Animation> animations;
+				SpellCasting(m_ui.spells, m_ui.eqstr).DeathBlow(event.cast, report.told, m_zone, lines, animations);
+				for (const SpellCasting::Line &line : lines)
+					ChatOut(line.text, line.type);
+			}
+			ApplyCombat(report);
+			break;
+		}
+		case Type::OwnAnimation:
+			// The zone's swing of ours (Mob::DoAnim reaches us too).
+			if (m_zone_view)
+				m_zone_view->PlayAnimation(event.value);
+			break;
 		case Type::MissileLaunched: {
 			// EQMissile::EQMissile: the caster's attack animation as it lets go, then the missile.
 			int animation = Missiles::CasterAnimation(event.missile);
@@ -2465,9 +2607,12 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			break;
 		case Type::Assisted:
 			// HandleWorldMessage's 0x4200: their target is ours (DoPassageOfTime tells the zone), a
-			// spawn we know or us. (With AttackOnAssist, auto attack would go on.)
-			if (event.id == m_zone.MySpawnId() || m_zone.Spawns().count(event.id))
+			// spawn we know or us; with AttackOnAssist, auto attack goes on.
+			if (event.id == m_zone.MySpawnId() || m_zone.Spawns().count(event.id)) {
 				SetTarget(event.id);
+				if (m_config.attack_on_assist)
+					SetAutoAttack(true);
+			}
 			break;
 		case Type::TargetChanged:
 			// The zone's answer to /target (or its refusal of a click).
@@ -2475,8 +2620,10 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			m_debug.SelectTarget(event.id);
 			break;
 		case Type::SpawnRemoved:
-			if (event.id == m_game_values.target)
+			if (event.id == m_game_values.target) {
+				SetAutoAttack(false);
 				m_game_values.target = 0;
+			}
 			// HandleWorldMessage's despawn: the merchant, banker or corpse we're dealing with goes.
 			if (event.id == m_merchant.Merchant())
 				m_merchant.Deactivate();
@@ -2671,6 +2818,9 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 	case KeyMap::PitchDown:
 		if (m_zone_view)
 			m_zone_view->Pitch(cmd == KeyMap::PitchUp ? 5.0f : -5.0f);
+		break;
+	case KeyMap::AutoAttack:
+		ToggleAutoAttack();
 		break;
 	case KeyMap::Consider:
 		InterpretCommand("/consider");

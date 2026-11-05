@@ -52,6 +52,11 @@ public:
 	void Handle(const ZoneSession::Event &event, const ZoneSession &zone, std::vector<Line> &lines,
 		std::vector<Animation> &animations, std::vector<SpellEffects::Request> &effects) const;
 
+	// ReportDeath's killing blow by a spell (an OP_Death of type 231): told as an OP_Damage is, but
+	// by `told` (ReportDeath's distance) rather than msg_successful_hit's.
+	void DeathBlow(const ZoneCast &cast, bool told, const ZoneSession &zone, std::vector<Line> &lines,
+		std::vector<Animation> &animations) const;
+
 	// EQ_Character_IsRoguePoison (@004c4753): our own casting of these says nothing.
 	static bool IsRoguePoison(int spell);
 
@@ -60,8 +65,9 @@ private:
 		std::vector<Animation> &animations, std::vector<SpellEffects::Request> &effects) const;
 	void Action(const ZoneCast &cast, const ZoneSession &zone, std::vector<Animation> &animations,
 		std::vector<SpellEffects::Request> &effects) const;
+	// told: -1 msg_successful_hit's rule, else whether it's told.
 	void Damaged(const ZoneCast &cast, const ZoneSession &zone, std::vector<Line> &lines,
-		std::vector<Animation> &animations) const;
+		std::vector<Animation> &animations, int told = -1) const;
 	std::string Format(uint32_t id, const std::string &fallback, const std::vector<std::string> &args) const;
 
 	const SpellFile *m_spells;

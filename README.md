@@ -142,6 +142,7 @@ LoadOldSkeletons=1
 CharSelectAnimWindow=1
 CharSelectEmotes=0
 AttackOnAssist=0
+CombatMusic=1
 LootNoDrop=0
 FastDrop=0
 
@@ -212,7 +213,9 @@ WeatherSounds=1
   every animation the model has, by name, played by double clicking one. `CharSelectEmotes` picks
   what the character plays now and then: `0` eqgame's own picks for its class (combat moves,
   casting, the fidget), `1` half of them a social's instead (`S01`..`S29`, those its model has).
-- `AttackOnAssist` is `/assist on|off`, kept as it changes.
+- `AttackOnAssist` is `/assist on|off`, kept as it changes. `CombatMusic` is `/combatmusic on|off`
+  (eqclient.ini's `[Defaults] CombatMusic`, on unless set otherwise): whether auto attack plays the
+  combat music. Kept as it changes.
 - `LootNoDrop` is `/lootnodrop`: whether looting a NO DROP item asks first, `0` always, `1` only
   for what you can't use, `2` never (eqgame's `DAT_00799674`, kept in its `eqOptions2.opt`).
   `FastDrop` is `/fastdrop`: `1` drops an item clicked onto the ground at once, `0` asks first,
@@ -284,7 +287,8 @@ eqgame's `OP_MoveItem`.
   So far: /say (or no slash, or `'`), /tell (/msg, /send), /reply, /gsay, /guildsay, /shout,
   /auction, /ooc, /emote (`:`, /me), /hail, /target, /assist, /consider, /location, /time,
   /played, /motd, /afk, /anonymous, /shownames, /sit, /stand, /book, /cast, /camp, /clearchat,
-  /random, /lootnodrop, /fastdrop and the socials (/smile, /wave and the other 86).
+  /random, /lootnodrop, /fastdrop, /attack, /combatmusic and the socials (/smile, /wave and the
+  other 86).
   The rest say they aren't supported yet; a GM's commands act as if they weren't there for
   anyone else.
 - `/consider` sends `OP_Consider` (`OP_ConsiderCorpse` on a corpse) and prints the answer as
@@ -459,6 +463,9 @@ build/eqclient -u USER -p PASS [options]
                         cursor; N takes N of a stack; "auto" puts the cursor's item away). Repeatable
   --cast GEM[:SPELL]    with --zone: cast gem GEM (1..8; SPELL memorized there first) on ourselves and
                         print the zone's answers and our buffs. Repeatable, 3 s after each cast ends
+  --attack NAME         with --zone: target the nearest NPC whose name starts with NAME, turn auto attack
+                        on and walk at it (facing it, 30 units a second), printing the OP_Damage and
+                        OP_Death packets and our own swings
   --idle SECONDS        without --char, stay at character select this long (default 0)
   --record DIR          with --zone: write each zone session's packets to DIR/<char>-<time>.eqr
   --replay FILE         play a recorded zone session back (no server): stay --zone seconds (default
@@ -495,7 +502,9 @@ snapshot the names over heads (from two distances and in first person) and print
 name says at each `/shownames` level. Along the way it opens a bag (a made-up backpack when the
 character has none) and moves an item in and out, stands by a banker, right clicks it and
 moves an item and coins into the bank, and gives an NPC coins and then an item through the give
-window (the replay answers as the zone does for an NPC), Give once and Cancel once.
+window (the replay answers as the zone does for an NPC), Give once and Cancel once. It also turns
+auto attack on and off with Q, /attack and /sit, printing whether it's on, the last chat line and
+how many frames draw the player window's lasso, and snapshots it on (`q1-auto-attack-lasso`).
 
 ```
 build/scene_preview EQDIR OUT.png --char RACE GENDER CLASS [--face F] [--equip M,M,...] [--velious 0|1] [--camera H] [--frames N] [--size WxH]
@@ -1230,6 +1239,82 @@ details and the nearest spawns at the top left and the radar at the top right.
     (`Beacon::BoltSpell`) at 100. `SpellsNew.eff` has no missile stage for any bolt (only the
     fireworks); `spells.eff`'s bolts name `GENC10`/`GENU00` sprite actors, and the server's comment
     says the model should be `GENC00` or `GENW00`, gequip's blit-sprite actors.
+
+## Combat
+
+- **Auto attack** (`FrontEnd::ToggleAutoAttack`, `SetAutoAttack`): eqgame's `__Attack`
+  (`_EverQuestinfo_SetAutoAttack` @005493b5, which also turns the combat music, track 2, on or off
+  when `/combatmusic` is on). `CEverquest_ExecuteCmd` 8 toggles it: the Autoattack key, the Actions
+  window's Attack button (`CActionsWnd::CombatPageWndNotification`) and its hot button. With the
+  book open and auto attack off it says eqstr 9027; with a merchant or bank up it does nothing;
+  standing (100) or already attacking it toggles and says 12370 "Auto attack is on." or 12371 "Auto
+  attack is off."; otherwise 12368 (stance 102) or 12369 "You must be standing to attack!", all in
+  color 13. `/attack` (@004fd3da) takes `off` (3 letters), `on` (2) or nothing (toggle) and says
+  nothing. `EQ_Character::DoPassageOfTime` runs ExecuteCmd 8 whenever we're attacking and not
+  standing, so sitting, the book sitting us down and a standing jump's crouch all turn it off with
+  12371, and sends `OP_AutoAttack2` (0x4161) then `OP_AutoAttack` (0x4151), `{u32 on}` each, as it
+  changes. It goes off silently entering a zone, when our target dies (ReportDeath) or despawns
+  (HandleWorldMessage), and when we die (`ReportDeath_ClearOutRentables`); with eqstr 1466 "Auto
+  attack off." asking a merchant for its shop or opening a bank (`RightClickedOnPlayer`,
+  `CBankWnd::Activate`). The assist's answer turns it on with AttackOnAssist (the TAKP exe reads
+  Zeal's `_Zeal_attack_on_assist` there). While it's on, a trade asked of us is busy
+  (`msg_req_trade`), and the player window draws a red one-pixel lasso round its client area every
+  other frame (`CPlayerWnd::UpdatePlayerWindowState`, `DrawSelectionLasso`).
+- **Melee is the zone's:** the client only says auto attack's on. EQMacEmu swings on its own
+  attack timers (`Client::Process`: in `CombatRange`, in line of sight and facing the target),
+  sends the attacker's swing as `OP_Animation` to everyone near, the attacker too (`Mob::DoAnim`),
+  and each hit or miss as `OP_Damage` (`Damage_Struct`: target, source, type, spell, damage,
+  force, heading, pitch). The type is `SkillDamageTypes[skill]`: 0 blunt, 1 slashing, 4 hand to
+  hand, 7 archery, 8 backstab, 10 bash, 21 dragon punch, 23 eagle strike and tiger claw, 30 the
+  kicks and intimidation, 36 piercing, 51 throwing; 231 a spell. Our own swing animation comes
+  back to us and plays on our model with its sound (`CDisplay_PlayAnimationSound`).
+- **Hits** (`frontend/combat.*`, `msg_successful_hit` @004e0907 ->
+  `CEverQuest_ReportSuccessfulHit` @005297d2): someone else's hit on someone else is told within 75
+  units of the victim. A hit is "%1 %2 %3 %4" (12162): the attacker ("You", 12185, when it's us),
+  the verb, the victim ("YOU" 12187 on us, "yourself" 12186, someone's own "himself", "herself" or
+  "itself" by gender) and "for %1 points of damage." (12160; 12161 for one). A miss (damage under
+  1) is "%1 try to %2 %3, but %4!" (12158; 12159 "tries" for anyone else), %4 by the damage: -1
+  block, -2 parry, -3 riposte, -4 dodge (12144..12151, "%1 blocks" and so on said of the victim),
+  -5 INVULNERABLE, -6 magical skin (12152..12155), else "miss" or "misses". The verb is singular
+  for us and for misses: by type, 0 and 2 crush, 1 and 3 slash, 7 and 51 hit, 8 backstab, 10 bash,
+  21, 23 and 52 strike, 26, 30, 38 and 71 kick, 36 pierce; anything else, hand to hand included, is
+  the attacker's race's (`CEverQuest_SetDefaultDamageDescByRace` @0052948c: maul, bite, claw,
+  gore, sting, slice, smash, rend, slash, else punch for the player races and hit for the rest;
+  `Combat::RaceVerb` has the table). Colors: `0x109` our hits, `0x10a` hits on us, `0x117`
+  others', `0x10b` our misses, `0x10c` misses of us, `0x118` others'. The line's first letter is
+  made upper case; an NPC's hit on itself isn't told. The new UI prints them through the hit modes
+  (`HandleMyHitsMode` and the rest), whose 0 is the whole line.
+- **The environment's damage** (types 244..253): 244 rotting (5722, 5723), 245 chilled, 246
+  freezing, 247 tormented, 248 burned, 249 thorns, 250 burning (12131..12142), 251 drowning
+  (12128, 12130; suffocating, 12127 and 12129, in zone 171, `DAT_007f9488` set from the profile),
+  252 falling (12118, 12119, with `fall_hit`), 253 a trap, by the packet's spell field: 140 and
+  145..152 crushed (with `fall_hit`), 115 and 116 a saw blade, 120 and 125 a spear, 130 a pendulum,
+  135 a blade, else 12126 (12120 for anyone else). Said only with damage, `0x10a` on us, `0x117`
+  else.
+- **What a hit does:** someone hitting us while we've no target becomes it (body type under 65;
+  for a spell, a detrimental one). A hit with damage on anyone not a corpse plays the victim's
+  animation (13, `D02`; 12 for 244..249, 15 burning and drowning, 14 falls and traps) and one of its
+  race's four get-hit sounds (`SetSounds`' GetHit1..4). A melee hit on a race whose first get-hit
+  wave is 32..89 also plays `FlshHit2` when the victim's hit points (ours, or its level x 30) are
+  under ten times the damage, else `FlshHit1`. A block, parry or riposte plays
+  `CEverQuest_GetSoundEffectForRiposte`: `SwordBlk` when both primaries are blades, `ShldBlk` half
+  the time from a shield in the victim's secondary, else `StaffBlk`; magical skin `StaffBlk`. A hit
+  on us closes the book and stands us up from sitting or kneeling, and someone else's melee takes
+  its damage off our hit points at once (`ModifyCurHP`) until the zone's `OP_HPUpdate`.
+- **Deaths** (`CEverQuest::ReportDeath` @00528e16, `OP_Death`: `Death_Struct` {spawn, killer,
+  corpse, level, spell @8, attack skill @10, damage @12}): the trade, merchant or bank of the one who
+  died closes, our target clears (with auto attack), then the killing blow is told as a hit (within
+  50 units across the ground unless we're in it) and the death: on us 12107 "You have been slain by
+  %1!", 12108 the unseen hand, 12106 "You died.", 12103..12105 falling (skill -4), choking (-5),
+  burning (-6), in `0x115`; anyone else 12113 "You have slain %1!", 12114 "%1 has been slain by
+  %2!", 12112 "%1 died.", 12115, 12109..12111, in `0x116` and told as the blow is (an NPC killing
+  itself says nothing).
+- **Filters:** `/filter`'s switches are fixed at `CEverQuest_loadOptions`' defaults: our misses,
+  misses of us and others' hits shown, others' misses not (`DAT_00798c10` 0), damage shields shown.
+- Checked against a live server: a level 1 warrior fighting a level 3 sewer rat in South Qeynos
+  (`eqclient --attack a_sewer_rat --record`), then the recording through `frontend_preview`: "You
+  try to punch a sewer rat, but miss!", "A sewer rat bites YOU for 8 points of damage.", "You punch
+  a sewer rat for 1 point of damage.", "You have been slain by a sewer rat!".
 
 ## Items and stats
 

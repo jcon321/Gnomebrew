@@ -58,6 +58,9 @@ namespace
 	void PlayerWindow(SidlWindow &wnd, const GameValues &values)
 	{
 		Show(wnd, "PetHP", values.Pet() != nullptr);
+		// CPlayerWnd::UpdatePlayerWindowState: while auto attack's on, a red lasso every other frame.
+		SidlWindow::Control &root = wnd.Root();
+		root.lasso = root.lasso == 0 && values.attacking ? 0xff0000 : 0;
 	}
 
 	void GroupWindow(SidlWindow &wnd, const GameValues &values)

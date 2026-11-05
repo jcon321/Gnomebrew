@@ -44,6 +44,8 @@ namespace
 			"  --cast GEM[:SPELL]    with --zone, once in, cast the spell in gem GEM (1..8; SPELL memorized there first)\n"
 			"                        on ourselves and print\n"
 			"                        the zone's answers. Repeatable: each 3 s after the zone ends the one before\n"
+			"  --attack NAME         with --zone, once in, target the nearest NPC whose name starts with NAME, turn\n"
+			"                        auto attack on and walk at it, printing the hits and the death\n"
 			"  --record DIR          with --zone, write each zone session's packets to DIR/<char>-<time>.eqr\n"
 			"  --replay FILE         play a recorded zone session back (no server): stay --zone seconds\n"
 			"                        (default 10), print what's around, then camp out\n"
@@ -124,6 +126,54 @@ namespace
 	std::vector<int> g_casts;         // --cast, gems from 1
 	std::vector<int> g_cast_spells;   // --cast GEM:SPELL's spell (0 the gem's)
 	std::string g_pickup;             // --pickup: a drop id or "far"
+	std::string g_attack;             // --attack: the name of an NPC to fight
+	uint16_t g_attack_id = 0;         // whom we're fighting (0 nobody)
+
+	// --attack: the nearest NPC whose name starts with g_attack, targeted, auto attack on.
+	void StartAttack(ZoneSession &zone)
+	{
+		const ZoneProfile &me = zone.Profile();
+		const ZoneSpawn *best = nullptr;
+		float best_d = 0;
+		for (const auto &[id, s] : zone.Spawns()) {
+			if (s.npc != 1 || s.name.compare(0, g_attack.size(), g_attack) != 0)
+				continue;
+			float d = std::hypot(s.x - me.x, s.y - me.y);
+			if (!best || d < best_d)
+				best = &s, best_d = d;
+		}
+		if (!best) {
+			printf("[attack] no NPC named %s*\n", g_attack.c_str());
+			return;
+		}
+		g_attack_id = best->id;
+		printf("[attack] %s (%u), level %u, %.0f away: target, auto attack on\n", best->DisplayName().c_str(), best->id,
+			best->level, best_d);
+		zone.SetTarget(best->id);
+		zone.SendAutoAttack(true);
+	}
+
+	// Walk at it (30 units a second at most, as running does), and face it.
+	void FollowAttackTarget(ZoneSession &zone)
+	{
+		auto it = zone.Spawns().find(g_attack_id);
+		if (it == zone.Spawns().end())
+			return;
+		const ZoneSpawn &t = it->second;
+		const ZoneProfile &me = zone.Profile();
+		float dx = t.x - me.x, dy = t.y - me.y;
+		float d = std::hypot(dx, dy);
+		ZoneMovement m;
+		m.x = me.x, m.y = me.y, m.z = me.z;
+		if (d > 6) {
+			float step = std::min(3.0f, d - 5) / d;
+			m.x += dx * step, m.y += dy * step, m.z = t.z;
+			m.speed = 0.7f;
+		}
+		float heading = std::atan2(dx, dy) * 512.0f / (2 * 3.14159265f);
+		m.heading = heading < 0 ? heading + 512 : heading;
+		zone.SetMovement(m);
+	}
 
 	float GroundDistance(const ZoneSession &zone, const ZoneGroundItem &item)
 	{
@@ -228,6 +278,8 @@ namespace
 					}
 					if (!say.empty())
 						zone.Say(say);
+					if (!g_attack.empty())
+						StartAttack(zone);
 					if (click_door >= 0) {
 						printf("[zone] using door %d\n", click_door);
 						zone.ClickDoor(static_cast<uint8_t>(click_door), 0xffff, 0);
@@ -318,8 +370,25 @@ namespace
 					printf("[zone] linked item %u '%s' (icon %u, slot %d)\n", zone.LinkedItem().id, zone.LinkedItem().name.c_str(),
 						zone.LinkedItem().icon, zone.LinkedItem().slot);
 					break;
+				case ZoneSession::Event::Type::Damaged:
+					if (!g_attack.empty())
+						printf("[attack] damage: %u -> %u, type %u, spell %d, %d\n", event.cast.caster, event.cast.target,
+							event.cast.type, event.cast.spell, event.cast.damage);
+					break;
+				case ZoneSession::Event::Type::Died:
+					printf("[attack] death: %s (%u) by %u, type %u, %d\n", event.text.c_str(), event.cast.target,
+						event.cast.caster, event.cast.type, event.cast.damage);
+					if (event.cast.target == g_attack_id) {
+						zone.SendAutoAttack(false);
+						g_attack_id = 0;
+					}
+					break;
+				case ZoneSession::Event::Type::OwnAnimation:
+					if (!g_attack.empty())
+						printf("[attack] our animation %d\n", event.value);
+					break;
 				case ZoneSession::Event::Type::Message:
-					if (g_click_link >= 0 || !g_casts.empty())
+					if (g_click_link >= 0 || !g_casts.empty() || !g_attack.empty())
 						printf("[zone] message %d: %s\n", event.value, event.text.c_str());
 					break;
 				case ZoneSession::Event::Type::CastBegan:
@@ -364,6 +433,8 @@ namespace
 				printf("[cast] casting gem %d (spell %d) on ourselves\n", gem + 1, spell);
 				zone.CastSpell(gem, spell, zone.MySpawnId());
 			}
+			if (g_attack_id != 0 && !camping)
+				FollowAttackTarget(zone);
 			if (pickup_at && NowMs() >= pickup_at) {
 				pickup_at = 0;
 				DoPickup(zone);
@@ -436,6 +507,8 @@ int main(int argc, char **argv)
 		}
 		else if (arg == "--pickup")
 			g_pickup = next();
+		else if (arg == "--attack")
+			g_attack = next();
 		else if (arg == "--click-link")
 			g_click_link = atoi(next().c_str());
 		else if (arg == "--zone-to")

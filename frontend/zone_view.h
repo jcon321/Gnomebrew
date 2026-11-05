@@ -77,9 +77,9 @@ public:
 	// and up with our head.
 	void SetSitting(bool sitting);
 	bool StandingUp() const { return m_standing_up; } // getting up: P02 backwards hasn't finished
-	// One of the client's own one-shot animations on us (a spell's casting or its hit,
-	// PlayAnimationTrack's id), played once while we stand or move on the ground; a jump, a fall,
-	// the water, crouching or sitting cut it short.
+	// One of the client's own one-shot animations on us (a spell's casting or its hit, a swing the
+	// zone sends; PlayAnimationTrack's id), played once while we stand or move on the ground, with
+	// its sound; a jump, a fall, the water, crouching or sitting cut it short.
 	void PlayAnimation(int id);
 	float EyeDrop() const { return m_eye_drop; }
 	ZoneMovement Movement() const; // for OP_ClientUpdate
@@ -103,6 +103,9 @@ public:
 	// A spell's effect (DoSpellEffect's stage) on the spawns it names, our own id for us; once
 	// loaded. They follow the spawns from then on, drawn with the rest.
 	void StartSpellEffect(const SpellEffects::Request &request);
+	// EQPlayer::PlaySoundA: wave `slot` from a spawn's center, or ours (our own id); false when it's
+	// not drawn.
+	bool PlayActorSound(uint16_t on, int slot);
 	const SpellEffects &Effects() const { return m_spell_effects; }
 	// OP_Projectile: a missile (Missiles) on its way from the next Render, drawn with its model and
 	// light, a spell's effect riding on it. The spells are for a bolt's (kind 9).

@@ -608,6 +608,16 @@ bool ZoneSession::SendAnimation(int animation)
 	return Send(ZoneOp::Animation, body, sizeof(body), "OP_Animation " + std::to_string(animation));
 }
 
+bool ZoneSession::SendAutoAttack(bool on)
+{
+	if (m_state != State::InZone)
+		return false;
+	uint32_t body = on ? 1 : 0;
+	std::string what = on ? " 1" : " 0";
+	bool sent = Send(ZoneOp::AutoAttack2, &body, sizeof(body), "OP_AutoAttack2" + what);
+	return Send(ZoneOp::AutoAttack, &body, sizeof(body), "OP_AutoAttack" + what) && sent;
+}
+
 bool ZoneSession::Random(uint32_t low, uint32_t high)
 {
 	if (m_state != State::InZone)
@@ -2146,12 +2156,21 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		break;
 	}
 	case ZoneOp::Animation: {
-		// Animation_Struct: {u16 spawn, pad, i32 animation id, float speed}, played once.
-		auto it = m_spawns.find(Read<uint16_t>(data, 0));
-		if (it != m_spawns.end() && data.size() >= 12) {
+		// Animation_Struct: {u16 spawn, pad, i32 animation id, float speed}, played once. Ours (the
+		// zone's swings of ours) goes to whoever draws us.
+		if (data.size() < 12)
+			break;
+		uint16_t id = Read<uint16_t>(data, 0);
+		auto it = m_spawns.find(id);
+		if (it != m_spawns.end()) {
 			it->second.action = Read<int32_t>(data, 4);
 			it->second.action_speed = Read<float>(data, 8);
 			++it->second.action_serial;
+		}
+		else if (id != 0 && id == m_my_id) {
+			Event e(Event::Type::OwnAnimation);
+			e.value = Read<int32_t>(data, 4);
+			events.push_back(e);
 		}
 		break;
 	}
@@ -2234,7 +2253,21 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 	}
 	case ZoneOp::Death: {
 		// Death_Struct: the spawn falls over and becomes its corpse.
-		auto it = m_spawns.find(Read<uint16_t>(data, 0));
+		if (data.size() < 16)
+			break;
+		uint16_t id = Read<uint16_t>(data, 0);
+		Event died(Event::Type::Died);
+		died.cast.target = id;
+		died.cast.caster = Read<uint16_t>(data, 2);
+		died.cast.spell = Read<int16_t>(data, 8);
+		died.cast.type = data[10];
+		died.cast.damage = Read<int32_t>(data, 12);
+		auto it = m_spawns.find(id);
+		if (it != m_spawns.end())
+			died.text = it->second.DisplayName();
+		else if (id != 0 && id == m_my_id)
+			died.text = m_self.DisplayName();
+		events.push_back(died);
 		if (it != m_spawns.end()) {
 			ZoneSpawn &s = it->second;
 			s.npc = s.npc == 0 ? 2 : 3;

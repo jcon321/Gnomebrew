@@ -27,6 +27,7 @@
 #include "sidl.h"
 #include "bank_window.h"
 #include "buffs.h"
+#include "combat.h"
 #include "compass.h"
 #include "containers.h"
 #include "ground_items.h"
@@ -66,7 +67,8 @@ struct FrontEndConfig
 	render::LuclinModels luclin_models; // the player races drawn with their Luclin models (UseLuclin*), none by default
 	bool char_select_anim_window = true; // our Animations window at character select (CharSelectAnimWindow)
 	bool char_select_emotes = false;     // character select's random animations include socials' (CharSelectEmotes)
-	bool attack_on_assist = false;       // /assist on|off (AttackOnAssist); there's no auto attack yet
+	bool attack_on_assist = false;       // /assist on|off (AttackOnAssist): the assist's answer turns auto attack on
+	bool combat_music = true;            // /combatmusic on|off (CombatMusic): auto attack plays the combat music
 	int loot_no_drop = 0;                // /lootnodrop (LootNoDrop): 0 always ask, 1 for what we can't use, 2 never
 	int fast_drop = 0;                   // /fastdrop (FastDrop): 1 drop at once, 0 ask, -1 never
 };
@@ -147,6 +149,8 @@ public:
 	int ShowNames() const { return m_config.show_names; }         // /shownames, to remember (ShowNamesLevel)
 	bool CharSelectEmotes() const { return m_config.char_select_emotes; } // the Animations window's choice
 	bool AttackOnAssist() const { return m_config.attack_on_assist; }      // /assist on|off, to remember
+	bool CombatMusic() const { return m_config.combat_music; }             // /combatmusic on|off, to remember
+	bool AutoAttack() const { return m_attack; }                           // EverQuestinfo's __Attack
 	int LootNoDrop() const { return m_config.loot_no_drop; }               // /lootnodrop, to remember
 	int FastDrop() const { return m_config.fast_drop; }                    // /fastdrop, to remember
 	const ZoneSession &Zone() const { return m_zone; }
@@ -270,6 +274,20 @@ private:
 	void ChangeStance(uint8_t stance);
 	bool CanSee(uint16_t spawn) const; // CastRay from us to a spawn, through the zone
 	void Sit(); // CEverQuest_Sit: /sit and the Actions window's Sit and Stand
+	// _EverQuestinfo_SetAutoAttack: on or off, the combat music with it (when /combatmusic is on).
+	// DoPassageOfTime tells the zone once it's changed.
+	void SetAutoAttack(bool on);
+	// ExecuteCmd 8 (the Autoattack key, the Actions window's Attack button, /attack with nothing
+	// after it): on or off standing, and said; not with the book open or a merchant or bank up.
+	void ToggleAutoAttack();
+	void AutoAttackOff(uint32_t said); // off with eqstr `said` (1466, 12371), if it was on
+	// The hit, miss or death a Combat report tells: its lines, sounds, the victim's animation, our
+	// new target, and what it does to us.
+	void ApplyCombat(const Combat::Report &report);
+	// The rest of msg_successful_hit and ReportSuccessfulHit for a spell's OP_Damage (SpellCasting
+	// tells it): someone's detrimental spell on us makes them our target, its damage the victim's
+	// get-hit sound and our standing up, and our hit points.
+	void SpellDamaged(const ZoneCast &cast);
 
 	// EqSoundManager::GiveTime's callers (character select and the world display): the listener and
 	// the emitters' surroundings from the zone, then the sound's frame.
@@ -386,6 +404,9 @@ private:
 	GameWindowState m_window_state; // the socials, the hot buttons, the button on the cursor
 	SpellBook m_spell_book;         // and the spell gems
 	SpellCast m_spell_cast;         // our casting from them
+	Combat m_combat;                // what hits, misses and deaths say and do
+	bool m_attack = false;          // auto attack (__Attack)
+	bool m_attack_sent = false;     // what OP_AutoAttack last said (DAT_0063db29)
 	Buffs m_buffs;                  // the spells on us
 	CompassWindow m_compass;
 	Containers m_containers;        // the bag windows

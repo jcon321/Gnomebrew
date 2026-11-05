@@ -43,6 +43,7 @@ public:
 	uint64_t now_ms = 0;          // the frame's (pinstCDisplay->GameTimeMs: a buff blinks by it)
 	uint16_t target = 0; // spawn id; 0 none
 	bool running = true; // run mode (eqgame's @0079856d), not walking
+	bool attacking = false; // auto attack (__Attack)
 	float heading = 0;   // ours, 0..512 (a compass item points by it)
 	bool fv_rules = false, auto_identify = false; // OP_LogServer's (WorldSession)
 

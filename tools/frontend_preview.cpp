@@ -1958,6 +1958,63 @@ int main(int argc, char **argv)
 				cast_report("/cast 9");
 			}
 		}
+		// Auto attack: Q (Autoattack) turns it on and off standing, said; /attack on and off say
+		// nothing; sitting turns it off ("Auto attack is off."); while it's on the player window's red
+		// lasso is drawn every other frame.
+		{
+			auto attack_key = [&] {
+				InputEvent e;
+				e.type = InputEvent::Type::Key;
+				e.scan = 0x10; // Q
+				frontend.OnEvent(e);
+				e.type = InputEvent::Type::KeyUp;
+				frontend.OnEvent(e);
+				frontend.Update(NowMs());
+			};
+			auto attack_report = [&](const char *when) {
+				SidlWindow *player = frontend.Windows().Find("PlayerWindow");
+				int lit = 0;
+				for (int i = 0; i < 6; ++i) {
+					frontend.Update(NowMs());
+					lit += player && player->Root().lasso != 0;
+				}
+				const auto &lines = frontend.Chat().Lines();
+				printf("[preview] auto attack %s: %d, stance %d, lasso %d of 6 frames, last chat '%s'\n", when,
+					frontend.AutoAttack(), frontend.Zone().Self().stance, lit, lines.empty() ? "" : lines.back().text.c_str());
+			};
+			if (frontend.Chat().Typing())
+				h.Key(InputEvent::Key::Escape); // the chat line's left open: Q would type
+			attack_report("at first");
+			attack_key();
+			attack_report("after Q");
+			if (SidlWindow *player = frontend.Windows().Find("PlayerWindow")) {
+				for (int i = 0; i < 2 && player->Root().lasso == 0; ++i)
+					frontend.Update(NowMs());
+				h.Snapshot("q1-auto-attack-lasso");
+			}
+			attack_key();
+			attack_report("after Q again");
+			h.Key(InputEvent::Key::Enter);
+			h.Type("/attack on");
+			h.Key(InputEvent::Key::Enter);
+			attack_report("after /attack on");
+			h.Key(InputEvent::Key::Enter);
+			h.Type("/sit");
+			h.Key(InputEvent::Key::Enter);
+			attack_report("after /sit");
+			h.Key(InputEvent::Key::Enter);
+			h.Type("/stand");
+			h.Key(InputEvent::Key::Enter);
+			h.RunUntil([] { return false; }, 300);
+			h.Key(InputEvent::Key::Enter);
+			h.Type("/attack");
+			h.Key(InputEvent::Key::Enter);
+			attack_report("after /attack");
+			h.Key(InputEvent::Key::Enter);
+			h.Type("/attack off");
+			h.Key(InputEvent::Key::Enter);
+			attack_report("after /attack off");
+		}
 		// Sitting: /sit lowers the first person view with our head; Space, the back key and turning
 		// with the right button do nothing; W stands us up and we run at once, getting up playing out.
 		if (ZoneView *view = frontend.ZoneScene()) {

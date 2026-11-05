@@ -174,11 +174,18 @@ void SpellCasting::Action(const ZoneCast &cast, const ZoneSession &zone, std::ve
 	effects.push_back(effect);
 }
 
-void SpellCasting::Damaged(const ZoneCast &cast, const ZoneSession &zone, std::vector<Line> &lines,
+void SpellCasting::DeathBlow(const ZoneCast &cast, bool told, const ZoneSession &zone, std::vector<Line> &lines,
 	std::vector<Animation> &animations) const
 {
+	if (m_spells)
+		Damaged(cast, zone, lines, animations, told ? 1 : 0);
+}
+
+void SpellCasting::Damaged(const ZoneCast &cast, const ZoneSession &zone, std::vector<Line> &lines,
+	std::vector<Animation> &animations, int told_override) const
+{
 	if (cast.type != SpellType)
-		return; // melee: not yet
+		return; // melee: Combat's
 	const ZoneSpawn *victim = FindSpawn(zone, cast.target);
 	const ZoneSpawn *attacker = FindSpawn(zone, cast.caster);
 	const SpellInfo *spell = m_spells->Find(cast.spell);
@@ -192,6 +199,8 @@ void SpellCasting::Damaged(const ZoneCast &cast, const ZoneSession &zone, std::v
 		float dx = victim->x - self.x, dy = victim->y - self.y, dz = victim->z - self.z;
 		told = std::sqrt(dx * dx + dy * dy + dz * dz) <= 75;
 	}
+	if (told_override >= 0)
+		told = told_override != 0;
 	bool on_me = cast.target == me;
 	std::string text;
 	if (on_me) {
