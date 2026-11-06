@@ -1545,6 +1545,35 @@ std::vector<ZoneView::NameTag> ZoneView::NameTags(float yon) const
 	return tags;
 }
 
+std::vector<ZoneView::ViewedSpawn> ZoneView::SpawnsInView(float range) const
+{
+	std::vector<ViewedSpawn> out;
+	if (!m_loaded || !m_error.empty())
+		return out;
+	render::Vec3 my_head = m_feet + render::Vec3{0, 0, m_height};
+	render::Vec3 my_feet = m_feet + render::Vec3{0, 0, 0.5f}; // off the floor the line starts on
+	for (const auto &[id, view] : m_actors) {
+		if (!view.drawn || !view.model)
+			continue;
+		render::Vec3 location = view.placement.translation;
+		float from_camera = render::Length(location - m_camera_position);
+		if (from_camera > range)
+			continue;
+		ViewedSpawn s;
+		s.id = id;
+		s.from_camera = from_camera;
+		s.camera_clear = CanSee(m_camera_position + render::Vec3{0, 0, 1}, location + render::Vec3{0, 0, 2.5f});
+		render::Vec3 feet = view.Feet() + render::Vec3{0, 0, 0.5f};
+		render::Vec3 head = view.Feet() + render::Vec3{0, 0, view.model->MaxZ() - view.model->MinZ()};
+		render::Vec3 apart = view.Feet() - m_feet;
+		s.from_me = render::Length(apart);
+		s.from_me_2d = std::sqrt(apart.x * apart.x + apart.y * apart.y);
+		s.me_clear = CanSee(my_head, head) || CanSee(my_head, feet) || CanSee(my_feet, feet) || CanSee(my_feet, head);
+		out.push_back(s);
+	}
+	return out;
+}
+
 bool ZoneView::NamePosition(int &x, int &y, float &depth) const
 {
 	if (!m_model_shown || !m_loaded || !m_error.empty())

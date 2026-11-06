@@ -211,17 +211,25 @@ no rules of its own.
 6. ~~**A configurable keymap**~~: done (`frontend/key_map.*`, eqgame's two maps,
    `default_key_bindings` with W A S D, `ProcessMovementKeys`, `ProcessKeyUp`, ExecuteCmd's
    typed-character rule, `[KeyMaps]` in my-client.ini as `_writeKeyMapToIni` writes eqclient.ini's;
-   `InputEvent::scan` carries the DirectInput code). Still to do:
+   `InputEvent::scan` carries the DirectInput code). Target nearest PC and NPC
+   (CDisplay::GetNearestPlayerInView, 500 units from the camera, `FrontEnd::NearestInView` over
+   `ZoneView::SpawnsInView`), our Cycle nearest target on Tab
+   (Zeal's CycleTarget, command 213), Toggle last two targets (ExecuteCmd 63) on no key, Cycle
+   reply forward and back (ExecuteCmd 60, 61, CycleNamesInTellList, AddNameToTellList's 50
+   names). Still to do:
    - ExecuteCmd's commands not done yet (the page's "No"): Toggle mouse look, Duck, Use centerscreen, Center view, Zoom in and out held
      (ProcessControls' camera distance at 2 units a frame unit), Toggle UI Display (ScreenMode 3),
      Target party member 1..5 and a second press of Target myself taking the pet
-     (setTargetBasedOnIndex), Target nearest PC and NPC (CDisplay::GetNearestPlayerInView, 500
-     units), Toggle netstat, Send tell, Reply, Cycle reply and Send tell to target (the chat line
+     (setTargetBasedOnIndex), Toggle netstat, Send tell, Reply and Send tell to target (the chat line
      opened with `/tell `, `/tell <last> `, `/rtarget <last> `; eqstr 12364 and 12365 with no
-     tells), Toggle last two targets, Who, Invite/follow, Disband, the clip plane, voice input,
+     tells), Who, Invite/follow, Disband, the clip plane, voice input,
      screenshots, the chat line's cursor and page up and down (CChatWindow::ScrollChatWindowUp),
      Command mode say and emote (`'` and `:`), the AA, bazaar, bazaar search, raid and music player
      windows, and the six camera moves (ExecuteCmd 0x6f..0x74, ProcessControls).
+   - Target nearest and Cycle nearest target don't know a spawn's rider (ActorInfo's Rider): an
+     NPC with a rider (a mount) isn't passed over, a horse (race 216) doesn't give its rider. They
+     don't know whether we see invisible (EQ_Character::CanISeeInvis: SPA 13 and the races'), so
+     an invisible spawn is never picked, nor a GM's VisibilityState.
    - Look up and down tilt 5 degrees a press with Windows' key repeat; ProcessControls speeds the
      pitch up while the key's held (DAT_0079974c up to 12 a frame unit, to 128).
    - CDisplay_KeyMapUpdated: the buttons' key tooltips (CXWnd::SetKeyTooltip,
@@ -273,7 +281,8 @@ no rules of its own.
     intimidation, disarm, disarm traps and sense traps. /filter and /serverfilter
     (`frontend/filters.*`, [Filters]) sent to the zone as OP_SetServerFilter. A melee hit on us
     takes off our invisibility and pushes us (IWasHit); our death lays us down (D05) to the death
-    music, and nothing moves us.
+    music, and nothing moves us; 2 s on, "Returning to home point, please wait..." (eqstr 539) and
+    OP_ZoneChange to the bind zone with reason 10 (RealRender_World's DeathTimer, MoveToZone).
     Still to do:
     - range attacks: the Range button and the hot button's (CombatPageWndNotification's
       `__RangeAttackReady`, DoAttack 0xb: the bow's delay and a quiver's haste, too close (12698),
@@ -296,6 +305,11 @@ no rules of its own.
     - ReportDeath's duel ending (eqstr 12100, 12101), a group member's HP, the tracking window; our
       death's first person view (still standing height), KnockedOut's "You have been knocked
       unconscious!" (12877) and ClearOutRentables' temporary items;
+    - going home dead: CDisplay_SwitchToDefaultCameraMode, PrepareLocalPCForRepop's group and raid
+      reset (SetInvited, CRaid::ResetFromDeath), MoveToZone_2's "Your Home Zone is unavailable"
+      fallback when the zone refuses (0x4150), EQ_3DView_MouseUp's clicks while the DeathTimer runs,
+      and HandleWorldMessage's "struck down by the gods" (1391) resetting it; the return checked
+      live only through a recording's replay;
     - being hit on a mount (DeacSpellScreen, ChangeStance), and the guildmaster window turning auto
       attack off (pinstActiveGMaster) once there is one;
     - the haste ModifyAttackSpeed divides by is `Buffs::Total(11)`, a sum of our buffs' SPA 11:

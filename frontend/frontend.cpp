@@ -803,6 +803,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		std::string zone_line = m_zone_view->TakeZoneLine();
 		if (!zone_line.empty())
 			HandleZoneLine(zone_line);
+		UpdateDeath(now_ms);
 	}
 	if (m_screen == Screen::Zone) {
 		Rect area = ScreenArea();
@@ -2203,6 +2204,194 @@ void FrontEnd::SetTarget(uint16_t id, bool command)
 	m_zone.SetTarget(id, command);
 }
 
+bool FrontEnd::InvisibleToMe(const ZoneSpawn &spawn) const
+{
+	// A player or an NPC alive: an untargetable body type is, and one invisible (VisibilityState
+	// 1) is unless we see invisible (EQ_Character::CanISeeInvis, which we don't have: we don't),
+	// and a GM's is to all but GMs.
+	if (spawn.npc >= 2 || spawn.hp <= 0)
+		return false;
+	if (spawn.body_type > 0x40)
+		return true;
+	return spawn.invis == 1;
+}
+
+uint16_t FrontEnd::NearestInView(float range, bool npc) const
+{
+	if (!m_zone_view)
+		return 0;
+	uint16_t best = 0;
+	float best_distance = 0;
+	uint16_t me = m_zone.MySpawnId();
+	for (const ZoneView::ViewedSpawn &seen : m_zone_view->SpawnsInView(range)) {
+		auto it = m_zone.Spawns().find(seen.id);
+		if (seen.id == me || it == m_zone.Spawns().end())
+			continue;
+		const ZoneSpawn &spawn = it->second;
+		if (spawn.npc != (npc ? 1 : 0))
+			continue;
+		if (npc && spawn.pet_owner) {
+			// Not a player's pet (ours included).
+			auto owner = m_zone.Spawns().find(spawn.pet_owner);
+			if (spawn.pet_owner == me || (owner != m_zone.Spawns().end() && owner->second.npc == 0))
+				continue;
+		}
+		// Heard from in the last 12 seconds, moving, or an NPC standing still; not invisible to us.
+		// (An NPC with a rider, a mount, is passed over too; we don't know riders.)
+		bool current = m_now_ms - spawn.updated_ms < 12001 || spawn.speed != 0 || npc;
+		if (!current || InvisibleToMe(spawn))
+			continue;
+		if (seen.from_camera <= range && (!best || seen.from_camera < best_distance) && seen.camera_clear) {
+			best = seen.id;
+			best_distance = seen.from_camera;
+		}
+	}
+	return best;
+}
+
+void FrontEnd::TargetNearest(bool npc)
+{
+	uint16_t id = NearestInView(500, npc);
+	if (!id)
+		return;
+	const ZoneSpawn &spawn = m_zone.Spawns().at(id);
+	// ExecuteCmd 29: an NPC of an untargetable body type (11, 60, 65, 67) below race 2253 leaves
+	// the target as it was. A horse (race 216) would give its rider; we don't know riders.
+	if (npc && spawn.race < 0x8cd &&
+		(spawn.body_type == 11 || spawn.body_type == 60 || spawn.body_type == 65 || spawn.body_type == 67))
+		return;
+	SetTarget(id);
+}
+
+void FrontEnd::CycleNearestTarget()
+{
+	// Zeal's CycleTarget::get_next_ent(250, NPC): three seconds since the last press starts again
+	// at the nearest.
+	if (!m_zone_view)
+		return;
+	if (m_now_ms - m_cycle_ms > 3000)
+		m_cycle_index = -1;
+	m_cycle_ms = m_now_ms;
+	uint16_t me = m_zone.MySpawnId();
+	struct Near
+	{
+		uint16_t id;
+		float distance;
+	};
+	std::vector<Near> near;
+	for (const ZoneView::ViewedSpawn &seen : m_zone_view->SpawnsInView(250)) {
+		auto it = m_zone.Spawns().find(seen.id);
+		if (seen.id == me || it == m_zone.Spawns().end())
+			continue;
+		const ZoneSpawn &spawn = it->second;
+		// get_world_visible_actor_list(250, true): within 250 of us, level, not invisible to us,
+		// and a line to it from our head or feet.
+		if (spawn.npc != 1 || spawn.level == 0 || seen.from_me_2d > 250 || !seen.me_clear || InvisibleToMe(spawn))
+			continue;
+		// A pet only of an NPC (or of no one we know); a mount (a player its rider) we can't tell.
+		if (spawn.pet_owner) {
+			auto owner = m_zone.Spawns().find(spawn.pet_owner);
+			bool npc_owner = owner != m_zone.Spawns().end() && (owner->second.npc == 1 || owner->second.npc == 3);
+			if (spawn.pet_owner == me || (owner != m_zone.Spawns().end() && !npc_owner))
+				continue;
+		}
+		near.push_back({seen.id, seen.from_me});
+	}
+	if (near.empty())
+		return;
+	std::stable_sort(near.begin(), near.end(), [](const Near &a, const Near &b) { return a.distance < b.distance; });
+	auto advance = [&] {
+		if (++m_cycle_index >= static_cast<int>(near.size()))
+			m_cycle_index = 0;
+	};
+	advance();
+	if (near[m_cycle_index].id == m_game_values.target)
+		advance();
+	SetTarget(near[m_cycle_index].id);
+}
+
+void FrontEnd::ToggleTarget()
+{
+	if (m_chat.Typing()) // UI_ChatInputCheck() == 2
+		return;
+	uint16_t me = m_zone.MySpawnId();
+	if (m_game_values.target == me) {
+		if (m_toggle_target && m_zone.Spawns().count(m_toggle_target))
+			SetTarget(m_toggle_target);
+		return;
+	}
+	if (m_game_values.target)
+		m_toggle_target = m_game_values.target;
+	SetTarget(me);
+}
+
+void FrontEnd::AddNameToTellList(const std::string &name)
+{
+	auto same = [&](const std::string &other) { return Lower(other) == Lower(name); };
+	m_tell_list.erase(std::remove_if(m_tell_list.begin(), m_tell_list.end(), same), m_tell_list.end());
+	m_tell_list.insert(m_tell_list.begin(), name);
+	if (m_tell_list.size() > 50)
+		m_tell_list.resize(50);
+	m_tell_index = 0;
+}
+
+void FrontEnd::CycleReply(bool back)
+{
+	if (!m_chat.Typing())
+		return;
+	// The line's start picks the command: eqstr 13974 "/tell", 14202 "/rtarget", or ";tell".
+	std::string line = Lower(m_chat.InputText());
+	std::string tell = Lower(EqString(13974, "/tell")), rtarget = Lower(EqString(14202, "/rtarget"));
+	std::string command;
+	if (line.compare(0, tell.size(), tell) == 0)
+		command = EqString(13974, "/tell");
+	else if (line.compare(0, rtarget.size(), rtarget) == 0)
+		command = EqString(14202, "/rtarget");
+	else if (line.compare(0, 5, ";tell") != 0)
+		return;
+	if (m_tell_list.empty()) {
+		// CycleNamesInTellList, then ExecuteCmd: eqstr 12364 (12365 for /rtarget).
+		uint32_t id = command == EqString(14202, "/rtarget") ? 12365 : 12364;
+		ChatOut(EqString(id, id == 12364 ? "You have not received any tells, so you cannot reply."
+		                                 : "You have not received any tells, so you cannot use reply target."),
+			ChatType::Default);
+		return;
+	}
+	int count = static_cast<int>(m_tell_list.size());
+	m_tell_index = back ? (m_tell_index > 0 ? m_tell_index - 1 : count - 1) : (m_tell_index + 1 < count ? m_tell_index + 1 : 0);
+	const std::string &name = m_tell_list[m_tell_index];
+	// "/rtarget <name> "; otherwise "/tell <name> ", or the chat server's ";tell <name> " for a
+	// name with a dot (another server's).
+	if (command == EqString(14202, "/rtarget"))
+		m_chat.Open(command + " " + name + " ");
+	else if (name.find('.') != std::string::npos)
+		m_chat.Open(";tell " + name + " ");
+	else
+		m_chat.Open(EqString(13974, "/tell") + " " + name + " ");
+}
+
+void FrontEnd::UpdateDeath(uint64_t now_ms)
+{
+	if (!m_dead || m_zoning || m_death_ms == UINT64_MAX)
+		return;
+	if (m_death_ms == 0) {
+		// CDisplay::MovePlayer: a corpse whose DeathTimer isn't going yet starts it.
+		m_death_ms = now_ms > 1 ? now_ms : 2;
+		return;
+	}
+	if (m_death_ms == 1) {
+		// PrepareLocalPCForRepop (the options saved, EQ_PC::PrepareForRepop: what the next
+		// zone's profile gives back), then MoveToZone(ZoneBoundId, "repop_to_home_at_death", 1, 10).
+		if (m_zone.RequestZoneChange(m_zone.Profile().bind_zone, 10))
+			m_death_ms = UINT64_MAX;
+		return;
+	}
+	if (now_ms - m_death_ms > 2000) {
+		ChatOut(EqString(539, "Returning to home point, please wait..."), ChatType::Red);
+		m_death_ms = 1;
+	}
+}
+
 bool FrontEnd::CanSee(uint16_t spawn) const
 {
 	auto it = m_zone.Spawns().find(spawn);
@@ -2532,6 +2721,9 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			AddZoneLog("You have entered " + m_zone.Info().long_name + ".", ZoneYellow);
 			SetAutoAttack(false); // CEverQuest_EnterZone
 			m_dead = false;
+			m_death_ms = 0;
+			m_cycle_index = -1;    // Zeal's CycleTarget::on_zone
+			m_toggle_target = 0; // CEverQuest_EnterZone
 			if (!m_windows_built)
 				BuildZoneWindows();
 			m_buffs.Reset(m_now_ms); // the profile's, which came first
@@ -2611,7 +2803,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			if (ChannelLine(event.chat, m_zone.Profile().name, m_zone.Profile().languages, m_ui.eqstr, line, type))
 				ChatOut(line, type);
 			if (event.chat.channel == 7 && event.chat.sender != m_zone.Profile().name)
-				m_last_tell = event.chat.sender; // AddNameToTellList
+				AddNameToTellList(event.chat.sender);
 			break;
 		}
 		case Type::Message:
@@ -2723,6 +2915,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 				SetAutoAttack(false); // CEverQuest_ReportDeath_ClearOutRentables
 				// EQPlayer::IDied: we fall and lie there, still, to the death music.
 				m_dead = true;
+				m_death_ms = 0; // EQPlayer::IDied: MovePlayer starts the DeathTimer
 				m_autorun = false;
 				if (m_zone_view)
 					m_zone_view->SetDead(true);
@@ -2994,6 +3187,22 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 	case KeyMap::TargetMe:
 		// setTargetBasedOnIndex: ourselves (the pet on a second press isn't done).
 		SetTarget(m_zone.MySpawnId());
+		break;
+	case KeyMap::TargetPc:
+	case KeyMap::TargetNpc:
+		TargetNearest(cmd == KeyMap::TargetNpc);
+		break;
+	case KeyMap::CycleNearestTarget:
+		// Zeal's: not while the chat line is open (UI_ChatInputCheck).
+		if (!m_chat.Typing())
+			CycleNearestTarget();
+		break;
+	case KeyMap::ToggleTarget:
+		ToggleTarget();
+		break;
+	case KeyMap::CycleReply:
+	case KeyMap::CycleReplyBack:
+		CycleReply(cmd == KeyMap::CycleReplyBack);
 		break;
 	case KeyMap::Camp:
 		StartCamp();

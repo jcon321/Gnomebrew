@@ -22,6 +22,7 @@ namespace KeyMap
 	constexpr uint32_t Shift = 0x10000000, Ctrl = 0x20000000, Alt = 0x40000000;
 	constexpr int Count = 256;     // entries in each map (ExecuteCmd's numbers)
 	constexpr int Assignable = 0x74; // KeyboardPageHandleKeyboardMsg: past this, a click just cancels
+	                                 // (eqgame's; our own commands, from OwnFirst, can be assigned)
 
 	// ExecuteCmd's numbers for the commands the zone runs (the map's entries).
 	enum Cmd
@@ -37,6 +38,9 @@ namespace KeyMap
 		TogglePetInfoWin, ToggleOptionsWin, ToggleHelpWin, ToggleSelectorWin, ToggleVideoModeWin,
 		ToggleBazaarSearchWin, ToggleCompassWin, ToggleRaidWin, ToggleMusicPlayerWin, ForwardCam, BackCam, RightCam,
 		LeftCam, PitchUpCam, PitchDownCam,
+		// Ours from here, commands eqgame doesn't have (Zeal's numbers where it has them).
+		OwnFirst = 200,
+		CycleNearestTarget = 213, // Zeal's "Cycle through nearest NPCs" (CycleTarget::handle_next_target)
 	};
 
 	// The keyboard page's categories (its combo box's choices, in order, the last All).
@@ -50,7 +54,7 @@ namespace KeyMap
 	struct Command
 	{
 		int id;              // ExecuteCmd's number
-		int eqstr;           // its name on the keyboard page
+		int eqstr;           // its name on the keyboard page (0: ours, `name` it is)
 		const char *name;    // that name in English
 		uint32_t categories; // Category bits
 		bool implemented;    // ours: my-client does what it does (the page's temporary 4th column)
@@ -63,7 +67,8 @@ namespace KeyMap
 	const char *BindName(int id);
 
 	// default_key_bindings (@0055a83b), with the movement keys on W, A, S and D and the arrows
-	// their alternates, Autoattack on Q and Duck on F (ours).
+	// their alternates, Autoattack on Q and Duck on F, Toggle last two targets on no key (not Tab)
+	// and our Cycle nearest target on Tab (ours).
 	uint32_t DefaultKey(int id, bool alternate);
 
 	// CEverQuest_IsValidKeyMap: Escape, Enter, / and the Windows keys can't be bound.

@@ -136,6 +136,18 @@ public:
 	// drawn that are no more than `yon` in front of the camera and not behind something, nearest
 	// first.
 	std::vector<NameTag> NameTags(float yon) const;
+	// s3dGetWorldVisibleActorList (flags 0x11): the spawns drawn last frame (in the view and the
+	// zone's visible regions) no farther than `range` from the camera.
+	struct ViewedSpawn
+	{
+		uint16_t id;
+		float from_camera;   // to its location (CDisplay_SimpleDistance)
+		bool camera_clear;   // s3dCollideSphereWithWorld: nothing from 1 over the camera to 2.5 over it
+		float from_me;       // feet to feet
+		float from_me_2d;    // the same, level
+		bool me_clear;       // Zeal's: a clear line between our head or feet and its head or feet
+	};
+	std::vector<ViewedSpawn> SpawnsInView(float range) const;
 	// This frame's ambient light, the sky's (SetAmbientLight), which lights the names too.
 	const render::Vec3 &Ambient() const { return m_daylight.ambient; }
 

@@ -61,6 +61,7 @@ struct ZoneProfile
 	uint8_t languages[32] = {}; // skill in each language, 0..100
 	float x = 0, y = 0, z = 0, heading = 0;
 	uint32_t zone_id = 0;
+	uint32_t bind_zone = 0; // the first bind point's zone (EQ_PC's ZoneBoundId): where we go when we die
 	int32_t platinum = 0, gold = 0, silver = 0, copper = 0;
 	int32_t bank_platinum = 0, bank_gold = 0, bank_silver = 0, bank_copper = 0;
 	int32_t cursor_platinum = 0, cursor_gold = 0, cursor_silver = 0, cursor_copper = 0; // coins on the cursor
@@ -516,7 +517,7 @@ public:
 	bool Camp();
 	// Ask to leave for another zone (a zone line): our position, then OP_ZoneChange. The answer
 	// comes as ZoneApproved (then Departed) or ZoneDenied.
-	bool RequestZoneChange(uint32_t zone_id);
+	bool RequestZoneChange(uint32_t zone_id, int32_t reason = 0);
 	// OP_SendZonepoints: the zone lines' teleport table.
 	const std::vector<ZonePoint> &ZonePoints() const { return m_zone_points; }
 	// OP_SpawnDoor's doors and switches.

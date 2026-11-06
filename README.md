@@ -460,6 +460,17 @@ additions of ours, or ones taken from TAKP's eqgame.dll or Zeal rather than stoc
   Luclin chest has three), and eqgame with the key on puts them on half the chest over the bare
   shirt. A Luclin model wears the armor they stand in for (17..22 as leather, chain, plate), as eqgame
   does with the key off.
+- **Cycle nearest target** (`KEYMAP_CYCLE_NEAREST_TARGET`, Tab by default, command 213 on the
+  Keyboard page's Target list): Zeal's "Cycle through nearest NPCs" (`CycleTarget::get_next_ent(250,
+  NPC)`). The NPCs drawn within 250 of us (across the ground), level above 0, not invisible to us,
+  not a player's pet, with a clear line from our head or feet to their head or feet, nearest first;
+  each press targets the next, skipping the one already targeted, and three seconds after the last
+  press it starts again at the nearest. Not while the chat line has the keys (Zeal's
+  `UI_ChatInputCheck`), where Tab is Cycle reply's. eqgame has no such command. Our commands are
+  numbered from 200 (`KeyMap::OwnFirst`, Zeal's numbers where it has them) and can be bound past
+  eqgame's 0x74 limit.
+- **Toggle last two targets on no key:** eqgame's default is Tab (`default_key_bindings`), which
+  is ours Cycle reply's (in the chat line) and Cycle nearest target's (outside it).
 - **Old skeletons** (`LoadOldSkeletons`, on by default): eqgame loads `global6_chr.s3d` before
   `global_chr.s3d`, so its later skeleton model is the one drawn; we skip global6's `SKE` (its model
   and tracks) and draw global_chr's.
@@ -1015,7 +1026,8 @@ the rejection).
   each) and the heading (3); zone 255 makes the y an index into `OP_SendZonepoints` (Rivervale's lines
   are 98 and 99). A line into the same zone moves us (999999 and a heading of 513 keep ours), with the
   client's adjustments between Freeport East and the Ocean of Tears and two Qeynos lines. Otherwise
-  `CEverQuest::MoveToZone_2`: `OP_ZoneChange` (name, zone, reason 0) and wait for its answer
+  `CEverQuest::MoveToZone_2`: `OP_ZoneChange` (name, zone, reason 0; 10 going home dead, see Combat)
+  and wait for its answer
   (`IsZoneAvailable`); on success "LOADING, PLEASE WAIT...", `OP_DeleteSpawn` with our id, and the zone
   answers `OP_LogoutReply` and drops us. Then world again with the zoning flag at 192 in
   `OP_SendLoginInfo`: it answers `OP_EnterWorld` with the character in the game, we enter as it, and it
@@ -1147,7 +1159,8 @@ details and the nearest spawns at the top left and the radar at the top right.
   F9 toggles the camera, F1 targets yourself and F2..F6 the group, F7 and F8 the nearest PC and
   NPC, 1..0 the hot buttons, Shift+1..0 their pages, Alt+1..8 the gems, Ctrl+B the book, Ctrl+A,
   C, O and M the Actions pages, Ctrl+S sit, Ctrl+R run, Ctrl+X camp, I inventory, C consider, H
-  hail, Tab both Cycle reply and Toggle last two targets, Alt+letters the windows (Alt+O options,
+  hail, Tab both Cycle reply and Toggle last two targets (ours Cycle reply and our Cycle nearest
+  target, see Custom changes), Alt+letters the windows (Alt+O options,
   Alt+D compass). The chat line's history and cursor take Shift with a numpad key or an arrow, the
   camera moves Alt; Page Up and Down look up and down. A flag (`DAT_008092d8`) adds dev keys past 116.
 - **A key down** (`ProcessKeyDown` @00525b04): Escape is `ExecuteCmd(200)`, Enter `ExecuteCmd(0xce)`
@@ -1174,9 +1187,33 @@ details and the nearest spawns at the top left and the radar at the top right.
   and `EnterZone`. `ProcessControls` runs us forward while Move forward's held, autorun's on or
   both mouse buttons are down.
   Of the 111, my-client does the movement, Autorun, Jump, Look up and down, Toggle camera view, Consider,
-  Say hail, Camp, Sit/stand, Run/walk, Target myself, the hot buttons and pages, the gems,
+  Say hail, Camp, Sit/stand, Run/walk, Target myself, Target nearest PC and NPC, Toggle last two
+  targets, Cycle reply forward and back, the hot buttons and pages, the gems,
   History up and down, the spellbook, inventory, Actions pages and the window toggles it has
   windows for (`implemented` in `frontend/key_map.cpp`).
+- **Target nearest PC and NPC** (`ExecuteCmd` 28 and 29, `CDisplay::GetNearestPlayerInView`
+  @004ac17f with 500 and 0 or 1): of the actors `s3dGetWorldVisibleActorList` (flags 0x11) gives
+  in the camera's view, not us, players (0) or NPCs (1) but not a player's pet, heard from in the
+  last 12 s or moving or an NPC standing still, not invisible to us (`CDisplay_IsInvisible`: alive
+  and body type over 0x40, or `VisibilityState` 1 unless `CanISeeInvis`, a GM to all but GMs), an
+  NPC without a rider: the nearest to the camera within 500 with nothing of the zone's from 1
+  over the camera to 2.5 over it (`s3dCollideSphereWithWorld`). For an NPC, one of body type 11,
+  60, 65 or 67 below race 2253 leaves the target as it was, and a horse (race 216) gives its rider.
+  The target is set locally; `DoPassageOfTime` tells the zone. Ours in `FrontEnd::NearestInView`
+  over `ZoneView::SpawnsInView` (the spawns drawn last frame); we don't know riders or whether we
+  see invisible.
+- **Toggle last two targets** (`ExecuteCmd` 63, not while the chat line has the keys:
+  `UI_ChatInputCheck() == 2`): targeting ourselves, back to the target kept in `DAT_00799788` (if
+  it's still there); targeting anyone else (or no one), that one is kept and we target ourselves.
+  Nothing else sets it, and `EnterZone` clears it, so it swaps between us and one other target.
+- **Cycle reply forward and back** (`ExecuteCmd` 60 and 61, the new UI's branch: only while the
+  chat line has the keys): when the line starts with eqstr 13974 `/tell`, eqstr 14202 `/rtarget`
+  or `;tell`, `CycleNamesInTellList` (@004f8531) steps through `__LastTell`'s 50 names (forward
+  to the next filled one or back to the first; back from the first to the last filled), and the
+  line becomes `/rtarget <name> `, `/tell <name> ` or `;tell <name> ` for a name with a dot.
+  Any other line is left alone; with no tells, eqstr 12364 (12365 for `/rtarget`).
+  `AddNameToTellList` (@004f847d) puts a tell's sender first, once, and sets the cycle back to
+  it; `/reply` goes to the first.
 - **The Keyboard page** (`COptionsWnd`): `initkeyboardassignments` (@0042a9d7) names each command
   (eqstr 6500..6697, 3144, 3150, 3153, 5107) and gives its categories (1 Movement, 2 Commands, 4
   Spell casting, 8 Target, 0x10 Camera, 0x20 Chat, 0x40 UI, 0x80 Macros). The combo box picks
@@ -1346,6 +1383,18 @@ details and the nearest spawns at the top left and the radar at the top right.
   fall (`D05`, held), the death music plays (track 8), and nothing moves us (stance 120:
   `ProcessControls` takes the movement keys only standing or crouching) until the zone moves us
   on.
+- **Going home** (`ActorInfo`'s `DeathTimer`, `frontend/frontend.cpp` `UpdateDeath`): `IDied` leaves
+  ours 0 and the next `CDisplay::MovePlayer` of us as a corpse starts it at the game time. More
+  than 2 s on, `CDisplay::RealRender_World` prints eqstr 539 "Returning to home point, please
+  wait..." in color 13 and sets it to 1; the frame after, `CEverQuest::PrepareLocalPCForRepop`
+  (the options saved, `EQ_PC::PrepareForRepop`: the bind point as the zone entry, buffs, stats and
+  memorized spells cleared, coins from level 10) and `MoveToZone(ZoneBoundId,
+  "repop_to_home_at_death", 1, 10)`: `OP_ZoneChange` to the profile's `bind_point_zone[0]` (@3784)
+  with reason 10, then zoning as through a zone line. EQMacEmu's `Client::GoToDeath` has the bind
+  transfer waiting for that request (and drops a dead client that never sends it). The next zone's
+  profile gives back what `PrepareForRepop` cleared, so we don't clear it ourselves. Checked with
+  the sewer rat recording below through `frontend_preview`: the message 2 s after the death, then
+  `OP_ZoneChange 1`.
 - **Filters** (`frontend/filters.*`, `/filter` @004fbc3a): `badword`, `guildsay`, `social`, `gsay`,
   `shout`, `auction`, `ooc`, `mymisses`, `othersmisses`, `othershits` and `atkmissesme` toggle;
   `npcspells` and `dmgshield` toggle the other way (0 shown); `pcspells` steps all, off, group;

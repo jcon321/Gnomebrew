@@ -44,8 +44,8 @@ namespace KeyMap
 			{Party3, 6546, "Target party member 3", Target, false},
 			{Party4, 6547, "Target party member 4", Target, false},
 			{Party5, 6548, "Target party member 5", Target, false},
-			{TargetPc, 6549, "Target nearest PC", Target, false},
-			{TargetNpc, 6550, "Target nearest NPC", Target, false},
+			{TargetPc, 6549, "Target nearest PC", Target, true},
+			{TargetNpc, 6550, "Target nearest NPC", Target, true},
 			{NetStat, 6589, "Toggle netstat", UI, false},
 			{Hot1, 6552, "Hot button 1", Macros, true},
 			{Hot1 + 1, 6553, "Hot button 2", Macros, true},
@@ -76,9 +76,9 @@ namespace KeyMap
 			{Cast1 + 6, 6578, "Cast gem 7", Spells, true},
 			{Cast1 + 7, 6579, "Cast gem 8", Spells, true},
 			{Reply, 6532, "Reply", Chat, false},
-			{CycleReply, 6533, "Cycle reply, forward", Chat, false},
-			{CycleReplyBack, 6534, "Cycle reply, back", Chat, false},
-			{ToggleTarget, 6551, "Toggle last two targets", Target, false},
+			{CycleReply, 6533, "Cycle reply, forward", Chat, true},
+			{CycleReplyBack, 6534, "Cycle reply, back", Chat, true},
+			{ToggleTarget, 6551, "Toggle last two targets", Target, true},
 			{SpellBook, 6590, "Toggle spellbook window", Spells | UI, true},
 			{Abilities, 6582, "Open actions ability page", UI, true},
 			{Combat, 6583, "Open actions combat page", UI, true},
@@ -128,6 +128,7 @@ namespace KeyMap
 			{LeftCam, 6695, "Tether-slide camera left", Camera, false},
 			{PitchUpCam, 6696, "Pitch camera up", Camera, false},
 			{PitchDownCam, 6697, "Pitch camera down", Camera, false},
+			{CycleNearestTarget, 0, "Cycle nearest target", Target, true},
 		};
 
 		// __BindList (@00611220), from 0: the ini's names of ExecuteCmd's numbers (*NULL* for 0).
@@ -154,7 +155,8 @@ namespace KeyMap
 			int id;
 			uint32_t key, alternate;
 		};
-		// default_key_bindings, but for the first eight (ours: W A S D with the arrows, Q, F).
+		// default_key_bindings, but for the first eight (ours: W A S D with the arrows, Q, F),
+		// Toggle last two targets (Tab in eqgame) and our own commands.
 		const DefaultBinding Defaults[] = {
 			{Autorun, 0x45, NoKey}, {Jump, 0x39, NoKey},
 			{Forward, 0x11, 0xc8}, {Back, 0x1f, 0xd0}, {Right, 0x20, 0xcd}, {Left, 0x1e, 0xcb},
@@ -176,7 +178,7 @@ namespace KeyMap
 			{Cast1 + 3, Alt | 0x05, NoKey}, {Cast1 + 4, Alt | 0x06, NoKey}, {Cast1 + 5, Alt | 0x07, NoKey},
 			{Cast1 + 6, Alt | 0x08, NoKey}, {Cast1 + 7, Alt | 0x09, NoKey},
 			{Reply, 0x13, NoKey}, {CycleReply, 0x0f, NoKey}, {CycleReplyBack, Shift | 0x0f, NoKey},
-			{Backdrop, 0x29, NoKey}, {ToggleTarget, 0x0f, NoKey},
+			{Backdrop, 0x29, NoKey}, {ToggleTarget, NoKey, NoKey},
 			{SpellBook, Ctrl | 0x30, NoKey}, {Abilities, Ctrl | 0x1e, NoKey}, {Combat, Ctrl | 0x2e, NoKey},
 			{Socials, Ctrl | 0x18, NoKey}, {Main, Ctrl | 0x32, NoKey}, {Who, Ctrl | 0x11, NoKey},
 			{InviteFollow, Ctrl | 0x17, NoKey}, {Disband, Ctrl | 0x20, NoKey}, {Camp, Ctrl | 0x2d, NoKey},
@@ -200,6 +202,7 @@ namespace KeyMap
 			{ForwardCam, Alt | 0x48, Alt | 0xc8}, {BackCam, Alt | 0x50, Alt | 0xd0}, {RightCam, Alt | 0x4d, Alt | 0xcd},
 			{LeftCam, Alt | 0x4b, Alt | 0xcb}, {PitchUpCam, Alt | 0x49, Alt | 0xc9},
 			{PitchDownCam, Alt | 0x51, Alt | 0xd1},
+			{CycleNearestTarget, 0x0f, NoKey},
 		};
 
 		// GetKeyCharacter's table (@006255e8): what a key's character is, for the ones it reads it
@@ -351,6 +354,8 @@ namespace KeyMap
 
 	const char *BindName(int id)
 	{
+		if (id == CycleNearestTarget)
+			return "CYCLE_NEAREST_TARGET";
 		return id >= 0 && id < static_cast<int>(std::size(BindNames)) ? BindNames[id] : "";
 	}
 
@@ -428,8 +433,10 @@ void KeyBindings::Set(int id, bool alternate, uint32_t key)
 
 void KeyBindings::Load(const IniFile &ini)
 {
-	for (int id = 1; id < static_cast<int>(std::size(BindNames)); ++id)
+	for (int id = 1; id < Count; ++id)
 		for (int alt = 0; alt < 2; ++alt) {
+			if (!*BindName(id))
+				continue;
 			uint32_t key = ReadKey(ini, id, alt != 0);
 			if (key != KeepDefault)
 				m_keys[alt][id] = key;
@@ -486,6 +493,9 @@ std::vector<int> KeyBindings::Down(uint32_t key) const
 	for (int id = 0; id <= 0x82; ++id)
 		if (bound(id, key))
 			add(id);
+	for (int id = OwnFirst; id < Count; ++id)
+		if (bound(id, key))
+			add(id);
 	return run;
 }
 
@@ -501,6 +511,9 @@ std::vector<int> KeyBindings::Up(uint32_t key) const
 		if (static_cast<uint8_t>(m_keys[0][id]) == scan || static_cast<uint8_t>(m_keys[1][id]) == scan)
 			add(id);
 	for (int id = 0; id < 0x83; ++id)
+		if (key == m_keys[0][id] || key == m_keys[1][id])
+			add(id);
+	for (int id = OwnFirst; id < Count; ++id)
 		if (key == m_keys[0][id] || key == m_keys[1][id])
 			add(id);
 	return stop;

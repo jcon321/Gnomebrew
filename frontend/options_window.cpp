@@ -70,7 +70,7 @@ void OptionsWindow::Fill()
 	for (const KeyMap::Command &command : KeyMap::List()) {
 		if (!(command.categories & mask))
 			continue;
-		list->rows.push_back({m_host.eqstr ? m_host.eqstr(command.eqstr, command.name) : command.name,
+		list->rows.push_back({m_host.eqstr && command.eqstr ? m_host.eqstr(command.eqstr, command.name) : command.name,
 			KeyMap::Describe(m_keys->Get(command.id, false)), KeyMap::Describe(m_keys->Get(command.id, true)),
 			command.implemented ? "Yes" : "No"});
 		m_row_ids.push_back(command.id);
@@ -167,7 +167,7 @@ bool OptionsWindow::Key(int scan, bool shift, bool ctrl, bool alt)
 	if (m_row < 0 || m_row >= static_cast<int>(m_row_ids.size()))
 		return false;
 	int id = m_row_ids[m_row];
-	if (id > KeyMap::Assignable) {
+	if (id > KeyMap::Assignable && id < KeyMap::OwnFirst) {
 		Cancel();
 		return true;
 	}

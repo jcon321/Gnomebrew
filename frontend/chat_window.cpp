@@ -231,6 +231,12 @@ void ChatWindow::Open(const std::string &text)
 	m_history_pos = -1;
 }
 
+std::string ChatWindow::InputText() const
+{
+	SidlWindow::Control *input = Input();
+	return input ? input->text : std::string();
+}
+
 void ChatWindow::Close()
 {
 	if (m_window && Typing())

@@ -549,17 +549,19 @@ void ZoneSession::SendPosition()
 		RecordSent(update);
 }
 
-bool ZoneSession::RequestZoneChange(uint32_t zone_id)
+bool ZoneSession::RequestZoneChange(uint32_t zone_id, int32_t reason)
 {
 	if (m_state != State::InZone || zone_id == 0)
 		return false;
 	// The zone checks the request against where it last heard we are.
 	SendPosition();
-	// ZoneChange_Struct: char_name[64], zoneID @64, zone_reason @68 (0: a zone line), success @72.
+	// ZoneChange_Struct: char_name[64], zoneID @64, zone_reason @68 (0: a zone line, 10: our death,
+	// MoveToZone's last argument), success @72.
 	uint8_t body[76] = {};
 	memcpy(body, m_profile.name.c_str(), std::min<size_t>(m_profile.name.size(), 63));
 	int32_t zone = static_cast<int32_t>(zone_id);
 	memcpy(body + 64, &zone, 4);
+	memcpy(body + 68, &reason, 4);
 	m_zone_target = zone_id;
 	m_zone_state_ms = NowMs();
 	m_state = State::ZoneRequested;
@@ -1461,6 +1463,7 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		p.cursor_silver = Read<int32_t>(data, 2964);
 		p.cursor_copper = Read<int32_t>(data, 2968);
 		p.zone_id = Read<uint32_t>(data, 3444);
+		p.bind_zone = Read<uint32_t>(data, 3784); // bind_point_zone[0]
 		p.deity = Read<uint16_t>(data, 4944);
 		p.birthday = Read<uint32_t>(data, 4948);
 		p.minutes_played = Read<uint32_t>(data, 4956);

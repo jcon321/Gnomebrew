@@ -36,6 +36,7 @@ public:
 	bool Typing() const;
 	void Open(const std::string &text = "");
 	void Close();
+	std::string InputText() const; // what's typed in it so far
 	// A key while it's open; true when it took it. A line sent with Enter comes back in `line`.
 	bool OnKey(const InputEvent &event, std::string &line);
 	// The keymap's History, up and down, while it's open: a line sent before into the input.

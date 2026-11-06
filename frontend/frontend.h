@@ -270,6 +270,28 @@ private:
 	void PrintConsider(const ZoneConsider &consider);
 	// Our target, and the zone told (OP_TargetMouse, or OP_TargetCommand for /target).
 	void SetTarget(uint16_t id, bool command = false);
+	// CDisplay::GetNearestPlayerInView: the nearest NPC (or player) in the view no more than
+	// `range` from the camera, with nothing of the zone's between; 0 for none.
+	uint16_t NearestInView(float range, bool npc) const;
+	// ExecuteCmd 28 and 29: Target nearest PC, Target nearest NPC.
+	void TargetNearest(bool npc);
+	// Ours, as Zeal's CycleTarget::get_next_ent: the NPCs in view within 250 of us we can see,
+	// nearest first, the next of them each press (the nearest again after 3 seconds).
+	void CycleNearestTarget();
+	// ExecuteCmd 63, Toggle last two targets: from ourselves back to the target we left, or from
+	// any other target (or none) to ourselves, while the chat line isn't open.
+	void ToggleTarget();
+	// AddNameToTellList (@004f847d): a name to the front, once.
+	void AddNameToTellList(const std::string &name);
+	// ExecuteCmd 60 and 61, Cycle reply forward and back (the new UI's branch): while the chat
+	// line is open and starts with /tell or /rtarget, the next (or the last) name of the tell list
+	// after it (CycleNamesInTellList @004f8531).
+	void CycleReply(bool back);
+	// CDisplay_IsInvisible to us (we don't know whether we see invisible: we don't).
+	bool InvisibleToMe(const ZoneSpawn &spawn) const;
+	// CDisplay::RealRender_World's DeathTimer: lying dead, 2 seconds on "Returning to home point,
+	// please wait...", and the frame after it, back to our bind point (MoveToZone).
+	void UpdateDeath(uint64_t now_ms);
 	// EQPlayer::ChangeStance for us (100 standing, 110 sitting): the zone told, our model, and the
 	// spellbook closing as we get up (DeacSpellScreen).
 	void ChangeStance(uint8_t stance);
@@ -384,7 +406,11 @@ private:
 	ChatWindow m_chat;
 	ChatColors m_chat_colors;
 	GameValues m_game_values;
-	std::string m_last_tell; // who to /reply to (AddNameToTellList)
+	// __LastTell: who sent us tells, the newest first, 50 at most (AddNameToTellList); /reply goes
+	// to the first, Cycle reply steps through them (CycleNamesInTellList's DAT_007cf0dc).
+	std::vector<std::string> m_tell_list;
+	int m_tell_index = 0;
+	uint16_t m_toggle_target = 0; // Toggle last two targets' (DAT_00799788): the target we left for ourselves
 	std::string m_time_of_day;
 	std::string m_afk_message;                    // /afk's text (DAT_007cf0e0); nothing answers tells with it yet
 	std::time_t m_started_at = std::time(nullptr); // WinMain's, for /played's session time
@@ -420,6 +446,9 @@ private:
 	Abilities m_abilities;          // the ability and combat skill buttons, and using skills
 	bool m_attack = false;          // auto attack (__Attack)
 	bool m_dead = false;            // we died in this zone (EQPlayer::IDied's stance 120): nothing moves us
+	uint64_t m_death_ms = 0;        // ActorInfo's DeathTimer: when we lay down; 1 once told we're going home
+	int m_cycle_index = -1;         // CycleNearestTarget's place in the list (Zeal's last_index)
+	uint64_t m_cycle_ms = 0;        // its last press
 	bool m_attack_sent = false;     // what OP_AutoAttack last said (DAT_0063db29)
 	Buffs m_buffs;                  // the spells on us
 	CompassWindow m_compass;

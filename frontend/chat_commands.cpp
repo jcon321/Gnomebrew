@@ -434,12 +434,12 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 		std::string to, text = args;
 		if (command == Command::Tell)
 			to = FirstWord(args, text);
-		else if (m_last_tell.empty()) {
+		else if (m_tell_list.empty()) {
 			ChatOut(format(12364, "You have not received any tells, so you cannot reply.", {}), ChatType::Default);
 			break;
 		}
 		else
-			to = m_last_tell;
+			to = m_tell_list.front(); // _reply: __LastTell's first
 		if (Lower(to) == Lower(me.name))
 			ChatOut(format(12323, "Talking to yourself again?", {}), ChatType::Default);
 		else if (!to.empty() && !text.empty())
