@@ -318,6 +318,16 @@ private:
 	// EQPlayer::NotOnSameDeity (@005097d2) of us and a player, on the deity team servers: we're on a
 	// team (EQPlayer_WhatDeityAlliance) and they're not a GM on it.
 	bool NotOnSameDeity(const ZoneSpawn &spawn) const;
+	// CEverQuest::Who (@0052f614, chat_commands.cpp): /who's filters; the zone's players listed
+	// here, or "all" asks the world (OP_WhoAllRequest), whose answer msg_who_response prints.
+	void Who(const std::string &args);
+	// /follow (@004fc259): auto-follow our target, a member of our group; FollowPlayerAI
+	// (@00507b08), each frame we have control, turns us toward them and runs, walks or stops us by
+	// the distance; TurnOffAutoFollow (@00507e0a) ends it.
+	void Follow();
+	void FollowPlayerAI();
+	void TurnOffAutoFollow(bool say = true);
+	void WhoAnswer(const ZoneWho &who);
 	// CDisplay_IsInvisible to us (we don't know whether we see invisible: we don't).
 	bool InvisibleToMe(const ZoneSpawn &spawn) const;
 	// CDisplay::RealRender_World's DeathTimer: lying dead, 2 seconds on "Returning to home point,
@@ -469,6 +479,7 @@ private:
 	// back, any change of our stance (EQPlayer::ChangeStance) and a new zone (EnterZone).
 	bool m_autorun = false;
 	uint8_t m_autorun_stance = 0; // our stance when it was last looked at, to see it change
+	uint16_t m_following = 0;     // ActorInfo's Following: whom /follow has us after (0 nobody)
 	KeyBindings m_key_bindings; // the keymap, from my-client.ini's [KeyMaps]
 	OptionsWindow m_options;
 	bool m_alt_down = false; // the Alt key (GetKeyboardFlags' 4), for the gems' tooltips

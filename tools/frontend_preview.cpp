@@ -368,6 +368,35 @@ namespace
 		h.Snapshot("g1-grouped");
 		click("GroupWindow", "Gauge1");
 		printf("[preview] target after the gauge: %u\n", frontend.Target());
+		// /who here and in all of EverQuest, and filtered.
+		for (const char *line : {"/who", "/who all", "/who all claude", "/who 1 10 human", "/who corpse", "/whotarget"})
+			type(line);
+		h.RunUntil([] { return false; }, 1500);
+		chat();
+		// /follow them: from 70 away we go after them and stop by them; Move back ends it.
+		type("/follow");
+		if (const ZoneSpawn *b = bot()) {
+			frontend.ZoneScene()->SetPlayerPosition(b->x, b->y - 70, b->z, 256);
+			auto gap = [&] {
+				ZoneMovement m = frontend.ZoneScene()->Movement();
+				return std::hypot(b->x - m.x, b->y - m.y);
+			};
+			printf("[preview] following from %.0f away\n", gap());
+			for (int i = 0; i < 6; ++i) {
+				h.RunUntil([] { return false; }, 1000);
+				ZoneMovement m = frontend.ZoneScene()->Movement();
+				printf("[preview]   %.0f away, heading %.0f, speed %.2f\n", gap(), m.heading, m.speed);
+			}
+		}
+		InputEvent back;
+		back.type = InputEvent::Type::Key;
+		back.key = InputEvent::Key::Down;
+		frontend.OnEvent(back);
+		h.RunUntil([] { return false; }, 200);
+		back.type = InputEvent::Type::KeyUp;
+		frontend.OnEvent(back);
+		h.RunUntil([] { return false; }, 300);
+		chat();
 		type("/disband");
 		h.RunUntil([] { return false; }, 2500);
 		chat();

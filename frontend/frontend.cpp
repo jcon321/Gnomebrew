@@ -2309,6 +2309,9 @@ void FrontEnd::ActionsClick(const std::string &control)
 	}
 	else if (control == "AMP_DisbandButton")
 		m_group.Disband();
+	else if (control == "AMP_WhoButton")
+		Who(""); // MainPageWndNotification (not while DAT_00798560, a flag not known)
+
 }
 
 void FrontEnd::AddZoneLog(const std::string &text, uint32_t color)
@@ -2504,6 +2507,120 @@ void FrontEnd::OpenChatLine(const std::string &text)
 	m_windows.Show("ChatWindow", true);
 	m_chat.Open(text);
 	m_chat_opened_by_key = true;
+}
+
+void FrontEnd::Follow()
+{
+	auto text = [this](uint32_t id, const char *fallback, const std::vector<std::string> &args = {}) {
+		return FormatEqString(m_ui.eqstr, id, fallback, args);
+	};
+	const ZoneSpawn *target = m_game_values.Target();
+	uint32_t refused = 0;
+	const char *why = "";
+	if (!target || target->npc != 0)
+		refused = 13225, why = "You must first target a group member to auto-follow.";
+	else if (target->id == m_zone.MySpawnId())
+		refused = 13226, why = "You can't auto-follow yourself.";
+	else if (!m_group.IsAGroupMember(target->name))
+		refused = 13225, why = "You must first target a group member to auto-follow.";
+	else if (m_buffs.SpeedModifier(m_zone.Self().run_speed) < -1000) // MovementSpeedModifier: rooted
+		refused = 13227, why = "You cannot move right now, how could you follow?";
+	else if (m_zone.Self().stance == 102 || m_zone.Self().linkdead) {
+		ChatOut(text(13228, "You are not yourself right now, you cannot follow."), ChatType::Default);
+		return;
+	}
+	else if (m_zone.Self().stance != 100)
+		refused = 13229, why = "Stand up first!";
+	if (refused != 0) {
+		ChatOut(text(refused, why), ChatType::Default);
+		return;
+	}
+	ChatOut(text(13230, "You will now auto-follow %1.", {target->DisplayName()}), ChatType::Default);
+	ChatOut(text(13231, "*WARNING*: Do NOT use around lava, water, cliffs, or other dangerous areas because you WILL fall into them. You have been warned."),
+		ChatType::Red);
+	ChatOut(text(13232, "Also, auto-follow works best in wide open areas with low lag.  Twisty areas, lag, and other factors may cause auto-follow to fail."),
+		ChatType::Red);
+	m_following = target->id;
+}
+
+void FrontEnd::TurnOffAutoFollow(bool say)
+{
+	if (m_following == 0)
+		return;
+	m_autorun = false;
+	m_run = true;
+	auto it = m_zone.Spawns().find(m_following);
+	if (say && it != m_zone.Spawns().end())
+		ChatOut(FormatEqString(m_ui.eqstr, 12694, "You are no longer auto-following %1.", {it->second.DisplayName()}),
+			ChatType::Default);
+	m_following = 0;
+}
+
+void FrontEnd::FollowPlayerAI()
+{
+	if (m_following == 0 || !m_zone_view)
+		return;
+	auto it = m_zone.Spawns().find(m_following);
+	if (it == m_zone.Spawns().end()) {
+		// ~EQPlayer: whoever followed them stops, without a word.
+		TurnOffAutoFollow(false);
+		return;
+	}
+	const ZoneSpawn &them = it->second;
+	if (them.stance == 120) {
+		ChatOut(FormatEqString(m_ui.eqstr, 12692, "%1 is dead, cancelling auto-follow.", {them.name}), ChatType::Default);
+		TurnOffAutoFollow();
+		return;
+	}
+	ZoneMovement me = m_zone_view->Movement();
+	float dx = them.x - me.x, dy = them.y - me.y, dz = them.z - me.z;
+	float distance = std::sqrt(dx * dx + dy * dy + dz * dz); // CDisplay_TrueDistance
+	if (distance > 200) {
+		ChatOut(FormatEqString(m_ui.eqstr, 12693, "%1 is too far away, cancelling auto-follow.", {them.DisplayName()}),
+			ChatType::Default);
+		TurnOffAutoFollow();
+		return;
+	}
+	float lift = m_zone_view->CenterHeight(them.id) + m_zone_view->CenterHeight(m_zone.MySpawnId());
+	// get_bearing: atan2 of the x and y differences, in degrees, as 511.5ths of a turn.
+	float degrees = std::atan2(dx, dy) * 180.0f / 3.14159265f;
+	if (degrees < 0)
+		degrees += 360;
+	float bearing = degrees * 511.5f / 360.0f;
+	if (CanSee(them.id)) { // CastRay from them to us
+		float heading = me.heading, turned = bearing;
+		if (distance >= 20) {
+			// CDisplay_HeadingDiff: the way round that's shorter, at most 4 a frame (9 past a quarter turn).
+			float low = std::min(heading, bearing), high = std::max(heading, bearing);
+			float diff = high - low, signed_diff = diff;
+			if (diff > 256) {
+				signed_diff = diff - 512;
+				diff = 512 - diff;
+			}
+			if (diff >= 1) {
+				float step = diff < 4 ? diff : diff <= 128 ? 4.0f : 9.0f;
+				if ((heading < bearing && signed_diff < 0) || (bearing < heading && signed_diff > 0))
+					turned = heading - step;
+				else
+					turned = heading + step;
+				while (turned >= 512)
+					turned -= 512;
+				while (turned < 0)
+					turned += 512;
+			}
+		}
+		m_zone_view->Turn(turned - heading);
+	}
+	if (distance < lift + 15) {
+		m_autorun = false;
+		return;
+	}
+	const ZoneMovement now = m_zone_view->Movement();
+	if (distance < lift + 30 && (them.speed < now.speed || now.speed == 0))
+		m_run = false;
+	else
+		m_run = true;
+	m_autorun = true;
 }
 
 void FrontEnd::UpdateDeath(uint64_t now_ms)
@@ -2993,6 +3110,9 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 		case Type::Profile:
 			m_group.ProfileArrived(); // CheckForGroupChanges
 			break;
+		case Type::WhoAnswered:
+			WhoAnswer(event.who);
+			break;
 		case Type::GroupInvited:
 		case Type::GroupInviteCancelled:
 		case Type::GroupFollowed:
@@ -3363,6 +3483,10 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 		if (!m_window_state.busy && m_zone.Self().stance != 102)
 			m_group.TargetMember(cmd - KeyMap::Party1);
 		break;
+	case KeyMap::Who:
+		if (m_zone.Self().stance != 102)
+			Who("");
+		break;
 	case KeyMap::InviteFollow:
 		// ExecuteCmd 0x46: invite, or accept the invitation we have.
 		if (m_zone.Self().stance != 102) {
@@ -3530,6 +3654,12 @@ MoveControls FrontEnd::ZoneControls()
 	if (stance != m_autorun_stance)
 		m_autorun = false;
 	m_autorun_stance = stance;
+	// ProcessControls: with control of ourselves (standing or crouching), auto-follow steers; Move
+	// back and the turn (or strafe) keys end it.
+	if (m_following && (m_keys.back || m_keys.left || m_keys.right))
+		TurnOffAutoFollow();
+	if (can_move && (stance == 100 || stance == 111))
+		FollowPlayerAI();
 	if (can_move) {
 		// ProcessControls: forward with the key, autorun, or both mouse buttons.
 		controls.forward = m_keys.forward || m_autorun || (m_mouse_turn && m_mouse_pan);

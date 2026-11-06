@@ -17,7 +17,7 @@ namespace
 	{
 		None, Say, Tell, Group, Shout, Auction, Ooc, Guild, Reply, Emote, Hail, Location, Target, Camp,
 		ClearChat, ShowNames, Sit, Stand, Book, Cast, Consider, Played, Motd, Time, Afk, Anonymous, Assist,
-		Random, LootNoDrop, FastDrop, Social, Attack, CombatMusic, DoAbility, Filter, ServerFilter, Invite, Disband,
+		Random, LootNoDrop, FastDrop, Social, Attack, CombatMusic, DoAbility, Filter, ServerFilter, Invite, Disband, Who, WhoTarget, Follow,
 	};
 
 	struct CommandEntry
@@ -29,7 +29,7 @@ namespace
 
 	// eqgame's table at 0x609afc, all 277 in order (abbreviations depend on it).
 	constexpr CommandEntry Commands[] = {
-		{"/who", 0, Command::None}, {"/consider", 0, Command::Consider}, {"/feedback", 0, Command::None},
+		{"/who", 0, Command::Who}, {"/consider", 0, Command::Consider}, {"/feedback", 0, Command::None},
 		{"/consent", 0, Command::None}, {"/played", 0, Command::Played}, {"/ignore", 0, Command::None},
 		{"/anonymous", 0, Command::Anonymous}, {"/afk", 0, Command::Afk}, {"/filter", 0, Command::Filter},
 		{"/assist", 0, Command::Assist}, {"/duel", 0, Command::None}, {"/decline", 0, Command::None},
@@ -86,7 +86,7 @@ namespace
 		{"/kick", 4, Command::None}, {"/kill", 3, Command::None}, {"/delcorpse", 8, Command::None},
 		{"/hideme", 3, Command::None}, {"/servers", 3, Command::None}, {"/height", 4, Command::None},
 		{"/exit", 0, Command::None}, {"/loot", 0, Command::None}, {"/roleplay", 0, Command::None},
-		{"/follow", 0, Command::None}, {"/report", 0, Command::None}, {"/surname", 0, Command::None},
+		{"/follow", 0, Command::Follow}, {"/report", 0, Command::None}, {"/surname", 0, Command::None},
 		{"/log", 0, Command::None}, {"/toggletell", 3, Command::None}, {"/inquire", 3, Command::None},
 		{"/praise", 3, Command::None}, {"/warn", 3, Command::None}, {"/edit", 3, Command::None},
 		{"/voice", 0, Command::None}, {"/microphone", 0, Command::None}, {"/movelog", 0, Command::None},
@@ -94,7 +94,7 @@ namespace
 		{"/fastdrop", 0, Command::FastDrop}, {"/trackplayers", 0, Command::None}, {"/help", 0, Command::None},
 		{"/lfg", 0, Command::None}, {"/approval", 4, Command::None}, {"/sit", 0, Command::Sit},
 		{"/stand", 0, Command::Stand}, {"/book", 0, Command::Book}, {"/cast", 0, Command::Cast},
-		{"/doability", 0, Command::DoAbility}, {"/whotarget", 0, Command::None}, {"/language", 0, Command::None},
+		{"/doability", 0, Command::DoAbility}, {"/whotarget", 0, Command::WhoTarget}, {"/language", 0, Command::None},
 		{"/target", 0, Command::Target}, {"/camp", 0, Command::Camp}, {"/attack", 0, Command::Attack},
 		{"/invite", 0, Command::Invite}, {"/disband", 0, Command::Disband}, {"/note", 0, Command::None},
 		{"/wincolor", 0, Command::None}, {"/usercolor", 0, Command::None}, {"/resetwindows", 0, Command::None},
@@ -324,6 +324,304 @@ namespace
 		case 204: case 208: case 210: case 212: case 215: return 1;
 		default: return 0;
 		}
+	}
+}
+
+namespace
+{
+	// EQ_Character::Race (@004bbd39): the playable races' names (and the Froglok's), "Unknown" for
+	// the rest.
+	std::string PcRace(const EqStr *strings, int race)
+	{
+		uint32_t id = race >= 1 && race <= 12 ? 1469 + race : race == 128 ? 1482 : race == 130 ? 1483 : race == 330 ? 2482 : 1484;
+		return FormatEqString(strings, id, race >= 1 && race <= 12 ? RaceName(static_cast<uint16_t>(race)) : "Unknown", {});
+	}
+
+	// CEverQuest_GrabFirstWord (@00545aae): past the spaces, a word up to a space (or a quoted one,
+	// ' or "), the rest after it.
+	std::string GrabFirstWord(std::string &rest)
+	{
+		size_t i = 0;
+		while (i < rest.size() && std::isspace(static_cast<unsigned char>(rest[i])))
+			++i;
+		char end = ' ';
+		if (i < rest.size() && (rest[i] == '\'' || rest[i] == '"'))
+			end = rest[i++];
+		std::string word;
+		while (i < rest.size() && rest[i] != end && rest[i] != '\x12')
+			word.push_back(rest[i++]);
+		if (i < rest.size() && rest[i] == end)
+			++i;
+		while (i < rest.size() && std::isspace(static_cast<unsigned char>(rest[i])))
+			++i;
+		rest = rest.substr(i);
+		return word;
+	}
+
+	bool SameText(const std::string &a, const std::string &b)
+	{
+		return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) {
+			return std::tolower(static_cast<unsigned char>(x)) == std::tolower(static_cast<unsigned char>(y));
+		});
+	}
+
+	// strnicmp(a, b, n).
+	bool SamePrefix(const std::string &a, const std::string &b, size_t n)
+	{
+		for (size_t i = 0; i < n; ++i) {
+			char x = i < a.size() ? a[i] : '\0', y = i < b.size() ? b[i] : '\0';
+			if (std::tolower(static_cast<unsigned char>(x)) != std::tolower(static_cast<unsigned char>(y)))
+				return false;
+			if (x == '\0')
+				return true;
+		}
+		return true;
+	}
+}
+
+void FrontEnd::Who(const std::string &given)
+{
+	// CEverQuest::Who (@0052f614): up to six words, each a filter.
+	auto text = [this](uint32_t id, const char *fallback, const std::vector<std::string> &args = {}) {
+		return FormatEqString(m_ui.eqstr, id, fallback, args);
+	};
+	const GuildNames &guilds = m_world.Guilds();
+	auto guild_name = [&](int16_t id) {
+		auto it = guilds.find(id);
+		return it != guilds.end() && !it->second.empty() ? it->second : std::string("Unknown Guild");
+	};
+	std::string rest = given, whom;
+	int mode = 0; // 2 our corpses, 3 /who all
+	int16_t race = -1, class_id = -1, level_low = -1, level_high = -1, gm = -1, guild = -1;
+	int first = -1, second = -1;
+	bool have_class = false, have_race = false, have_first = false, have_second = false;
+	for (int n = 0; n < 6; ++n) {
+		std::string word = GrabFirstWord(rest);
+		if (word.empty())
+			break;
+		if (SameText(word, text(3118, "corpse")))
+			mode = 2;
+		else if (SameText(word, text(13205, "ALL")) || SameText(word, "all"))
+			mode = 3;
+		else if (SameText(word, text(3119, "GM")) || SameText(word, "GM"))
+			gm = 1;
+		else if (SameText(word, text(3120, "NONGM")))
+			gm = 0;
+		else if (SameText(word, text(3112, "friend")) || SameText(word, "friends"))
+			guild = -2;
+		else if (SameText(word, text(3121, "LFG")))
+			guild = -3;
+		else if (SameText(word, "Trader") && mode != 3)
+			guild = -4;
+		else {
+			std::string guild_word = text(13122, "guild");
+			// "guild<n>": that guild by number.
+			if (SamePrefix(word, guild_word, 5) && word.size() > 5 && std::isalnum(static_cast<unsigned char>(word[5]))) {
+				guild = static_cast<int16_t>(std::atoi(word.c_str() + 5));
+				whom = guild_name(guild);
+				continue;
+			}
+			if (SameText(word, guild_word)) {
+				if (m_zone.Self().guild_id != -1) {
+					guild = m_zone.Self().guild_id;
+					whom = guild_name(guild);
+					continue;
+				}
+				ChatOut(text(12336, "You aren't in a guild, so can't ask for guild info in who list."), ChatType::Default);
+			}
+			// A class or race the word starts (the first of each).
+			bool matched = false;
+			if (!have_class)
+				for (int c = 1; c <= 32 && !matched; ++c)
+					if (SamePrefix(GameValues::ClassDesc(m_ui.eqstr, c), word, word.size())) {
+						have_class = matched = true;
+						class_id = static_cast<int16_t>(c);
+					}
+			if (!have_race && !matched)
+				for (int r = 0; r < 331 && !matched; ++r)
+					if (SamePrefix(PcRace(m_ui.eqstr, r), word, word.size())) {
+						have_race = matched = true;
+						race = static_cast<int16_t>(r);
+					}
+			if (matched)
+				continue;
+			// The first number, the second; otherwise a name or a guild's.
+			if (std::isdigit(static_cast<unsigned char>(word[0])) && !have_first) {
+				have_first = true;
+				first = std::atoi(word.c_str());
+				continue;
+			}
+			if (std::isdigit(static_cast<unsigned char>(word[0])) && !have_second) {
+				have_second = true;
+				second = std::atoi(word.c_str());
+				continue;
+			}
+			// FindGuildIndexName: a guild the word starts (under 31 characters).
+			if (word.size() < 31)
+				for (const auto &[id, name] : guilds)
+					if (!name.empty() && SamePrefix(name, word, word.size())) {
+						guild = id;
+						break;
+					}
+			whom = word;
+		}
+	}
+	// A level, or a range either way round.
+	if (first > 0 || second > 0) {
+		int low = second, high = second;
+		if (first > 0) {
+			if (second < 1)
+				second = first;
+			low = first;
+			high = second;
+			if (first >= second) {
+				low = second;
+				high = first;
+			}
+		}
+		level_low = static_cast<int16_t>(low);
+		level_high = static_cast<int16_t>(high);
+	}
+	if (mode == 3) {
+		if (guild != -2) {
+			m_zone.WhoAll(whom, race, class_id, level_low, level_high, gm, guild);
+			return;
+		}
+		// /who all friends: OP_FriendsWho with the friends list (no /friends yet: none).
+		ChatOut(text(12308, "You have no friends, but you can add some with: /friends <name>"), 0x119);
+		return;
+	}
+	ChatOut(guild == -3 ? text(12309, "Players Looking For Groups:") : text(12310, "Players on EverQuest:"), 0x119);
+	ChatOut("---------------------------", 0x119);
+	const ZoneProfile &me = m_zone.Profile();
+	int count = 0;
+	auto list = [&](const ZoneSpawn &spawn) {
+		bool ok = true;
+		if (class_id != -1 && (spawn.class_id != class_id || spawn.anon != 0))
+			ok = false;
+		if (race != -1 && (spawn.race != race || spawn.anon != 0))
+			ok = false;
+		if (level_low != -1 && (spawn.level < level_low || spawn.level > level_high || spawn.anon != 0))
+			ok = false;
+		if (gm != -1 && spawn.gm != gm)
+			ok = false;
+		if (guild == -3 && !spawn.lfg)
+			ok = false;
+		if (guild == -4) // a trader (the Bazaar's; none known here)
+			ok = false;
+		if (guild < 0) {
+			if (!whom.empty() && !SamePrefix(whom, spawn.name, whom.size()))
+				ok = false;
+		}
+		else if (spawn.guild_id != guild)
+			ok = false;
+		if (spawn.gm != 0 && spawn.anon != 0)
+			ok = false;
+		if (!ok)
+			return;
+		std::string guild_text = spawn.guild_id == -1 || spawn.anon == 1 ? "" : " <" + guild_name(spawn.guild_id) + ">";
+		std::string afk = spawn.afk ? text(12311, " AFK ") : "";
+		std::string gm_text = spawn.gm ? text(12312, "* GM * ") : "";
+		std::string linkdead = spawn.linkdead && !spawn.pvp ? text(12313, " <LINKDEAD>") : "";
+		std::string lfg = spawn.lfg == 1 ? text(12314, " LFG") : "";
+		std::string trader; // " TRADER" (12315) for a Bazaar trader; not known here
+		std::string line;
+		if (mode == 0) {
+			if (spawn.npc != 0)
+				return;
+			if (spawn.anon == 0)
+				line = trader + afk + linkdead + gm_text + "[" + std::to_string(spawn.level) + " " +
+				       GameValues::ClassTitle(m_ui.eqstr, spawn.class_id, spawn.level) + "] " + spawn.DisplayName() + " (" +
+				       PcRace(m_ui.eqstr, spawn.race) + ")" + guild_text + lfg;
+			else
+				line = trader + afk + linkdead + gm_text + "[" + text(3122, "ANONYMOUS") + "] " + spawn.DisplayName() + " " +
+				       guild_text + lfg;
+		}
+		else if (mode == 2 && spawn.npc > 1 && SamePrefix(spawn.name, me.name, me.name.size()))
+			line = "[" + std::to_string(spawn.level) + " " + GameValues::ClassTitle(m_ui.eqstr, spawn.class_id, spawn.level) + "] " +
+			       spawn.DisplayName() + " (" + PcRace(m_ui.eqstr, spawn.race) + ")";
+		else
+			return;
+		ChatOut(line, 0x119);
+		++count;
+	};
+	// pinstSpawnList, ourselves among them.
+	ZoneSpawn self = m_zone.Self();
+	self.id = m_zone.MySpawnId();
+	list(self);
+	for (const auto &[id, spawn] : m_zone.Spawns())
+		if (id != self.id)
+			list(spawn);
+	std::string zone = FullZoneName(me.zone_id, m_ui.eqstr);
+	if (count == 0)
+		ChatOut(text(12317, "There are no players in %1 that match those who filters.", {zone}), 0x119);
+	else if (count == 1)
+		ChatOut(text(12318, "There is 1 player in %1.", {zone}), 0x119);
+	else
+		ChatOut(text(12316, "There are %1 players in %2.", {std::to_string(count), zone}), 0x119);
+}
+
+void FrontEnd::WhoAnswer(const ZoneWho &who)
+{
+	// msg_who_response (@004e4d3d): the heading and its line, a line for each player, the closing.
+	auto text = [this](uint32_t id, const std::vector<std::string> &args) {
+		return FormatEqString(m_ui.eqstr, id, "", args);
+	};
+	if (who.heading != -1) {
+		ChatOut(text(static_cast<uint16_t>(who.heading), {}), ChatType::Default);
+		ChatOut(who.line, ChatType::Default);
+	}
+	for (const ZoneWhoPlayer &p : who.players) {
+		std::string line;
+		if (p.format == 5026 || p.format == 5027)
+			line = text(p.format, {ShortZoneName(p.zone)});
+		else {
+			std::string flag = p.flag != 0xffff ? text(p.flag, {}) : "";
+			std::string rank = p.rank != 0xffff ? std::to_string(p.rank) : ""; // %T1: the eqstr of that id
+			if (p.format == 5022 || p.format == 5025) {
+				std::string pid;
+				if (p.pid == 5003)
+					pid = text(5003, {std::to_string(static_cast<int32_t>(p.gm)), p.account});
+				else if (p.pid == 5004)
+					pid = text(5004, {p.account});
+				std::string zone = p.zone_string != 0xffff ? text(p.zone_string, {ShortZoneName(p.zone)}) : "";
+				std::string level = std::to_string(static_cast<int16_t>(p.level));
+				std::string cls = GameValues::ClassTitle(m_ui.eqstr, p.class_id, p.level);
+				std::string race = PcRace(m_ui.eqstr, p.race);
+				if (p.format == 5022)
+					line = text(5022, {rank, level, cls, p.name, race, zone, pid, flag});
+				else
+					line = text(5025, {rank, level, cls, p.name, race, p.guild, zone, pid, flag});
+			}
+			else if (p.format == 5023)
+				line = text(5023, {rank, p.name, p.guild, flag});
+			else if (p.format == 5024)
+				line = text(5024, {rank, p.name, flag});
+			else
+				continue;
+		}
+		ChatOut(line, 10);
+	}
+	std::string n28 = std::to_string(who.numbers[0]), n2c = std::to_string(who.numbers[1]), n30 = std::to_string(who.numbers[2]),
+	            n34 = std::to_string(who.numbers[3]);
+	switch (who.closing) {
+	case 5028: case 5034: case 5035: case 5036:
+		ChatOut(text(static_cast<uint32_t>(who.closing), {n30}), ChatType::Default);
+		break;
+	case 5029: case 5033:
+		ChatOut(text(static_cast<uint32_t>(who.closing), {}), ChatType::Default);
+		break;
+	case 5030:
+		ChatOut(text(5030, {n34, n30, n2c}), ChatType::Default);
+		break;
+	case 5031:
+		ChatOut(text(5031, {n34, n30, n28}), ChatType::Default);
+		break;
+	case 5032:
+		ChatOut(text(5032, {n34, n30, n2c, n28}), ChatType::Default);
+		break;
+	default:
+		break;
 	}
 }
 
@@ -1054,6 +1352,17 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 		}
 		break;
 	}
+	case Command::Who:
+		Who(args);
+		break;
+	case Command::Follow:
+		Follow();
+		break;
+	case Command::WhoTarget:
+		// /whotarget (@004fd2fa): /who of the target's name.
+		if (target != spawns.end())
+			Who(target->second.name);
+		break;
 	case Command::Invite:
 		// /invite (@004fd38d): an invitation we have accepted, else CEverQuest_Invite.
 		if (!allow())

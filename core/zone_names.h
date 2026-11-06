@@ -12,6 +12,10 @@ class EqStr;
 // built-in long name; "Unknown Zone" for an id it doesn't know. `strings` may be null.
 std::string FullZoneName(uint32_t zone_id, const EqStr *strings);
 
+// EQWorldData::GetZoneNameFromIndex (@00523f73): a zone's short name ("qeynos"); empty for an id
+// it doesn't know.
+std::string ShortZoneName(uint32_t zone_id);
+
 // EQWorldData::ExpansionZone (@00523ec1): the expansion AddZone gives a zone (0 the original world,
 // 1 Kunark, 2 Velious, 3 Luclin, 4 the Planes of Power); 0 for an id it doesn't know.
 int ZoneExpansion(uint32_t zone_id);

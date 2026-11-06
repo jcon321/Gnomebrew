@@ -192,8 +192,15 @@ no rules of its own.
    Still to do: more windows and the channel map (eqgame's `CChatManager`: which window each
    channel goes to, set from the right-click menu; there were no tabs in this era), the chat font
    size, hold-to-repeat on the scrollbar's arrows, languages scrambled by skill
-   (`HearBabel`), and the commands that still say they aren't supported (/who, /follow, /lfg,
-   /rtarget...). DoPercentConvert (@00538110, `FrontEnd::PercentConvert`): %t, %m, %s, %o, %p and %r
+   (`HearBabel`), and the commands that still say they aren't supported (/lfg, /rtarget...).
+   /who (CEverQuest::Who: this zone's players filtered by class, race, levels, GM, LFG, guild or
+   name, and our corpses; `all` through OP_WhoAllRequest and msg_who_response's lines), /whotarget,
+   the Who key and button, and /follow (FollowPlayerAI's turning, running, walking and stopping,
+   TurnOffAutoFollow on Move back and the turn keys) are done. Still to do: /who all friends
+   (OP_FriendsWho with a friends list; no /friends yet), traders (ActorInfo's IsTrader), the
+   spawn list's order (pinstSpawnList; ours by id), and /follow on a mount or of a rider
+   (pinstCharSpawn, ActorInfo's Mount) and its line of sight from them to us (CastRay is ours,
+   from us). DoPercentConvert (@00538110, `FrontEnd::PercentConvert`): %t, %m, %s, %o, %p and %r
    at a line's start or after a space or apostrophe, eleven at most (then '@'), on every line
    printed (`ChatOut`, as print_chat_dsp_chat) and on what's said, told, sent to a channel, emoted
    and sent by socials (SendNewText, CEverQuest::Emote, send_social). Still to do: stripName's
@@ -245,7 +252,7 @@ no rules of its own.
    own character after it. Still to do:
    - ExecuteCmd's commands not done yet (the page's "No"): Toggle mouse look, Duck, Use centerscreen, Center view, Zoom in and out held
      (ProcessControls' camera distance at 2 units a frame unit), Toggle UI Display (ScreenMode 3),
-     Toggle netstat, Who, the clip plane, voice input,
+     Toggle netstat, the clip plane, voice input,
      screenshots, the chat line's cursor and page up and down (CChatWindow::ScrollChatWindowUp),
      the AA, bazaar, bazaar search, raid and music player
      windows, and the six camera moves (ExecuteCmd 0x6f..0x74, ProcessControls).

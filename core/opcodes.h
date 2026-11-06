@@ -130,6 +130,9 @@ namespace ZoneOp
 	constexpr uint16_t TradeCoins = 0x40e4;       // TradeMoney_Struct: the other side's coins
 	constexpr uint16_t TradeItemPacket = 0x40df;  // TradeItemHeader_Struct {u16 from, i16 slot, u8 type, item}
 	constexpr uint16_t TradeReset = 0x4010;       // empty
+	// /who all: see ZoneSession::WhoAll.
+	constexpr uint16_t WhoAllRequest = 0x40f4;  // Who_All_Struct, 140 bytes
+	constexpr uint16_t WhoAllResponse = 0x200b; // WhoAllReturnStruct: a header, then variable-length WhoAllPlayers
 	// Groups: see ZoneSession::GroupInvite.
 	constexpr uint16_t GroupInvite = 0x203e;       // GroupInvite_Struct {invitee[64], inviter[64], group[64], u8 pvp}: both ways
 	constexpr uint16_t GroupInvite2 = 0x4040;      // the same, from a group's leader (the zone hands it on as 0x203e)
@@ -320,6 +323,8 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::TradeCoins, "OP_TradeCoins"},
 	{ZoneOp::TradeItemPacket, "OP_TradeItemPacket"},
 	{ZoneOp::TradeReset, "OP_TradeReset"},
+	{ZoneOp::WhoAllRequest, "OP_WhoAllRequest"},
+	{ZoneOp::WhoAllResponse, "OP_WhoAllResponse"},
 	{ZoneOp::GroupInvite, "OP_GroupInvite"},
 	{ZoneOp::GroupInvite2, "OP_GroupInvite2"},
 	{ZoneOp::GroupFollow, "OP_GroupFollow"},

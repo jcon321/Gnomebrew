@@ -84,7 +84,7 @@ namespace KeyMap
 			{Combat, 6583, "Open actions combat page", UI, true},
 			{Socials, 6584, "Open actions social page", UI, true},
 			{Main, 6581, "Open actions main page", UI, true},
-			{Who, 6513, "Who", Commands, false},
+			{Who, 6513, "Who", Commands, true},
 			{InviteFollow, 6514, "Invite/follow", Commands, true},
 			{Disband, 6515, "Disband", Commands, true},
 			{Camp, 6516, "Camp", Commands, true},

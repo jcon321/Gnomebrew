@@ -973,6 +973,18 @@ bool ZoneSession::GroupInvite(const std::string &invitee, bool as_leader)
 		std::string(as_leader ? "OP_GroupInvite2 " : "OP_GroupInvite ") + invitee);
 }
 
+bool ZoneSession::WhoAll(const std::string &whom, int16_t race, int16_t class_id, int16_t level_low, int16_t level_high,
+	int16_t gm, int16_t guild)
+{
+	if (m_state != State::InZone)
+		return false;
+	std::vector<uint8_t> body(140, 0);
+	PutName(body, 0, whom);
+	int16_t fields[6] = {race, class_id, level_low, level_high, gm, guild};
+	std::memcpy(body.data() + 64, fields, sizeof(fields));
+	return Send(ZoneOp::WhoAllRequest, body.data(), body.size(), "OP_WhoAllRequest '" + whom + "'");
+}
+
 bool ZoneSession::GroupFollow(const std::string &inviter)
 {
 	if (m_state != State::InZone)
@@ -1840,6 +1852,54 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		Event e{Event::Type::TradeRefused};
 		e.id = Read<uint16_t>(data, 2);
 		e.value = data[4];
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::WhoAllResponse: {
+		if (data.size() < 0x3a)
+			break;
+		Event e{Event::Type::WhoAnswered};
+		ZoneWho &who = e.who;
+		who.heading = Read<int16_t>(data, 4);
+		who.line = CString(data, 6, 27);
+		who.closing = Read<int16_t>(data, 0x24);
+		for (int i = 0; i < 4; ++i)
+			who.numbers[i] = Read<int32_t>(data, 0x28 + i * 4);
+		int count = Read<int16_t>(data, 0x38);
+		size_t at = 0x3a;
+		auto text = [&](size_t &p) {
+			std::string out = CString(data, p, 256);
+			p += out.size() + 1;
+			return out;
+		};
+		for (int i = 0; i < count && at + 2 <= data.size(); ++i) {
+			ZoneWhoPlayer player;
+			player.format = Read<uint16_t>(data, at);
+			if (player.format == 5026 || player.format == 5027) { // a zone server's state
+				player.zone = Read<uint32_t>(data, at + 2);
+				at += 6;
+				who.players.push_back(player);
+				continue;
+			}
+			player.pid = Read<uint16_t>(data, at + 2);
+			at += 4;
+			player.name = text(at);
+			player.rank = Read<uint16_t>(data, at);
+			at += 2;
+			player.guild = text(at);
+			player.gm = Read<uint32_t>(data, at);
+			player.flag = Read<uint16_t>(data, at + 4);
+			player.zone_string = Read<uint16_t>(data, at + 6);
+			player.zone = Read<uint32_t>(data, at + 8);
+			player.class_id = Read<uint16_t>(data, at + 12);
+			player.level = Read<uint16_t>(data, at + 14);
+			player.race = Read<uint16_t>(data, at + 16);
+			at += 18;
+			player.account = text(at);
+			player.ending = Read<uint16_t>(data, at);
+			at += 2;
+			who.players.push_back(player);
+		}
 		events.push_back(e);
 		break;
 	}

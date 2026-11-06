@@ -582,7 +582,8 @@ what's on the ground, drop an item and pick it back up, and open a forge and clo
 print the chat, and snapshot the compass as it turns; or `group`, with Claudebot in the zone through
 `eqclient -u clauderobot -p testpass1 --char Claudebot --zone 200 --group-invite Replaycaster
 --group-accept`, to stand by them, follow their invitation in the group window, click their gauge,
-/disband, then click them, /invite them, select them with Target party member 1 and /disband them,
+type the /who lines, /follow them from 70 away (printing the gap each second) until Move back ends
+it, /disband, then click them, /invite them, select them with Target party member 1 and /disband them,
 printing the group and the window's buttons at each step). `create` instead makes an Erudite wizard from the first empty slot,
 snapshots every creation screen and the face picker, submits it, and deletes it again (Yes in the
 confirmation dialog). `createluclin` does the same with every Luclin model on, as a dwarf warrior
@@ -1246,7 +1247,7 @@ details and the nearest spawns at the top left and the radar at the top right.
   both mouse buttons are down.
   Of the 111, my-client does the movement, Autorun, Jump, Look up and down, Toggle camera view, Consider,
   Say hail, Camp, Sit/stand, Run/walk, Target myself, Target party member 1..5, Invite/follow,
-  Disband, Target nearest PC and NPC, Toggle last two
+  Disband, Who, Target nearest PC and NPC, Toggle last two
   targets, Cycle reply forward and back, Send tell, Reply, Send tell to target, Command mode say
   and emote, the hot buttons and pages, the gems,
   History up and down, the spellbook, inventory, Actions pages and the window toggles it has
@@ -1635,6 +1636,33 @@ details and the nearest spawns at the top left and the radar at the top right.
   `PutItemInInventory` sends: something bought, traded for or handed back by an NPC) goes out
   under it, and eqgame's `HandleWorldMessage` gives it to `msg_snd_ieq` as it does
   `OP_ItemPacket`: the item into our slot `equipSlot`.
+- **/who** (`CEverQuest::Who` @0052f614, `FrontEnd::Who`): up to six words (GrabFirstWord: a quoted
+  one keeps its spaces), each taken as the first of: `corpse` (our corpses), `all`, `GM`, `NONGM`,
+  `friend(s)`, `LFG`, `Trader`, `guild` (ours; 12336 without one) or `guild<n>`, a class the word
+  starts (CEverQuest::GetClassDesc 1..32, the first only), a race it starts (EQ_Character::Race
+  0..330: the playable races and the Froglok, "Unknown" for the rest, so `/who u` asks for race 0),
+  the first and second number (a level, or a range either way round), else a name (and the guild
+  it starts, FindGuildIndexName). Without `all` the zone's players are listed from the spawn list:
+  `"%s%s%s%s[%d %s] %s (%s)%s%s"` (trader, AFK, linkdead, GM, level, class title, name, race,
+  " <guild>", LFG) or `"[ANONYMOUS]"` for the anonymous, in color 0x119 between 12309/12310 and a
+  count line (12316..12318). `all` sends `OP_WhoAllRequest` (0x40f4, Who_All_Struct: whom[64],
+  race, class, level low and high, GM, guild; -1 unset). The answer `OP_WhoAllResponse` (0x200b)
+  is a heading (an eqstr id at 4 and a dash line at 6), the closing line's id at 0x24 with numbers at
+  0x28..0x34, a count at 0x38 and from 0x3a each player: u16 format, u16 pid string, name\0, u16
+  rank (an eqstr id: `%T1`), guild\0, u32 GM level, u16 flag (LFG), u16 zone string, u32 zone, u16
+  class, level, race, account\0, u16 (211). `msg_who_response` formats 5022 (GM view), 5023, 5024
+  (anonymous) and 5025 (`"%T1[%2 %3] %4 (%5) %6 %7 %8 %9"`) in color 10, the zone's short name
+  (EQWorldData::GetZoneNameFromIndex; the long name only in the Japanese client), and the closing
+  line (5028..5036).
+- **/follow** (@004fc259): a group member targeted (13225, 13226), not rooted (13227), in control of
+  ourselves and not linkdead (13228), standing (13229); then 13230 and the two red warnings.
+  `FollowPlayerAI` (@00507b08) runs from ProcessControls each frame we stand or crouch: they're dead
+  (stance 120: 12692) or over 200 away (12693) ends it; seen (CastRay), within 20 we face them
+  straight, further we turn toward them the short way at most 4 a frame (9 past a quarter turn);
+  within both ModelHeightOffsets + 15 we stop (autorun off), within + 30 and they're slower or we're
+  still we walk (`DAT_0079856d` 0), else run, autorun on. `get_bearing` is atan2 of the x and y
+  differences in degrees times 511.5/360. Move back, turning and strafing call
+  `TurnOffAutoFollow` (12694, autorun off, run on); their spawn going stops it silently.
 - **Groups** (`frontend/group.*`). The zone's packets: `OP_GroupInvite` (0x203e, both ways;
   `GroupInvite_Struct` {invitee[64], inviter[64], a group's name[64] (empty), u8 PvP}, 193 bytes; a
   leader's goes out as `OP_GroupInvite2` 0x4040, which the zone hands on as 0x203e),

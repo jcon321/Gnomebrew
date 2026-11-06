@@ -222,6 +222,34 @@ struct ZoneGroundItem
 	int16_t contents[10] = {}; // a dropped bag's items' ids (-1 none)
 };
 
+// OP_WhoAllResponse (WhoAllReturnStruct) as msg_who_response reads it: a heading (an eqstr id, -1
+// none, and a line of dashes), the players, and the closing line's eqstr id with the four numbers
+// at 0x28..0x34 it may take.
+struct ZoneWhoPlayer
+{
+	uint16_t format = 0;    // its eqstr (5022 GM view, 5023 and 5024 anonymous, 5025 all; 5026 and 5027 a zone's state)
+	uint16_t pid = 0xffff;  // pidstring (5003, 5004 for GMs)
+	std::string name;
+	uint16_t rank = 0xffff; // rankstring: an eqstr id (AFK, a GM's rank)
+	std::string guild;      // " <name>" or empty
+	uint32_t gm = 0;        // the four bytes after the guild (the GM level, then 0xFFFF)
+	uint16_t flag = 0xffff; // an eqstr id (LFG)
+	uint16_t zone_string = 0xffff;
+	uint32_t zone = 0;
+	uint16_t class_id = 0, level = 0, race = 0;
+	std::string account;
+	uint16_t ending = 0;
+};
+
+struct ZoneWho
+{
+	int16_t heading = -1;
+	std::string line;
+	int16_t closing = -1;
+	int32_t numbers[4] = {}; // at 0x28, 0x2c, 0x30, 0x34
+	std::vector<ZoneWhoPlayer> players;
+};
+
 // A group packet as it comes: OP_GroupInvite (invitee, inviter, the group's name after them),
 // OP_GroupCancelInvite (inviter, invitee, why) and OP_GroupUpdate: its action, then yourname at 4
 // and the member's name at 68 (GroupJoin_Struct); for action 3 a second name at 132; for 5 the
@@ -451,6 +479,7 @@ public:
 			// invitation turned down or called off (OP_GroupCancelInvite), the zone's yes to one we
 			// accepted, or its word on entering the zone that there's no invitation (OP_GroupFollow), and
 			// the group changing (OP_GroupUpdate).
+			WhoAnswered,  // who: OP_WhoAllResponse
 			GroupInvited,
 			GroupInviteCancelled,
 			GroupFollowed,
@@ -477,6 +506,7 @@ public:
 		ZoneLoot loot;
 		ZoneWorldContainer world;
 		ZoneGroup group;
+		ZoneWho who;
 	};
 
 	ZoneSession();
@@ -602,6 +632,10 @@ public:
 	// OP_GroupCancelInvite to turn it down (why: 3 declined; 1 considering another, 2 in a group, 4
 	// and 5 the raid's), OP_GroupDisband with a name twice (ours to leave, a member's to remove them).
 	bool GroupInvite(const std::string &invitee, bool as_leader);
+	// /who all (CEverQuest::Who): OP_WhoAllRequest, Who_All_Struct {whom[64], race, class, level
+	// low, level high, GM, guild (-1 any, -3 LFG, -4 traders)}, -1 for each not asked about.
+	bool WhoAll(const std::string &whom, int16_t race, int16_t class_id, int16_t level_low, int16_t level_high, int16_t gm,
+		int16_t guild);
 	bool GroupFollow(const std::string &inviter);
 	bool GroupCancelInvite(const std::string &inviter, uint8_t why);
 	bool GroupDisband(const std::string &name);
