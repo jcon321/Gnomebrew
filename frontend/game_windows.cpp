@@ -239,7 +239,8 @@ namespace
 	// the window comes up with the slider from 0 to the count at the count, its top left at (x,
 	// y) unless that puts it off the screen, and the edit box taking the keys (0 returned); its
 	// target is the state's quantity_slot or quantity_coin. None at all: nothing.
-	int ActivateQuantity(WindowManager &windows, GameWindowState &state, int count, int x, int y, bool shift, bool ctrl)
+	int ActivateQuantity(WindowManager &windows, GameWindowState &state, int count, int x, int y, bool shift, bool ctrl,
+		int start = -1)
 	{
 		if (count <= 0)
 			return 0;
@@ -256,8 +257,8 @@ namespace
 		if (value != 0)
 			return value;
 		slider->slider_ticks = std::max(count + 1, 2); // SetNumTicks
-		wnd->SetSlider(*slider, count);
-		edit->text = std::to_string(count);
+		wnd->SetSlider(*slider, start >= 0 ? start : count); // SetValue(param_4)
+		edit->text = std::to_string(slider->slider_value);
 		state.quantity_max = count;
 		state.quantity_value = slider->slider_value;
 		state.quantity_text = edit->text;
@@ -853,7 +854,7 @@ bool MoneyClick(WindowManager &windows, GameWindowState &state, ZoneSession &zon
 }
 
 void AskQuantity(WindowManager &windows, GameWindowState &state, int count, int x, int y, bool shift, bool ctrl,
-	std::function<void(int)> done)
+	std::function<void(int)> done, int start)
 {
 	state.quantity_slot = state.quantity_coin = -1;
 	state.quantity_done = nullptr;
@@ -863,7 +864,7 @@ void AskQuantity(WindowManager &windows, GameWindowState &state, int count, int 
 			y = (windows.ScreenHeight() - wnd->Bounds().h) / 2;
 		}
 	}
-	if (int value = ActivateQuantity(windows, state, count, x, y, shift, ctrl)) {
+	if (int value = ActivateQuantity(windows, state, count, x, y, shift, ctrl, start)) {
 		done(value);
 		return;
 	}

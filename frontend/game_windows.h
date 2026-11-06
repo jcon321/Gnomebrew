@@ -241,9 +241,9 @@ bool InventoryClick(WindowManager &windows, GameWindowState &state, ZoneSession 
 bool QuantityEnter(WindowManager &windows, GameWindowState &state, ZoneSession &zone, InventoryClickResult &result);
 // CQuantityWnd::Activate for another window: how many of `count`, the window at (x, y) (-1: centered
 // on the screen); `done` gets the number, at once when Shift, Ctrl or a count of one says it, or
-// when the window's accepted.
+// when the window's accepted. The slider starts at `start` (-1: all of it).
 void AskQuantity(WindowManager &windows, GameWindowState &state, int count, int x, int y, bool shift, bool ctrl,
-	std::function<void(int)> done);
+	std::function<void(int)> done, int start = -1);
 void UpdateGameWindows(WindowManager &windows, const GameValues &values, GameWindowState &state);
 
 // A skill's name (eqgame's __SkillDict, from InitializeSkillData), from eqstr (null: English).

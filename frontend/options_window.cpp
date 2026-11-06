@@ -40,6 +40,7 @@ void OptionsWindow::Attach(WindowManager &windows, KeyBindings &keys, Host host)
 		}
 	// The Implemented column, and the window wide enough for it (it only sizes up and down).
 	if (SidlWindow::Control *list = wnd->Find(AssignmentList)) {
+		list->header_color = 0x8aa3ff; // COptionsWnd::COptionsWnd: the list's +0x14c, 0xff8aa3ff
 		if (list->columns.size() == 3)
 			list->columns.push_back(ImplementedColumn);
 		int wanted = 0;

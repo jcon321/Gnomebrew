@@ -298,6 +298,7 @@ public:
 		// decal's animation in place of NormalDecal (A_SpellIcons) with `cell` its cell.
 		std::string background, decal;
 		bool no_background = false;
+		uint32_t decal_tint = 0xffffff; // the decal's color (CButtonWnd's 0x11c: a color picker's swatch)
 		// A Button's own opacity, 0..255 (CBuffWindow::RefreshBuffDisplay sets a buff's UnfadedAlpha
 		// as it blinks out).
 		int alpha = 255;
@@ -330,6 +331,11 @@ public:
 		std::vector<int> justification;
 		int row_height = 0;
 		uint32_t row_color = 0xffffff, header_color = 0xffffff;
+		std::vector<uint32_t> row_colors; // a row's own, over row_color (0: row_color)
+		bool header_hidden = false;       // no header row at all (a context menu's)
+		// CListWnd style 0x10000: the row under the mouse in 0x150's color, if enabled (DrawItem).
+		int hover_row = -1;
+		uint32_t hover_color = 0xffff00;
 		// The row clicked last, drawn highlighted, and the column the click was in
 		// (CListWnd::GetCurCol); -1 none. A click on a row reports the list's ScreenID as a button's
 		// would.
@@ -416,6 +422,13 @@ public:
 	int BorderPieceAt(int x, int y) const;
 	// Minimized (CXWnd::IsMinimized): just the title bar and border, no client area or pieces.
 	void SetMinimized(bool minimized) { m_minimized = minimized; }
+	// CXWnd::DoAllDrawing's background: the template's texture tinted (BGType 1, DrawClientBackground's
+	// DrawTexturedQuadWithAlpha), or the client area filled with the tint (2, DrawColoredRect).
+	void SetBackground(uint32_t tint, bool texture)
+	{
+		m_bg_tint = tint & 0xffffff;
+		m_bg_texture = texture;
+	}
 	bool Minimized() const { return m_minimized; }
 	// A control under (x, y) that takes clicks (a shown button, slot, spell gem, edit box or scrollbar): clicks
 	// there don't drag.
@@ -513,5 +526,9 @@ private:
 	std::string m_pressed_pick; // a list row or combo choice picked by the press, for the release
 	ScrollPart m_scroll_hover_part = ScrollPart::None;
 	bool m_minimized = false;
+	// CXWnd's 0x6c and 0x80: the client background's tint (BGTint), and whether it's the
+	// template's texture (BGType 1) or the tint alone (2).
+	uint32_t m_bg_tint = 0xffffff;
+	bool m_bg_texture = true;
 	TitleBox m_box_hover = TitleBox::None, m_box_pressed = TitleBox::None;
 };

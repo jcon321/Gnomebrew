@@ -29,6 +29,7 @@
 #include "bank_window.h"
 #include "buffs.h"
 #include "combat.h"
+#include "color_picker.h"
 #include "compass.h"
 #include "containers.h"
 #include "ground_items.h"
@@ -263,6 +264,11 @@ private:
 	// TurnCharacterNameSpritesOn / TurnNPCNameSpritesOn: the names over the heads of the spawns
 	// drawn last frame (and ours), for the zone view's next Render to draw.
 	void BuildNameSprites(uint64_t now_ms);
+	// HandleContextMenuAction's picks of the window menu that open a window: Tint Color the color
+	// picker with the window's BGTint, Normal and Faded Level the quantity window from 0 to 100 at
+	// the alpha now (x 100 / 255), its answer back as x 255 / 100 (HandleContextMenuEvent's 0x1e and
+	// 0x1d).
+	void WindowMenuPicks();
 	// A line of a name sprite: its text's coverage as a texture, made once and kept while in use.
 	ZoneView::NameLine NameLineTexture(const std::string &text, uint64_t now_ms);
 	struct NameTexture
@@ -464,6 +470,7 @@ private:
 	bool m_attack_sent = false;     // what OP_AutoAttack last said (DAT_0063db29)
 	Buffs m_buffs;                  // the spells on us
 	CompassWindow m_compass;
+	ColorPicker m_color_picker;     // CColorPickerWnd, for the window menu's Tint Color
 	Containers m_containers;        // the bag windows
 	BankWindow m_bank;
 	MerchantWindow m_merchant;

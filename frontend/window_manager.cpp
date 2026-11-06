@@ -1,4 +1,5 @@
 #include "window_manager.h"
+#include "chat_text.h"
 #include "ini_file.h"
 
 #include <algorithm>
@@ -64,6 +65,10 @@ void WindowManager::Reset(const SidlDefinitions *defs, SidlTextures *textures, i
 	m_drag = Drag::None;
 	m_drag_window = m_press = -1;
 	m_box_down = SidlWindow::TitleBox::None;
+	m_open_menus.clear();
+	m_menu_picks.clear();
+	m_menu_window.clear();
+	BuildMenus();
 }
 
 SidlWindow *WindowManager::Add(const std::string &screen, bool shown, std::string *error, const std::string &name)
@@ -313,6 +318,8 @@ bool WindowManager::OnMouse(const InputEvent &event, uint64_t now_ms)
 	using Box = SidlWindow::TitleBox;
 	InputEvent away = event; // for the windows the mouse isn't over: nothing's hovered
 	away.x = away.y = -100000;
+	if (!m_open_menus.empty() && MenuMouse(event))
+		return true;
 
 	switch (event.type) {
 	case Type::MouseMove: {
@@ -434,11 +441,19 @@ bool WindowManager::OnMouse(const InputEvent &event, uint64_t now_ms)
 	}
 	case Type::RightDown:
 	case Type::RightUp: {
-		// No context menus yet, but the world doesn't get them either.
 		int top = TopAt(event.x, event.y);
 		Click at;
 		if (top >= 0)
 			at = {m_windows[top]->screen, m_windows[top]->wnd.ButtonAt(event.x, event.y)};
+		// CXWnd::HandleRButtonDown off the window's buttons (and slots, gems, edit boxes): the
+		// window menu, there.
+		if (event.type == Type::RightDown && top >= 0 && !m_menus.empty() &&
+		    !m_windows[top]->wnd.InteractiveAt(event.x, event.y)) {
+			BringToTop(top);
+			m_menu_window = m_windows[top]->screen;
+			OpenMenuAt(2, event.x, event.y, 0);
+			return true;
+		}
 		if (event.type == Type::RightDown) {
 			m_right_press = at;
 			m_right_ms = now_ms;
@@ -660,7 +675,7 @@ void WindowManager::Draw(Canvas &canvas, TextRenderer &text, uint64_t now_ms)
 	if (!m_textures)
 		return;
 	for (const auto &wp : m_windows) {
-		const Window &w = *wp;
+		Window &w = *wp;
 		if (!w.shown)
 			continue;
 		int alpha = EffectiveAlpha(w);
@@ -669,10 +684,15 @@ void WindowManager::Draw(Canvas &canvas, TextRenderer &text, uint64_t now_ms)
 		const Rect &bounds = w.wnd.Bounds();
 		if (alpha < 255)
 			canvas.Keep(bounds, m_kept);
+		w.wnd.SetBackground(w.settings.tint, w.settings.texture);
 		w.wnd.Draw(canvas, text, *m_textures, now_ms);
 		if (alpha < 255)
 			canvas.BlendKept(bounds, m_kept, alpha);
 	}
+	// The menus over them all (CContextMenu's z layer 1000).
+	DrawMenus(canvas, text, now_ms);
+	if (!m_open_menus.empty())
+		return;
 	// The tooltip of what the mouse rests on (the window itself has none), unless a window's moving.
 	if (m_drag != Drag::None || now_ms - m_moved_ms <= TooltipMs)
 		return;
@@ -702,4 +722,337 @@ void WindowManager::DrawTooltip(Canvas &canvas, TextRenderer &text, const std::s
 	canvas.Fill(box, 0x000080);
 	canvas.BlendKept(box, kept, 0xc8);
 	text.Draw(canvas, box.x + 2, box.y + 1, tip, height, 0xffffff, weight);
+}
+
+// ---------------------------------------------------------------- context menus
+
+namespace
+{
+	// The menu's own screen: a window in WDT_RoundedNoTitle (CContextMenu::CContextMenu's
+	// FindDrawTemplate) filled by its list, in the system font (2).
+	const char *const MenuXml = R"(<?xml version = "1.0"?>
+<XML ID = "EQInterfaceDefinitionLanguage">
+	<Listbox item = "CM_List">
+		<ScreenID>CM_List</ScreenID>
+		<Font>2</Font>
+		<AutoStretch>true</AutoStretch>
+		<RightAnchorToLeft>false</RightAnchorToLeft>
+		<BottomAnchorToTop>false</BottomAnchorToTop>
+		<Style_Border>false</Style_Border>
+		<Style_VScroll>false</Style_VScroll>
+		<Columns><Width>10</Width><Heading>Check</Heading></Columns>
+		<Columns><Width>10</Width><Heading>Item</Heading></Columns>
+		<Columns><Width>10</Width><Heading>SubMenu</Heading></Columns>
+	</Listbox>
+	<Screen item = "ContextMenuWnd">
+		<RelativePosition>false</RelativePosition>
+		<Location><X>0</X><Y>0</Y></Location>
+		<Size><CX>60</CX><CY>40</CY></Size>
+		<Style_Transparent>false</Style_Transparent>
+		<DrawTemplate>WDT_RoundedNoTitle</DrawTemplate>
+		<Style_Titlebar>false</Style_Titlebar>
+		<Style_Closebox>false</Style_Closebox>
+		<Style_Minimizebox>false</Style_Minimizebox>
+		<Style_Border>true</Style_Border>
+		<Style_Sizable>false</Style_Sizable>
+		<Pieces>CM_List</Pieces>
+	</Screen>
+</XML>
+)";
+	constexpr int CheckWidth = 10, SubMenuWidth = 10; // the Check and SubMenu columns
+}
+
+void WindowManager::AddDefinitions(SidlDefinitions &defs)
+{
+	if (!defs.WindowTemplate("WDT_RoundedNoTitle") || defs.Piece("ContextMenuWnd"))
+		return;
+	defs.LoadText(MenuXml, "ContextMenuWnd");
+}
+
+std::string WindowManager::MenuText(uint32_t id, const char *fallback) const
+{
+	return FormatEqString(m_strings, id, fallback, {});
+}
+
+void WindowManager::BuildMenus()
+{
+	// CContextMenuManager::CreateDefaultMenu: Background's and Alpha's submenus, then the window
+	// menu with them.
+	m_menus.clear();
+	if (!m_defs || !m_defs->Piece("ContextMenuWnd"))
+		return;
+	m_menus.push_back({{MenuText(15006, "Texture"), MenuTexture}, {MenuText(15007, "Tint Color"), MenuTint}});
+	m_menus.push_back({{MenuText(15004, "Normal Level"), MenuNormalAlpha}, {MenuText(15005, "Faded Level"), MenuFadedAlpha}});
+	MenuItem separator;
+	separator.separator = true;
+	MenuItem background{MenuText(15002, "Background"), 0, 0}, alpha{MenuText(15003, "Alpha"), 0, 1};
+	m_menus.push_back({background, alpha, separator, {MenuText(6649, "Lock"), MenuLock}, separator,
+		{MenuText(15001, "Minimize"), MenuMinimize}, separator, {MenuText(15000, "Close"), MenuClose}});
+}
+
+void WindowManager::OpenMenuAt(int menu, int x, int y, int parent_width)
+{
+	if (menu < 0 || menu >= static_cast<int>(m_menus.size()) || m_open_menus.size() >= 8)
+		return;
+	OpenMenu open;
+	open.menu = menu;
+	std::string error;
+	if (!open.wnd.Build(*m_defs, "ContextMenuWnd", error))
+		return;
+	const std::vector<MenuItem> &items = m_menus[menu];
+	const Window *owner = nullptr;
+	for (const auto &w : m_windows)
+		if (w->screen == m_menu_window)
+			owner = w.get();
+	SidlWindow::Control *list = open.wnd.Find("CM_List");
+	if (!list || !owner)
+		return;
+	list->header_hidden = true;
+	list->row_height = SidlFontHeight(2); // CContextMenu's 0x140: the font's height
+	list->rows.clear();
+	list->row_colors.clear();
+	for (const MenuItem &item : items) {
+		// CContextMenuManager::WarnDefaultMenu: Background only when the window isn't transparent,
+		// Minimize and Close when it has their boxes; Lock checked when it's locked.
+		bool enabled = !item.separator;
+		bool checked = false;
+		if (menu == 2 && item.submenu == 0)
+			enabled = !owner->wnd.Def().transparent;
+		else if (item.id == MenuMinimize)
+			enabled = owner->wnd.Def().minimizebox;
+		else if (item.id == MenuClose)
+			enabled = owner->wnd.Def().closebox;
+		else if (item.id == MenuLock)
+			checked = owner->settings.locked;
+		open.enabled.push_back(enabled);
+		// AddMenuItem: "*" in Check when checked, the text, ">" in SubMenu for a submenu;
+		// EnableMenuItem: white, or grey disabled.
+		list->rows.push_back({checked ? "*" : "", item.text, item.submenu >= 0 ? ">" : ""});
+		list->row_colors.push_back(enabled ? 0xffffff : 0x808080);
+	}
+	// Placed for real once the text's measured (DrawMenus); till then, here.
+	open.wnd.Move({x - 3, y, 60, 40});
+	open.parent_width = parent_width;
+	if (m_text)
+		LayoutMenu(open, *m_text);
+	m_open_menus.push_back(std::move(open));
+}
+
+Rect WindowManager::MenuRowRect(int level, int row) const
+{
+	if (level < 0 || level >= static_cast<int>(m_open_menus.size()))
+		return {};
+	const SidlWindow &wnd = m_open_menus[level].wnd;
+	const SidlWindow::Control *list = wnd.Find("CM_List");
+	if (!list || row < 0 || row >= static_cast<int>(list->rows.size()))
+		return {};
+	Rect content = wnd.ContentRect(*list);
+	return {content.x, content.y + row * list->row_height, content.w, list->row_height};
+}
+
+void WindowManager::CloseMenus()
+{
+	m_open_menus.clear();
+}
+
+std::vector<WindowManager::MenuPick> WindowManager::TakeMenuPicks()
+{
+	std::vector<MenuPick> picks;
+	picks.swap(m_menu_picks);
+	return picks;
+}
+
+bool WindowManager::MenuMouse(const InputEvent &event)
+{
+	using Type = InputEvent::Type;
+	// The deepest menu under the mouse, and its row.
+	int level = -1, row = -1;
+	for (int i = static_cast<int>(m_open_menus.size()) - 1; i >= 0 && level < 0; --i) {
+		OpenMenu &open = m_open_menus[i];
+		if (!open.wnd.Bounds().Contains(event.x, event.y))
+			continue;
+		level = i;
+		if (const SidlWindow::Control *list = open.wnd.Find("CM_List")) {
+			Rect content = open.wnd.ContentRect(*list);
+			int height = list->row_height > 0 ? list->row_height : 1;
+			if (content.Contains(event.x, event.y)) {
+				row = (event.y - content.y) / height;
+				if (row >= static_cast<int>(list->rows.size()))
+					row = -1;
+			}
+		}
+	}
+	switch (event.type) {
+	case Type::MouseMove: {
+		for (int i = 0; i < static_cast<int>(m_open_menus.size()); ++i)
+			if (SidlWindow::Control *list = m_open_menus[i].wnd.Find("CM_List"))
+				list->hover_row = i == level && row >= 0 && m_open_menus[i].enabled[row] ? row : -1;
+		if (level < 0 || row < 0)
+			return level >= 0;
+		// HandleContextMenuEvent's 0x14: the menus past this one close, and an item's submenu
+		// opens right of its row.
+		const MenuItem &item = m_menus[m_open_menus[level].menu][row];
+		bool open_already = item.submenu >= 0 && static_cast<int>(m_open_menus.size()) > level + 1 &&
+		                    m_open_menus[level + 1].menu == item.submenu;
+		if (!open_already) {
+			m_open_menus.resize(level + 1);
+			if (item.submenu >= 0 && m_open_menus[level].enabled[row]) {
+				const SidlWindow &parent = m_open_menus[level].wnd;
+				const SidlWindow::Control *list = parent.Find("CM_List");
+				int top = parent.Bounds().y + row * (list ? list->row_height : 0);
+				OpenMenuAt(item.submenu, parent.Bounds().Right() + 3, top, parent.Bounds().w);
+			}
+		}
+		return true;
+	}
+	case Type::MouseUp:
+		// 2: a click on an enabled item with no submenu picks it, and they all close.
+		if (level >= 0 && row >= 0) {
+			const MenuItem &item = m_menus[m_open_menus[level].menu][row];
+			if (m_open_menus[level].enabled[row] && item.submenu < 0 && item.id != 0) {
+				int id = item.id;
+				CloseMenus();
+				MenuAction(id);
+			}
+		}
+		return true;
+	case Type::MouseDown:
+	case Type::DoubleClick:
+	case Type::RightDown:
+		// A press off them closes them (the manager's window covers the screen).
+		if (level < 0)
+			CloseMenus();
+		return true;
+	case Type::RightUp:
+		return true;
+	case Type::Wheel:
+		return level >= 0;
+	default:
+		return false;
+	}
+}
+
+void WindowManager::MenuAction(int id)
+{
+	Window *w = WindowNamed(m_menu_window);
+	if (!w)
+		return;
+	switch (id) {
+	case MenuTexture: // BGType 1 and 2 in turn
+		w->settings.texture = !w->settings.texture;
+		break;
+	case MenuTint:
+	case MenuNormalAlpha:
+	case MenuFadedAlpha:
+		m_menu_picks.push_back({m_menu_window, id});
+		break;
+	case MenuMinimize: // CXWndManager::MinimizeWindow
+		SetMinimized(*w, !w->wnd.Minimized());
+		m_changed = true;
+		break;
+	case MenuClose: // HideWindow
+		Show(w->screen, false);
+		break;
+	case MenuLock:
+		w->settings.locked = !w->settings.locked;
+		m_changed = true;
+		break;
+	default:
+		break;
+	}
+}
+
+void WindowManager::LayoutMenu(OpenMenu &open, TextRenderer &text)
+{
+	SidlWindow::Control *list = open.wnd.Find("CM_List");
+	if (!list)
+		return;
+	// AddMenuItem: the Item column as wide as the widest text and 4, at most 400.
+	int widest = 10;
+	for (const auto &row : list->rows)
+		widest = std::max(widest, std::min(text.Measure(row[1], SidlFontHeight(2), SidlFontWeight(2)).w + 4, 400));
+	list->columns.resize(3);
+	list->columns[0].width = CheckWidth;
+	list->columns[1].width = widest;
+	list->columns[2].width = SubMenuWidth;
+	// CContextMenu::Activate: from 3 left of the point, as tall as its rows inside the border,
+	// moved up off the bottom, and left off the right (a submenu to its parent's left).
+	int left, top, right, bottom;
+	open.wnd.BorderInsets(left, top, right, bottom);
+	Rect r = open.wnd.Bounds();
+	r.w = left + CheckWidth + widest + SubMenuWidth + right;
+	r.h = top + list->row_height * static_cast<int>(list->rows.size()) + bottom;
+	if (r.Bottom() > m_height)
+		r.y = std::max(0, m_height - r.h);
+	if (r.Right() > m_width)
+		r.x = open.parent_width > 0 ? r.x - (r.w - 6 + open.parent_width) : std::max(0, m_width - r.w);
+	const Rect &now = open.wnd.Bounds();
+	if (r.x != now.x || r.y != now.y || r.w != now.w || r.h != now.h)
+		open.wnd.Move(r);
+}
+
+void WindowManager::DrawMenus(Canvas &canvas, TextRenderer &text, uint64_t now_ms)
+{
+	m_text = &text;
+	for (OpenMenu &open : m_open_menus) {
+		SidlWindow::Control *list = open.wnd.Find("CM_List");
+		if (!list)
+			continue;
+		LayoutMenu(open, text);
+		open.wnd.Draw(canvas, text, *m_textures, now_ms);
+		// CListWnd::DrawSeparator: A_DividerMiddle 4 high across a separator's row.
+		Rect content = open.wnd.ContentRect(*list);
+		const std::vector<MenuItem> &items = m_menus[open.menu];
+		for (size_t i = 0; i < items.size(); ++i)
+			if (items[i].separator) {
+				int y = content.y + static_cast<int>(i) * list->row_height + (list->row_height - 4) / 2;
+				DrawAnimation(canvas, "A_DividerMiddle", {content.x + 2, y, content.w - 5, 4}, now_ms);
+			}
+	}
+}
+
+WindowManager::Window *WindowManager::WindowNamed(const std::string &screen)
+{
+	for (auto &w : m_windows)
+		if (w->screen == screen)
+			return w.get();
+	return nullptr;
+}
+
+const WindowManager::Settings *WindowManager::SettingsOf(const std::string &screen) const
+{
+	for (const auto &w : m_windows)
+		if (w->screen == screen)
+			return &w->settings;
+	return nullptr;
+}
+
+void WindowManager::SetTint(const std::string &screen, uint32_t rgb)
+{
+	if (Window *w = WindowNamed(screen)) {
+		w->settings.tint = rgb & 0xffffff;
+		m_changed = true;
+	}
+}
+
+void WindowManager::SetAlpha(const std::string &screen, int alpha)
+{
+	if (Window *w = WindowNamed(screen)) {
+		w->settings.alpha = std::clamp(alpha, 0, 255);
+		if (w->unfaded || !w->settings.fades)
+			w->alpha = w->fade_target = w->settings.alpha;
+		m_changed = true;
+	}
+}
+
+void WindowManager::SetFadeTo(const std::string &screen, int alpha)
+{
+	if (Window *w = WindowNamed(screen)) {
+		// HandleContextMenuEvent's 0x1d for Faded Level: the faded alpha, fading on, CXWnd::Refade.
+		w->settings.fade_to = std::clamp(alpha, 0, 255);
+		w->settings.fades = true;
+		w->unfaded = true;
+		w->hover_ms = 0;
+		m_changed = true;
+	}
 }

@@ -892,6 +892,91 @@ int main(int argc, char **argv)
 		h.Key(InputEvent::Key::F11); // the debug menu out of the way
 		if (argc >= 7 && std::string(argv[6]) == "options")
 			return OptionsTest(frontend, h, config.settings_ini);
+		// The window menu: a right press on the player window off its controls, Background's
+		// submenu, Tint Color, a swatch and Accept; then Texture off, and Lock.
+		if (const SidlWindow *player = where("PlayerWindow")) {
+			const Rect &c = player->Root().client;
+			int px = -1, py = -1;
+			for (int y = c.y + 2; y < c.Bottom() && px < 0; y += 2)
+				for (int x = c.x + 2; x < c.Right() && px < 0; x += 2)
+					if (!player->InteractiveAt(x, y)) {
+						px = x;
+						py = y;
+					}
+			auto at = [&](const Rect &r) { return std::make_pair(r.x + r.w / 2, r.y + r.h / 2); };
+			auto move = [&](const Rect &r) {
+				auto [x, y] = at(r);
+				frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+				frontend.Update(NowMs());
+			};
+			auto pick = [&](const Rect &r) {
+				auto [x, y] = at(r);
+				frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+				frontend.OnEvent({InputEvent::Type::MouseDown, x, y});
+				frontend.OnEvent({InputEvent::Type::MouseUp, x, y});
+				frontend.Update(NowMs());
+			};
+			auto menu = [&] {
+				frontend.OnEvent({InputEvent::Type::MouseMove, px, py});
+				frontend.OnEvent({InputEvent::Type::RightDown, px, py});
+				frontend.OnEvent({InputEvent::Type::RightUp, px, py});
+				frontend.Update(NowMs());
+				h.RunUntil([] { return false; }, 100); // drawn: laid out
+			};
+			menu();
+			h.RunUntil([] { return false; }, 100);
+			printf("[preview] window menu at %d,%d: open %d, row 0 %d,%d %dx%d\n", px, py, windows.MenuOpen(),
+				windows.MenuRowRect(0, 0).x, windows.MenuRowRect(0, 0).y, windows.MenuRowRect(0, 0).w, windows.MenuRowRect(0, 0).h);
+			h.Snapshot("m1-window-menu");
+			move(windows.MenuRowRect(0, 0)); // Background
+			h.RunUntil([] { return false; }, 100);
+			printf("[preview] Background's submenu: %d\n", windows.MenuRowRect(1, 1).w > 0);
+			h.Snapshot("m2-background-submenu");
+			move(windows.MenuRowRect(1, 0));
+			pick(windows.MenuRowRect(1, 1)); // Tint Color
+			h.RunUntil([] { return false; }, 100);
+			printf("[preview] color picker %s, menu open %d\n", windows.Shown("ColorPickerWnd") ? "shown" : "hidden",
+				windows.MenuOpen());
+			h.Snapshot("m3-color-picker");
+			if (const SidlWindow *picker = windows.Find("ColorPickerWnd")) {
+				if (const SidlWindow::Control *swatch = picker->Find("CPW_TC0Button"))
+					click(swatch->rect.x + swatch->rect.w / 2, swatch->rect.y + swatch->rect.h / 2);
+				if (const SidlWindow::Control *accept = picker->Find("CPW_Accept_Button"))
+					click(accept->rect.x + accept->rect.w / 2, accept->rect.y + accept->rect.h / 2);
+			}
+			h.RunUntil([] { return false; }, 100);
+			const WindowManager::Settings *s = windows.SettingsOf("PlayerWindow");
+			printf("[preview] after Accept: picker %s, PlayerWindow tint %06x\n",
+				windows.Shown("ColorPickerWnd") ? "shown" : "hidden", s ? s->tint : 0);
+			h.Snapshot("m4-tinted");
+			menu();
+			move(windows.MenuRowRect(0, 0));
+			pick(windows.MenuRowRect(1, 0)); // Texture
+			h.RunUntil([] { return false; }, 100);
+			printf("[preview] after Texture: texture %d\n", s ? s->texture : -1);
+			h.Snapshot("m5-no-texture");
+			menu();
+			pick(windows.MenuRowRect(0, 3)); // Lock
+			printf("[preview] after Lock: locked %d\n", s ? s->locked : -1);
+			menu();
+			pick(windows.MenuRowRect(0, 3));
+			printf("[preview] after Lock again: locked %d\n", s ? s->locked : -1);
+			menu();
+			move(windows.MenuRowRect(0, 1)); // Alpha
+			pick(windows.MenuRowRect(1, 0)); // Normal Level
+			if (const SidlWindow *quantity = windows.Find("QuantityWnd")) {
+				const SidlWindow::Control *edit = quantity->Find("QTYW_SliderInput");
+				printf("[preview] Normal Level: quantity %s at '%s'\n", windows.Shown("QuantityWnd") ? "shown" : "hidden",
+					edit ? edit->text.c_str() : "?");
+			}
+			windows.Show("QuantityWnd", false);
+			windows.SetTint("PlayerWindow", 0xffffff);
+			if (s && !s->texture) {
+				menu();
+				move(windows.MenuRowRect(0, 0));
+				pick(windows.MenuRowRect(1, 0));
+			}
+		}
 		if (const SidlWindow *selector = where("SelectorWindow")) {
 			const Rect &title = selector->Root().title;
 			drag(title.x + 20, title.y + title.h / 2, title.x + 220, title.y + title.h / 2 + 120);

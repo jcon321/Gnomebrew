@@ -82,6 +82,8 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 		if (config.char_select_anim_window)
 			CharSelectAnimWindow::AddDefinitions(*m_ui.definitions);
 	}
+	if (m_ui.definitions)
+		WindowManager::AddDefinitions(*m_ui.definitions); // the context menus' screen
 	m_rules.CheckInstall(m_ui.eq_dir);
 	if (m_ui.mixer && !m_ui.eq_dir.empty()) {
 		m_sound = std::make_unique<audio::EqSound>(*m_ui.mixer, m_ui.eq_dir, m_ui.sound);
@@ -839,6 +841,8 @@ void FrontEnd::Update(uint64_t now_ms)
 		if (m_zone_view)
 			m_game_values.heading = m_zone_view->Movement().heading;
 		UpdateGameWindows(m_windows, m_game_values, m_window_state);
+		WindowMenuPicks();
+		m_color_picker.Update();
 		m_compass.Frame(m_windows, m_game_values.heading, m_zone.Profile().skills[40] /* Sense Heading */, now_ms);
 		m_containers.Update(now_ms);
 		if (m_windows.TakeChanged())
@@ -1786,6 +1790,31 @@ void FrontEnd::BuildNameSprites(uint64_t now_ms)
 			it = now_ms - it->second.used_ms > 10000 ? m_name_textures.erase(it) : std::next(it);
 }
 
+void FrontEnd::WindowMenuPicks()
+{
+	for (const WindowManager::MenuPick &pick : m_windows.TakeMenuPicks()) {
+		const WindowManager::Settings *settings = m_windows.SettingsOf(pick.window);
+		if (!settings)
+			continue;
+		std::string window = pick.window;
+		if (pick.id == WindowManager::MenuTint) {
+			m_color_picker.Activate(settings->tint, [this, window](uint32_t color) { m_windows.SetTint(window, color); });
+			continue;
+		}
+		bool faded = pick.id == WindowManager::MenuFadedAlpha;
+		int alpha = faded ? settings->fade_to : settings->alpha;
+		AskQuantity(m_windows, m_window_state, 100, -1, -1, false, false,
+			[this, window, faded](int value) {
+				int alpha = std::min((value * 255 + 0x80) / 100, 255);
+				if (faded)
+					m_windows.SetFadeTo(window, alpha);
+				else
+					m_windows.SetAlpha(window, alpha);
+			},
+			alpha * 100 / 255);
+	}
+}
+
 ZoneView::NameLine FrontEnd::NameLineTexture(const std::string &text, uint64_t now_ms)
 {
 	if (text.empty())
@@ -1904,6 +1933,7 @@ namespace
 		{"InventoryWindow", false}, {"OptionsWindow", false}, {"FriendsWindow", false}, {"PetInfoWindow", false},
 		{"HelpWindow", false}, {"CompassWindow", false}, {"SocialEditWnd", false}, {"ChatWindow", true},
 		{"SkillsWindow", false}, {"ItemDisplayWindow", false}, {"QuantityWnd", false}, {"SpellBookWnd", false},
+		{ColorPicker::Screen, false},
 		{"ConfirmationDialogBox", false}, {"CastingWindow", false}, {"BankWnd", false},
 		{"MerchantWnd", false}, {"LootWnd", false}, {"TradeWnd", false}, {"GiveWnd", false},
 		{"SkillsSelectWindow", false},
@@ -1928,6 +1958,7 @@ void FrontEnd::BuildZoneWindows()
 	m_windows_built = true;
 	if (!m_ui.definitions || !m_ui.textures)
 		return;
+	m_windows.SetStrings(m_ui.eqstr);
 	m_windows.Reset(m_ui.definitions, m_ui.textures, m_game_width, m_game_height);
 	m_windows.SetValues(&m_game_values);
 	m_game_values.eqstr = m_ui.eqstr;
@@ -1962,6 +1993,7 @@ void FrontEnd::BuildZoneWindows()
 		m_windows.Show("SpellBookWnd", false); // open only while it's activated
 		m_windows.Show("ConfirmationDialogBox", false);
 		m_windows.Show("CastingWindow", false); // up only while we cast
+		m_windows.Show(ColorPicker::Screen, false); // only while it's asked
 		Log("UI: " + std::to_string(m_windows.Count()) + " windows, layout " + m_ui_layout_path);
 		// CEverQuest::CreateIniFilenames: the character's own ini is the layout's name without UI_.
 		m_hot_buttons_path = m_config.ui_dir + "/" + suffix;
@@ -1992,6 +2024,7 @@ void FrontEnd::BuildZoneWindows()
 	// CDisplay_ActivateMainUI activates the compass if it was up; Toggle Compass (Alt+D) opens and
 	// closes it.
 	m_compass.Activate(m_zone.Profile().skills[40]);
+	m_color_picker.Attach(m_windows);
 	m_windows.TakeChanged();
 	SpellBook::Host host;
 	host.change_stance = [this](uint8_t stance) { ChangeStance(stance); };
@@ -2129,6 +2162,8 @@ void FrontEnd::HandleWindowClicks()
 		GameWindowRightRelease(m_windows, release.window, release.control);
 	for (WindowManager::Click click : m_windows.TakeClicks()) {
 		if (click.window == "SkillsSelectWindow" && m_abilities.Click(click.window, click.control, m_now_ms))
+			continue;
+		if (m_color_picker.Click(click.window, click.control))
 			continue;
 		// The Options window's keyboard page, and the question about its defaults.
 		if (m_options.Click(click.window, click.control, m_now_ms))
@@ -3386,6 +3421,7 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 	// window from the editors.
 	SidlWindow *social_editor = m_windows.Find("SocialEditWnd");
 	SidlWindow *quantity = m_windows.Find("QuantityWnd");
+	SidlWindow *color_picker = m_windows.Find(ColorPicker::Screen);
 	// The chat's links light under the mouse, and a click on one asks the zone about it.
 	ItemTag link;
 	if (event.IsMouse() && !m_mouse_turn && !m_mouse_pan &&
@@ -3394,23 +3430,26 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 	if (event.IsMouse() && !m_mouse_turn && !m_mouse_pan && m_windows.OnMouse(event, m_now_ms)) {
 		if (event.type == InputEvent::Type::MouseDown) {
 			std::string pressed = m_windows.ScreenAt(event.x, event.y);
-			SidlWindow *pressed_editor = pressed == "SocialEditWnd" ? social_editor
-			                             : pressed == "QuantityWnd" ? quantity
-			                                                        : nullptr;
+			SidlWindow *pressed_editor = pressed == "SocialEditWnd"     ? social_editor
+			                             : pressed == "QuantityWnd"       ? quantity
+			                             : pressed == ColorPicker::Screen ? color_picker
+			                                                              : nullptr;
 			if (pressed_editor && pressed_editor->Typing()) {
 				m_chat.Close();
-				for (SidlWindow *other : {social_editor, quantity})
+				for (SidlWindow *other : {social_editor, quantity, color_picker})
 					if (other && other != pressed_editor)
 						other->Focus("");
 			}
 			else if (pressed == "ChatWindow" && m_chat.Typing())
-				for (SidlWindow *other : {social_editor, quantity})
+				for (SidlWindow *other : {social_editor, quantity, color_picker})
 					if (other)
 						other->Focus("");
 		}
 		return;
 	}
-	SidlWindow *editor = quantity && quantity->Typing() ? quantity : social_editor;
+	SidlWindow *editor = quantity && quantity->Typing()           ? quantity
+	                     : color_picker && color_picker->Typing() ? color_picker
+	                                                              : social_editor;
 	bool editing = editor && editor->Typing();
 	switch (event.type) {
 	case InputEvent::Type::Wheel:

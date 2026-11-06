@@ -276,6 +276,36 @@ mouse has been off them a while. Their layout is kept in eqgame's own format, in
 `UI_<character>_<server>.ini` next to the exe (the server part is the login server's address cut
 to 7 characters, as eqgame names it).
 
+Right-click a window off its buttons, slots, gems and edit boxes for eqgame's window menu
+(`WindowManager`'s menus, `CContextMenuManager`):
+
+- **Its items** (`CreateDefaultMenu`): Background > Texture (eqstr 15006) and Tint Color (15007),
+  Alpha > Normal Level (15004) and Faded Level (15005), Lock (6649, checked when locked), Minimize
+  (15001) and Close (15000), with `A_DividerMiddle` separators. `WarnDefaultMenu` greys Background
+  on a transparent window and Minimize and Close on one without those boxes (`EnableMenuItem`:
+  `0xff808080`, else white). `CXWnd::HandleRButtonDown` opens it; `CSidlScreenWnd`'s init gives a
+  top-level screen the default menu.
+- **How a menu looks and works** (`CContextMenu`): a `CListWnd` in `WDT_RoundedNoTitle` and the
+  system font (2), rows its font's height, columns Check ("*"), the text (its width + 4, 400 at
+  most) and SubMenu (">"), from 3 left of the point and kept on the screen (`Activate`). The row
+  under the mouse is yellow (`0x150`), and an item with a submenu opens it right of its row, or
+  left of the menu at the screen's edge (`HandleContextMenuEvent`'s 0x14). A click on another item
+  picks it and closes them all; a press anywhere else closes them.
+- **What the items do** (`HandleContextMenuAction`): Texture switches the window's `BGType` between
+  1, the template's background texture tiled and tinted by `BGTint` (`DrawClientBackground`), and
+  2, the client area filled with the tint (`DoAllDrawing`'s `DrawColoredRect`; not kept in the ini).
+  Tint Color opens the color picker with the window's tint. Normal and Faded Level open the
+  quantity window from 0 to 100 at the alpha `x 100 / 255`, its answer `(n x 255 + 0x80) / 100` the
+  window's `Alpha`, or its `FadeToAlpha` with fading turned on (`HandleContextMenuEvent`'s 0x1d).
+  Lock, Minimize and Close do that. The tint multiplies the background texture, so white leaves it
+  as it is (`wnd_bg_light_rock.tga` averages 29 of 255, `wnd_bg_dark_rock.tga` 6).
+- **The color picker** (`CColorPickerWnd`, `frontend/color_picker.*`): fifteen swatches, each its
+  button's `TextColor` in its `A_WhitePixel` decal (the constructor copies a button's 0x68 to its
+  decal color 0x11c), the color so far in `CPW_TC15Button`, red, green and blue sliders of 256 ticks
+  with three-character boxes (a slider moved writes its box; a box typed into moves its slider, over
+  255 written back as 255), and Accept, which reads the boxes and gives the color to the window
+  that asked (its BGTint) as the picker goes.
+
 Hot buttons work as eqgame's do: hold the left button on any button of the Actions window, on any
 of its pages, for 3/4 of a second and a copy of it follows the cursor; click a hot button to put it
 there (whatever was there goes onto the cursor instead). Hold a hot button to take it off onto the
@@ -1226,8 +1256,9 @@ details and the nearest spawns at the top left and the radar at the top right.
 - **The Keyboard page** (`COptionsWnd`): `initkeyboardassignments` (@0042a9d7) names each command
   (eqstr 6500..6697, 3144, 3150, 3153, 5107) and gives its categories (1 Movement, 2 Commands, 4
   Spell casting, 8 Target, 0x10 Camera, 0x20 Chat, 0x40 UI, 0x80 Macros). The combo box picks
-  them (`UpdateKeyboardCategoryList`: choice n is bit n, All is 0xff) and the list shows those
-  commands in number order with `GetKeypressDescription`'s text: `Shift `, `Ctrl `, `Alt `,
+  them (`UpdateKeyboardCategoryList`: choice n is bit n, All is 0xff) and the list (its headings
+  light blue, `0xff8aa3ff`, as `COptionsWnd::COptionsWnd` sets them) shows those commands in number
+  order with `GetKeypressDescription`'s text: `Shift `, `Ctrl `, `Alt `,
   `ShCtl `, `ShAlt `, `CtlAlt `, `ShCtlAlt ` then the key's character in capitals or its name
   (`NPAD 8`, `PGUP`, `F12`), `-------` for none. A click on a Keypress or Alternate cell shows eqstr
   6598 ("Press a key") there (`KeyboardPageWndNotification`); the next key binds it

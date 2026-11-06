@@ -129,6 +129,7 @@ add_library(eqfrontend STATIC
     frontend/spell_book.cpp
     frontend/spell_cast.cpp
     frontend/buffs.cpp
+    frontend/color_picker.cpp
     frontend/compass.cpp
     frontend/spell_casting.cpp
     frontend/combat.cpp

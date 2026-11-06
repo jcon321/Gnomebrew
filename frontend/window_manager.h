@@ -22,7 +22,14 @@
 //   - DrawWindows (@0059e000): once the mouse has been still 500 ms (HandleMouseMove's tick count),
 //     the tooltip of the control under it (FindWnd, GetChildWndAt), over all the windows. In the
 //     control's own font, as DrawTooltipAtPoint draws it: DrawWindows' own path uses the system
-//     font (2), but the TAKP client shows an item's or a gem's in their font 3.
+//     font (2), but the TAKP client shows an item's or a gem's in their font 3;
+//   - CContextMenuManager (@00417ce6 on): popup menus over everything. A window's right button
+//     going down off its buttons opens CreateDefaultMenu's window menu there (CXWnd::
+//     HandleRButtonDown: CSidlScreenWnd::Init makes a screen's 0x12c the default menu). The mouse
+//     on an item with a submenu opens it to the right of that row (HandleContextMenuEvent's 0x14,
+//     closing any deeper); a click on another enabled item picks it (2: the window's
+//     WndNotification 0x13, HandleContextMenuAction) and closes them all, and a press anywhere
+//     else closes them.
 // Layouts are kept in eqgame's UI_<character>_<server>.ini format, one [section] per window
 // named after its screen (CSidlScreenWnd::LoadIniInfo / StoreIniInfo): XPos<W>x<H> and
 // YPos<W>x<H> per resolution, Width and Height for sizable windows, Show, Locked, Fades, Delay,
@@ -36,6 +43,7 @@
 #include <string>
 #include <vector>
 
+class EqStr;
 class IniFile;
 
 class WindowManager
@@ -50,7 +58,8 @@ public:
 		int alpha = 255;     // Alpha: how opaque it is unfaded
 		int fade_to = 128;   // FadeToAlpha
 		bool locked = false;
-		uint32_t tint = 0xffffff; // BGTint (kept in the ini; not drawn yet)
+		uint32_t tint = 0xffffff; // BGTint: the client background's color
+		bool texture = true;      // BGType 1, the template's texture tinted; 2 (false) the tint alone. Not kept.
 	};
 
 	// A button let go over in one of the windows.
@@ -131,6 +140,32 @@ public:
 		bool at_mouse) const;
 	const SidlDefinitions *Definitions() const { return m_defs; }
 
+	// The window menu's items (CreateDefaultMenu's ids, HandleContextMenuAction's cases).
+	enum MenuId
+	{
+		MenuTexture = 10, MenuTint, MenuNormalAlpha, MenuFadedAlpha, MenuMinimize, MenuClose, MenuLock,
+	};
+	struct MenuPick
+	{
+		std::string window;
+		int id = 0;
+	};
+	// The menu's screen (a WDT_RoundedNoTitle window with a list), into the UI's definitions.
+	static void AddDefinitions(SidlDefinitions &defs);
+	void SetStrings(const EqStr *strings) { m_strings = strings; } // the items' names
+	// Picks the windows can't do alone (Tint Color: CColorPickerWnd; Normal and Faded Level:
+	// CQuantityWnd), for whoever has those.
+	std::vector<MenuPick> TakeMenuPicks();
+	bool MenuOpen() const { return !m_open_menus.empty(); }
+	void CloseMenus(); // CloseAllContextMenus
+	// Where an open menu's row was last drawn (for tools); empty if there's no such row.
+	Rect MenuRowRect(int level, int row) const;
+	// A window's settings, and what the window menu's picks change in them (kept in the layout).
+	const Settings *SettingsOf(const std::string &screen) const;
+	void SetTint(const std::string &screen, uint32_t rgb);  // the color picker's 0x1e
+	void SetAlpha(const std::string &screen, int alpha);    // Normal Level: UnfadedAlpha
+	void SetFadeTo(const std::string &screen, int alpha);   // Faded Level: FadeToAlpha, fading on (Refade)
+
 	int Count() const { return static_cast<int>(m_windows.size()); }
 
 private:
@@ -160,6 +195,38 @@ private:
 	void SetMinimized(Window &w, bool minimized);
 	int EffectiveAlpha(const Window &w) const;
 	Rect Clamped(const Rect &rect) const;
+	Window *WindowNamed(const std::string &screen);
+
+	// The menus (CContextMenu): their items, an item's submenu the index of another menu.
+	struct MenuItem
+	{
+		std::string text;
+		int id = 0;
+		int submenu = -1;
+		bool separator = false;
+	};
+	struct OpenMenu
+	{
+		int menu = 0;
+		SidlWindow wnd;
+		std::vector<bool> enabled;
+		int parent_width = 0; // a submenu's parent's, for going left of it
+	};
+	void BuildMenus();
+	// CContextMenu::Activate: the menu's top left at (x, y), kept on the screen; a submenu that would
+	// run off the right goes left of its parent (`parent_width` wide) instead.
+	void OpenMenuAt(int menu, int x, int y, int parent_width);
+	bool MenuMouse(const InputEvent &event);
+	void MenuAction(int id); // HandleContextMenuAction
+	void DrawMenus(Canvas &canvas, TextRenderer &text, uint64_t now_ms);
+	void LayoutMenu(OpenMenu &open, TextRenderer &text); // its columns and rect, from its text
+	TextRenderer *m_text = nullptr; // the last Draw's, to lay a menu out as it opens
+	std::string MenuText(uint32_t id, const char *fallback) const;
+	std::vector<std::vector<MenuItem>> m_menus; // CreateDefaultMenu's: 0 Background's, 1 Alpha's, 2 the window menu
+	std::vector<OpenMenu> m_open_menus;         // the menu, then its open submenus
+	std::string m_menu_window;                  // the window the window menu is for
+	std::vector<MenuPick> m_menu_picks;
+	const EqStr *m_strings = nullptr;
 
 	const SidlDefinitions *m_defs = nullptr;
 	SidlTextures *m_textures = nullptr;

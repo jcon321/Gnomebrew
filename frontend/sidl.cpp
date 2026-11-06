@@ -1176,10 +1176,21 @@ void SidlWindow::DrawFrame(const Control &control, Canvas &canvas, SidlTextures 
 	const SidlWindowTemplate *frame = control.frame;
 	if (!frame)
 		return;
-	// Client background: the template texture tiled at its natural size.
-	if (!control.def->transparent)
-		if (const Image *background = textures.Get(frame->background))
-			canvas.TileRegion(*background, {0, 0, background->width, background->height}, control.client);
+	// Client background: the template texture tiled at its natural size, tinted by the window's
+	// BGTint (white leaves it as it is); a window's own (control 0) set to BGType 2, the tint alone.
+	if (!control.def->transparent) {
+		uint32_t tint = &control == &m_controls.front() ? m_bg_tint : 0xffffff;
+		if (&control == &m_controls.front() && !m_bg_texture)
+			canvas.Fill(control.client, tint);
+		else if (const Image *background = textures.Get(frame->background)) {
+			const Rect &dest = control.client;
+			for (int y = dest.y; y < dest.Bottom(); y += background->height)
+				for (int x = dest.x; x < dest.Right(); x += background->width) {
+					Rect part{0, 0, std::min(background->width, dest.Right() - x), std::min(background->height, dest.Bottom() - y)};
+					canvas.Stretch(*background, part, {x, y, part.w, part.h}, tint, canvas.Clip());
+				}
+		}
+	}
 	if (!control.def->style_border)
 		return;
 	Rect pieces[BorderPieceCount];
@@ -1311,7 +1322,7 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 			if (grid_decal)
 				DrawCell(canvas, textures, decal_name, control.cell, decal);
 			else
-				DrawAnimation(canvas, textures, decal_name, decal, now_ms);
+				DrawAnimation(canvas, textures, decal_name, decal, now_ms, control.decal_tint);
 			text_rect.w -= decal.Right() - text_rect.x;
 			text_rect.x = decal.Right();
 		}
@@ -1827,7 +1838,7 @@ void SidlWindow::DrawGauge(const Control &control, Canvas &canvas, TextRenderer 
 int SidlWindow::ListHeaderHeight(const Control &control) const
 {
 	// CListWnd::CListWnd: its font's height and 4, when it has columns.
-	return control.columns.empty() ? 0 : SidlFontHeight(control.def->font) + 4;
+	return control.columns.empty() || control.header_hidden ? 0 : SidlFontHeight(control.def->font) + 4;
 }
 
 int SidlWindow::ListRowHeight(const Control &control) const
@@ -1896,7 +1907,7 @@ void SidlWindow::DrawListbox(const Control &control, Canvas &canvas, TextRendere
 	};
 	int header = ListHeaderHeight(control);
 	int x = content.x;
-	for (size_t i = 0; i < control.columns.size(); ++i) {
+	for (size_t i = 0; i < control.columns.size() && !control.header_hidden; ++i) {
 		draw(control.columns[i].heading, static_cast<int>(i), x, control.columns[i].width, content.y, header,
 			control.header_color);
 		x += control.columns[i].width;
@@ -1911,9 +1922,12 @@ void SidlWindow::DrawListbox(const Control &control, Canvas &canvas, TextRendere
 			canvas.Fill(Intersect({content.x, y, content.w, row_height}, content), 0x203c6c);
 		}
 		x = content.x;
+		uint32_t color = r < control.row_colors.size() && control.row_colors[r] ? control.row_colors[r] : control.row_color;
+		if (static_cast<int>(r) == control.hover_row)
+			color = control.hover_color;
 		for (size_t i = 0; i < row.size(); ++i) {
 			int width = i < control.columns.size() ? control.columns[i].width : content.Right() - x;
-			draw(row[i], static_cast<int>(i), x, width, y, row_height, control.row_color);
+			draw(row[i], static_cast<int>(i), x, width, y, row_height, color);
 			x += width;
 		}
 		y += row_height;

@@ -6,9 +6,12 @@ no rules of its own.
 ## UI
 
 1. ~~**In-game SIDL windows.**~~ Done: `frontend/window_manager.*` (drag, resize, close, minimize,
-   focus order, fading, `UI_<char>_<server>.ini`). Still to do: BGTint isn't drawn, no
-   right-click context menu (lock, alpha), and only the chat window's and the social editor's
-   edit boxes take typing. The
+   focus order, fading, `UI_<char>_<server>.ini`, BGTint and BGType drawn, the window menu and
+   the color picker: `CContextMenuManager`, `CColorPickerWnd`). Still to do: the windows' own
+   menus over the default one (`CPlayerWnd::CreateLocalMenu`, `CGroupWnd`'s, the chat window's
+   `CChatManager::InitContextMenu`), Lock for windows that can't be locked (CXWnd 0x13, always
+   allowed here), and only the chat window's, the social editor's, the quantity window's and the
+   color picker's edit boxes take typing. The
    resize and drag cursors are the SIDL ones; the usual cursor is still eqmain's `cursor.bmp`
    rather than `A_DefaultCursor`.
 2. **Display-only windows**, showing what the server already sends:
