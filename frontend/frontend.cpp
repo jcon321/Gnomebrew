@@ -37,7 +37,7 @@ namespace
 	}
 
 	// Our model's look: our spawn, as the zone entered us and our items since have it.
-	render::CharacterAppearance PlayerAppearance(const ZoneSession &zone)
+	render::CharacterAppearance PlayerAppearance(const ZoneSession &zone, bool shooting = false)
 	{
 		const ZoneSpawn &me = zone.Self();
 		render::CharacterAppearance appearance;
@@ -55,6 +55,15 @@ namespace
 		for (int k = 0; k < render::EquipSlots; ++k) {
 			appearance.equip[k] = me.equipment[k];
 			appearance.tint[k] = me.colors[k];
+		}
+		// DoAttack(11)'s UpdateItemSlot: shooting, nothing in the primary hand and the range item in
+		// the secondary.
+		if (shooting) {
+			auto range = zone.Items().find(Inventory::Range);
+			appearance.equip[7] = 0;
+			appearance.equip[8] = range != zone.Items().end() && range->second.idfile.size() > 2
+			                          ? static_cast<uint16_t>(std::atoi(range->second.idfile.c_str() + 2))
+			                          : 0;
 		}
 		return appearance;
 	}
@@ -796,9 +805,17 @@ void FrontEnd::Update(uint64_t now_ms)
 		m_zone_view->UpdateSpawns(m_zone.Spawns(), m_zone.MySpawnId(), now_ms);
 		// What we put on or took off (UpdatePlayerAppearance), and the light we carry.
 		const ZoneSpawn &me = m_zone.Self();
-		if (me.look_serial != m_my_look_serial) {
+		// The Range button readied (DoPassageOfTime); a swing of auto attack puts the weapons back
+		// in our hands (DoAttack 13's UpdateItemSlot; ours on the attack being on, the zone swinging).
+		RangedPassageOfTime(now_ms);
+		if (m_attack && m_last_attack == 11) {
+			m_last_attack = 13;
+			m_ranged_look = true;
+		}
+		if (me.look_serial != m_my_look_serial || m_ranged_look) {
 			m_my_look_serial = me.look_serial;
-			m_zone_view->SetPlayer(PlayerAppearance(m_zone), me.walk_speed, me.run_speed);
+			m_ranged_look = false;
+			m_zone_view->SetPlayer(PlayerAppearance(m_zone, m_last_attack == 11), me.walk_speed, me.run_speed);
 		}
 		m_zone_view->SetMyLight(me.light);
 		m_zone_view->SetMyLevel(m_zone.Profile().level);
@@ -2307,6 +2324,8 @@ void FrontEnd::ActionsClick(const std::string &control)
 	// The combat page's Attack button (CombatPageWndNotification: ExecuteCmd 8).
 	else if (control == "ACP_MeleeAttackButton")
 		ToggleAutoAttack();
+	else if (control == "ACP_RangeAttackButton")
+		RangeAttackButton();
 	// MainPageWndNotification: Invite only when not invited, Follow only when invited, Disband.
 	else if (control == "AMP_InviteButton") {
 		if (!m_group.Invited())

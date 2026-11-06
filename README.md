@@ -1636,6 +1636,26 @@ details and the nearest spawns at the top left and the radar at the top right.
   `PutItemInInventory` sends: something bought, traded for or handed back by an NPC) goes out
   under it, and eqgame's `HandleWorldMessage` gives it to `msg_snd_ieq` as it does
   `OP_ItemPacket`: the item into our slot `equipSlot`.
+- **Archery and throwing** (`frontend/ranged_attack.cpp`). DoPassageOfTime readies the Range button
+  (`__RangeAttackReady`) when the primary's delay (Delay * 100, hand to hand's reuse without one;
+  a weapon is item type under 6, 13 or 22) has passed since ActorInfo's AttackTimer, or the range
+  item's after a shot (LastAttack 11); auto attack on takes it back and restarts the timer.
+  `ModifyAttackSpeed(delay, bow)` (@0050a039) hastens by SPA 11 (delay / (haste * 0.01)) and for a
+  bow the first quiver (bag type 2) in the general slots with a weight reduction takes
+  `(int)(WR * 0.0025 * delay) + 1` off, unless that leaves 1000 or less. The button
+  (CombatPageWndNotification) clears it and calls `DoAttack(11, 0, target)`: the held models become
+  nothing and the range item (UpdateItemSlot 7, 8), the range item's own hastened delay must have
+  passed (else nothing, the timer kept), standing (12368, 12369), not within 30 of the target
+  (12698, yellow) nor 40 above or below (12699; not zone 71), `CanIHitTarget` with the reach added
+  (a bow's Range plus an arrow's, or the ammo's, or the thrown item's), then `HandleAmmo`
+  (@0050b0fe): not a bow (5), type 6 or throwing (19), the item itself if it has a range; with no
+  ammo a stack of throwing weapons moves all but one to the ammo slot (`OP_MoveItem` 11 to 21);
+  arrows (27) for a bow, 28 for type 6, the same or other throwing for throwing; else 12875. The
+  ammo (or the item) goes to `DoMissileHit` (@004f3228): AimAtTarget (face them if within 64 of our
+  heading), `OP_CombatAbility` {target, 11, skill (SkillUsed of the item type; 231 for type 9)}. Then
+  `OP_DeleteCharge` {slot, -1, -1} for the ammo (a lone one from the same item in the general slots
+  or bags instead, the last found, as bag slot (slot * 5 + 15) * 2 + n) or a droppable thrown item
+  with charges, or `OP_MoveItem` {11, -1, 0} for the item gone.
 - **/who** (`CEverQuest::Who` @0052f614, `FrontEnd::Who`): up to six words (GrabFirstWord: a quoted
   one keeps its spaces), each taken as the first of: `corpse` (our corpses), `all`, `GM`, `NONGM`,
   `friend(s)`, `LFG`, `Trader`, `guild` (ours; 12336 without one) or `guild<n>`, a class the word

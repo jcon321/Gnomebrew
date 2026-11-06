@@ -327,6 +327,16 @@ private:
 	// (@00507b08), each frame we have control, turns us toward them and runs, walks or stops us by
 	// the distance; TurnOffAutoFollow (@00507e0a) ends it.
 	void Follow();
+	// Archery and throwing (ranged_attack.cpp): EQPlayer::ModifyAttackSpeed (with a bow, a quiver's
+	// haste), a slot's weapon delay as DoPassageOfTime takes it, DoPassageOfTime's readying of the
+	// Range button, the button (CombatPageWndNotification), DoAttack(11), HandleAmmo and DoMissileHit.
+	uint32_t ModifyAttackSpeed(uint32_t delay, bool bow) const;
+	uint32_t WeaponDelay(int16_t slot) const;
+	void RangedPassageOfTime(uint64_t now_ms);
+	void RangeAttackButton();
+	void RangedAttack(uint16_t target);
+	int HandleAmmo();
+	void DoMissileHit(uint16_t target, const ZoneItem &item);
 	// CInvSlot_DoDrinkEatPoison (@004223ca): the right button on a common item (frontend.cpp).
 	void DoDrinkEatPoison(const ZoneItem &item, int16_t slot);
 	void FollowPlayerAI();
@@ -483,6 +493,10 @@ private:
 	// back, any change of our stance (EQPlayer::ChangeStance) and a new zone (EnterZone).
 	bool m_autorun = false;
 	uint8_t m_autorun_stance = 0; // our stance when it was last looked at, to see it change
+	uint64_t m_attack_timer_ms = 0; // ActorInfo's AttackTimer
+	bool m_range_ready = false;     // __RangeAttackReady
+	int m_last_attack = 0;          // ActorInfo's LastAttack: 11 shooting, 13 the primary's swing
+	bool m_ranged_look = false;     // the held items changed for shooting or back: our model again
 	bool m_lfg = false;           // DAT_007cf1fc: we're looking for a group
 	uint16_t m_following = 0;     // ActorInfo's Following: whom /follow has us after (0 nobody)
 	KeyBindings m_key_bindings; // the keymap, from my-client.ini's [KeyMaps]

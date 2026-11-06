@@ -322,12 +322,18 @@ no rules of its own.
     music, and nothing moves us; 2 s on, "Returning to home point, please wait..." (eqstr 539) and
     OP_ZoneChange to the bind zone with reason 10 (RealRender_World's DeathTimer, MoveToZone).
     Still to do:
-    - range attacks: the Range button and the hot button's (CombatPageWndNotification's
-      `__RangeAttackReady`, DoAttack 0xb: the bow's delay and a quiver's haste, too close (12698),
-      too far above or below (12699), the bow's and arrow's range in CanIHitTarget, HandleAmmo,
-      DoMissileHit's OP_CombatAbility {target, 11, skill}, OP_DeleteCharge 0x4147 or OP_MoveItem
-      for what's used up, the bow in the hand while shooting), and throwing; the zone's
-      RangedAttack wants the ammo it's told of;
+    - range attacks: done (`frontend/ranged_attack.cpp`): the Range button and a hot button
+      holding it when `__RangeAttackReady` (DoPassageOfTime: the primary's delay, or the range
+      item's after a shot, hastened, a bow's by a quiver too), DoAttack 11's checks (standing, too
+      close 12698, too far above or below 12699, CanIHitTarget with the bow's and arrow's reach),
+      HandleAmmo (12875; a stack of throwing weapons split to the ammo slot), DoMissileHit's turn
+      to face them and OP_CombatAbility {target, 11, skill}, the ammo used (OP_DeleteCharge, the
+      last of a stack taken from the general slots or bags) or the weapon thrown (OP_MoveItem to
+      -1), and the bow held while shooting. Not checked live: none of the test characters has a
+      bow or anything to throw. Still to do: AimAtTarget's pitch, the Endless Quiver AA (GetAbility
+      0x54), hide and sneak ending, the fatigue a shot costs (SetFatigue), our own missile drawn
+      (EQMissile), and the weapons back in hand on the zone's swings rather than auto attack's
+      being on;
     - ProcessControls' own swings while auto attack's on (DoAttack 0xd primary, 0xe the off hand,
       on `__RangeAttackReady` and DAT_007cd845): their timers, the fatigue, CanIHitTarget's says
       ("too far away") as well as the zone's;

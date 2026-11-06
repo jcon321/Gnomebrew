@@ -126,6 +126,7 @@ add_library(eqfrontend STATIC
     frontend/loot_window.cpp
     frontend/trade_window.cpp
     frontend/group.cpp
+    frontend/ranged_attack.cpp
     frontend/ground_items.cpp
     frontend/spell_book.cpp
     frontend/spell_cast.cpp
