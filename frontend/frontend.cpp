@@ -1970,7 +1970,7 @@ namespace
 		{ColorPicker::Screen, false},
 		{"ConfirmationDialogBox", false}, {"CastingWindow", false}, {"BankWnd", false},
 		{"MerchantWnd", false}, {"LootWnd", false}, {"TradeWnd", false}, {"GiveWnd", false},
-		{"SkillsSelectWindow", false},
+		{"SkillsSelectWindow", false}, {"NoteWindow", false},
 	};
 
 	// The selector's buttons (EQUI_SelectorWnd.xml) and the windows they open and close.
@@ -2188,6 +2188,8 @@ void FrontEnd::HandleWindowClicks()
 				if (const ZoneItem *item = SlotItem(m_windows, m_game_values, click.window, click.control)) {
 					if (item->item_class == 1)
 						m_containers.Toggle(static_cast<int16_t>(slot));
+					else if (item->item_class == 2 && slot < 1000)
+						ReadNote(*item, static_cast<int16_t>(slot));
 					else if (item->item_class == 0 && slot < 31) {
 						ZoneItem copy = *item; // what it was: eating may take the last of it
 						DoDrinkEatPoison(copy, static_cast<int16_t>(slot));
@@ -2264,6 +2266,11 @@ void FrontEnd::HandleWindowClicks()
 				if (SidlWindow *social_editor = m_windows.Find("SocialEditWnd"))
 					social_editor->Focus("");
 			}
+			continue;
+		}
+		// CNoteWnd's Done.
+		if (click.window == "NoteWindow" && click.control == "DoneButton") {
+			m_windows.Show("NoteWindow", false);
 			continue;
 		}
 		// CGroupWnd::WndNotification: Follow, Invite, and Disband or Decline.
@@ -2602,6 +2609,40 @@ void FrontEnd::DoDrinkEatPoison(const ZoneItem &item, int16_t slot)
 		return;
 	if (m_spell_cast.CastItem(item, slot, m_now_ms) && item.item_type == 21 && m_sound)
 		m_sound->PlayWave(0x95); // a potion
+}
+
+void FrontEnd::ReadNote(const ZoneItem &item, int16_t slot)
+{
+	// A note (type 0): CNoteWnd's Deactivate, then CheckNote; a book's window (CBookWnd) isn't ours
+	// yet, so a book asks for its text all the same and nothing shows it.
+	std::string which = std::to_string(slot) + ":" + item.name;
+	if (item.book_type == 0) {
+		m_windows.Show("NoteWindow", false);
+		if (m_note_shown == which) {
+			m_note_shown.clear();
+			return;
+		}
+		m_note_shown = which;
+		m_note_title = item.name;
+	}
+	m_zone.ReadBook(item.book_type, item.book_file);
+}
+
+void FrontEnd::BookText(int type, const std::string &text)
+{
+	if (type != 0)
+		return; // a book: CBookWnd::SetBook and Activate (not ours yet)
+	SidlWindow *note = m_windows.Find("NoteWindow");
+	if (!note)
+		return;
+	// CNoteWnd::SetNote: the window named for the note, the text black (<c "#000000">...</c>).
+	note->Root().text = m_note_title;
+	if (SidlWindow::Control *display = note->Find("Note")) {
+		display->text = "<c \"#000000\">" + text + "</c>";
+		display->scroll_pos = 0;
+	}
+	m_windows.Show("NoteWindow", true);
+	m_windows.Raise("NoteWindow");
 }
 
 void FrontEnd::Follow()
@@ -3207,6 +3248,9 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			break;
 		case Type::Profile:
 			m_group.ProfileArrived(); // CheckForGroupChanges
+			break;
+		case Type::BookText:
+			BookText(event.value, event.text);
 			break;
 		case Type::WhoAnswered:
 			WhoAnswer(event.who);

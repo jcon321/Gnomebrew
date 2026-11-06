@@ -118,9 +118,8 @@ no rules of its own.
      named by type (OpenWorldContainer), their items from OP_ObjectItemPacket at 4000 + n,
      OP_ClearObject emptying them, Combine as slot 1000, closed by Done, Escape or walking off 20
      (CContainerMgr::Process) with OP_ClickObjectAction, and not closeable with a NO DROP item in
-     (CheckCloseable). Still to do: CanGoInBag's checks for a world container's slots, the bag's
-     open flag (EQ_Container::Open), and the right button on a book or note reading it
-     (EQ_Note::SendTextRequestMsg, OP_ReadBook).
+     (CheckCloseable). Still to do: CanGoInBag's checks for a world container's slots, and the bag's
+     open flag (EQ_Container::Open).
    - Equipping: our model's armor, weapons and light follow what we have on (`ZoneSession::UpdateAppearance`).
      Still to do: dual wield
      from the class table rather than the zone's 254/255, the casting check (no moves but from the
@@ -135,7 +134,10 @@ no rules of its own.
      down here; checked live) and items' click effects (`SpellCast::CastItem`, OP_CastSpell gem 10
      with the slot; not checked live, the test characters have none). Still to do: poisons
      (CEverQues_ApplyPoison), Alcohol Tolerance's skill-up (EQ_PC_CheckSkillImprove 66), what
-     drunkenness does, and a book or note read (EQ_Note::SendTextRequestMsg).
+     drunkenness does, and the book window: a note (book type 0) is read
+     (EQ_Note::SendTextRequestMsg's OP_ReadBook, CNoteWnd's SetNote and Done; checked live), a book
+     (type 1) asks for its text but CBookWnd (two pages of 12 lines each fitted by the font,
+     ParseAndFormatBookContent, its page buttons and keys) isn't ours yet.
    - Item display: alt+click or the right button held on an inventory slot shows its item
      (`frontend/item_display.*`, eqgame's SetItem text with spells_en.txt's spell names); letting
      the right button go closes it. A link clicked in the chat shows its item (the zone's

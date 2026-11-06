@@ -339,6 +339,13 @@ private:
 	void DoMissileHit(uint16_t target, const ZoneItem &item);
 	// CInvSlot_DoDrinkEatPoison (@004223ca): the right button on a common item (frontend.cpp).
 	void DoDrinkEatPoison(const ZoneItem &item, int16_t slot);
+	// EQ_Note::SendTextRequestMsg (@004ce45d): the right button on a book or note closes its window,
+	// and asks for its text unless it was this one's (CNoteWnd::CheckNote, CBookWnd::CheckBook); the
+	// answer (OP_ReadBook) fills it (CNoteWnd::SetNote, Activate).
+	void ReadNote(const ZoneItem &item, int16_t slot);
+	void BookText(int type, const std::string &text);
+	std::string m_note_shown;   // CNoteWnd+0x544: the item whose note is up (ours: its slot and name)
+	std::string m_note_title;   // its name (+0x144)
 	void FollowPlayerAI();
 	void TurnOffAutoFollow(bool say = true);
 	void WhoAnswer(const ZoneWho &who);

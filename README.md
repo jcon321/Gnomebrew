@@ -1636,6 +1636,13 @@ details and the nearest spawns at the top left and the radar at the top right.
   `PutItemInInventory` sends: something bought, traded for or handed back by an NPC) goes out
   under it, and eqgame's `HandleWorldMessage` gives it to `msg_snd_ieq` as it does
   `OP_ItemPacket`: the item into our slot `equipSlot`.
+- **Notes and books**: the right button on one in a slot under 1000 (`EQ_Note::SendTextRequestMsg`
+  @004ce45d) closes its window (the note's or the book's) and, unless it was this item's
+  (CheckNote, CheckBook: a second click only closes it), sends `OP_ReadBook` 0x40ce {u8 the
+  item's BookType (byte 228), its Filename (byte 231)\0}. The zone answers with the same opcode
+  {u8 type, the text (no terminator)}: 0 a note, `CNoteWnd::SetNote` (the window titled with the
+  item's name, the STMLbox `Note` given `<c "#000000">` + text + `</c>`) and Activate; 1 a book,
+  `CBookWnd::SetBook`.
 - **Archery and throwing** (`frontend/ranged_attack.cpp`). DoPassageOfTime readies the Range button
   (`__RangeAttackReady`) when the primary's delay (Delay * 100, hand to hand's reuse without one;
   a weapon is item type under 6, 13 or 22) has passed since ActorInfo's AttackTimer, or the range

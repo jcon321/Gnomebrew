@@ -379,6 +379,7 @@ struct ZoneItem
 	uint8_t bag_slots = 0, bag_open = 0, bag_size = 0, bag_wr = 0; // bag_wr: % weight reduction
 	// Books (the first two bytes of the union): book or note, and open or not.
 	uint8_t book_type = 0, book_open = 0;
+	std::string book_file;   // Filename (@231): its text's name on the zone (OP_ReadBook)
 };
 
 struct ZoneChat
@@ -483,6 +484,7 @@ public:
 			// accepted, or its word on entering the zone that there's no invitation (OP_GroupFollow), and
 			// the group changing (OP_GroupUpdate).
 			WhoAnswered,  // who: OP_WhoAllResponse
+			BookText,     // OP_ReadBook's answer: value the type (0 a note, 1 a book), text the text
 			GroupInvited,
 			GroupInviteCancelled,
 			GroupFollowed,
@@ -603,6 +605,8 @@ public:
 	// CInvSlot_DoDrinkEatPoison: OP_Consume {slot, 999 (by hand), -1, 1 food or 2 drink}, or for
 	// alcohol OP_DeleteCharge {slot, -1, -1}; one comes off the stack here, as eqgame takes it.
 	bool Consume(int16_t slot, int type);
+	// EQ_Note::SendTextRequestMsg: OP_ReadBook {type, the item's file}.
+	bool ReadBook(uint8_t type, const std::string &file);
 	bool DeleteCharge(int16_t slot);
 	bool StopCasting(); // an empty OP_ManaChange: a bard's song stops (StopSpellCast)
 	// OP_MoveCoin (MoveCoin_Struct, 20 bytes: i32 from, to, from coin, to coin, amount): coins moved

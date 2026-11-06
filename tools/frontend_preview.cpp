@@ -274,6 +274,28 @@ namespace
 			printf("[preview] slot %d: %s (class %u, type %u, charges %d, stackable %u, click %d spell %d)\n", slot, item.name.c_str(),
 				item.item_class, item.item_type, item.charges, item.stackable, item.effect_type2, item.effect2);
 		}
+		// The right button on a note reads it (OP_ReadBook, CNoteWnd).
+		for (const auto &[slot, item] : zone.Items())
+			if (slot >= 22 && slot < 31 && item.item_class == 2) {
+				const SidlWindow *inv = windows.Find("InventoryWindow");
+				const SidlWindow::Control *c = inv ? inv->Find("InvSlot" + std::to_string(slot)) : nullptr;
+				if (!c)
+					break;
+				Rect area = frontend.ScreenArea();
+				int x = area.x + c->rect.x + c->rect.w / 2, y = area.y + c->rect.y + c->rect.h / 2;
+				printf("[preview] right click note '%s' (file '%s', type %u)\n", item.name.c_str(), item.book_file.c_str(), item.book_type);
+				frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+				frontend.OnEvent({InputEvent::Type::RightDown, x, y});
+				frontend.OnEvent({InputEvent::Type::RightUp, x, y});
+				h.RunUntil([&] { return windows.Shown("NoteWindow"); }, 3000);
+				const SidlWindow *note = windows.Find("NoteWindow");
+				const SidlWindow::Control *text = note ? note->Find("Note") : nullptr;
+				printf("[preview] note window %s: '%s' %s\n", windows.Shown("NoteWindow") ? "up" : "down",
+					note ? note->Root().text.c_str() : "", text ? text->text.c_str() : "");
+				h.Snapshot("n1-note");
+				windows.Show("NoteWindow", false);
+				break;
+			}
 		for (int type : {14, 15, 14}) {
 			int16_t found = -1;
 			for (const auto &[slot, item] : zone.Items())

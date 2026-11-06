@@ -209,6 +209,7 @@ namespace
 		else if (item.item_class == 2) {
 			item.book_type = d[o + 228];
 			item.book_open = d[o + 229];
+			item.book_file = CString(d, o + 231, 30);
 		}
 		item.charges = Read<int8_t>(d, o + 278);
 		item.effect_type2 = Read<int8_t>(d, o + 279);
@@ -761,6 +762,16 @@ bool ZoneSession::SendBuff(int slot, const ZoneBuff &buff, uint32_t how)
 	memcpy(body + 16, &how, 4);
 	return Send(ZoneOp::Buff, body, sizeof(body),
 		"OP_Buff slot " + std::to_string(slot) + " spell " + std::to_string(buff.spell) + " how " + std::to_string(how));
+}
+
+bool ZoneSession::ReadBook(uint8_t type, const std::string &file)
+{
+	if (m_state != State::InZone)
+		return false;
+	std::vector<uint8_t> body(file.size() + 2, 0);
+	body[0] = type;
+	std::memcpy(body.data() + 1, file.data(), file.size());
+	return Send(ZoneOp::ReadBook, body.data(), body.size(), "OP_ReadBook " + file);
 }
 
 bool ZoneSession::Consume(int16_t slot, int type)
@@ -1915,6 +1926,15 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		Event e{Event::Type::TradeRefused};
 		e.id = Read<uint16_t>(data, 2);
 		e.value = data[4];
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::ReadBook: {
+		if (data.empty())
+			break;
+		Event e{Event::Type::BookText};
+		e.value = data[0];
+		e.text = CString(data, 1, data.size());
 		events.push_back(e);
 		break;
 	}
