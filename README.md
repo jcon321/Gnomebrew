@@ -1390,7 +1390,11 @@ details and the nearest spawns at the top left and the radar at the top right.
   has gone by since its last use (`DAT_007cd650`); mend at its own time (`DAT_007cd6d0`). The combat
   skills share one timer (ActorInfo +0x164: the last one's reuse from its use), `__AltTimerReady`.
   `EQPlayer::ModifyAttackSpeed` (@0050a039) hastens a delay: `delay / (haste * 0.01)` with haste
-  SPA 11's total (100 none); a bow's also drops `delay * weight reduction * 0.0025 + 1` with a
+  `TotalSpellAffects(11)`: the best spell haste, the best worn item's (110 at most under level
+  26), the worst slow, overhaste and bard haste, capped by level (ours: only the buffs' SPA 11
+  summed); EQMacEmu restarts its own combat ability timer at `reuse * 100 / GetHaste() - 1` whole
+  seconds (kick and bash 8, backstab 10, round and flying kick 8, eagle strike and dragon punch 6,
+  tiger claw 7), so a tiger claw at eqgame's 5.5 s comes too early for it and is dropped; a bow's also drops `delay * weight reduction * 0.0025 + 1` with a
   quiver in a pack slot, when that leaves over 1000.
 - **UseSkill** (@004bdf2f): nothing at 0 HP or for a skill at 254 and up; stance 102 says 12368. A
   combat skill turns `__AltTimerReady` off; bash needs a shield in the secondary hand (or primary

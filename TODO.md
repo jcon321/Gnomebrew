@@ -297,7 +297,11 @@ no rules of its own.
       death's first person view (still standing height), KnockedOut's "You have been knocked
       unconscious!" (12877) and ClearOutRentables' temporary items;
     - being hit on a mount (DeacSpellScreen, ChangeStance), and the guildmaster window turning auto
-      attack off (pinstActiveGMaster) once there is one.
+      attack off (pinstActiveGMaster) once there is one;
+    - the haste ModifyAttackSpeed divides by is `Buffs::Total(11)`, a sum of our buffs' SPA 11:
+      TotalSpellAffects' own SPA 11 branch (@004c6b6d) takes the best spell haste, the best worn
+      item's (110 at most under level 26), the worst slow, overhaste (SPA 98, over level 49) and
+      bard haste (SPA 119), capped by level; worn and over haste aren't ours yet.
 
 ## Rendering / presentation
 
