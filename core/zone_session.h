@@ -116,6 +116,7 @@ struct ZoneSpawn
 	uint8_t gender = 0;
 	uint8_t npc = 0;         // 0 player, 1 NPC, 2 player corpse, 3 NPC corpse
 	uint16_t pet_owner = 0;
+	uint8_t temporary_pet = 0; // Spawn_Struct's temporaryPet (EQPlayer+0x15c: set when it's 1)
 	int16_t hp = 0;          // percent for everything but ourselves
 	float x = 0, y = 0, z = 0;
 	float heading = 0;       // 0..512, counterclockwise from north (spawn packets send 256ths)

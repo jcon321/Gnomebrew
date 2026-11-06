@@ -125,6 +125,7 @@ namespace
 		s.aa_title = d[o + 27];
 		s.guild_id = Read<int16_t>(d, o + 82);
 		s.deity = Read<int16_t>(d, o + 124);
+		s.temporary_pet = d[o + 126] == 1 ? 1 : 0;
 		s.invis = d[o + 90];
 		s.pvp = d[o + 92];
 		s.anon = d[o + 95];

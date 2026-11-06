@@ -305,6 +305,14 @@ private:
 	// line is open and starts with /tell or /rtarget, the next (or the last) name of the tell list
 	// after it (CycleNamesInTellList @004f8531).
 	void CycleReply(bool back);
+	// ExecuteCmd's keys that open the chat line with something in it (Send tell, Reply, Send tell
+	// to target, Command mode say and emote), while it isn't open (__InChatMode).
+	void OpenChatLine(const std::string &text);
+	// DoPercentConvert (@00538110): %t, %m, %s, %o, %p and %r in a line of chat, at its start or
+	// after a space or an apostrophe, become the target's name, our pet's, the target's he, him,
+	// his and its race. print_chat_dsp_chat runs it on every line printed, SendNewText,
+	// CEverQuest::Emote and send_social on what they send.
+	std::string PercentConvert(const std::string &text) const;
 	// CDisplay_IsInvisible to us (we don't know whether we see invisible: we don't).
 	bool InvisibleToMe(const ZoneSpawn &spawn) const;
 	// CDisplay::RealRender_World's DeathTimer: lying dead, 2 seconds on "Returning to home point,
@@ -428,6 +436,10 @@ private:
 	// to the first, Cycle reply steps through them (CycleNamesInTellList's DAT_007cf0dc).
 	std::vector<std::string> m_tell_list;
 	int m_tell_index = 0;
+	// A key that opened the chat line (OpenChatLine): its own character, which Windows sends after
+	// the key, isn't typed into it (eqgame's DirectInput key reaches the edit box before the
+	// command opens it).
+	bool m_chat_opened_by_key = false;
 	uint16_t m_toggle_target = 0; // Toggle last two targets' (DAT_00799788): the target we left for ourselves
 	std::string m_time_of_day;
 	std::string m_afk_message;                    // /afk's text (DAT_007cf0e0); nothing answers tells with it yet

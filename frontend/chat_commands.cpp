@@ -3,6 +3,7 @@
 // word starts is the one, so "/s" is /split and "/g" is /gsay, as in eqgame. Anything else is said.
 
 #include "frontend.h"
+#include "item_display.h"
 #include "zone_names.h"
 
 #include <cctype>
@@ -326,6 +327,88 @@ namespace
 	}
 }
 
+namespace
+{
+	// CEverQuest::stripName (@00537e4b): a spawn's name up to an apostrophe ("a_rat's_corpse"),
+	// without its digits and '#', underscores as spaces.
+	std::string StripName(const std::string &name)
+	{
+		std::string out;
+		for (char c : name) {
+			if (c == '\'')
+				break;
+			if (std::isdigit(static_cast<unsigned char>(c)) || c == '#')
+				continue;
+			out.push_back(c == '_' ? ' ' : c);
+		}
+		return out;
+	}
+}
+
+std::string FrontEnd::PercentConvert(const std::string &given) const
+{
+	uint16_t me = m_zone.MySpawnId();
+	const ZoneSpawn *target = nullptr;
+	if (uint16_t id = Target()) {
+		auto it = m_zone.Spawns().find(id);
+		target = id == me ? &m_zone.Self() : it != m_zone.Spawns().end() ? &it->second : nullptr;
+	}
+	std::string text = given;
+	size_t from = 0; // where the last conversion's two characters ended (param_1)
+	int converted = 0;
+	for (size_t at = text.find('%'); at != std::string::npos; at = text.find('%', at + 1)) {
+		// At the start, the second character, or after a space or an apostrophe. (eqgame measures
+		// from the end of the last %x it took out, not of what went in; a % just before there
+		// would make it copy a negative length, so it's passed over here.)
+		if (at < from)
+			continue;
+		size_t count = at - from;
+		if (count >= 2 && text[at - 1] != ' ' && text[at - 1] != '\'')
+			continue;
+		if (converted >= 11) {
+			text[at] = '@'; // past eleven, the % goes
+			continue;
+		}
+		char c = at + 1 < text.size() ? static_cast<char>(std::tolower(static_cast<unsigned char>(text[at + 1]))) : 0;
+		std::string with;
+		switch (c) {
+		case 't':
+			with = target ? StripName(target->name) : "Target";
+			break;
+		case 'm': {
+			// The first spawn whose owner we are, temporary or not.
+			with = "Pet";
+			for (const auto &[id, spawn] : m_zone.Spawns())
+				if (spawn.pet_owner == me && me != 0) {
+					with = StripName(spawn.name);
+					break;
+				}
+			break;
+		}
+		case 's':
+			with = target && target->gender == 0 ? "he" : target && target->gender == 1 ? "she" : "it";
+			break;
+		case 'o':
+			with = target && target->gender == 0 ? "him" : target && target->gender == 1 ? "her" : "it";
+			break;
+		case 'p':
+			with = target && target->gender == 0 ? "his" : target && target->gender == 1 ? "her" : "its";
+			break;
+		case 'r':
+			// A player's race, "Corpse" for a player's corpse, "NPC" for the rest; no target, nothing.
+			if (target)
+				with = target->npc == 0 ? RaceDescription(m_game_values, target->race) : target->npc == 2 ? "Corpse" : "NPC";
+			break;
+		default:
+			continue;
+		}
+		text = text.substr(0, at) + with + text.substr(at + 2);
+		++converted;
+		from = at + 2;
+	}
+	return text;
+}
+
 void FrontEnd::InterpretCommand(const std::string &typed)
 {
 	size_t start = 0;
@@ -398,8 +481,10 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 	auto send = [&](uint16_t channel, const std::string &to, const std::string &text, uint32_t echo, const char *echo_text, int type) {
 		if (text.empty())
 			return;
-		m_zone.SendChannel(channel, to, text);
-		ChatOut(format(echo, echo_text, {text}), type);
+		// SendNewText sends it through DoPercentConvert, and the echo's print_chat_dsp_chat too.
+		std::string sent = PercentConvert(text);
+		m_zone.SendChannel(channel, to, sent);
+		ChatOut(format(echo, echo_text, {sent}), type);
 	};
 	switch (command) {
 	case Command::Say:
@@ -443,7 +528,7 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 		if (Lower(to) == Lower(me.name))
 			ChatOut(format(12323, "Talking to yourself again?", {}), ChatType::Default);
 		else if (!to.empty() && !text.empty())
-			m_zone.SendChannel(7, to, text);
+			m_zone.SendChannel(7, to, PercentConvert(text)); // send_tell's SendNewText
 		break;
 	}
 	case Command::Emote:
@@ -453,8 +538,8 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 			ChatOut(format(13068, "FORMAT: /emote <what you want to emote>", {}), ChatType::Default);
 			break;
 		}
-		m_zone.Emote(" " + args);
-		ChatOut(me.name + " " + args, ChatType::EchoEmote);
+		m_zone.Emote(PercentConvert(" " + args));
+		ChatOut(me.name + " " + args, ChatType::EchoEmote); // converted by ChatOut, as print_chat_dsp_chat does
 		break;
 	case Command::Location: {
 		// Our position in the server's terms: y, x, z.
@@ -941,6 +1026,7 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 			sent = " " + lone;
 		if (!sent.empty()) {
 			stop(sent);
+			sent = PercentConvert(sent);
 			m_zone.Emote(sent); // eqgame's Emote_Struct has 0xffff in front here; the zone ignores it
 		}
 		if (animation != -1)

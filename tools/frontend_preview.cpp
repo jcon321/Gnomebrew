@@ -226,7 +226,41 @@ namespace
 			std::string first = near->name.substr(0, near->name.find('_'));
 			for (const char *social : {"/bow ", "/tap ", "/yawn ", "/dance "})
 				type(social + first);
+			// DoPercentConvert: the target's name, pronouns and race, and our pet (none: "Pet").
+			type("/target " + first);
+			type("%t is %s, %o, %p, a %r; %m. x%t 50% '%t'");
+			type("/smile say waves at %t");
 		}
+		// The keys that open the chat line with something in it (their own character not typed
+		// after), and Target myself twice (no pet: still us).
+		auto press = [&](int scan, bool shift, char ch, const char *what) {
+			InputEvent down;
+			down.type = InputEvent::Type::Key;
+			down.scan = scan;
+			down.shift = shift;
+			frontend.OnEvent(down);
+			InputEvent typed;
+			typed.type = InputEvent::Type::Char;
+			typed.ch = static_cast<unsigned char>(ch);
+			frontend.OnEvent(typed);
+			InputEvent up = down;
+			up.type = InputEvent::Type::KeyUp;
+			frontend.OnEvent(up);
+			h.RunUntil([] { return false; }, 200);
+			printf("[preview] %s: typing %d, line \"%s\"\n", what, frontend.Chat().Typing() ? 1 : 0,
+				frontend.Chat().InputText().c_str());
+			chat();
+			if (frontend.Chat().Typing())
+				h.Key(InputEvent::Key::Escape);
+		};
+		press(0x14, false, 't', "Send tell (T)");
+		press(0x28, false, '\'', "Command mode say (')");
+		press(0x27, true, ':', "Command mode emote (:)");
+		press(0x13, false, 'r', "Reply (R)");
+		press(0x3b, false, 0, "Target myself (F1)");
+		printf("[preview] target %u (us %u)\n", frontend.Target(), zone.MySpawnId());
+		press(0x3b, false, 0, "Target myself again (F1)");
+		printf("[preview] target %u (us %u)\n", frontend.Target(), zone.MySpawnId());
 		printf("[preview] exp %u (gauge %d)\n", me.exp, static_cast<int>(std::min(me.exp * 3.03031, 1000.0)));
 
 		windows.Show("CompassWindow", true);

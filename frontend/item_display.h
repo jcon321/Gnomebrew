@@ -34,3 +34,5 @@ class GameValues;
 struct ZoneItem;
 
 std::string ItemDisplayText(const GameValues &values, const ZoneItem &item);
+// CEverQuest_GetRaceDesc2 (@0052db3a): a race's name, "UNKNOWN RACE" past its table.
+std::string RaceDescription(const GameValues &values, int race);

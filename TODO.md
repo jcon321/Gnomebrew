@@ -177,9 +177,12 @@ no rules of its own.
    Still to do: more windows and the channel map (eqgame's `CChatManager`: which window each
    channel goes to, set from the right-click menu; there were no tabs in this era), the chat font
    size, hold-to-repeat on the scrollbar's arrows, languages scrambled by skill
-   (`HearBabel`), and the commands that still say they aren't supported (/who, /follow, /lfg...).
-   DoPercentConvert (@00538110) isn't ported: %t (the target's name), %m (our pet's), %s, %o, %p
-   (the target's he/him/his) and %r (its race) in what's said, told, shouted, emoted and in socials.
+   (`HearBabel`), and the commands that still say they aren't supported (/who, /follow, /lfg,
+   /rtarget...). DoPercentConvert (@00538110, `FrontEnd::PercentConvert`): %t, %m, %s, %o, %p and %r
+   at a line's start or after a space or apostrophe, eleven at most (then '@'), on every line
+   printed (`ChatOut`, as print_chat_dsp_chat) and on what's said, told, sent to a channel, emoted
+   and sent by socials (SendNewText, CEverQuest::Emote, send_social). Still to do: stripName's
+   ConvertNameToLocal (another server's names), and the lines we print through `AddZoneLog`.
    Done in `chat_commands.cpp`: /consider (OP_Consider, PrintConsiderAssessment's text and con
    color), /time (Norrath's date as EQWorldData::AdvanceTime carries it on, and Earth's), /played,
    /motd, /afk, /anonymous, /assist (OP_Assist; the answer becomes our target), /random
@@ -219,16 +222,22 @@ no rules of its own.
    `ZoneView::SpawnsInView`), our Cycle nearest target on Tab
    (Zeal's CycleTarget, command 213), Toggle last two targets (ExecuteCmd 63) on no key, Cycle
    reply forward and back (ExecuteCmd 60, 61, CycleNamesInTellList, AddNameToTellList's 50
-   names). Still to do:
+   names). Target myself a second time takes our pet (ExecuteCmd 22: the first spawn of ours
+   not a temporary pet, Spawn_Struct's temporaryPet). Send tell, Reply, Send tell to target and
+   Command mode say and emote (ExecuteCmd 13, 59, 100, 87, 88; `FrontEnd::OpenChatLine`) open the
+   chat line with `/tell `, `/tell <name> ` (`;tell` for a name with a dot), `/rtarget <name> `
+   (Cycle reply's name; eqstr 12364 and 12365 with no tells), `'` and `:`, without the key's
+   own character after it. Still to do:
    - ExecuteCmd's commands not done yet (the page's "No"): Toggle mouse look, Duck, Use centerscreen, Center view, Zoom in and out held
      (ProcessControls' camera distance at 2 units a frame unit), Toggle UI Display (ScreenMode 3),
-     Target party member 1..5 and a second press of Target myself taking the pet
-     (setTargetBasedOnIndex), Toggle netstat, Send tell, Reply and Send tell to target (the chat line
-     opened with `/tell `, `/tell <last> `, `/rtarget <last> `; eqstr 12364 and 12365 with no
-     tells), Who, Invite/follow, Disband, the clip plane, voice input,
+     Target party member 1..5 (setTargetBasedOnIndex), Toggle netstat, Who, Invite/follow,
+     Disband, the clip plane, voice input,
      screenshots, the chat line's cursor and page up and down (CChatWindow::ScrollChatWindowUp),
-     Command mode say and emote (`'` and `:`), the AA, bazaar, bazaar search, raid and music player
+     the AA, bazaar, bazaar search, raid and music player
      windows, and the six camera moves (ExecuteCmd 0x6f..0x74, ProcessControls).
+   - Send tell for a GM helping a petitioner (`/tell <petitioner> `, CPetitionQWnd), and
+     ExecuteCmd 0x81 and 0x82 (`;` and `/` command modes; not on the keyboard page).
+   - Target myself's pet: eqgame takes the first in pinstSpawnList's order; ours the lowest id.
    - Target nearest and Cycle nearest target don't know a spawn's rider (ActorInfo's Rider): an
      NPC with a rider (a mount) isn't passed over, a horse (race 216) doesn't give its rider. They
      don't know whether we see invisible (EQ_Character::CanISeeInvis: SPA 13 and the races'), so

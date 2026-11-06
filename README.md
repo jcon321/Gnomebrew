@@ -375,7 +375,19 @@ eqgame's `OP_MoveItem`.
   standing still. A social with only a lone text (/fidget) does nothing with a target; /nudge has
   only a targeted one. The table (`Socials` in `frontend/chat_commands.cpp`) was read out of the
   exe's two switches: the sent one Ghidra recovers; the echo's jump table (0x535d63) it doesn't.
-  `DoPercentConvert` (%t and the rest) isn't applied.
+  `DoPercentConvert` runs on the built text after the full stop, before it's sent; the name
+  typed after the social is looked up first, so `/smile %t` finds no one.
+- **DoPercentConvert** (@00538110, `FrontEnd::PercentConvert`): a `%` at a line's first or second
+  character, or after a space or an apostrophe, followed by t, m, s, o, p or r (either case) is
+  replaced: `%t` the target's `stripName` (@00537e4b: up to an apostrophe, no digits or '#',
+  underscores as spaces) or `Target`; `%m` the first spawn whose `PetOwnerSpawnId` is ours
+  (temporary or not) or `Pet`; `%s`, `%o`, `%p` the target's he/she/it, him/her/it, his/her/its by
+  gender (literals, not eqstr; no target: it, it, its); `%r` a player target's race
+  (`CEverQuest_GetRaceDesc2`), `Corpse` for a player's corpse (Type 2), `NPC` for an NPC or its
+  corpse, nothing with no target. After eleven, a qualifying `%` becomes `@`. The position test
+  measures from where the last `%x` ended in the old text, not the new. `print_chat_dsp_chat` runs
+  it on every line it prints (anyone's chat included), and `SendNewText` (say, tell, group, shout,
+  auction, OOC, guild, raid), `CEverQuest::Emote` and `send_social` on what they send.
 - The Actions window's tabs (Main, Abilities, Combat, Socials) switch pages, drawn as `CTabWnd`
   draws them (`DrawTab` @00593f80: the label centered across the tab inside its border, at the top
   of it, not centered down it: `DrawWrappedText`'s flags 0x15 lack eqgfx's 0x20, so a tall
@@ -1227,7 +1239,8 @@ details and the nearest spawns at the top left and the radar at the top right.
   both mouse buttons are down.
   Of the 111, my-client does the movement, Autorun, Jump, Look up and down, Toggle camera view, Consider,
   Say hail, Camp, Sit/stand, Run/walk, Target myself, Target nearest PC and NPC, Toggle last two
-  targets, Cycle reply forward and back, the hot buttons and pages, the gems,
+  targets, Cycle reply forward and back, Send tell, Reply, Send tell to target, Command mode say
+  and emote, the hot buttons and pages, the gems,
   History up and down, the spellbook, inventory, Actions pages and the window toggles it has
   windows for (`implemented` in `frontend/key_map.cpp`).
 - **Target nearest PC and NPC** (`ExecuteCmd` 28 and 29, `CDisplay::GetNearestPlayerInView`
@@ -1253,6 +1266,20 @@ details and the nearest spawns at the top left and the radar at the top right.
   Any other line is left alone; with no tells, eqstr 12364 (12365 for `/rtarget`).
   `AddNameToTellList` (@004f847d) puts a tell's sender first, once, and sets the cycle back to
   it; `/reply` goes to the first.
+- **Send tell, Reply, Send tell to target, Command mode say and emote** (`ExecuteCmd` 13, 59, 100,
+  87, 88, the new UI's branches; 0x81 and 0x82 are `;` and `/` the same way): only while the chat
+  line doesn't have the keys (`__InChatMode`), the active chat window's input box gets `"%s "`
+  of eqstr 13974 (`/tell `; a GM with a petitioner checked out gets `/tell <petitioner> `), `'`,
+  `:`, or for Reply and Send tell to target the name at Cycle reply's place in `__LastTell`
+  (`DAT_007cf0dc`): `/tell <name> ` (`;tell <name> ` for a name with a dot) or eqstr 14202's
+  `/rtarget <name> `; with none, eqstr 12364 or 12365. The box then takes the focus. eqgame's
+  DirectInput key reaches `CXWndManager::HandleKeyboardMsg` before `ProcessKeyDown` runs the
+  command (`ProcessKeyboardInput` @0055afe2), so the key isn't typed into the line it opens; ours
+  drops the `WM_CHAR` that follows the key (`m_chat_opened_by_key`).
+- **Target myself** (`ExecuteCmd` 22): not stunned or without control (stance 102), nor while
+  `DAT_007d0258` or `DAT_007d0254` waits. Targeting anyone else, ourselves; already ourselves,
+  the first spawn in `pinstSpawnList` with our `PetOwnerSpawnId` and EQPlayer+0x15c clear (set by
+  `UnPackNetPlayer` from Spawn_Struct's `temporaryPet` byte at 126 being 1), else unchanged.
 - **The Keyboard page** (`COptionsWnd`): `initkeyboardassignments` (@0042a9d7) names each command
   (eqstr 6500..6697, 3144, 3150, 3153, 5107) and gives its categories (1 Movement, 2 Commands, 4
   Spell casting, 8 Target, 0x10 Camera, 0x20 Chat, 0x40 UI, 0x80 Macros). The combo box picks

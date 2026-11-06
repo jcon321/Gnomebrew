@@ -387,6 +387,13 @@ void FrontEnd::OnEvent(const InputEvent &given)
 	InputEvent event = given;
 	if ((event.type == InputEvent::Type::Key || event.type == InputEvent::Type::KeyUp) && event.scan == 0)
 		event.scan = ScanOf(event.key);
+	// The character of a key that opened the chat line (OpenChatLine) isn't typed into it.
+	if (event.type == InputEvent::Type::Key)
+		m_chat_opened_by_key = false;
+	else if (event.type == InputEvent::Type::Char && m_chat_opened_by_key) {
+		m_chat_opened_by_key = false;
+		return;
+	}
 	if (event.IsMouse()) {
 		m_mouse_x = event.x;
 		m_mouse_y = event.y;
@@ -2277,7 +2284,8 @@ void FrontEnd::AddZoneLog(const std::string &text, uint32_t color)
 
 void FrontEnd::ChatOut(const std::string &text, int type)
 {
-	m_chat.Add(text, m_chat_colors.Get(type));
+	// print_chat_dsp_chat: DoPercentConvert first.
+	m_chat.Add(PercentConvert(text), m_chat_colors.Get(type));
 }
 
 void FrontEnd::SetTarget(uint16_t id, bool command)
@@ -2452,6 +2460,16 @@ void FrontEnd::CycleReply(bool back)
 		m_chat.Open(";tell " + name + " ");
 	else
 		m_chat.Open(EqString(13974, "/tell") + " " + name + " ");
+}
+
+void FrontEnd::OpenChatLine(const std::string &text)
+{
+	// The active chat window's input box set to it and given the focus.
+	if (!m_chat.Attached())
+		return;
+	m_windows.Show("ChatWindow", true);
+	m_chat.Open(text);
+	m_chat_opened_by_key = true;
 }
 
 void FrontEnd::UpdateDeath(uint64_t now_ms)
@@ -3268,10 +3286,24 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 	case KeyMap::Hail:
 		InterpretCommand("/hail");
 		break;
-	case KeyMap::TargetMe:
-		// setTargetBasedOnIndex: ourselves (the pet on a second press isn't done).
-		SetTarget(m_zone.MySpawnId());
+	case KeyMap::TargetMe: {
+		// ExecuteCmd 22: ourselves, or with ourselves the target already, our pet: the first spawn
+		// that's ours and not a temporary pet (EQPlayer+0x15c), if there is one. Not without control
+		// of ourselves (stance 102) nor while a transaction waits (DAT_007d0254).
+		if (m_window_state.busy || m_zone.Self().stance == 102)
+			break;
+		uint16_t me = m_zone.MySpawnId();
+		if (m_game_values.target != me) {
+			SetTarget(me);
+			break;
+		}
+		for (const auto &[id, spawn] : m_zone.Spawns())
+			if (id != me && spawn.pet_owner == me && !spawn.temporary_pet) {
+				SetTarget(id);
+				break;
+			}
 		break;
+	}
 	case KeyMap::TargetPc:
 	case KeyMap::TargetNpc:
 		TargetNearest(cmd == KeyMap::TargetNpc);
@@ -3288,6 +3320,42 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 	case KeyMap::CycleReplyBack:
 		CycleReply(cmd == KeyMap::CycleReplyBack);
 		break;
+	case KeyMap::Tell:
+	case KeyMap::Reply:
+	case KeyMap::RTarget:
+	case KeyMap::CmdModeSay:
+	case KeyMap::CmdModeEmote: {
+		// ExecuteCmd 13, 59, 100, 87 and 88 (the new UI's branches), only while the chat line
+		// isn't open (__InChatMode): "/tell " (eqstr 13974 and a space), "'", ":", or the tell list's
+		// name Cycle reply is on: "/tell <name> " (";tell <name> " for another server's, with a
+		// dot), "/rtarget <name> " (eqstr 14202); with no tells, eqstr 12364 (12365 for
+		// /rtarget). (A GM's Send tell to the petitioner being helped, CPetitionQWnd, isn't ours.)
+		if (m_chat.Typing())
+			break;
+		if (cmd == KeyMap::Tell) {
+			OpenChatLine(EqString(13974, "/tell") + " ");
+			break;
+		}
+		if (cmd == KeyMap::CmdModeSay || cmd == KeyMap::CmdModeEmote) {
+			OpenChatLine(cmd == KeyMap::CmdModeSay ? "'" : ":");
+			break;
+		}
+		if (m_tell_index < 0 || m_tell_index >= static_cast<int>(m_tell_list.size())) {
+			uint32_t id = cmd == KeyMap::RTarget ? 12365 : 12364;
+			ChatOut(EqString(id, id == 12364 ? "You have not received any tells, so you cannot reply."
+			                                 : "You have not received any tells, so you cannot use reply target."),
+				ChatType::Default);
+			break;
+		}
+		const std::string &name = m_tell_list[m_tell_index];
+		if (cmd == KeyMap::RTarget)
+			OpenChatLine(EqString(14202, "/rtarget") + " " + name + " ");
+		else if (name.find('.') != std::string::npos)
+			OpenChatLine(";tell " + name + " ");
+		else
+			OpenChatLine(EqString(13974, "/tell") + " " + name + " ");
+		break;
+	}
 	case KeyMap::Camp:
 		StartCamp();
 		break;

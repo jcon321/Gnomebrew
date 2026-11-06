@@ -572,3 +572,8 @@ std::string ItemDisplayText(const GameValues &values, const ZoneItem &item)
 	}
 	return out;
 }
+
+std::string RaceDescription(const GameValues &values, int race)
+{
+	return RaceDesc(values, race);
+}
