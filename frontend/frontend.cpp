@@ -4,6 +4,7 @@
 #include "game_windows.h"
 #include "ini_file.h"
 #include "inventory.h"
+#include "skills.h"
 #include "spell_casting.h"
 #include "zone_names.h"
 
@@ -109,6 +110,7 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 	group_host.set_target = [this](uint16_t id) { SetTarget(id); };
 	// The deity team servers' rule (DAT_006ec740 4).
 	group_host.other_team = [this](const ZoneSpawn &spawn) { return m_world.ServerType() == 4 && NotOnSameDeity(spawn); };
+	group_host.lfg_off = [this] { Lfg(true, "off"); };
 	m_group.Attach(m_zone, m_game_values, std::move(group_host));
 	EnterStart();
 }
@@ -2161,12 +2163,19 @@ void FrontEnd::HandleWindowClicks()
 			continue;
 		// CInvSlot::HandleRButtonUp: a bag's window opens or closes, with no Shift, Ctrl or Alt
 		// down, nothing waiting on the zone and no spell being cast (but a bard's song).
+		// Under 1000, a common item in the cursor, worn or general slots is eaten, drunk or clicked
+		// (CInvSlot_DoDrinkEatPoison).
 		if (int slot = InvSlotAt(m_windows, click.window, click.control); slot >= 0) {
 			if (!click.shift && !click.ctrl && !click.alt && !m_window_state.busy &&
 			    (!m_spell_cast.Casting() || m_zone.Profile().class_id == 8))
-				if (const ZoneItem *item = SlotItem(m_windows, m_game_values, click.window, click.control);
-				    item && item->item_class == 1)
-					m_containers.Toggle(static_cast<int16_t>(slot));
+				if (const ZoneItem *item = SlotItem(m_windows, m_game_values, click.window, click.control)) {
+					if (item->item_class == 1)
+						m_containers.Toggle(static_cast<int16_t>(slot));
+					else if (item->item_class == 0 && slot < 31) {
+						ZoneItem copy = *item; // what it was: eating may take the last of it
+						DoDrinkEatPoison(copy, static_cast<int16_t>(slot));
+					}
+				}
 			continue;
 		}
 		GameWindowRightClick(m_windows, m_window_state, click.window, click.control);
@@ -2507,6 +2516,73 @@ void FrontEnd::OpenChatLine(const std::string &text)
 	m_windows.Show("ChatWindow", true);
 	m_chat.Open(text);
 	m_chat_opened_by_key = true;
+}
+
+void FrontEnd::DoDrinkEatPoison(const ZoneItem &item, int16_t slot)
+{
+	// CInvSlot_DoDrinkEatPoison (@004223ca): by the item's type, food (14), drink (15), alcohol (38),
+	// a poison (42: not ours yet), else its click effect.
+	auto text = [this](uint32_t id, const char *fallback, const std::vector<std::string> &args = {}) {
+		return FormatEqString(m_ui.eqstr, id, fallback, args);
+	};
+	ZoneProfile &me = const_cast<ZoneProfile &>(m_zone.Profile());
+	switch (item.item_type) {
+	case 42: // CEverQues_ApplyPoison
+		return;
+	case 14:
+	case 15: {
+		bool food = item.item_type == 14;
+		int32_t &level = food ? me.hunger : me.thirst;
+		if (level > 5999) {
+			ChatOut(food ? text(12074, "You could not possibly eat any more, you would explode!")
+			             : text(12077, "You could not possibly drink any more, you would explode!"),
+				ChatType::Default);
+			return;
+		}
+		ChatOut(food ? text(12075, "You take a bite out of a %1.", {item.name}) : text(12078, "You take a drink from an %1.", {item.name}),
+			ChatType::Default);
+		level = std::min(level + item.cast_time * 100 / 2, 6000);
+		if (!food && m_sound)
+			m_sound->PlayWave(0x95);
+		ChatOut(food ? text(12076, "Ahhh. That was tasty.") : text(12079, "Ahhh. That was refreshing."), ChatType::Default);
+		m_zone.Consume(slot, food ? 1 : 2);
+		return;
+	}
+	case 38: {
+		if (me.drunk > 199) {
+			ChatOut(text(12080, "You could not possibly consume more alcohol or become more intoxicated!"), ChatType::Default);
+			return;
+		}
+		ChatOut(text(12081, "Glug, glug, glug...  You take a swig of %1.", {item.name}), ChatType::Default);
+		// Alcohol Tolerance (66) takes the edge off: a roll under the skill (and under 96) of 40.
+		int more = 40;
+		if (Skills::HasSkill(me, 66) != 0) {
+			int roll = std::rand() % 100 + 1;
+			int skill = me.skills[66];
+			if (roll <= skill && roll < 96 && skill > 0)
+				more = roll * 40 / skill;
+		}
+		me.drunk = static_cast<int16_t>(std::min(me.drunk + more, 200));
+		m_zone.DeleteCharge(slot);
+		ChatOut(text(12079, "Ahhh. That was refreshing."), ChatType::Default);
+		return;
+	}
+	default:
+		break;
+	}
+	// A click effect: an item that has one (EffectType2), not while singing for a bard's own kinds
+	// (12082), not a worn one, not while casting.
+	if (item.stackable < 2 || item.effect_type2 == 0)
+		return;
+	int8_t kind = item.effect_type2;
+	if (me.class_id == 8 && (kind == 2 || kind == 4 || kind == 1) && m_spell_cast.Casting()) {
+		ChatOut(text(12082, "You must stop singing to cast this spell!"), ChatType::Spells);
+		return;
+	}
+	if (kind == 2 || m_spell_cast.Casting())
+		return;
+	if (m_spell_cast.CastItem(item, slot, m_now_ms) && item.item_type == 21 && m_sound)
+		m_sound->PlayWave(0x95); // a potion
 }
 
 void FrontEnd::Follow()
@@ -3013,6 +3089,9 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			break;
 		case Type::InZone:
 			m_zoning = false;
+			// HandleWorldMessage's OP_SendExpZonein: still looking for a group, say so here too.
+			if (m_lfg)
+				Lfg(false, "on");
 			AddZoneLog(std::to_string(m_zone.Spawns().size()) + " spawns in the zone.", ZoneGrey);
 			if (m_zone_view) {
 				int16_t swimming = m_zone.Profile().skills[50];

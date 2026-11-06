@@ -1663,6 +1663,22 @@ details and the nearest spawns at the top left and the radar at the top right.
   still we walk (`DAT_0079856d` 0), else run, autorun on. `get_bearing` is atan2 of the x and y
   differences in degrees times 511.5/360. Move back, turning and strafing call
   `TurnOffAutoFollow` (12694, autorun off, run on); their spawn going stops it silently.
+- **The right button on an item** (`CInvSlot::HandleRButtonUp` @00422804): with no Shift, Ctrl or
+  Alt, nothing waited on and nothing cast (a bard's song aside): a bag opens or closes, a book or
+  note in a slot under 1000 is read, a common item in slots 0..30 goes to
+  `CInvSlot_DoDrinkEatPoison` (@004223ca) by its ItemType: 14 food and 15 drink (over 5999 hunger or
+  thirst: 12074, 12077; else 12075/12078 with its name, the level up by its CastTime * 100 / 2 to
+  6000, a drink's sound 0x95, 12076/12079, and `OP_Consume` 0x4156 {slot, 999, -1, 1 or 2}); 38
+  alcohol (Drunkness over 199: 12080; else 12081, Drunkness up by 40, or a roll r under the Alcohol
+  Tolerance skill and under 96 makes it r * 40 / skill, to 200, `OP_DeleteCharge` 0x4147 {slot, -1,
+  -1}, 12079); 42 a poison; anything else its click effect: IsStackable 2 or more and EffectType2
+  (byte 279) not 0 or 2, a bard singing gets 12082 for kinds 1, 2 and 4, then `CastSpell(10, 0,
+  item, slot)` and a potion's sound. eqgame takes one off the stack (Charges, byte 278) itself: the
+  zone doesn't say. CastSpell's item branch: an item that isn't common or is type 20 does nothing;
+  EffectType1 4 must be worn (slots 1..21, 179), 5 must pass can_use_item (181), either needs
+  EffectLevel1 (136); IsStackable under 2 does nothing; Effect2 the spell; Charges 0 is 182; no mana
+  check; a potion (type 21) targets us for a targeted spell; no CastingTimeout of ours; OP_CastSpell
+  {10, spell, the item's slot, target}.
 - **Groups** (`frontend/group.*`). The zone's packets: `OP_GroupInvite` (0x203e, both ways;
   `GroupInvite_Struct` {invitee[64], inviter[64], a group's name[64] (empty), u8 PvP}, 193 bytes; a
   leader's goes out as `OP_GroupInvite2` 0x4040, which the zone hands on as 0x203e),
@@ -1684,7 +1700,12 @@ details and the nearest spawns at the top left and the radar at the top right.
   selected at ActorInfo+0x278: Target party member n, a click on their gauge
   (`setTargetBasedOnIndex`, called by the gauge's own mouse handler at 0x5c2d1b with its EQType: 1
   us, 11..15 a member, 16 our pet, 17..21 a member's pet) or on them in the world
-  (`EQ_3DView_MouseUp`); Target myself clears it. The group window's gauges: EQType 11..15 the
+  (`EQ_3DView_MouseUp`); Target myself clears it. `/makeleader` (@004f397d), as the leader: the
+  member named (EQUtil_FormatCharacterName: a capital, the rest small) or targeted gets
+  `OP_GroupUpdate` {8, us, them} (136 bytes); else 5042. `/lfg on|off` (@004f9518): on refused in a
+  group (13132) or as a trader (13133), 13134/13135 when it changes, 13136 otherwise; `OP_LFGCommand`
+  0x41f0 {our name[64], u32}. Joining or forming a group calls it with "off"; `OP_SendExpZonein`
+  sends "on" again into each zone while it's on. The group window's gauges: EQType 11..15 the
   member's name and HP, -2 (no bar) while they're out of the zone; 17..21 their pet's.
 - **Trading** (`frontend/trade_window.*`, `CTradeWnd`, `CGiveWnd`): a left click on a player or NPC
   with an item or coins on the cursor (`LeftClickedOnPlayer`, `DropItemOrMoneyOnPlayer`) asks to

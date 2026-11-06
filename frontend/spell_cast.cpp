@@ -114,6 +114,56 @@ bool SpellCast::CastSpell(int gem, uint64_t now_ms)
 		Say(12443, "You are not high enough level to cast this spell!", ChatType::SpellFailure);
 		return false;
 	}
+	return Cast(gem, spell, *info, nullptr, -1, now_ms);
+}
+
+bool SpellCast::CastItem(const ZoneItem &item, int16_t slot, uint64_t now_ms)
+{
+	if (!m_zone)
+		return false;
+	const ZoneProfile &me = m_zone->Profile();
+	uint8_t stance = m_zone->Self().stance;
+	if (stance != Standing) {
+		Say(12441, "You must be standing to cast a spell.", ChatType::SpellFailure);
+		if (stance == Feigning)
+			Say(12368, "You do not have control of yourself right now.", ChatType::SpellFailure);
+		return false;
+	}
+	if (item.item_class != 0 || item.item_type == 20)
+		return false;
+	if (Casting() && !BardSong(Spell(m_spell)))
+		return false;
+	if (item.effect_type == 4 || item.effect_type == 5) {
+		if (item.effect_type == 4 && (slot < 1 || slot > 21)) {
+			Say(179, "You cannot use this item unless it is equipped.", ChatType::Red);
+			return false;
+		}
+		if (item.effect_type == 5 && !Inventory::CanUse(me, item)) {
+			Say(181, "Your race, class, or deity cannot use this item.", ChatType::Red);
+			return false;
+		}
+		if (me.level < item.effect_level) {
+			Say(136, "You are not sufficient level to use this item.", ChatType::Red);
+			return false;
+		}
+	}
+	if (item.stackable < 2)
+		return false;
+	const SpellInfo *info = Spell(item.effect2);
+	if (!info)
+		return false;
+	if (item.charges == 0) {
+		Say(182, "Item is out of charges.", ChatType::Default);
+		return false;
+	}
+	return Cast(10, item.effect2, *info, &item, slot, now_ms);
+}
+
+bool SpellCast::Cast(int gem, int spell, const SpellInfo &spell_info, const ZoneItem *item, int16_t slot, uint64_t now_ms)
+{
+	const ZoneProfile &me = m_zone->Profile();
+	uint8_t stance = m_zone->Self().stance;
+	const SpellInfo *info = &spell_info;
 	uint16_t target = m_host.target ? m_host.target() : 0;
 	if (target != 0 && !m_zone->Spawns().count(target) && target != m_zone->MySpawnId())
 		target = 0;
@@ -137,7 +187,7 @@ bool SpellCast::CastSpell(int gem, uint64_t now_ms)
 		Say(210, "That spell can not affect this target PC.", ChatType::SpellFailure);
 		return false;
 	}
-	if (me.mana < info->mana) {
+	if (!item && me.mana < info->mana) {
 		Say(199, "Insufficient Mana to cast this spell!", ChatType::SpellFailure);
 		return false;
 	}
@@ -155,7 +205,9 @@ bool SpellCast::CastSpell(int gem, uint64_t now_ms)
 				problem = 215;
 		}
 		break;
-	case 7: // an item enchanted: one held
+	case 7: // an item enchanted: one held (never from an item)
+		if (item)
+			return false;
 		if (!m_zone->Items().count(Inventory::Cursor))
 			problem = 233;
 		break;
@@ -173,6 +225,12 @@ bool SpellCast::CastSpell(int gem, uint64_t now_ms)
 		break;
 	}
 	case 5: case 9: case 10: case 11: case 12: case 13: case 15: case 16: case 17: case 18: case 20: case 27:
+		// A potion's spell lands on us (pinstTarget = us).
+		if (item && item->item_class == 0 && item->item_type == 21 && item->stackable > 1) {
+			target = m_zone->MySpawnId();
+			if (m_host.set_target)
+				m_host.set_target(target);
+		}
 		problem = CheckTarget(*info, target, false);
 		break;
 	case 8: case 21: case 22: case 23: case 28:
@@ -211,14 +269,18 @@ bool SpellCast::CastSpell(int gem, uint64_t now_ms)
 		return false;
 	}
 
-	// Away it goes: the cast time (no AA or focus modifiers here), and the zone's to say the rest.
-	m_cast_ms = 0;
-	m_timeout = now_ms + static_cast<uint64_t>(std::max(info->cast_ms, 0));
-	m_spell = spell;
-	m_gem = gem;
-	m_zone->CastSpell(gem, spell, target);
-	m_recast_ms[gem] = now_ms + AnswerMs;
-	m_fizzle_ms = now_ms + AnswerMs;
+	// Away it goes: a gem's cast time (no AA or focus modifiers here), and the zone's to say the rest.
+	if (!item) {
+		m_cast_ms = 0;
+		m_timeout = now_ms + static_cast<uint64_t>(std::max(info->cast_ms, 0));
+		m_spell = spell;
+		m_gem = gem;
+	}
+	m_zone->CastSpell(gem, spell, target, item ? static_cast<uint16_t>(slot) : 0xffff);
+	if (gem < GemCount) {
+		m_recast_ms[gem] = now_ms + AnswerMs;
+		m_fizzle_ms = now_ms + AnswerMs;
+	}
 	if (!song) {
 		++m_casts;
 		++m_waiting;

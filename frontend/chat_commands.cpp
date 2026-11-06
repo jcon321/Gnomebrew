@@ -17,7 +17,7 @@ namespace
 	{
 		None, Say, Tell, Group, Shout, Auction, Ooc, Guild, Reply, Emote, Hail, Location, Target, Camp,
 		ClearChat, ShowNames, Sit, Stand, Book, Cast, Consider, Played, Motd, Time, Afk, Anonymous, Assist,
-		Random, LootNoDrop, FastDrop, Social, Attack, CombatMusic, DoAbility, Filter, ServerFilter, Invite, Disband, Who, WhoTarget, Follow,
+		Random, LootNoDrop, FastDrop, Social, Attack, CombatMusic, DoAbility, Filter, ServerFilter, Invite, Disband, Who, WhoTarget, Follow, MakeLeader, Lfg,
 	};
 
 	struct CommandEntry
@@ -92,7 +92,7 @@ namespace
 		{"/voice", 0, Command::None}, {"/microphone", 0, Command::None}, {"/movelog", 0, Command::None},
 		{"/hidecorpses", 0, Command::None}, {"/vrdelay", 0, Command::None}, {"/reverb", 0, Command::None},
 		{"/fastdrop", 0, Command::FastDrop}, {"/trackplayers", 0, Command::None}, {"/help", 0, Command::None},
-		{"/lfg", 0, Command::None}, {"/approval", 4, Command::None}, {"/sit", 0, Command::Sit},
+		{"/lfg", 0, Command::Lfg}, {"/approval", 4, Command::None}, {"/sit", 0, Command::Sit},
 		{"/stand", 0, Command::Stand}, {"/book", 0, Command::Book}, {"/cast", 0, Command::Cast},
 		{"/doability", 0, Command::DoAbility}, {"/whotarget", 0, Command::WhoTarget}, {"/language", 0, Command::None},
 		{"/target", 0, Command::Target}, {"/camp", 0, Command::Camp}, {"/attack", 0, Command::Attack},
@@ -109,7 +109,7 @@ namespace
 		{"/hotbutton", 0, Command::None}, {"/particledensity", 0, Command::None}, {"/facepick", 0, Command::None},
 		{"/dismount", 0, Command::None}, {"/rtarget", 0, Command::None}, {"/showgrass", 0, Command::None},
 		{"/alias", 0, Command::None}, {"/hitsmode", 0, Command::None}, {"/clearhits", 0, Command::None},
-		{"/dopropertinting", 0, Command::None}, {"/makeleader", 0, Command::None}, {"/viewport", 0, Command::None},
+		{"/dopropertinting", 0, Command::None}, {"/makeleader", 0, Command::MakeLeader}, {"/viewport", 0, Command::None},
 		{"/clearchat", 0, Command::ClearChat}, {"/bazaar", 0, Command::None}, {"/trader", 0, Command::None},
 		{"/music", 0, Command::None}, {"/bugreport", 0, Command::None}, {"/loadskin", 0, Command::None},
 		{"/newui", 0, Command::None}, {"/webupdate", 0, Command::None}, {"/viewpetition", 0, Command::None},
@@ -377,6 +377,40 @@ namespace
 		}
 		return true;
 	}
+}
+
+void FrontEnd::Lfg(bool ours, const std::string &word)
+{
+	// /lfg (@004f9518): "on" or "off" (eqstr 12947, 12946). Ours says what changed; the zone's
+	// (coming into a zone LFG) sends it again whatever.
+	auto text = [this](uint32_t id, const char *fallback) { return FormatEqString(m_ui.eqstr, id, fallback, {}); };
+	bool on;
+	if (SameText(word, text(12947, "on"))) {
+		if (m_group.InGroup()) {
+			ChatOut(text(13132, "You are already in a group!"), ChatType::Default);
+			return;
+		}
+		// (A Bazaar trader can't: 13133. We're never one.)
+		on = true;
+		if (ours && m_lfg == on)
+			return;
+		if (ours)
+			ChatOut(text(13134, "You are now Looking For a Group."), ChatType::Default);
+	}
+	else if (SameText(word, text(12946, "off"))) {
+		on = false;
+		if (ours && m_lfg == on)
+			return;
+		if (ours)
+			ChatOut(text(13135, "You are no longer Looking For a Group."), ChatType::Default);
+	}
+	else {
+		if (ours)
+			ChatOut(text(13136, "FORMAT: /lfg <on/off>."), ChatType::Default);
+		return;
+	}
+	m_zone.SendLfg(on);
+	m_lfg = on;
 }
 
 void FrontEnd::Who(const std::string &given)
@@ -1357,6 +1391,12 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 		break;
 	case Command::Follow:
 		Follow();
+		break;
+	case Command::MakeLeader:
+		m_group.MakeLeader(args);
+		break;
+	case Command::Lfg:
+		Lfg(true, args);
 		break;
 	case Command::WhoTarget:
 		// /whotarget (@004fd2fa): /who of the target's name.

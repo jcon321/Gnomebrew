@@ -138,6 +138,8 @@ void Group::ProfileArrived()
 		if (m_leader.empty())
 			m_leader = "PENDING";
 		Say(m_leader != me.name ? Text(12004, {}, "You have joined the group.") : Text(12003, {}, "You have formed the group."));
+		if (m_host.lfg_off)
+			m_host.lfg_off();
 		fill();
 		return;
 	}
@@ -287,6 +289,8 @@ void Group::ZoneEvent(const ZoneSession::Event &event)
 		case 9: // we formed it
 			m_leader = g.names[0];
 			Say(Text(12003, {}, "You have formed the group."));
+			if (m_host.lfg_off)
+				m_host.lfg_off();
 			DropInvitation();
 			break;
 		default:
@@ -356,6 +360,8 @@ void Group::Accept()
 		                           : Text(12284, {m_inviter, m_invite_group}, "You notify %1 that you agree to join %2."));
 		m_invited = false;
 		m_leader = m_inviter;
+		if (m_host.lfg_off)
+			m_host.lfg_off();
 		// OP_GroupFollow; eqgame sends 0x4042 for an invitation that came as OP_GroupInvite2, but
 		// the zone only ever hands invitations on as OP_GroupInvite.
 		m_zone->GroupFollow(m_inviter);
@@ -385,6 +391,34 @@ void Group::Disband()
 		return;
 	}
 	m_zone->GroupDisband(me.name);
+}
+
+void Group::MakeLeader(const std::string &name)
+{
+	if (!m_zone || !m_values || m_leader.empty() || !Same(m_leader, m_zone->Profile().name))
+		return;
+	std::string who = name;
+	const ZoneSpawn *target = m_values->Target();
+	if (name.empty() && target) {
+		for (const auto &member : m_members)
+			if (Same(target->name, member)) {
+				m_zone->GroupMakeLeader(target->name);
+				return;
+			}
+		who = target->name;
+	}
+	else
+		for (const auto &member : m_members)
+			if (Same(name, member)) {
+				// EQUtil_FormatCharacterName: as names are written, a capital then the rest small.
+				std::string formatted = name;
+				for (size_t i = 0; i < formatted.size(); ++i)
+					formatted[i] = static_cast<char>(i == 0 ? std::toupper(static_cast<unsigned char>(formatted[i]))
+					                                        : std::tolower(static_cast<unsigned char>(formatted[i])));
+				m_zone->GroupMakeLeader(formatted);
+				return;
+			}
+	Say(Text(5042, {who}, "%1 is not in your group."));
 }
 
 void Group::TargetMember(int index)

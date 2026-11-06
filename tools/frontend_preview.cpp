@@ -263,6 +263,42 @@ namespace
 		printf("[preview] target %u (us %u)\n", frontend.Target(), zone.MySpawnId());
 		printf("[preview] exp %u (gauge %d)\n", me.exp, static_cast<int>(std::min(me.exp * 3.03031, 1000.0)));
 
+		// The right button on food and drink in the inventory window (CInvSlot_DoDrinkEatPoison).
+		windows.Show("InventoryWindow", true);
+		h.RunUntil([] { return false; }, 300);
+		for (int16_t slot = 1; slot < 31; ++slot) {
+			auto it = zone.Items().find(slot);
+			if (it == zone.Items().end())
+				continue;
+			const ZoneItem &item = it->second;
+			printf("[preview] slot %d: %s (class %u, type %u, charges %d, stackable %u, click %d spell %d)\n", slot, item.name.c_str(),
+				item.item_class, item.item_type, item.charges, item.stackable, item.effect_type2, item.effect2);
+		}
+		for (int type : {14, 15, 14}) {
+			int16_t found = -1;
+			for (const auto &[slot, item] : zone.Items())
+				if (slot >= 22 && slot < 31 && item.item_class == 0 && item.item_type == type)
+					found = slot;
+			if (found < 0)
+				continue;
+			const SidlWindow *inv = windows.Find("InventoryWindow");
+			const SidlWindow::Control *c = inv ? inv->Find("InvSlot" + std::to_string(found)) : nullptr;
+			if (!c)
+				continue;
+			Rect area = frontend.ScreenArea();
+			int x = area.x + c->rect.x + c->rect.w / 2, y = area.y + c->rect.y + c->rect.h / 2;
+			printf("[preview] right click slot %d (%s): hunger %d thirst %d\n", found, zone.Items().at(found).name.c_str(),
+				zone.Profile().hunger, zone.Profile().thirst);
+			frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+			frontend.OnEvent({InputEvent::Type::RightDown, x, y});
+			frontend.OnEvent({InputEvent::Type::RightUp, x, y});
+			h.RunUntil([] { return false; }, 800);
+			chat();
+			auto after = zone.Items().find(found);
+			printf("[preview]   after: hunger %d thirst %d, slot %d %s (%d)\n", zone.Profile().hunger, zone.Profile().thirst, found,
+				after == zone.Items().end() ? "empty" : after->second.name.c_str(), after == zone.Items().end() ? 0 : after->second.charges);
+		}
+
 		windows.Show("CompassWindow", true);
 		windows.MoveTo("CompassWindow", 300, 40);
 		for (int turn = 0; turn < 4; ++turn) {
@@ -413,6 +449,9 @@ namespace
 		printf("[preview] target %u\n", frontend.Target());
 		h.RunUntil([] { return false; }, 300);
 		state("targeted");
+		// /lfg on shows in /who lfg; forming the group turns it off.
+		type("/lfg on");
+		type("/who lfg");
 		type("/invite");
 		h.RunUntil([&] { return !group.Member(0).empty(); }, 10000);
 		h.RunUntil([] { return false; }, 1500);
@@ -427,6 +466,12 @@ namespace
 		f2.type = InputEvent::Type::KeyUp;
 		frontend.OnEvent(f2);
 		printf("[preview] target after F2: %u\n", frontend.Target());
+		// /makeleader of someone not in it, then of them; then /disband leaves (two: it's gone).
+		type("/makeleader nobody");
+		type("/makeleader");
+		h.RunUntil([] { return false; }, 1500);
+		chat();
+		state("led by them");
 		type("/disband");
 		h.RunUntil([] { return false; }, 2500);
 		chat();

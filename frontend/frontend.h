@@ -321,10 +321,14 @@ private:
 	// CEverQuest::Who (@0052f614, chat_commands.cpp): /who's filters; the zone's players listed
 	// here, or "all" asks the world (OP_WhoAllRequest), whose answer msg_who_response prints.
 	void Who(const std::string &args);
+	// /lfg (@004f9518): `ours` from the command (and on joining a group), else the zone's re-send.
+	void Lfg(bool ours, const std::string &word);
 	// /follow (@004fc259): auto-follow our target, a member of our group; FollowPlayerAI
 	// (@00507b08), each frame we have control, turns us toward them and runs, walks or stops us by
 	// the distance; TurnOffAutoFollow (@00507e0a) ends it.
 	void Follow();
+	// CInvSlot_DoDrinkEatPoison (@004223ca): the right button on a common item (frontend.cpp).
+	void DoDrinkEatPoison(const ZoneItem &item, int16_t slot);
 	void FollowPlayerAI();
 	void TurnOffAutoFollow(bool say = true);
 	void WhoAnswer(const ZoneWho &who);
@@ -479,6 +483,7 @@ private:
 	// back, any change of our stance (EQPlayer::ChangeStance) and a new zone (EnterZone).
 	bool m_autorun = false;
 	uint8_t m_autorun_stance = 0; // our stance when it was last looked at, to see it change
+	bool m_lfg = false;           // DAT_007cf1fc: we're looking for a group
 	uint16_t m_following = 0;     // ActorInfo's Following: whom /follow has us after (0 nobody)
 	KeyBindings m_key_bindings; // the keymap, from my-client.ini's [KeyMaps]
 	OptionsWindow m_options;

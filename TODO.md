@@ -28,11 +28,12 @@ no rules of its own.
      eqgame enables them) with the members' names and HP gauges (EQTypes 11..15; out of the zone,
      -2) and their pets' (17..21); a gauge clicked targets by its EQType (setTargetBasedOnIndex),
      Target party member 1..5 a member and then their pet, and the leader's Disband removes the
-     member selected (by those or a click on them in the world). Checked live with a second
+     member selected (by those or a click on them in the world). /makeleader (@004f397d,
+     OP_GroupUpdate 8) and /lfg (@004f9518, OP_LFGCommand; off on joining, sent again on entering a
+     zone). Checked live with a second
      player (`eqclient --group-invite`, `--group-accept`; `frontend_preview ... group`). Still to
      do: the raid's branches (CRaid: IsInRaid, IsRaidGroupLeader, eqstr 5087, 5086, 5088's why 4
-     and 5), /makeleader (@004f397d, OP_GroupUpdate 8 from us), /lfg going off on joining
-     (`_lfg`), the group window's menu (`CGroupWnd::CreateLocalMenu`: its pet gauges toggle, 0x32),
+     and 5), the group window's menu (`CGroupWnd::CreateLocalMenu`: its pet gauges toggle, 0x32),
      CEverQuest_Disband sent as a camp ends (ProcessGameLoop's 0xca; our session's already
      closed), and AcceptGroupInvite's OP_GroupFollow2 (0x4042) for an invitation that came as
      OP_GroupInvite2 (the zone never hands one on as that; we always send OP_GroupFollow).
@@ -129,7 +130,12 @@ no rules of its own.
      (`DropItemOrMoneyOnPlayer`, below), clicking the ground drops it (item 11), and AutoInventory
      with no room drops it (AutoGenInventory: "There was no place to put that!", eqstr 12937; a
      NO DROP item stays on the cursor). Holding a slot's item to make an item hot button (`CInvSlot::HandleLButtonHeld`), and
-     the right button on a slot (eat, drink, click effects: `CInvSlot::HandleRButtonUp`).
+     the right button on a slot: done for food, drink and alcohol (`CInvSlot_DoDrinkEatPoison`:
+     the messages, hunger and thirst to 6000, OP_Consume and OP_DeleteCharge with the stack taken
+     down here; checked live) and items' click effects (`SpellCast::CastItem`, OP_CastSpell gem 10
+     with the slot; not checked live, the test characters have none). Still to do: poisons
+     (CEverQues_ApplyPoison), Alcohol Tolerance's skill-up (EQ_PC_CheckSkillImprove 66), what
+     drunkenness does, and a book or note read (EQ_Note::SendTextRequestMsg).
    - Item display: alt+click or the right button held on an inventory slot shows its item
      (`frontend/item_display.*`, eqgame's SetItem text with spells_en.txt's spell names); letting
      the right button go closes it. A link clicked in the chat shows its item (the zone's
@@ -155,9 +161,8 @@ no rules of its own.
      (EQType 7) and the zone's answers (OP_MemorizeSpell 3's recast and recovery, OP_ManaChange
      ending the cast, OP_TokenText's fizzles and interrupts), with the gems dim while anything's
      cast or recovering; a bard's song stops on a gem click (an empty OP_ManaChange). Still to do:
-     - casting: stuns and divine aura (OP_Stun), the AA and focus cast time and range modifiers, items'
-       click effects (OP_CastSpell's inventory slot) and abilities (gem 9), and a bard being hit
-       (StopSpellCast 1);
+     - casting: stuns and divine aura (OP_Stun), the AA and focus cast time and range modifiers,
+       abilities (gem 9), and a bard being hit (StopSpellCast 1);
      - the spell info display: alt+click (or the right button held) on a book slot or a gem shows
        the spell in the item display (CItemDisplayWnd::SetSpell @00425957);
      - spell hot buttons: a gem held onto the cursor (CCursorAttachment type 9) and the book button

@@ -130,6 +130,9 @@ namespace ZoneOp
 	constexpr uint16_t TradeCoins = 0x40e4;       // TradeMoney_Struct: the other side's coins
 	constexpr uint16_t TradeItemPacket = 0x40df;  // TradeItemHeader_Struct {u16 from, i16 slot, u8 type, item}
 	constexpr uint16_t TradeReset = 0x4010;       // empty
+	// Eating, drinking and alcohol: see ZoneSession::Consume.
+	constexpr uint16_t Consume = 0x4156;       // Consume_Struct {i32 slot, i32 auto (999 by hand, -1 the client's own), i32 -1, i32 1 food or 2 drink}
+	constexpr uint16_t DeleteCharge = 0x4147;  // {i32 slot, i32 -1, i32 -1}: a charge (or one of a stack) used up
 	// /who all: see ZoneSession::WhoAll.
 	constexpr uint16_t WhoAllRequest = 0x40f4;  // Who_All_Struct, 140 bytes
 	constexpr uint16_t WhoAllResponse = 0x200b; // WhoAllReturnStruct: a header, then variable-length WhoAllPlayers
@@ -323,6 +326,8 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::TradeCoins, "OP_TradeCoins"},
 	{ZoneOp::TradeItemPacket, "OP_TradeItemPacket"},
 	{ZoneOp::TradeReset, "OP_TradeReset"},
+	{ZoneOp::Consume, "OP_Consume"},
+	{ZoneOp::DeleteCharge, "OP_DeleteCharge"},
 	{ZoneOp::WhoAllRequest, "OP_WhoAllRequest"},
 	{ZoneOp::WhoAllResponse, "OP_WhoAllResponse"},
 	{ZoneOp::GroupInvite, "OP_GroupInvite"},

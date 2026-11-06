@@ -37,7 +37,7 @@
 //     OP_GroupCancelInvite 3; otherwise OP_GroupDisband with our name (we leave);
 //   - Target party member 1..5 (ExecuteCmd 0x17..0x1b) and setTargetBasedOnIndex (@00436474, a
 //     click on a gauge): the member, a second press their pet; a member not in the zone, no target.
-// Not ours: the raid's branches (CRaid), /lfg turned off on joining (_lfg), and on camping out
+// Not ours: the raid's branches (CRaid), and on camping out
 // eqgame's last CEverQuest_Disband (ProcessGameLoop's 0xca, after our session's closed).
 
 #include "zone_session.h"
@@ -58,6 +58,7 @@ public:
 		std::function<void(const std::string &, int)> chat; // a message, in a chat color type
 		std::function<void(uint16_t)> set_target;            // pinstTarget (0 none)
 		std::function<bool(const ZoneSpawn &)> other_team;   // ruleset 4's EQPlayer::NotOnSameDeity
+		std::function<void()> lfg_off;                       // _lfg(us, "off") on joining
 	};
 
 	void Attach(ZoneSession &zone, const GameValues &values, Host host);
@@ -69,6 +70,9 @@ public:
 	void Invite();  // CEverQuest_Invite
 	void Accept();  // CEverQuest::AcceptGroupInvite
 	void Disband(); // CEverQuest_Disband
+	// /makeleader (@004f397d): the leader names a member (or targets one) to lead; otherwise
+	// "%1 is not in your group." (5042).
+	void MakeLeader(const std::string &name);
 	// ExecuteCmd 0x17..0x1b: member 0..4, and their pet when they're the target already.
 	void TargetMember(int index);
 	// setTargetBasedOnIndex: a gauge's EQType clicked (1 us, 11..15 a member, 16 our pet, 17..21 a

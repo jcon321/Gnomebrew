@@ -58,6 +58,8 @@ struct ZoneProfile
 	int8_t aa_percentage = 0; // how much of our experience goes to AAs
 	int16_t str = 0, sta = 0, cha = 0, dex = 0, int_ = 0, agi = 0, wis = 0; // base stats, without items or spells
 	int8_t fatigue = 0; // 0 rested .. 100 exhausted (OP_Stamina keeps it up to date)
+	int32_t hunger = 0, thirst = 0; // 0 .. 6000 eaten and drunk (the profile's, then OP_Stamina's)
+	int16_t drunk = 0;  // Drunkness: 0 .. 200, ours alone (alcohol)
 	uint8_t languages[32] = {}; // skill in each language, 0..100
 	float x = 0, y = 0, z = 0, heading = 0;
 	uint32_t zone_id = 0;
@@ -369,6 +371,7 @@ struct ZoneItem
 	int16_t effect1 = 0;     // Effect1: a scroll's spell
 	uint8_t stackable = 0;   // IsStackable, @276
 	int8_t charges = 0;
+	int8_t effect_type2 = 0; // EffectType2 (@279): the click's kind for CInvSlot_DoDrinkEatPoison (0 none, 2 worn)
 	int16_t effect2 = 0;     // Effect2: the spell of its effect
 	int32_t classes = 0, races = 0; // a bit per class (WAR first) and per race (HUM first)
 	// Containers:
@@ -595,7 +598,12 @@ public:
 	bool DeleteSpell(int slot);         // OP_DeleteSpell: a book slot; done when the zone answers
 	// OP_CastSpell: a gem's spell at a spawn (0 none). The zone answers with OP_BeginCast, and once
 	// it's over, gone off or not, OP_ManaChange; gone off, OP_MemorizeSpell 3 before that.
-	bool CastSpell(int gem, int spell, uint16_t target);
+	// An item's click effect goes as gem 10 with the item's slot.
+	bool CastSpell(int gem, int spell, uint16_t target, uint16_t inventory_slot = 0xffff);
+	// CInvSlot_DoDrinkEatPoison: OP_Consume {slot, 999 (by hand), -1, 1 food or 2 drink}, or for
+	// alcohol OP_DeleteCharge {slot, -1, -1}; one comes off the stack here, as eqgame takes it.
+	bool Consume(int16_t slot, int type);
+	bool DeleteCharge(int16_t slot);
 	bool StopCasting(); // an empty OP_ManaChange: a bard's song stops (StopSpellCast)
 	// OP_MoveCoin (MoveCoin_Struct, 20 bytes: i32 from, to, from coin, to coin, amount): coins moved
 	// between the cursor (0), our purse (1), the bank (2) and the trade window (3), the coins 0
@@ -639,6 +647,10 @@ public:
 	bool GroupFollow(const std::string &inviter);
 	bool GroupCancelInvite(const std::string &inviter, uint8_t why);
 	bool GroupDisband(const std::string &name);
+	// /makeleader: OP_GroupUpdate {8, us, the member} (GroupGeneric_Struct2, 136 bytes).
+	bool GroupMakeLeader(const std::string &member);
+	// /lfg: OP_LFGCommand {our name[64], u32 on}; our own flag with it.
+	bool SendLfg(bool on);
 	// The ground: what's on it, by drop id. PickUp is CEverQuest_LMouseUp's OP_ClickObject {drop id,
 	// us}; the zone puts it on our cursor and tells everyone it's gone. DropCursorItem is
 	// DropHeldItemOnGround: OP_GroundSpawn with the cursor's item where we stand, which goes from
@@ -731,6 +743,7 @@ public:
 	static uint64_t Now(); // the clock behind PacketRecord::ms, SentPosition::ms and ZoneSpawn::updated_ms
 
 private:
+	void TakeOne(int16_t slot); // an item's charges (or a stack) less one
 	void Reset(const std::string &character);
 	void Log(const std::string &line);
 	void Fail(std::vector<Event> &events, const std::string &text);

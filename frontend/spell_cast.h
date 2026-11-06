@@ -33,8 +33,13 @@
 // (StunnedState, OP_Stun), our invisibility and sneaking ending as we cast, the AA and focus cast
 // time modifiers (GetAACastingTimeModifier, GetFocusCastingTimeModifier: none of either here) and
 // the focus's range, Modulation and Mystical Transvergance's checks (items and abilities, not gems),
-// PvP deities, being hit interrupting a bard (StopSpellCast 1), item clicks, abilities (gem 9) and
-// the spell_crc (the zone ignores it).
+// PvP deities, being hit interrupting a bard (StopSpellCast 1), abilities (gem 9) and the spell_crc
+// (the zone ignores it).
+//   - An item's click effect (gem 10): not while something's cast (but a bard's song); a
+//     must-equip effect only worn (179), a class-checked one only by those who can use it (181),
+//     either from its EffectLevel1 (136); a stackable item (IsStackable 1) never; out of charges
+//     (182). No mana; a potion's targeted spell lands on us; no cast time of ours (the zone's
+//     OP_BeginCast starts it); OP_CastSpell with the item's slot.
 
 #include <cstdint>
 #include <functional>
@@ -47,6 +52,7 @@ class WindowManager;
 class ZoneSession;
 struct SpellInfo;
 struct ZoneCast;
+struct ZoneItem;
 struct ZoneSpawn;
 
 class SpellCast
@@ -65,6 +71,8 @@ public:
 
 	// HandleSpellLeftClick, without a book spell on the cursor.
 	void GemClicked(int gem, uint64_t now_ms);
+	// CastSpell for an item's click effect (gem 10, CInvSlot_DoDrinkEatPoison): from the slot it's in.
+	bool CastItem(const ZoneItem &item, int16_t slot, uint64_t now_ms);
 	// The zone's: ZoneSession::Event's SpellMemorized, SpellForgotten, SpellRecast, ManaChanged.
 	void ZoneEvent(int type, int id, int value, uint64_t now_ms);
 	void CastBegan(const ZoneCast &cast, uint64_t now_ms); // OP_BeginCast, anyone's
@@ -86,6 +94,8 @@ private:
 	void Say(uint32_t id, const std::string &fallback, int type);
 	bool BardSong(const SpellInfo *spell) const; // EQ_Character_BardCastBard: ours, a bard's
 	bool CastSpell(int gem, uint64_t now_ms);
+	// What CastSpell does for a gem and an item alike, from the line of sight on; `item` null for a gem.
+	bool Cast(int gem, int spell, const SpellInfo &info, const ZoneItem *item, int16_t slot, uint64_t now_ms);
 	// What's in the way at `target` for target types that need one (LAB_004c50ba, LAB_004c5141):
 	// 0 nothing, or the message.
 	uint32_t CheckTarget(const SpellInfo &spell, uint16_t target, bool area) const;

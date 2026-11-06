@@ -211,6 +211,7 @@ namespace
 			item.book_open = d[o + 229];
 		}
 		item.charges = Read<int8_t>(d, o + 278);
+		item.effect_type2 = Read<int8_t>(d, o + 279);
 		item.effect2 = Read<int16_t>(d, o + 280);
 		item.cast_time = Read<int32_t>(d, o + 292);
 		item.skill_mod_type = Read<uint16_t>(d, o + 312);
@@ -762,11 +763,45 @@ bool ZoneSession::SendBuff(int slot, const ZoneBuff &buff, uint32_t how)
 		"OP_Buff slot " + std::to_string(slot) + " spell " + std::to_string(buff.spell) + " how " + std::to_string(how));
 }
 
-bool ZoneSession::CastSpell(int gem, int spell, uint16_t target)
+bool ZoneSession::Consume(int16_t slot, int type)
 {
 	if (m_state != State::InZone)
 		return false;
-	uint16_t body[6] = {static_cast<uint16_t>(gem), static_cast<uint16_t>(spell), 0xffff, target, 0, 0};
+	int32_t body[4] = {slot, 999, -1, type};
+	bool sent = Send(ZoneOp::Consume, body, sizeof(body), "OP_Consume " + std::to_string(slot));
+	if (sent)
+		TakeOne(slot);
+	return sent;
+}
+
+bool ZoneSession::DeleteCharge(int16_t slot)
+{
+	if (m_state != State::InZone)
+		return false;
+	int32_t body[3] = {slot, -1, -1};
+	bool sent = Send(ZoneOp::DeleteCharge, body, sizeof(body), "OP_DeleteCharge " + std::to_string(slot));
+	if (sent)
+		TakeOne(slot);
+	return sent;
+}
+
+void ZoneSession::TakeOne(int16_t slot)
+{
+	// The item's charges (a stack's count) less one, or gone with its last.
+	auto it = m_items.find(slot);
+	if (it == m_items.end())
+		return;
+	if (it->second.charges == 1)
+		m_items.erase(it);
+	else
+		--it->second.charges;
+}
+
+bool ZoneSession::CastSpell(int gem, int spell, uint16_t target, uint16_t inventory_slot)
+{
+	if (m_state != State::InZone)
+		return false;
+	uint16_t body[6] = {static_cast<uint16_t>(gem), static_cast<uint16_t>(spell), inventory_slot, target, 0, 0};
 	bool sent = Send(ZoneOp::CastSpell, body, sizeof(body),
 		"OP_CastSpell " + std::to_string(gem) + " " + std::to_string(spell) + " at " + std::to_string(target));
 	if (m_replay) {
@@ -1004,6 +1039,29 @@ bool ZoneSession::GroupCancelInvite(const std::string &inviter, uint8_t why)
 	PutName(body, 64, m_profile.name);
 	body[128] = why;
 	return Send(ZoneOp::GroupCancelInvite, body.data(), body.size(), "OP_GroupCancelInvite " + inviter);
+}
+
+bool ZoneSession::GroupMakeLeader(const std::string &member)
+{
+	if (m_state != State::InZone)
+		return false;
+	std::vector<uint8_t> body(136, 0);
+	uint32_t action = 8;
+	std::memcpy(body.data(), &action, 4);
+	PutName(body, 4, m_profile.name);
+	PutName(body, 68, member);
+	return Send(ZoneOp::GroupUpdate, body.data(), body.size(), "OP_GroupUpdate makeleader " + member);
+}
+
+bool ZoneSession::SendLfg(bool on)
+{
+	if (m_state != State::InZone)
+		return false;
+	std::vector<uint8_t> body(68, 0);
+	PutName(body, 0, m_profile.name);
+	body[64] = on ? 1 : 0;
+	m_self.lfg = on ? 1 : 0;
+	return Send(ZoneOp::LFGCommand, body.data(), body.size(), on ? "OP_LFGCommand on" : "OP_LFGCommand off");
 }
 
 bool ZoneSession::GroupDisband(const std::string &name)
@@ -1531,6 +1589,8 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		p.zone_id = Read<uint32_t>(data, 3444);
 		p.bind_zone = Read<uint32_t>(data, 3784); // bind_point_zone[0]
 		p.deity = Read<uint16_t>(data, 4944);
+		p.hunger = Read<int32_t>(data, 3416);
+		p.thirst = Read<int32_t>(data, 3420);
 		p.birthday = Read<uint32_t>(data, 4948);
 		p.minutes_played = Read<uint32_t>(data, 4956);
 		m_profile_ms = NowMs();
@@ -1688,8 +1748,11 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 	}
 	case ZoneOp::Stamina:
 		// Stamina_Struct: {i16 food, i16 water, i8 fatigue}.
-		if (data.size() >= 5)
+		if (data.size() >= 5) {
+			m_profile.hunger = Read<int16_t>(data, 0);
+			m_profile.thirst = Read<int16_t>(data, 2);
 			m_profile.fatigue = Read<int8_t>(data, 4);
+		}
 		break;
 	case ZoneOp::ExpUpdate:
 		m_profile.exp = Read<uint32_t>(data, 0);
