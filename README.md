@@ -329,7 +329,7 @@ eqgame's `OP_MoveItem`.
   (eqgame reads them from `PCData+0x94` and `+0x1528`; no experience table is needed, and the
   profile's total experience is replaced by `OP_ExpUpdate`'s as we enter the zone); the pet gauge along the bottom of the HP bar, only while you have a pet. The target
   window shows the target's name, HP bar and percent. What the windows do for themselves each frame
-  in eqgame is in `frontend/game_windows.cpp`: the group window's Invite and Disband buttons, the
+  in eqgame is in `frontend/game_windows.cpp`: the group window's Invite, Disband, Follow and Decline buttons, the
   buff window's buttons in columns from the top right (empty slots draw nothing), and the hot
   buttons. Click someone to target them, or `/target name`; Escape clears the target (and, as in
   eqgame, closes the help, options or inventory window if one's open). Gauges are drawn the way
@@ -554,6 +554,9 @@ build/eqclient -u USER -p PASS [options]
                         on and walk at it (facing it, 30 units a second), printing the OP_Damage and
                         OP_Death packets and our own swings
   --skill N             with --attack: use combat skill N on it too (OP_CombatAbility), every 9 s in reach
+  --group-invite NAME   with --zone: 15 s in, once NAME is in the zone, invite them (OP_GroupInvite)
+  --group-accept        with --zone: accept any group invitation 2 s after it comes (OP_GroupFollow);
+                        every group packet prints
   --idle SECONDS        without --char, stay at character select this long (default 0)
   --record DIR          with --zone: write each zone session's packets to DIR/<char>-<time>.eqr
   --replay FILE         play a recorded zone session back (no server): stay --zone seconds (default
@@ -565,7 +568,7 @@ build/eqclient -u USER -p PASS [options]
 ## Preview tool (Linux)
 
 ```
-build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|ground|commands]]
+build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|ground|commands|group]]
 build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS]
 ```
 
@@ -576,7 +579,11 @@ at character select instead, or `shop` to stand by the nearest merchant, open it
 right button, sell the first thing worth anything and buy it back, then camp; or `ground` to list
 what's on the ground, drop an item and pick it back up, and open a forge and close it; or
 `commands` to type /random, /lootnodrop, /fastdrop and socials (alone and at the nearest spawn),
-print the chat, and snapshot the compass as it turns). `create` instead makes an Erudite wizard from the first empty slot,
+print the chat, and snapshot the compass as it turns; or `group`, with Claudebot in the zone through
+`eqclient -u clauderobot -p testpass1 --char Claudebot --zone 200 --group-invite Replaycaster
+--group-accept`, to stand by them, follow their invitation in the group window, click their gauge,
+/disband, then click them, /invite them, select them with Target party member 1 and /disband them,
+printing the group and the window's buttons at each step). `create` instead makes an Erudite wizard from the first empty slot,
 snapshots every creation screen and the face picker, submits it, and deletes it again (Yes in the
 confirmation dialog). `createluclin` does the same with every Luclin model on, as a dwarf warrior
 whose face picker steps through each feature, printing the rows shown and what the model takes,
@@ -1238,7 +1245,8 @@ details and the nearest spawns at the top left and the radar at the top right.
   and `EnterZone`. `ProcessControls` runs us forward while Move forward's held, autorun's on or
   both mouse buttons are down.
   Of the 111, my-client does the movement, Autorun, Jump, Look up and down, Toggle camera view, Consider,
-  Say hail, Camp, Sit/stand, Run/walk, Target myself, Target nearest PC and NPC, Toggle last two
+  Say hail, Camp, Sit/stand, Run/walk, Target myself, Target party member 1..5, Invite/follow,
+  Disband, Target nearest PC and NPC, Toggle last two
   targets, Cycle reply forward and back, Send tell, Reply, Send tell to target, Command mode say
   and emote, the hot buttons and pages, the gems,
   History up and down, the spellbook, inventory, Actions pages and the window toggles it has
@@ -1627,6 +1635,29 @@ details and the nearest spawns at the top left and the radar at the top right.
   `PutItemInInventory` sends: something bought, traded for or handed back by an NPC) goes out
   under it, and eqgame's `HandleWorldMessage` gives it to `msg_snd_ieq` as it does
   `OP_ItemPacket`: the item into our slot `equipSlot`.
+- **Groups** (`frontend/group.*`). The zone's packets: `OP_GroupInvite` (0x203e, both ways;
+  `GroupInvite_Struct` {invitee[64], inviter[64], a group's name[64] (empty), u8 PvP}, 193 bytes; a
+  leader's goes out as `OP_GroupInvite2` 0x4040, which the zone hands on as 0x203e),
+  `OP_GroupFollow` (0x203d, {inviter[64], invitee[64]}: our yes, and the zone's to the inviter; empty
+  on entering a zone ungrouped), `OP_GroupCancelInvite` (0x4041, the same and a why byte: 1
+  considering another, 2 in a group, 3 declined, 4 and 5 the raid's), `OP_GroupDisband` (0x4044,
+  a name twice: ours to leave, a member's for the leader to remove them; the zone disbands a group
+  of two) and `OP_GroupUpdate` (0x2026: u32 action, yourname[64] at 4, a name at 68; action 3's
+  new name and action 5's eqstr id at 132; action 7 the five names from 68 and the leader at 388).
+  eqgame keeps two lists: the profile's `groupMembers` (byte 5012, six names with ours;
+  `msg_wldgroup2` adds, removes, renames and replaces in it) and the window's five others with
+  `__GroupLeader`. `CheckForGroupChanges` runs on every `OP_PlayerProfile`: coming in grouped with
+  no list yet it fills it and says 12003 or 12004 (the leader "PENDING" until `OP_GroupUpdate` 8);
+  otherwise it says who left (12005) and joined (1399) since, or 12001/12002 when the profile's list
+  is empty. `msg_wldgroup`'s actions: 0 join (1399), 1 leave (12005, the rest moving up; ours
+  12001), 3 rename (5039; eqgame sets the leader to the new name when we lead, whoever changed), 5
+  and 6 disbanded (5's eqstr, 6's 12002, the invitation and selection gone), 7 the whole group
+  (12004), 8 a leader (5040, 5041), 9 we formed it (12003). The leader's Disband removes the member
+  selected at ActorInfo+0x278: Target party member n, a click on their gauge
+  (`setTargetBasedOnIndex`, called by the gauge's own mouse handler at 0x5c2d1b with its EQType: 1
+  us, 11..15 a member, 16 our pet, 17..21 a member's pet) or on them in the world
+  (`EQ_3DView_MouseUp`); Target myself clears it. The group window's gauges: EQType 11..15 the
+  member's name and HP, -2 (no bar) while they're out of the zone; 17..21 their pet's.
 - **Trading** (`frontend/trade_window.*`, `CTradeWnd`, `CGiveWnd`): a left click on a player or NPC
   with an item or coins on the cursor (`LeftClickedOnPlayer`, `DropItemOrMoneyOnPlayer`) asks to
   trade when `IsOkToTransact` and they're within their `ModelHeightOffset` + 20 (3D; further:

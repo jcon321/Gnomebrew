@@ -17,7 +17,7 @@ namespace
 	{
 		None, Say, Tell, Group, Shout, Auction, Ooc, Guild, Reply, Emote, Hail, Location, Target, Camp,
 		ClearChat, ShowNames, Sit, Stand, Book, Cast, Consider, Played, Motd, Time, Afk, Anonymous, Assist,
-		Random, LootNoDrop, FastDrop, Social, Attack, CombatMusic, DoAbility, Filter, ServerFilter,
+		Random, LootNoDrop, FastDrop, Social, Attack, CombatMusic, DoAbility, Filter, ServerFilter, Invite, Disband,
 	};
 
 	struct CommandEntry
@@ -96,7 +96,7 @@ namespace
 		{"/stand", 0, Command::Stand}, {"/book", 0, Command::Book}, {"/cast", 0, Command::Cast},
 		{"/doability", 0, Command::DoAbility}, {"/whotarget", 0, Command::None}, {"/language", 0, Command::None},
 		{"/target", 0, Command::Target}, {"/camp", 0, Command::Camp}, {"/attack", 0, Command::Attack},
-		{"/invite", 0, Command::None}, {"/disband", 0, Command::None}, {"/note", 0, Command::None},
+		{"/invite", 0, Command::Invite}, {"/disband", 0, Command::Disband}, {"/note", 0, Command::None},
 		{"/wincolor", 0, Command::None}, {"/usercolor", 0, Command::None}, {"/resetwindows", 0, Command::None},
 		{"/mcicontrol", 0, Command::None}, {"/popmail", 0, Command::None}, {"/audiodebug", 0, Command::None},
 		{"/dynamiclights", 0, Command::None}, {"/chatfontsize", 0, Command::None}, {"/lootnodrop", 0, Command::LootNoDrop},
@@ -325,6 +325,12 @@ namespace
 		default: return 0;
 		}
 	}
+}
+
+bool FrontEnd::NotOnSameDeity(const ZoneSpawn &spawn) const
+{
+	int mine = DeityAlliance(static_cast<int16_t>(m_zone.Profile().deity));
+	return mine != 0 && spawn.gm == 0 && DeityAlliance(spawn.deity) != mine;
 }
 
 namespace
@@ -1048,6 +1054,20 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 		}
 		break;
 	}
+	case Command::Invite:
+		// /invite (@004fd38d): an invitation we have accepted, else CEverQuest_Invite.
+		if (!allow())
+			break;
+		if (m_group.Invited())
+			m_group.Accept();
+		else
+			m_group.Invite();
+		break;
+	case Command::Disband:
+		// /disband (@004fd3c5).
+		if (allow())
+			m_group.Disband();
+		break;
 	case Command::Camp:
 		StartCamp();
 		break;

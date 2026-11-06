@@ -2,7 +2,7 @@
 // snapshots, to check layout and flow without a Windows box. Text is drawn as
 // outline boxes of an estimated Arial size, since GDI isn't available.
 //
-//   frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|shop|ground|commands]]
+//   frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|shop|ground|commands|group]]
 //   frontend_preview EQDIR OUTDIR --replay FILE [SECONDS]
 //
 // Without a login server it snapshots the start screen, a dialog and the login
@@ -281,6 +281,131 @@ namespace
 		type("/camp");
 		h.RunUntil([&] { return zone.GetState() != ZoneSession::State::InZone && zone.GetState() != ZoneSession::State::Camping; },
 			40000);
+		printf("[preview] camped\n");
+		return 0;
+	}
+
+	// Live, as the account's first character (Replaycaster), with a second player (Claudebot through
+	// eqclient --group-invite Replaycaster --group-accept):
+	// their invitation followed through the group window, the member's gauge clicked, /disband to
+	// leave; then our /invite of them, Target party member 1 and /disband to remove them.
+	int GroupTest(FrontEnd &frontend, Harness &h)
+	{
+		WindowManager &windows = frontend.Windows();
+		const ZoneSession &zone = frontend.Zone();
+		const Group &group = frontend.GroupState();
+		h.Key(InputEvent::Key::F11);
+		size_t chat_seen = frontend.Chat().Lines().size();
+		auto chat = [&] {
+			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
+				printf("[preview] chat: %s\n", frontend.Chat().Lines()[chat_seen].text.c_str());
+		};
+		auto type = [&](const std::string &line) {
+			printf("[preview] > %s\n", line.c_str());
+			h.Key(InputEvent::Key::Enter);
+			h.Type(line);
+			h.Key(InputEvent::Key::Enter);
+			h.RunUntil([] { return false; }, 700);
+			chat();
+		};
+		auto click = [&](const char *window, const std::string &id) {
+			const SidlWindow *wnd = windows.Find(window);
+			const SidlWindow::Control *c = wnd ? wnd->Find(id) : nullptr;
+			if (!c) {
+				printf("[preview] no %s in %s\n", id.c_str(), window);
+				return;
+			}
+			printf("[preview] click %s.%s\n", window, id.c_str());
+			Rect area = frontend.ScreenArea();
+			int x = area.x + c->rect.x + c->rect.w / 2, y = area.y + c->rect.y + c->rect.h / 2;
+			frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+			frontend.OnEvent({InputEvent::Type::MouseDown, x, y});
+			frontend.OnEvent({InputEvent::Type::MouseUp, x, y});
+			frontend.Update(NowMs());
+		};
+		auto state = [&](const char *when) {
+			printf("[preview] %s: leader '%s', invited %d, profile list:", when, group.Leader().c_str(), group.Invited() ? 1 : 0);
+			for (const auto &name : zone.Profile().group_members)
+				printf(" '%s'", name.c_str());
+			printf("\n");
+			for (int i = 0; i < Group::Members; ++i)
+				if (!group.Member(i).empty()) {
+					const ZoneSpawn *spawn = group.MemberSpawn(i);
+					printf("[preview]   member %d: %s (%s)\n", i + 1, group.Member(i).c_str(),
+						spawn ? ("in the zone, hp " + std::to_string(spawn->hp)).c_str() : "not here");
+				}
+			if (const SidlWindow *wnd = windows.Find("GroupWindow"))
+				for (const char *id : {"InviteButton", "DisbandButton", "FollowButton", "DeclineButton"})
+					if (const SidlWindow::Control *c = wnd->Find(id))
+						printf("[preview]   %s %s%s\n", id, wnd->Shown(*c) ? "shown" : "hidden", c->enabled ? "" : " (disabled)");
+		};
+		windows.Show("GroupWindow", true);
+		windows.MoveTo("GroupWindow", 300, 300);
+		h.RunUntil([] { return false; }, 300);
+		state("start");
+		printf("[preview] waiting for Claudebot\n");
+		auto bot = [&]() -> const ZoneSpawn * {
+			for (const auto &[id, spawn] : zone.Spawns())
+				if (spawn.name == "Claudebot")
+					return &spawn;
+			return nullptr;
+		};
+		h.RunUntil([&] { return bot() != nullptr; }, 60000);
+		if (const ZoneSpawn *b = bot()) {
+			// Next to them, facing them (north).
+			frontend.ZoneScene()->SetPlayerPosition(b->x, b->y - 15, b->z, 0);
+			h.RunUntil([] { return false; }, 1500);
+		}
+		printf("[preview] waiting for an invitation\n");
+		h.RunUntil([&] { return group.Invited(); }, 60000);
+		h.RunUntil([] { return false; }, 300);
+		chat();
+		state("invited");
+		click("GroupWindow", "FollowButton");
+		h.RunUntil([] { return false; }, 3000);
+		chat();
+		state("followed");
+		h.Snapshot("g1-grouped");
+		click("GroupWindow", "Gauge1");
+		printf("[preview] target after the gauge: %u\n", frontend.Target());
+		type("/disband");
+		h.RunUntil([] { return false; }, 2500);
+		chat();
+		state("left");
+
+		// A click on them in the world targets them (and would select them, were they a member).
+		int bx = 0, by = 0;
+		if (const ZoneSpawn *b = bot(); b && FindOnScreen(frontend, h, b->id, bx, by)) {
+			frontend.OnEvent({InputEvent::Type::MouseMove, bx, by});
+			frontend.OnEvent({InputEvent::Type::MouseDown, bx, by});
+			frontend.OnEvent({InputEvent::Type::MouseUp, bx, by});
+		}
+		h.RunUntil([] { return false; }, 300);
+		printf("[preview] target %u\n", frontend.Target());
+		h.RunUntil([] { return false; }, 300);
+		state("targeted");
+		type("/invite");
+		h.RunUntil([&] { return !group.Member(0).empty(); }, 10000);
+		h.RunUntil([] { return false; }, 1500);
+		chat();
+		state("formed");
+		h.Snapshot("g2-formed");
+		// Target party member 1 (F2) selects them; /disband as the leader removes them.
+		InputEvent f2;
+		f2.type = InputEvent::Type::Key;
+		f2.scan = 0x3c;
+		frontend.OnEvent(f2);
+		f2.type = InputEvent::Type::KeyUp;
+		frontend.OnEvent(f2);
+		printf("[preview] target after F2: %u\n", frontend.Target());
+		type("/disband");
+		h.RunUntil([] { return false; }, 2500);
+		chat();
+		state("removed");
+		type("/camp");
+		h.RunUntil([&] { return zone.GetState() != ZoneSession::State::InZone && zone.GetState() != ZoneSession::State::Camping; },
+			40000);
+		chat();
 		printf("[preview] camped\n");
 		return 0;
 	}
@@ -851,6 +976,7 @@ int main(int argc, char **argv)
 	bool shop = argc == 7 && std::string(argv[6]) == "shop";
 	bool ground = argc == 7 && std::string(argv[6]) == "ground";
 	bool commands = argc == 7 && std::string(argv[6]) == "commands";
+	bool group_test = argc == 7 && std::string(argv[6]) == "group";
 	if (argc >= 6 && !replay) {
 		std::string login = argv[3];
 		size_t colon = login.rfind(':');
@@ -2597,6 +2723,8 @@ int main(int argc, char **argv)
 				return GroundTest(frontend, h);
 			if (commands)
 				return CommandsTest(frontend, h);
+			if (group_test)
+				return GroupTest(frontend, h);
 			h.Key(InputEvent::Key::F9);
 			h.Snapshot("8-zone-first-person");
 			h.Key(InputEvent::Key::F9);

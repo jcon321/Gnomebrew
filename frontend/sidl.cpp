@@ -823,7 +823,7 @@ bool SidlWindow::InteractiveAt(int x, int y) const
 	for (const auto &control : m_controls) {
 		const std::string &type = control.def->type;
 		if ((type == "Button" || type == "Editbox" || type == "InvSlot" || type == "SpellGem" || type == "Slider" ||
-		     type == "Combobox" || type == "Listbox" || control.clickable) &&
+		     type == "Combobox" || type == "Listbox" || type == "Gauge" || control.clickable) &&
 		    control.enabled && HitTest(control, x, y))
 			return true;
 		if (type == "Combobox" && control.list_open && ComboListRect(control).Contains(x, y))
@@ -1628,7 +1628,9 @@ std::string SidlWindow::Press(const InputEvent &event)
 			control.hover = HitTest(control, event.x, event.y);
 			continue;
 		}
-		if ((type != "Button" && type != "Editbox" && type != "InvSlot" && type != "SpellGem" && !control.clickable) ||
+		// A gauge's click targets by its EQType (CGaugeWnd's mouse handler, setTargetBasedOnIndex).
+		if ((type != "Button" && type != "Editbox" && type != "InvSlot" && type != "SpellGem" && type != "Gauge" &&
+		     !control.clickable) ||
 		    !Shown(control))
 			continue;
 		bool inside = HitTest(control, event.x, event.y);

@@ -36,6 +36,7 @@
 #include "loot_window.h"
 #include "merchant_window.h"
 #include "options_window.h"
+#include "group.h"
 #include "trade_window.h"
 #include "spell_book.h"
 #include "spell_cast.h"
@@ -157,6 +158,7 @@ public:
 	int LootNoDrop() const { return m_config.loot_no_drop; }               // /lootnodrop, to remember
 	int FastDrop() const { return m_config.fast_drop; }                    // /fastdrop, to remember
 	const ZoneSession &Zone() const { return m_zone; }
+	const Group &GroupState() const { return m_group; }
 	const ChatWindow &Chat() const { return m_chat; }
 	uint16_t Target() const { return m_game_values.target; } // spawn id, 0 none
 	const CharacterSelectView *CharacterScene() const { return m_charselect_view.get(); }
@@ -313,6 +315,9 @@ private:
 	// his and its race. print_chat_dsp_chat runs it on every line printed, SendNewText,
 	// CEverQuest::Emote and send_social on what they send.
 	std::string PercentConvert(const std::string &text) const;
+	// EQPlayer::NotOnSameDeity (@005097d2) of us and a player, on the deity team servers: we're on a
+	// team (EQPlayer_WhatDeityAlliance) and they're not a GM on it.
+	bool NotOnSameDeity(const ZoneSpawn &spawn) const;
 	// CDisplay_IsInvisible to us (we don't know whether we see invisible: we don't).
 	bool InvisibleToMe(const ZoneSpawn &spawn) const;
 	// CDisplay::RealRender_World's DeathTimer: lying dead, 2 seconds on "Returning to home point,
@@ -488,6 +493,7 @@ private:
 	MerchantWindow m_merchant;
 	LootWindow m_loot;
 	TradeWindow m_trade;            // and the give window
+	Group m_group;
 	GroundItems m_ground;           // dropping and picking up
 	uint64_t m_right_world_ms = 0;  // when the right button went down on the world (0: it didn't)
 	bool m_jump_requested = false;

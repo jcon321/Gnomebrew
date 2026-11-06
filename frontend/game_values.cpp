@@ -1,6 +1,7 @@
 #include "game_values.h"
 #include "buffs.h"
 #include "eqstr.h"
+#include "group.h"
 #include "inventory.h"
 #include "spell_book.h"
 #include "spell_cast.h"
@@ -614,8 +615,21 @@ int GameValues::Gauge(int eq_type, std::string &text)
 		return spell_book ? spell_book->MemorizeGauge() : 0;
 	case 10: // GetSpellScribeTicksLeft
 		return spell_book ? spell_book->ScribeGauge() : 0;
-	case 11: case 12: case 13: case 14: case 15: // group members (no group yet)
-		return -1;
+	case 11: case 12: case 13: case 14: case 15: { // a group member's name, and HP while in the zone
+		if (!group || group->Member(eq_type - 11).empty())
+			return -1;
+		text = group->Member(eq_type - 11);
+		const ZoneSpawn *member = group->MemberSpawn(eq_type - 11);
+		return member ? Permille(member->hp, 100) : -2;
+	}
+	case 17: case 18: case 19: case 20: case 21: { // a group member's pet
+		const ZoneSpawn *member = group ? group->MemberSpawn(eq_type - 17) : nullptr;
+		const ZoneSpawn *pet = member ? group->PetOf(*member) : nullptr;
+		if (!pet)
+			return -3;
+		text = pet->DisplayName();
+		return Permille(pet->hp, 100);
+	}
 	default:
 		return -3;
 	}

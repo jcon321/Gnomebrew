@@ -102,6 +102,14 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 	}
 	m_zone.SetServerFilters(m_filters.Packet());
 	m_game_values.zone = &m_zone;
+	m_game_values.eqstr = m_ui.eqstr;
+	m_game_values.group = &m_group;
+	Group::Host group_host;
+	group_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
+	group_host.set_target = [this](uint16_t id) { SetTarget(id); };
+	// The deity team servers' rule (DAT_006ec740 4).
+	group_host.other_team = [this](const ZoneSpawn &spawn) { return m_world.ServerType() == 4 && NotOnSameDeity(spawn); };
+	m_group.Attach(m_zone, m_game_values, std::move(group_host));
 	EnterStart();
 }
 
@@ -2232,6 +2240,21 @@ void FrontEnd::HandleWindowClicks()
 			}
 			continue;
 		}
+		// CGroupWnd::WndNotification: Follow, Invite, and Disband or Decline.
+		if (click.window == "GroupWindow") {
+			if (click.control == "FollowButton")
+				m_group.Accept();
+			else if (click.control == "InviteButton")
+				m_group.Invite();
+			else if (click.control == "DisbandButton" || click.control == "DeclineButton")
+				m_group.Disband();
+		}
+		// A gauge clicked: setTargetBasedOnIndex by its EQType (us, a member, a pet).
+		if (SidlWindow *wnd = m_windows.Find(click.window))
+			if (const SidlWindow::Control *gauge = wnd->Find(click.control); gauge && gauge->def->type == "Gauge") {
+				m_group.TargetByGauge(gauge->def->eq_type);
+				continue;
+			}
 		// CBuffWindow::WndNotification: a buff clicked comes off (with Alt it would show the spell).
 		if (click.window == "BuffWindow" && click.control.rfind("Buff", 0) == 0) {
 			if (!m_alt_down)
@@ -2275,6 +2298,17 @@ void FrontEnd::ActionsClick(const std::string &control)
 	// The combat page's Attack button (CombatPageWndNotification: ExecuteCmd 8).
 	else if (control == "ACP_MeleeAttackButton")
 		ToggleAutoAttack();
+	// MainPageWndNotification: Invite only when not invited, Follow only when invited, Disband.
+	else if (control == "AMP_InviteButton") {
+		if (!m_group.Invited())
+			m_group.Invite();
+	}
+	else if (control == "AMP_FollowButton") {
+		if (m_group.Invited())
+			m_group.Accept();
+	}
+	else if (control == "AMP_DisbandButton")
+		m_group.Disband();
 }
 
 void FrontEnd::AddZoneLog(const std::string &text, uint32_t color)
@@ -2519,6 +2553,7 @@ void FrontEnd::WorldClick(int x, int y)
 {
 	if (uint16_t id = m_zone_view->PickSpawn(x, y, m_zone.MySpawnId())) {
 		SetTarget(id);
+		m_group.Clicked(id); // EQ_3DView_MouseUp: a member clicked is the one selected
 		if (m_zone.Items().count(Inventory::Cursor) || Inventory::CursorMoneyType(m_zone.Profile()))
 			m_trade.DropOnPlayer(id);
 		return;
@@ -2955,6 +2990,15 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 		case Type::Emote:
 			ChatOut(event.text, ChatType::Emote);
 			break;
+		case Type::Profile:
+			m_group.ProfileArrived(); // CheckForGroupChanges
+			break;
+		case Type::GroupInvited:
+		case Type::GroupInviteCancelled:
+		case Type::GroupFollowed:
+		case Type::GroupUpdated:
+			m_group.ZoneEvent(event);
+			break;
 		case Type::SpellMemorized:
 		case Type::SpellForgotten:
 			m_spell_cast.ZoneEvent(static_cast<int>(event.type), event.id, event.value, m_now_ms);
@@ -3097,6 +3141,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			m_weather.Receive(event.id, event.value);
 			break;
 		case Type::LoggedOut:
+			m_group.Clear(); // ProcessGameLoop's "Cleaning up groups"
 			ShowMessage("You have camped.", [this](bool) { EnterStart(); });
 			break;
 		case Type::Error:
@@ -3295,6 +3340,7 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 		uint16_t me = m_zone.MySpawnId();
 		if (m_game_values.target != me) {
 			SetTarget(me);
+			m_group.Unselect();
 			break;
 		}
 		for (const auto &[id, spawn] : m_zone.Spawns())
@@ -3307,6 +3353,28 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 	case KeyMap::TargetPc:
 	case KeyMap::TargetNpc:
 		TargetNearest(cmd == KeyMap::TargetNpc);
+		break;
+	case KeyMap::Party1:
+	case KeyMap::Party2:
+	case KeyMap::Party3:
+	case KeyMap::Party4:
+	case KeyMap::Party5:
+		// ExecuteCmd 0x17..0x1b: not without control of ourselves nor while a transaction waits.
+		if (!m_window_state.busy && m_zone.Self().stance != 102)
+			m_group.TargetMember(cmd - KeyMap::Party1);
+		break;
+	case KeyMap::InviteFollow:
+		// ExecuteCmd 0x46: invite, or accept the invitation we have.
+		if (m_zone.Self().stance != 102) {
+			if (m_group.Invited())
+				m_group.Accept();
+			else
+				m_group.Invite();
+		}
+		break;
+	case KeyMap::Disband:
+		if (m_zone.Self().stance != 102)
+			m_group.Disband();
 		break;
 	case KeyMap::CycleNearestTarget:
 		// Zeal's: not while the chat line is open (UI_ChatInputCheck).

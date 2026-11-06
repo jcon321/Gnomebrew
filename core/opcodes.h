@@ -130,6 +130,13 @@ namespace ZoneOp
 	constexpr uint16_t TradeCoins = 0x40e4;       // TradeMoney_Struct: the other side's coins
 	constexpr uint16_t TradeItemPacket = 0x40df;  // TradeItemHeader_Struct {u16 from, i16 slot, u8 type, item}
 	constexpr uint16_t TradeReset = 0x4010;       // empty
+	// Groups: see ZoneSession::GroupInvite.
+	constexpr uint16_t GroupInvite = 0x203e;       // GroupInvite_Struct {invitee[64], inviter[64], group[64], u8 pvp}: both ways
+	constexpr uint16_t GroupInvite2 = 0x4040;      // the same, from a group's leader (the zone hands it on as 0x203e)
+	constexpr uint16_t GroupFollow = 0x203d;       // GroupGeneric_Struct {inviter[64], invitee[64]}: yes; the zone's, to the inviter
+	constexpr uint16_t GroupCancelInvite = 0x4041; // GroupCancel_Struct {inviter[64], invitee[64], u8 why}
+	constexpr uint16_t GroupUpdate = 0x2026;       // GroupJoin_Struct, GroupUpdate_Struct or GroupGeneric_Struct2 by its action
+	constexpr uint16_t GroupDisband = 0x4044;      // GroupGeneric_Struct {name[64], name[64]}
 	// Looting: see ZoneSession::LootRequest.
 	constexpr uint16_t LootRequest = 0x404e;    // ours: {u16 corpse}
 	constexpr uint16_t MoneyOnCorpse = 0x4050;  // moneyOnCorpseStruct {u8 response, u8[3], u32 platinum, gold, silver, copper}
@@ -313,6 +320,12 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::TradeCoins, "OP_TradeCoins"},
 	{ZoneOp::TradeItemPacket, "OP_TradeItemPacket"},
 	{ZoneOp::TradeReset, "OP_TradeReset"},
+	{ZoneOp::GroupInvite, "OP_GroupInvite"},
+	{ZoneOp::GroupInvite2, "OP_GroupInvite2"},
+	{ZoneOp::GroupFollow, "OP_GroupFollow"},
+	{ZoneOp::GroupCancelInvite, "OP_GroupCancelInvite"},
+	{ZoneOp::GroupUpdate, "OP_GroupUpdate"},
+	{ZoneOp::GroupDisband, "OP_GroupDisband"},
 	{ZoneOp::LootRequest, "OP_LootRequest"},
 	{ZoneOp::MoneyOnCorpse, "OP_MoneyOnCorpse"},
 	{ZoneOp::LootItemPacket, "OP_LootItemPacket"},

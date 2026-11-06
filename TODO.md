@@ -19,8 +19,23 @@ no rules of its own.
      Targeting ourselves: F1 and clicking our model in the chase view. The XP and AA gauges
      (EQTypes 4, 5) are OP_ExpUpdate's and OP_AAExpUpdate's 0..330 * 3.03031. Still to do: max mana
      leaves out items' worn effects and `AntiTwinkAdj` for items with a recommended level.
-   - Group window: laid out as `CGroupWnd::UpdateButtons` does (`frontend/game_windows.*`), but
-     there's no group state yet (invites, members, leader).
+   - Group: done (`frontend/group.*`, the zone's OP_GroupInvite, OP_GroupCancelInvite,
+     OP_GroupFollow and OP_GroupUpdate in `ZoneSession`): msg_wldgroup's actions,
+     CheckForGroupChanges on each profile, CEverQuest_doInvite and doUnInvite, CEverQuest_Invite,
+     AcceptGroupInvite and CEverQuest_Disband with their messages, from /invite, /disband, the group
+     window's and Actions window's buttons and the Invite/follow and Disband keys; the group window
+     (`CGroupWnd::UpdateButtons`: Follow and Decline while invited, Invite and Disband enabled as
+     eqgame enables them) with the members' names and HP gauges (EQTypes 11..15; out of the zone,
+     -2) and their pets' (17..21); a gauge clicked targets by its EQType (setTargetBasedOnIndex),
+     Target party member 1..5 a member and then their pet, and the leader's Disband removes the
+     member selected (by those or a click on them in the world). Checked live with a second
+     player (`eqclient --group-invite`, `--group-accept`; `frontend_preview ... group`). Still to
+     do: the raid's branches (CRaid: IsInRaid, IsRaidGroupLeader, eqstr 5087, 5086, 5088's why 4
+     and 5), /makeleader (@004f397d, OP_GroupUpdate 8 from us), /lfg going off on joining
+     (`_lfg`), the group window's menu (`CGroupWnd::CreateLocalMenu`: its pet gauges toggle, 0x32),
+     CEverQuest_Disband sent as a camp ends (ProcessGameLoop's 0xca; our session's already
+     closed), and AcceptGroupInvite's OP_GroupFollow2 (0x4042) for an invitation that came as
+     OP_GroupInvite2 (the zone never hands one on as that; we always send OP_GroupFollow).
    - Buff window: done (`frontend/buffs.*`, `game_windows.cpp`): our buffs from the profile, those
      landing on us (HitBySpell's FindAffectSlot stacking and overwriting), `OP_Buff`, the 6 s tick
      and its expiry, clicking a beneficial one off, their icons on red or blue, names (tooltips and
@@ -230,8 +245,7 @@ no rules of its own.
    own character after it. Still to do:
    - ExecuteCmd's commands not done yet (the page's "No"): Toggle mouse look, Duck, Use centerscreen, Center view, Zoom in and out held
      (ProcessControls' camera distance at 2 units a frame unit), Toggle UI Display (ScreenMode 3),
-     Target party member 1..5 (setTargetBasedOnIndex), Toggle netstat, Who, Invite/follow,
-     Disband, the clip plane, voice input,
+     Toggle netstat, Who, the clip plane, voice input,
      screenshots, the chat line's cursor and page up and down (CChatWindow::ScrollChatWindowUp),
      the AA, bazaar, bazaar search, raid and music player
      windows, and the six camera moves (ExecuteCmd 0x6f..0x74, ProcessControls).

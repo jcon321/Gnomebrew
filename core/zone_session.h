@@ -71,6 +71,8 @@ struct ZoneProfile
 	// By skill id (50 is swimming): 255 the class never has it, 254 it does at a later level,
 	// 0 it has it untrained.
 	int16_t skills[100] = {};
+	// groupMembers (EQ_PC+0x1390 in eqgame): the group's names as the zone has them, ours among them.
+	std::string group_members[6];
 	// The spells scribed in the book's 256 slots (eight to a page) and memorized in the eight gems,
 	// by id; -1 for none (the profile's 0xFFFF). The zone's answers to the spell requests keep them.
 	static constexpr int BookSlots = 256, Gems = 8;
@@ -218,6 +220,21 @@ struct ZoneGroundItem
 	std::string model;         // its actor, "IT63_ACTORDEF"
 	uint32_t object_type = 0;  // 1 a dropped item; a tradeskill container's bag type
 	int16_t contents[10] = {}; // a dropped bag's items' ids (-1 none)
+};
+
+// A group packet as it comes: OP_GroupInvite (invitee, inviter, the group's name after them),
+// OP_GroupCancelInvite (inviter, invitee, why) and OP_GroupUpdate: its action, then yourname at 4
+// and the member's name at 68 (GroupJoin_Struct); for action 3 a second name at 132; for 5 the
+// eqstr id at 132 (GroupGeneric_Struct2's param); for 7 the five names from 68 and the leader's at
+// 388 (GroupUpdate_Struct).
+struct ZoneGroup
+{
+	uint32_t action = 0;
+	std::string your_name;
+	std::string names[5];   // names[0] the member (or the inviter)
+	std::string second;     // the name at 132 (action 3), the inviter's group (OP_GroupInvite)
+	int32_t param = 0;      // the int at 132 (action 5); OP_GroupCancelInvite's why
+	std::string leader;     // at 388 (action 7)
 };
 
 // OP_ClickObjectAction (ClickObjectAction_Struct): a tradeskill container we clicked opens for us
@@ -430,6 +447,14 @@ public:
 			GroundItemRemoved,
 			WorldContainerOpened,
 			WorldContainerCleared,
+			// Groups (group): someone invites us (OP_GroupInvite; value the opcode it came as), our
+			// invitation turned down or called off (OP_GroupCancelInvite), the zone's yes to one we
+			// accepted, or its word on entering the zone that there's no invitation (OP_GroupFollow), and
+			// the group changing (OP_GroupUpdate).
+			GroupInvited,
+			GroupInviteCancelled,
+			GroupFollowed,
+			GroupUpdated,
 			LoggedOut,    // camp finished; the zone closes the connection
 			ZoneApproved, // value: the zone we're going to; OP_DeleteSpawn is sent
 			ZoneDenied,   // value: the answer (ZoningMessage: 0 down, -1 not ready, -7 not experienced...)
@@ -451,6 +476,7 @@ public:
 		ZoneMerchant merchant;
 		ZoneLoot loot;
 		ZoneWorldContainer world;
+		ZoneGroup group;
 	};
 
 	ZoneSession();
@@ -571,6 +597,14 @@ public:
 	bool TradeAccept(uint16_t target);
 	bool CancelTrade(uint16_t target);
 	void ClearTrade();
+	// Groups (CEverQuest_Invite, AcceptGroupInvite, CEverQuest_Disband): OP_GroupInvite (OP_GroupInvite2
+	// as a group's leader) to invite someone, OP_GroupFollow to accept the inviter's,
+	// OP_GroupCancelInvite to turn it down (why: 3 declined; 1 considering another, 2 in a group, 4
+	// and 5 the raid's), OP_GroupDisband with a name twice (ours to leave, a member's to remove them).
+	bool GroupInvite(const std::string &invitee, bool as_leader);
+	bool GroupFollow(const std::string &inviter);
+	bool GroupCancelInvite(const std::string &inviter, uint8_t why);
+	bool GroupDisband(const std::string &name);
 	// The ground: what's on it, by drop id. PickUp is CEverQuest_LMouseUp's OP_ClickObject {drop id,
 	// us}; the zone puts it on our cursor and tells everyone it's gone. DropCursorItem is
 	// DropHeldItemOnGround: OP_GroundSpawn with the cursor's item where we stand, which goes from

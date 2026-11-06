@@ -4,8 +4,9 @@
 // OnProcessFrame), for the windows we put up:
 //   - CPlayerWnd::UpdatePlayerWindowState (@0042ee3a): the pet's HP gauge only while we have a pet.
 //   - CGroupWnd::UpdateButtons (@0041f06e): Invite and Disband, with Follow and Decline (for an
-//     invitation) hidden where they overlap them; Invite only with another player targeted, Disband
-//     only in a group; a member's pet gauge only while that member has a pet. We have no group yet.
+//     invitation) hidden where they overlap them; Invite only with another player targeted and a
+//     place in our group (or no group), Disband only in a group; a member's pet gauge only while
+//     that member has a pet.
 //   - CBuffWindow::RefreshIconArrangement and RefreshBuffDisplay (@004090e9, @00409334): the buff
 //     buttons stacked in columns from the top right, as many as fit (the rest hidden); a buff's
 //     icon (the spell's, a cell of A_SpellIcons: the window's BuffIcons aren't used) on RedIconBackground for a detrimental spell or

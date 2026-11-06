@@ -48,6 +48,9 @@ namespace
 			"  --attack NAME         with --zone, once in, target the nearest NPC whose name starts with NAME, turn\n"
 			"                        auto attack on and walk at it, printing the hits and the death\n"
 			"  --skill N             with --attack, use combat skill N on it too (OP_CombatAbility), every 9 s\n"
+			"  --group-invite NAME   with --zone, 15 s after coming in and NAME is here, invite NAME to a group\n"
+			"  --group-accept        with --zone, accept any group invitation 2 s after it comes (OP_GroupFollow);\n"
+			"                        every group packet prints\n"
 			"  --record DIR          with --zone, write each zone session's packets to DIR/<char>-<time>.eqr\n"
 			"  --replay FILE         play a recorded zone session back (no server): stay --zone seconds\n"
 			"                        (default 10), print what's around, then camp out\n"
@@ -131,6 +134,8 @@ namespace
 	std::string g_attack;             // --attack: the name of an NPC to fight
 	uint16_t g_attack_id = 0;         // whom we're fighting (0 nobody)
 	int g_skill = -1;                 // --skill: a combat skill to use on them too
+	std::string g_group_invite;       // --group-invite: whom to invite
+	bool g_group_accept = false;      // --group-accept
 	uint64_t g_skill_at = 0;          // when it's next ready
 
 	// --attack: the nearest NPC whose name starts with g_attack, targeted, auto attack on.
@@ -279,6 +284,9 @@ namespace
 		uint64_t cast_at = 0; // when the next --cast goes; 0 not yet
 		uint64_t pickup_at = 0;      // when --pickup goes (the ground items come in after we're in)
 		uint64_t pickup_check_at = 0; // when to look at the cursor after the zone answers it
+		uint64_t invite_at = 0;       // when --group-invite goes
+		uint64_t follow_at = 0;       // when --group-accept answers
+		std::string inviter;
 		for (;;) {
 			std::vector<ZoneSession::Event> events;
 			zone.Pump(100, events);
@@ -301,6 +309,8 @@ namespace
 					}
 					if (!g_pickup.empty())
 						pickup_at = NowMs() + 2000;
+					if (!g_group_invite.empty())
+						invite_at = NowMs() + 15000;
 					if (g_click_link >= 0) {
 						printf("[zone] clicking link %d\n", g_click_link);
 						zone.ClickItemLink(static_cast<uint16_t>(g_click_link), "link");
@@ -429,6 +439,27 @@ namespace
 							cast_at = NowMs() + 3000;
 					}
 					break;
+				case ZoneSession::Event::Type::GroupInvited:
+					printf("[group] %s invites us (group '%s')\n", event.group.names[0].c_str(), event.group.second.c_str());
+					if (g_group_accept) {
+						inviter = event.group.names[0];
+						follow_at = NowMs() + 2000;
+					}
+					break;
+				case ZoneSession::Event::Type::GroupInviteCancelled:
+					printf("[group] invitation cancelled: %s / %s, why %d\n", event.group.names[0].c_str(), event.group.second.c_str(),
+						event.group.param);
+					break;
+				case ZoneSession::Event::Type::GroupFollowed:
+					printf("[group] OP_GroupFollow: %s / %s\n", event.group.names[0].c_str(), event.group.second.c_str());
+					break;
+				case ZoneSession::Event::Type::GroupUpdated: {
+					const ZoneGroup &g = event.group;
+					printf("[group] update %u: you '%s', names '%s' '%s' '%s' '%s' '%s', leader '%s', param %d\n", g.action,
+						g.your_name.c_str(), g.names[0].c_str(), g.names[1].c_str(), g.names[2].c_str(), g.names[3].c_str(),
+						g.names[4].c_str(), g.leader.c_str(), g.param);
+					break;
+				}
 				case ZoneSession::Event::Type::LoggedOut:
 					if (zone.Replaying())
 						PrintNearby(zone);
@@ -450,6 +481,24 @@ namespace
 			}
 			if (g_attack_id != 0 && !camping)
 				FollowAttackTarget(zone);
+			// --group-invite waits for them to be in the zone.
+			if (invite_at && NowMs() >= invite_at) {
+				bool here = false;
+				for (const auto &[id, spawn] : zone.Spawns())
+					here |= spawn.name == g_group_invite;
+				if (!here)
+					invite_at = NowMs() + 1000;
+			}
+			if (invite_at && NowMs() >= invite_at) {
+				invite_at = 0;
+				printf("[group] inviting %s\n", g_group_invite.c_str());
+				zone.GroupInvite(g_group_invite, false);
+			}
+			if (follow_at && NowMs() >= follow_at) {
+				follow_at = 0;
+				printf("[group] accepting %s's invitation\n", inviter.c_str());
+				zone.GroupFollow(inviter);
+			}
 			if (pickup_at && NowMs() >= pickup_at) {
 				pickup_at = 0;
 				DoPickup(zone);
@@ -532,6 +581,10 @@ int main(int argc, char **argv)
 			zone_to = static_cast<uint32_t>(atoi(next().c_str()));
 		else if (arg == "--move")
 			g_moves.push_back(next());
+		else if (arg == "--group-invite")
+			g_group_invite = next();
+		else if (arg == "--group-accept")
+			g_group_accept = true;
 		else if (arg == "--record")
 			g_record_dir = next();
 		else if (arg == "--replay")

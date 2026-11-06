@@ -951,6 +951,59 @@ bool ZoneSession::CancelTrade(uint16_t target)
 	return sent;
 }
 
+namespace
+{
+	// A name in a 64-byte field.
+	void PutName(std::vector<uint8_t> &body, size_t at, const std::string &name)
+	{
+		std::memcpy(body.data() + at, name.data(), std::min<size_t>(name.size(), 63));
+	}
+}
+
+bool ZoneSession::GroupInvite(const std::string &invitee, bool as_leader)
+{
+	if (m_state != State::InZone)
+		return false;
+	// GroupInvite_Struct, 193 bytes: the invitee, us, no group name, our PvP flag.
+	std::vector<uint8_t> body(193, 0);
+	PutName(body, 0, invitee);
+	PutName(body, 64, m_profile.name);
+	body[192] = m_self.pvp;
+	return Send(as_leader ? ZoneOp::GroupInvite2 : ZoneOp::GroupInvite, body.data(), body.size(),
+		std::string(as_leader ? "OP_GroupInvite2 " : "OP_GroupInvite ") + invitee);
+}
+
+bool ZoneSession::GroupFollow(const std::string &inviter)
+{
+	if (m_state != State::InZone)
+		return false;
+	std::vector<uint8_t> body(128, 0);
+	PutName(body, 0, inviter);
+	PutName(body, 64, m_profile.name);
+	return Send(ZoneOp::GroupFollow, body.data(), body.size(), "OP_GroupFollow " + inviter);
+}
+
+bool ZoneSession::GroupCancelInvite(const std::string &inviter, uint8_t why)
+{
+	if (m_state != State::InZone)
+		return false;
+	std::vector<uint8_t> body(129, 0);
+	PutName(body, 0, inviter);
+	PutName(body, 64, m_profile.name);
+	body[128] = why;
+	return Send(ZoneOp::GroupCancelInvite, body.data(), body.size(), "OP_GroupCancelInvite " + inviter);
+}
+
+bool ZoneSession::GroupDisband(const std::string &name)
+{
+	if (m_state != State::InZone)
+		return false;
+	std::vector<uint8_t> body(128, 0);
+	PutName(body, 0, name);
+	PutName(body, 64, name);
+	return Send(ZoneOp::GroupDisband, body.data(), body.size(), "OP_GroupDisband " + name);
+}
+
 void ZoneSession::ClearTrade()
 {
 	for (int16_t slot = Inventory::FirstTrade; slot <= Inventory::LastHisTrade; ++slot)
@@ -1471,6 +1524,8 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		m_profile_ms = NowMs();
 		for (int i = 0; i < 100; ++i)
 			p.skills[i] = Read<int16_t>(data, 2988 + i * 2);
+		for (int i = 0; i < 6; ++i)
+			p.group_members[i] = CString(data, 5012 + i * 64, 64);
 		for (int i = 0; i < ZoneProfile::BookSlots; ++i)
 			p.spell_book[i] = Read<int16_t>(data, 1846 + i * 2);
 		for (int i = 0; i < ZoneProfile::Gems; ++i)
@@ -1785,6 +1840,100 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		Event e{Event::Type::TradeRefused};
 		e.id = Read<uint16_t>(data, 2);
 		e.value = data[4];
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::GroupInvite:
+	case ZoneOp::GroupInvite2: {
+		Event e{Event::Type::GroupInvited};
+		e.value = opcode;
+		e.group.your_name = CString(data, 0, 64);
+		e.group.names[0] = CString(data, 64, 64);
+		e.group.second = CString(data, 128, 64);
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::GroupCancelInvite: {
+		Event e{Event::Type::GroupInviteCancelled};
+		e.group.names[0] = CString(data, 0, 64);
+		e.group.second = CString(data, 64, 64);
+		e.group.param = data.size() > 128 ? data[128] : 0;
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::GroupFollow: {
+		Event e{Event::Type::GroupFollowed};
+		e.group.names[0] = CString(data, 0, 64);
+		e.group.second = CString(data, 64, 64);
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::GroupUpdate: {
+		if (data.size() < 4)
+			break;
+		Event e{Event::Type::GroupUpdated};
+		ZoneGroup &g = e.group;
+		g.action = Read<uint32_t>(data, 0);
+		g.your_name = CString(data, 4, 64);
+		for (int i = 0; i < 5; ++i)
+			g.names[i] = CString(data, 68 + i * 64, 64);
+		g.second = CString(data, 132, 64);
+		g.param = data.size() >= 136 ? Read<int32_t>(data, 132) : 0;
+		g.leader = CString(data, 388, 64);
+		// The member lists in the profile, as msg_wldgroup2 keeps them; frontend/group.* does the rest.
+		std::string *list = m_profile.group_members;
+		auto same = [](const std::string &a, const std::string &b) {
+			return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) {
+				return std::tolower(static_cast<unsigned char>(x)) == std::tolower(static_cast<unsigned char>(y));
+			});
+		};
+		switch (g.action) {
+		case 0: { // ProcessMSG_WLDGROUP: added once, into the first empty place, up to six
+			if (g.names[0].empty())
+				break;
+			bool there = false;
+			int count = 0;
+			for (int i = 0; i < 6; ++i) {
+				there |= same(g.names[0], list[i]);
+				count += !list[i].empty();
+			}
+			if (there || count >= 6)
+				break;
+			for (int i = 0; i < 6; ++i)
+				if (list[i].empty()) {
+					list[i] = g.names[0];
+					break;
+				}
+			break;
+		}
+		case 1: // msg_wldgroup3: ours empties the list, another's takes them out
+			if (g.names[0].empty())
+				break;
+			if (same(g.names[0], m_profile.name))
+				for (int i = 0; i < 6; ++i)
+					list[i].clear();
+			else
+				for (int i = 0; i < 6; ++i)
+					if (same(g.names[0], list[i]))
+						list[i].clear();
+			break;
+		case 3: // msg_wldgroup4: a name changed
+			if (!g.names[0].empty())
+				for (int i = 0; i < 6; ++i)
+					if (same(g.names[0], list[i]))
+						list[i] = g.second;
+			break;
+		case 6: // disbanded
+			for (int i = 0; i < 6; ++i)
+				list[i].clear();
+			break;
+		case 7: // copyWldGroupStrings: the five names, the sixth left as it was
+			for (int i = 0; i < 5; ++i)
+				list[i] = g.names[i];
+			break;
+		default:
+			break;
+		}
 		events.push_back(e);
 		break;
 	}

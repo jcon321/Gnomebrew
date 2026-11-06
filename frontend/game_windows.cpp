@@ -3,6 +3,7 @@
 #include "chat_text.h"
 #include "eqstr.h"
 #include "game_values.h"
+#include "group.h"
 #include "ini_file.h"
 #include "inventory.h"
 #include "item_display.h"
@@ -64,21 +65,41 @@ namespace
 		root.lasso = root.lasso == 0 && values.attacking ? 0xff0000 : 0;
 	}
 
+	// Invite's enabled (UpdateButtons, MainPageOnProcessFrame): another player targeted, and no group
+	// or ours with a place free.
+	bool CanInvite(const GameValues &values)
+	{
+		const ZoneSpawn *target = values.Target();
+		if (!target || target->npc != 0 || target->id == values.zone->MySpawnId())
+			return false;
+		const Group *group = values.group;
+		if (!group || !group->InGroup())
+			return true;
+		if (group->Leader() != values.zone->Profile().name)
+			return false;
+		for (int i = 0; i < Group::Members; ++i)
+			if (group->Member(i).empty())
+				return true;
+		return false;
+	}
+
 	void GroupWindow(SidlWindow &wnd, const GameValues &values)
 	{
-		const bool invited = false, in_group = false;
+		const bool invited = values.group && values.group->Invited();
+		const bool in_group = values.group && values.group->InGroup();
 		Show(wnd, "FollowButton", invited);
 		Show(wnd, "DeclineButton", invited);
 		Show(wnd, "InviteButton", !invited);
 		Show(wnd, "DisbandButton", !invited);
 		if (SidlWindow::Control *disband = wnd.Find("DisbandButton"))
 			disband->enabled = in_group;
-		if (SidlWindow::Control *invite = wnd.Find("InviteButton")) {
-			const ZoneSpawn *target = values.Target();
-			invite->enabled = target && target->npc == 0 && target->id != values.zone->MySpawnId();
+		if (SidlWindow::Control *invite = wnd.Find("InviteButton"))
+			invite->enabled = CanInvite(values);
+		// A member's pet gauge while they have a pet here, and the window menu's pets are on.
+		for (int i = 1; i <= GroupMembers; ++i) {
+			const ZoneSpawn *member = values.group ? values.group->MemberSpawn(i - 1) : nullptr;
+			Show(wnd, "PetGauge" + std::to_string(i), member && values.group->show_pets && values.group->PetOf(*member));
 		}
-		for (int i = 1; i <= GroupMembers; ++i)
-			Show(wnd, "PetGauge" + std::to_string(i), false);
 	}
 
 	void BuffWindow(SidlWindow &wnd, const GameValues &values)
@@ -118,7 +139,8 @@ namespace
 
 	void ActionsWindow(SidlWindow &wnd, const GameValues &values)
 	{
-		const bool invited = false, in_group = false;
+		const bool invited = values.group && values.group->Invited();
+		const bool in_group = values.group && values.group->InGroup();
 		Show(wnd, "AMP_InviteButton", !invited);
 		Show(wnd, "AMP_FollowButton", invited);
 		bool sitting = values.zone->Self().stance == 110;
@@ -128,10 +150,8 @@ namespace
 		Show(wnd, "AMP_WalkButton", values.running);
 		if (SidlWindow::Control *disband = wnd.Find("AMP_DisbandButton"))
 			disband->enabled = in_group || invited;
-		if (SidlWindow::Control *invite = wnd.Find("AMP_InviteButton")) {
-			const ZoneSpawn *target = values.Target();
-			invite->enabled = target && target->npc == 0 && target->id != values.zone->MySpawnId();
-		}
+		if (SidlWindow::Control *invite = wnd.Find("AMP_InviteButton"))
+			invite->enabled = CanInvite(values);
 	}
 
 	// CXStr's number constructor as the page labels use it: the page from 1, padded to two places.

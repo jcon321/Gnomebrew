@@ -22,6 +22,7 @@
 #include <map>
 
 class Buffs;
+class Group;
 class EqStr;
 class SpellBook;
 class SpellCast;
@@ -40,6 +41,7 @@ public:
 	const SpellBook *spell_book = nullptr; // for its gauges
 	const SpellCast *spell_cast = nullptr; // for the casting gauge
 	const Buffs *buffs = nullptr; // the spells on us; null: none
+	const Group *group = nullptr; // the group's members (the group window's gauges)
 	uint64_t now_ms = 0;          // the frame's (pinstCDisplay->GameTimeMs: a buff blinks by it)
 	uint16_t target = 0; // spawn id; 0 none
 	bool running = true; // run mode (eqgame's @0079856d), not walking
