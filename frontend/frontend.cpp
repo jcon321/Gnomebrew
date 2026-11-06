@@ -1742,9 +1742,8 @@ namespace
 	constexpr uint32_t ZoneYellow = 0xf0e070;
 }
 
-void FrontEnd::DrawNameSprites(Canvas &canvas, uint64_t now_ms)
+void FrontEnd::BuildNameSprites(uint64_t now_ms)
 {
-	// TurnCharacterNameSpritesOn / TurnNPCNameSpritesOn: names over heads, ours in the chase view.
 	// The target's pulses a step a frame in eqgame, a cycle about every 300 ms; by the clock here,
 	// whatever our frame rate.
 	int pulse = static_cast<int>(now_ms % NameSprite::PulseMs * NameSprite::PulseSteps / NameSprite::PulseMs);
@@ -1752,14 +1751,14 @@ void FrontEnd::DrawNameSprites(Canvas &canvas, uint64_t now_ms)
 	ZoneSpawn self = m_zone.Self();
 	self.name = m_zone.Profile().name;
 	const auto &spawns = m_zone.Spawns();
-	// Extended nameplate distance: as far as the zone is drawn (its actors are culled there).
-	float yon = m_config.extended_nameplates ? std::numeric_limits<float>::max() : NameSprite::YonClip;
-	const render::Vec3 &light = m_zone_view->Ambient();
-	for (const ZoneView::NameTag &tag : m_zone_view->NameTags(yon)) {
+	std::vector<uint16_t> ids = m_zone_view->DrawnSpawns();
+	ids.push_back(0); // us
+	std::vector<ZoneView::NameSprite> sprites;
+	for (uint16_t id : ids) {
 		const ZoneSpawn *spawn = &self;
-		bool targeted = target != 0 && (tag.id == 0 ? target == m_zone.MySpawnId() : tag.id == target);
-		if (tag.id != 0) {
-			auto it = spawns.find(tag.id);
+		bool targeted = target != 0 && (id == 0 ? target == m_zone.MySpawnId() : id == target);
+		if (id != 0) {
+			auto it = spawns.find(id);
 			if (it == spawns.end())
 				continue;
 			spawn = &it->second;
@@ -1767,12 +1766,62 @@ void FrontEnd::DrawNameSprites(Canvas &canvas, uint64_t now_ms)
 		std::string text = NameSpriteText(*spawn, m_config.show_names, m_zone.Guilds(), m_ui.eqstr, targeted);
 		if (text.empty())
 			continue;
-		uint32_t color = NameSpriteColor(*spawn, m_world.ServerType());
+		ZoneView::NameSprite sprite;
+		sprite.id = id;
+		size_t newline = text.find('\n');
+		sprite.lines[0] = NameLineTexture(text.substr(0, newline), now_ms);
+		if (newline != std::string::npos)
+			sprite.lines[1] = NameLineTexture(text.substr(newline + 1), now_ms);
+		sprite.color = NameSpriteColor(*spawn, m_world.ServerType());
 		if (targeted)
-			color = NameSpritePulse(color, pulse);
-		color = NameSpriteLit(color, light.x, light.y, light.z);
-		DrawNameSprite(canvas, tag.x, tag.y, tag.depth, tag.focal, text, color);
+			sprite.color = NameSpritePulse(sprite.color, pulse);
+		sprites.push_back(sprite);
 	}
+	// Extended nameplate distance: as far as the zone is drawn (its actors are culled there).
+	float yon = m_config.extended_nameplates ? std::numeric_limits<float>::max() : NameSprite::YonClip;
+	m_zone_view->SetNameSprites(std::move(sprites), yon);
+	// Lines not shown for a while go (their GPU copies with them).
+	if (m_name_textures.size() > 256)
+		for (auto it = m_name_textures.begin(); it != m_name_textures.end();)
+			it = now_ms - it->second.used_ms > 10000 ? m_name_textures.erase(it) : std::next(it);
+}
+
+ZoneView::NameLine FrontEnd::NameLineTexture(const std::string &text, uint64_t now_ms)
+{
+	if (text.empty())
+		return {};
+	auto it = m_name_textures.find(text);
+	if (it == m_name_textures.end()) {
+		// s3dCreateStringSprite with font 5: the 20 pixel bold Arial's coverage, white, its alpha
+		// the coverage, in a power-of-two texture from its top left.
+		NameTexture made;
+		std::vector<uint8_t> alpha;
+		int w = 0, h = 0, left = 0;
+		if (m_text.Coverage(text, NameSprite::FontHeight, NameSprite::FontWeight, alpha, w, h, left)) {
+			Image image;
+			image.width = 1;
+			while (image.width < w)
+				image.width *= 2;
+			image.height = 1;
+			while (image.height < h)
+				image.height *= 2;
+			image.pixels.assign(static_cast<size_t>(image.width) * image.height, 0x00ffffff);
+			for (int y = 0; y < h; ++y)
+				for (int x = 0; x < w; ++x)
+					image.pixels[static_cast<size_t>(y) * image.width + x] =
+						static_cast<uint32_t>(alpha[static_cast<size_t>(y) * w + x]) << 24 | 0xffffff;
+			image.has_alpha = true;
+			made.texture = render::MakeTexture(image);
+			made.line.texture = made.texture.get();
+			made.line.width = w;
+			made.line.height = h;
+			made.line.left = left;
+			made.line.text_width = m_text.Measure(text, NameSprite::FontHeight, NameSprite::FontWeight).w;
+		}
+		it = m_name_textures.emplace(text, std::move(made)).first;
+	}
+	it->second.used_ms = now_ms;
+	return it->second.line;
 }
 
 void FrontEnd::DrawNameSprite(Canvas &canvas, int x, int y, float depth, float focal, const std::string &text, uint32_t color)
@@ -3586,14 +3635,14 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 	DebugMenu::FrameTimes times;
 	times.present = m_present_ms;
 	if (world) {
+		Clock::time_point tags_start = Clock::now();
+		BuildNameSprites(now_ms);
+		times.tags = since(tags_start);
 		m_zone_view->Render(canvas, now_ms);
 		const ZoneView::RenderTimes &render_times = m_zone_view->Times();
 		times.zone = render_times.zone;
 		times.models = render_times.models;
 		times.submit = render_times.submit;
-		Clock::time_point tags_start = Clock::now();
-		DrawNameSprites(canvas, now_ms);
-		times.tags = since(tags_start);
 	}
 	else {
 		canvas.Fill({0, 0, width, height}, 0x000000);

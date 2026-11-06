@@ -132,9 +132,32 @@ public:
 		float depth;  // in front of the camera
 		float focal;  // pixels a unit covers at depth 1
 	};
-	// Where names go over heads (CDisplay's name sprites): us in the chase view, and the spawns
-	// drawn that are no more than `yon` in front of the camera and not behind something, nearest
-	// first.
+	// eqgfx's name sprites (CDisplay::SetNameSpriteState's string sprites, renderNameTag), drawn
+	// by the next Render in the 3D pass: a line or two of text over a spawn's head point (id 0
+	// us, in the chase view), each line a texture of its text's coverage. They face the camera
+	// at the head point's depth, tested against the depth buffer and not written to it, so what's
+	// in front hides them pixel by pixel, as eqgfx draws its deferred name text with ZENABLE on.
+	struct NameLine
+	{
+		const render::Texture *texture = nullptr; // white, its alpha the coverage; null: no line
+		int width = 0, height = 0; // the coverage's texels (the texture may be bigger)
+		int text_width = 0;        // the text's (Measure's), from `left` on
+		int left = 0;
+	};
+	struct NameSprite
+	{
+		uint16_t id = 0;
+		NameLine lines[2];         // the name, then the guild (0.85 of its size)
+		uint32_t color = 0xffffff; // the tint before the light (NameSpriteColor, the target's pulse)
+	};
+	void SetNameSprites(std::vector<NameSprite> sprites, float yon)
+	{
+		m_name_sprites = std::move(sprites);
+		m_name_yon = yon;
+	}
+	// The spawns drawn last frame (in the view and the zone's visible regions).
+	std::vector<uint16_t> DrawnSpawns() const;
+	// The name sprites the last Render drew: their head point's screen position, nearest first.
 	std::vector<NameTag> NameTags(float yon) const;
 	// s3dGetWorldVisibleActorList (flags 0x11): the spawns drawn last frame (in the view and the
 	// zone's visible regions) no farther than `range` from the camera.
@@ -183,7 +206,12 @@ public:
 
 	void Render(Canvas &canvas, uint64_t now_ms);
 	// Where to draw the name over our character's head, after Render (chase view only).
-	bool NamePosition(int &x, int &y, float &depth) const;
+	// renderNameTag: the name sprites, after the models and effects.
+	void DrawNameSprites(const render::Camera &camera);
+	// UpdateDAGPointers' DagHeadPoint: <tag>HEAD_POINT_DAG, else <tag>HE_DAG; a Luclin model's
+	// <tag>HEHEAD_DAG. -1: none, and no name. `lift` is renderSceneHierarchy's for its name:
+	// 1.1 of the actor's scale on a DAG whose sixth letter is H (1.2 an ogre's), else 0.55.
+	int HeadPoint(const render::CharacterModel &model, float &lift);
 
 	// For the preview tool.
 	const render::CharacterModel *Model() const { return m_model.get(); }
@@ -402,6 +430,11 @@ private:
 		bool dead = false;   // a corpse: missiles stop steering at it
 		const render::Vec3 &Feet() const { return actor.Feet(); }
 	};
+	std::vector<NameSprite> m_name_sprites;
+	float m_name_yon = 0;
+	std::vector<NameTag> m_name_tags; // drawn last Render
+	std::map<const render::CharacterModel *, std::pair<int, float>> m_head_points; // HeadPoint's, by model
+	std::vector<render::Vertex> m_name_vertices;
 	std::map<uint16_t, SpawnView> m_actors;
 	struct GroundItemView
 	{

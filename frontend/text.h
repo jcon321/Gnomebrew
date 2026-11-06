@@ -7,7 +7,9 @@
 #include "canvas.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <string>
+#include <vector>
 
 struct TextSize
 {
@@ -33,6 +35,26 @@ public:
 		int weight = 0)
 	{
 		Draw(canvas, x, y, utf8, std::max(1, static_cast<int>(height * scale + 0.5f)), rgb, weight);
+	}
+	// The coverage DrawScaled stretches, as it is: 0..255 a texel, rows top first, `w` x `h` with
+	// `left` texels of slack before the text (Measure's width) starts. Without a renderer of its
+	// own, Draw's text white on black.
+	virtual bool Coverage(const std::string &utf8, int height, int weight, std::vector<uint8_t> &alpha, int &w, int &h,
+		int &left)
+	{
+		TextSize size = Measure(utf8, height, weight);
+		w = size.w + 3;
+		h = size.h;
+		left = 1;
+		if (size.w <= 0 || h <= 0)
+			return false;
+		std::vector<uint32_t> pixels(static_cast<size_t>(w) * h, 0);
+		Canvas canvas(pixels.data(), w, h, w);
+		Draw(canvas, left, 0, utf8, height, 0xffffff, weight);
+		alpha.resize(pixels.size());
+		for (size_t i = 0; i < pixels.size(); ++i)
+			alpha[i] = static_cast<uint8_t>(pixels[i] >> 8);
+		return true;
 	}
 	// Word-wrapped inside area; '\n' breaks lines.
 	virtual void DrawWrapped(Canvas &canvas, const Rect &area, const std::string &utf8, int height, uint32_t rgb,

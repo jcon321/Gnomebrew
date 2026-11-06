@@ -10,8 +10,9 @@
 //   - NameSpriteColor is CDisplay_SetNameSpriteTint (@004b114d): one color per kind of spawn.
 //     The target's name runs from white back to its color over 11 frames, again and again
 //     (RealRender_World tints it every frame, about 300 ms a cycle); NameSpritePulse is that.
-//   - eqgfx's renderNameTag draws the text 0.05 units a texel of a 20 pixel bold Arial (CDisplay::
-//     InitDDraw's font 5, antialiased), the glyphs stretched to size: a line is one unit tall from
+//   - eqgfx's renderNameTag draws the text 0.05 units a texel of a 20 pixel bold Arial (the
+//     cached font 5, antialiased), on the actor's head point, depth tested and not written
+//     (ZoneView::DrawNameSprites has the placement), the glyphs stretched to size: a line is one unit tall from
 //     20 units out, and closer than that keeps the size it had at 20. Lines after the first are
 //     0.85 of the first (renderFormattedText). It lights the tint with the world's ambient
 //     light (the sky's, before any floor's exposure) plus 0.4, each channel at most full.

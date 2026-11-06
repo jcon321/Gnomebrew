@@ -47,6 +47,7 @@
 
 #include <ctime>
 #include <functional>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -259,7 +260,18 @@ private:
 	void WorldClick(int x, int y); // CEverQuest_LMouseUp on the world (window pixels) // CEverQuest_IsOkToTransact: no window that deals with someone up
 	void AddZoneLog(const std::string &text, uint32_t color); // a line of chat in this color
 	void ChatOut(const std::string &text, int type);          // in a chat color type (ChatType)
-	void DrawNameSprites(Canvas &canvas, uint64_t now_ms);
+	// TurnCharacterNameSpritesOn / TurnNPCNameSpritesOn: the names over the heads of the spawns
+	// drawn last frame (and ours), for the zone view's next Render to draw.
+	void BuildNameSprites(uint64_t now_ms);
+	// A line of a name sprite: its text's coverage as a texture, made once and kept while in use.
+	ZoneView::NameLine NameLineTexture(const std::string &text, uint64_t now_ms);
+	struct NameTexture
+	{
+		std::unique_ptr<render::Texture> texture;
+		ZoneView::NameLine line;
+		uint64_t used_ms = 0;
+	};
+	std::map<std::string, NameTexture> m_name_textures;
 	// One name sprite (eqgfx's renderNameTag) sitting on the point x, y, `depth` in front of the
 	// camera; a '\n' starts its second line.
 	void DrawNameSprite(Canvas &canvas, int x, int y, float depth, float focal, const std::string &text, uint32_t color);

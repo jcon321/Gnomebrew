@@ -34,6 +34,9 @@ public:
 	void Draw(Canvas &canvas, int x, int y, const std::string &utf8, int height, uint32_t rgb, int weight = 0) override;
 	void DrawScaled(Canvas &canvas, int x, int y, const std::string &utf8, int height, float scale, uint32_t rgb,
 		int weight = 0) override;
+	// The antialiased string's mask DrawScaled stretches (TextMask), a pixel of slack on its left.
+	bool Coverage(const std::string &utf8, int height, int weight, std::vector<uint8_t> &alpha, int &w, int &h,
+		int &left) override;
 	void DrawWrapped(Canvas &canvas, const Rect &area, const std::string &utf8, int height, uint32_t rgb,
 		int weight = 0) override;
 

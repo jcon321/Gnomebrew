@@ -363,8 +363,17 @@ eqgame's `OP_MoveItem`.
   players, teal NPCs and corpses, green GMs, red PvP, purple roleplayers. They're a world unit tall
   (smaller further off, the size they'd be at 20 units when closer; a 20 pixel bold Arial stretched, as
   eqgfx draws them), shown as far out as the zone is drawn (eqgame's own cutoff is 70 units; see
-  `EnableExtendedNameplateDistance`), and
-  hidden behind walls. Your target's name flashes from white back to its color, as eqgame shows
+  `EnableExtendedNameplateDistance`). A name hangs on the actor's head point
+  (`CDisplay_UpdateDAGPointers`' `DagHeadPoint`: `<tag>HEAD_POINT_DAG`, else `<tag>HE_DAG`; a Luclin
+  model's `<tag>HEHEAD_DAG`; none, no name, as for horses), posed with the animation each frame:
+  `renderSceneHierarchy` lifts it up the screen by 0.55 of the actor's scale (1.1 on a DAG whose sixth
+  letter is H, 1.2 an ogre's) and `renderNameTag` by 1 more, and the first line is centered there
+  (closer than 20 units, its bottom stays where the full-size line's would be). eqgfx queues the
+  text (`t3dDeferCachedNameTagTextW`) and `t3dProcessRenderQueue` draws it with `D3DRS_ZENABLE` on
+  and z writes off, at the head point's depth, so walls, trees and models in front cover it pixel by
+  pixel. Ours (`ZoneView::DrawNameSprites`) draws each line as a camera-facing quad of its text's
+  coverage (`TextRenderer::Coverage`) in the 3D pass the same way: translucent, depth tested, not
+  written. Your target's name flashes from white back to its color, as eqgame shows
   the target (no ring: the client of this era had none). Name sprites are lit as `renderNameTag`
   lights them: the world's ambient plus 0.4, each channel at most full. F1, or clicking our own
   model in the chase view, targets ourselves.

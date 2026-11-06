@@ -148,6 +148,10 @@ namespace render
 		bool Project(const Vec3 &point, float &x, float &y, float &depth) const;
 		// Pixels a unit at depth 1 covers on the screen.
 		float Focal() const { return m_focal; }
+		// The camera's axes (world space): screen right, screen up, into the screen.
+		const Vec3 &Right() const { return m_right; }
+		const Vec3 &Up() const { return m_up; }
+		const Vec3 &Forward() const { return m_forward; }
 		// The unit direction from the camera through a screen position (Project's inverse).
 		Vec3 ViewRay(float x, float y) const
 		{

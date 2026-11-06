@@ -2,6 +2,7 @@
 
 #include "actor_tags.h"
 #include "animations.h"
+#include "name_sprites.h"
 #include "spell_file.h"
 
 #include <algorithm>
@@ -986,6 +987,7 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 	m_spell_effects.Update(now_ms, camera.position,
 		[this](uint16_t id, SpellEffects::Actor &actor) { return FindActor(id, actor); });
 	m_spell_effects.Draw(*m_renderer);
+	DrawNameSprites(camera);
 	m_times.models = since(start);
 	start = Clock::now();
 	// The sky dims with the day period, toward a deep blue at night. RealRender_World draws none
@@ -1525,25 +1527,6 @@ void ZoneView::DrawSpawns(uint64_t now_ms)
 	}
 }
 
-std::vector<ZoneView::NameTag> ZoneView::NameTags(float yon) const
-{
-	std::vector<NameTag> tags;
-	int x, y;
-	float depth;
-	float focal = m_renderer->Focal();
-	if (NamePosition(x, y, depth) && depth <= yon)
-		tags.push_back({0, x, y, depth, focal});
-	for (const auto &[id, actor] : m_actors) {
-		if (!actor.drawn)
-			continue;
-		float sx, sy;
-		render::Vec3 top = actor.Feet() + render::Vec3{0, 0, actor.model->MaxZ() - actor.model->MinZ() + 0.6f};
-		if (m_renderer->Project(top, sx, sy, depth) && depth <= yon && !m_renderer->Occluded(top))
-			tags.push_back({id, static_cast<int>(sx), static_cast<int>(sy), depth, focal});
-	}
-	std::sort(tags.begin(), tags.end(), [](const NameTag &a, const NameTag &b) { return a.depth < b.depth; });
-	return tags;
-}
 
 std::vector<ZoneView::ViewedSpawn> ZoneView::SpawnsInView(float range) const
 {
@@ -1574,15 +1557,147 @@ std::vector<ZoneView::ViewedSpawn> ZoneView::SpawnsInView(float range) const
 	return out;
 }
 
-bool ZoneView::NamePosition(int &x, int &y, float &depth) const
+std::vector<uint16_t> ZoneView::DrawnSpawns() const
 {
-	if (!m_model_shown || !m_loaded || !m_error.empty())
-		return false;
-	float sx, sy;
-	render::Vec3 top = m_feet + render::Vec3{0, 0, m_model->MaxZ() - m_model->MinZ() + 0.6f};
-	if (!m_renderer->Project(top, sx, sy, depth))
-		return false;
-	x = static_cast<int>(sx);
-	y = static_cast<int>(sy);
-	return true;
+	std::vector<uint16_t> ids;
+	for (const auto &[id, view] : m_actors)
+		if (view.drawn)
+			ids.push_back(id);
+	return ids;
+}
+
+std::vector<ZoneView::NameTag> ZoneView::NameTags(float yon) const
+{
+	std::vector<NameTag> tags;
+	for (const NameTag &tag : m_name_tags)
+		if (tag.depth <= yon)
+			tags.push_back(tag);
+	return tags;
+}
+
+int ZoneView::HeadPoint(const render::CharacterModel &model, float &lift)
+{
+	auto it = m_head_points.find(&model);
+	if (it == m_head_points.end()) {
+		if (m_head_points.size() > 512)
+			m_head_points.clear(); // models come and go
+		const std::string &tag = model.Code();
+		std::string name = tag + "HEHEAD_DAG"; // a Luclin model's (its model's +0x3b0)
+		int bone = model.FindBone(name);
+		if (bone < 0) {
+			name = tag + "HEAD_POINT_DAG";
+			bone = model.FindBone(name);
+		}
+		if (bone < 0) {
+			name = tag + "HE_DAG";
+			bone = model.FindBone(name);
+		}
+		float factor = 0.55f;
+		if (name.size() > 5 && std::toupper(static_cast<unsigned char>(name[5])) == 'H')
+			factor = name[0] == 'O' && name[1] == 'G' ? 1.2f : 1.1f;
+		it = m_head_points.emplace(&model, std::make_pair(bone, factor)).first;
+	}
+	lift = it->second.second * model.Scale() + 1.0f;
+	return it->second.first;
+}
+
+void ZoneView::DrawNameSprites(const render::Camera &camera)
+{
+	m_name_tags.clear();
+	if (m_name_sprites.empty())
+		return;
+	const render::Vec3 &right = m_renderer->Right(), &up = m_renderer->Up(), &forward = m_renderer->Forward();
+	// renderNameTag lights the tint itself: no vertex light, no ambient add, no sun.
+	m_renderer->SetVertexLight({1, 1, 1}, {0, 0, 0});
+	m_renderer->SetDynamicLights(false, 0);
+	render::Material material;
+	material.blend = render::Blend::Translucent;
+	material.texel_alpha = true;
+	material.two_sided = true;
+	material.fog = false;
+	static const uint32_t Quad[6] = {0, 1, 2, 0, 2, 3};
+	std::vector<render::Transform> placed;
+	for (const NameSprite &sprite : m_name_sprites) {
+		// The actor as it was just drawn.
+		const render::CharacterModel *model = nullptr;
+		render::Transform placement;
+		uint64_t time = 0;
+		std::string animation;
+		bool loops = true;
+		if (sprite.id == 0) {
+			if (!m_model_shown)
+				continue;
+			model = m_model.get();
+			placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(m_heading));
+			placement.translation = m_feet + render::Vec3{0, 0, m_model->OriginOverFeet()};
+			time = m_player_time_ms;
+			animation = m_animation;
+			loops = m_player_loops;
+		}
+		else {
+			auto it = m_actors.find(sprite.id);
+			if (it == m_actors.end() || !it->second.drawn || !it->second.model)
+				continue;
+			model = it->second.model.get();
+			placement = it->second.placement;
+			time = it->second.time_ms;
+			animation = it->second.animation;
+			loops = it->second.loops;
+		}
+		float lift;
+		int bone = HeadPoint(*model, lift);
+		if (bone < 0)
+			continue; // SetNameSpriteState: no DagHeadPoint, no name
+		model->PlaceBones(placement, time, animation, loops, {bone}, placed);
+		render::Vec3 head = placed[0].translation;
+		// The head point's depth; s3dSetStringSpriteYonClip's yon.
+		float depth = render::Dot(head - camera.position, forward);
+		if (depth <= camera.near_plane || depth > m_name_yon)
+			continue;
+		// A unit a line (20 texels of 0.05) from 20 units out; closer, the size it had at 20.
+		float near_scale = depth < ::NameSprite::NearestDepth ? depth / ::NameSprite::NearestDepth : 1.0f;
+		render::Vec3 anchor = head + up * lift;
+		// The first line centered on the anchor, its bottom kept where it'd be unscaled; the next
+		// under it.
+		float bottom = 0;
+		uint32_t color = NameSpriteLit(sprite.color, m_daylight.ambient.x, m_daylight.ambient.y, m_daylight.ambient.z);
+		for (int line = 0; line < 2; ++line) {
+			const NameLine &text = sprite.lines[line];
+			if (!text.texture || text.width <= 0 || text.height <= 0)
+				continue;
+			float texel = ::NameSprite::UnitsPerTexel * near_scale * (line == 0 ? 1.0f : ::NameSprite::LineScale);
+			float height = text.height * texel;
+			float top;
+			if (line == 0) {
+				bottom = -0.5f * text.height * ::NameSprite::UnitsPerTexel;
+				top = bottom + height;
+			}
+			else {
+				top = bottom;
+				bottom = top - height;
+			}
+			float x0 = -(text.text_width * 0.5f + text.left) * texel, x1 = x0 + text.width * texel;
+			float u1 = static_cast<float>(text.width) / text.texture->width;
+			float v1 = static_cast<float>(text.height) / text.texture->height;
+			m_name_vertices.assign(4, render::Vertex{});
+			m_name_vertices[0].position = anchor + right * x0 + up * top;
+			m_name_vertices[1].position = anchor + right * x1 + up * top;
+			m_name_vertices[2].position = anchor + right * x1 + up * bottom;
+			m_name_vertices[3].position = anchor + right * x0 + up * bottom;
+			m_name_vertices[0].u = 0, m_name_vertices[0].v = 0;
+			m_name_vertices[1].u = u1, m_name_vertices[1].v = 0;
+			m_name_vertices[2].u = u1, m_name_vertices[2].v = v1;
+			m_name_vertices[3].u = 0, m_name_vertices[3].v = v1;
+			for (render::Vertex &v : m_name_vertices) {
+				v.color = color & 0xffffff;
+				v.normal = forward * -1.0f;
+			}
+			material.texture = text.texture;
+			m_renderer->Draw(m_name_vertices.data(), 4, Quad, 6, material);
+		}
+		float sx, sy, d;
+		if (m_renderer->Project(anchor, sx, sy, d))
+			m_name_tags.push_back({sprite.id, static_cast<int>(sx), static_cast<int>(sy), depth, m_renderer->Focal()});
+	}
+	std::sort(m_name_tags.begin(), m_name_tags.end(), [](const NameTag &a, const NameTag &b) { return a.depth < b.depth; });
 }

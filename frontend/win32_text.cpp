@@ -392,6 +392,21 @@ void GdiTextRenderer::DrawScaled(Canvas &canvas, int x, int y, const std::string
 	BlendMask(*surface, m_stretched.data(), width, width, rows, left, y, rgb, clip);
 }
 
+bool GdiTextRenderer::Coverage(const std::string &utf8, int height, int weight, std::vector<uint8_t> &alpha, int &w,
+	int &h, int &left)
+{
+	const Mask *mask = m_surfaces.empty() ? nullptr : TextMask(utf8, height, weight, true);
+	if (!mask)
+		return false;
+	w = mask->width;
+	h = mask->height;
+	left = 1;
+	alpha.resize(mask->coverage.size());
+	for (size_t i = 0; i < alpha.size(); ++i)
+		alpha[i] = static_cast<uint8_t>(mask->coverage[i] >> 8);
+	return true;
+}
+
 void GdiTextRenderer::DrawWrapped(Canvas &canvas, const Rect &area, const std::string &utf8, int height, uint32_t rgb, int weight)
 {
 	int x = area.x, y = area.y;

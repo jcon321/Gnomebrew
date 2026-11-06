@@ -320,10 +320,17 @@ no rules of its own.
 ## Rendering / presentation
 
 9. ~~**Nameplates**~~: done (`frontend/name_sprites.*`, eqgame's name sprites), lit as
-   renderNameTag does (the world's ambient light +0.4, `NameSpriteLit`). Still to do: the trader tag in the Bazaar,
+   renderNameTag does (the world's ambient light +0.4, `NameSpriteLit`), on the animated head point
+   (DagHeadPoint, renderSceneHierarchy's lift) and depth tested pixel by pixel in the 3D pass
+   (`ZoneView::DrawNameSprites`). Still to do: the trader tag in the Bazaar,
    the names eqgame hides in some animations (skeletons, gargoyles and mimics lying or feigning:
    animations 0x10, 0x21, 0x26), `/shownpcnames`, Zeal's raid shownames, and the guild list in packet logs (replays show "Unknown Guild"). An HP
-   bar over heads isn't eqgame's; leave it to an option if ever.
+   bar over heads isn't eqgame's; leave it to an option if ever. Character select's name is still
+   drawn on the 2D canvas (`DrawNameSprite`) at the model's top, not the head point. A 1-2 pixel
+   size difference from the TAKP client was reported; the size math (texels x 0.05, focal / depth,
+   20 units nearest) and font 5 (Arial 20, `MakeFont`) match eqgfx's, so the cause isn't found:
+   compare against a screenshot (the zone's 90 degree field of view against eqgfx's lens is a
+   candidate).
 10. ~~**Target indicator**~~: done, as eqgame does it: the target's name flashes from white back
    to its color. The client of this era had no target ring and no hover highlighting.
 11. ~~**Ground spawns and dropped objects**~~: done (`frontend/ground_items.*`, `ZoneView`'s ground
