@@ -656,7 +656,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 		uint64_t now = NowMs();
 		if (gpu)
 			gpu->BeginFrame();
+		auto update_start = std::chrono::steady_clock::now();
 		frontend.Update(now);
+		frontend.SetUpdateMs(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - update_start).count());
 		frontend.Render(canvas, now);
 		auto present_start = std::chrono::steady_clock::now();
 		auto present_ms = [&] {

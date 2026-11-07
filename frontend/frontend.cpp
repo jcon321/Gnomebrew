@@ -4242,6 +4242,7 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 	DebugMenu::FrameTimes times;
 	times.present = m_present_ms;
 	times.upload = m_upload_ms;
+	times.update = m_update_ms;
 	if (world) {
 		Clock::time_point tags_start = Clock::now();
 		BuildNameSprites(now_ms);

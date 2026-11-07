@@ -53,6 +53,7 @@ public:
 		// Of the UI: the windows, this menu's own card and radar, and the text drawn in it (and how
 		// many strings GDI rasterized rather than took from a cache). Of Present: the canvas upload.
 		double ui_windows = 0, ui_debug = 0, ui_text = 0, ui_rasterized = 0, upload = 0;
+		double update = 0; // FrontEnd::Update, before the frame's drawing
 		std::string slowest; // the window that took longest to draw (over the second: the worst)
 		double slowest_ms = 0;
 	};

@@ -135,6 +135,7 @@ public:
 		m_present_ms = ms;
 		m_upload_ms = upload_ms;
 	}
+	void SetUpdateMs(double ms) { m_update_ms = ms; } // how long the host's Update took this frame
 	// While a mouse drag turns the character or pans the camera, the cursor is hidden and held
 	// where the drag started: the host puts it back at (x, y), in window pixels, after every move
 	// and once more when the drag ends.
@@ -420,7 +421,7 @@ private:
 	FrontEndArt &m_art;
 	const EqText &m_strings;
 	TextRenderer &m_text;
-	double m_present_ms = 0, m_upload_ms = 0;
+	double m_present_ms = 0, m_upload_ms = 0, m_update_ms = 0;
 	FrontEndConfig m_config;
 
 	Screen m_screen = Screen::Start;
