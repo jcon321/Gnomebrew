@@ -238,7 +238,7 @@ no rules of its own.
    - /random: leaving out the rolls of someone we ignore (CEverQuest_BeingIgnored; no /ignore yet).
    - socials: the 60 unit check is our 3D SpawnDistance (eqgame's CDisplay::PlayerDistance with
      its last argument 0, not checked to be the same), DAT_007985f1 (a flag that stops them
-     all) isn't known, and OP_Emote goes out with 0 in front where send_social puts 0xffff.
+     all) isn't known.
 4. **Cursor and dragging.** EQ's own cursors. (An item on the cursor follows it:
    `DrawCursorAttachment`.) Tooltips: done (`WindowManager::DrawTooltip`, eqgame's DrawWindows and
    DrawTooltipAtPoint): after the mouse rests 500 ms, the control under it shows its tooltip, its

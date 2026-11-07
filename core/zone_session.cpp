@@ -589,12 +589,13 @@ bool ZoneSession::SendChannel(uint16_t channel, const std::string &target, const
 		"OP_ChannelMessage " + std::to_string(channel) + (target.empty() ? "" : " to " + target) + ": " + message);
 }
 
-bool ZoneSession::Emote(const std::string &text)
+bool ZoneSession::Emote(const std::string &text, uint16_t first)
 {
 	if (m_state != State::InZone || text.empty())
 		return false;
 	// Emote_Struct: u16 unknown, message[1024], sent whole.
 	std::vector<uint8_t> body(1026, 0);
+	memcpy(&body[0], &first, 2);
 	memcpy(&body[2], text.c_str(), std::min<size_t>(text.size(), 511));
 	return Send(ZoneOp::Emote, body.data(), body.size(), "OP_Emote" + text);
 }

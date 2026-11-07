@@ -1365,7 +1365,7 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 		if (!sent.empty()) {
 			stop(sent);
 			sent = PercentConvert(sent);
-			m_zone.Emote(sent); // eqgame's Emote_Struct has 0xffff in front here; the zone ignores it
+			m_zone.Emote(sent, 0xffff); // send_social's Emote_Struct has 0xffff in front
 		}
 		if (animation != -1)
 			m_zone.SendAnimation(animation);

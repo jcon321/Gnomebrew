@@ -549,7 +549,8 @@ public:
 	// 5 ooc, 7 tell, 8 say), to `target` (a tell's recipient; for a say, the NPC we're talking to).
 	bool SendChannel(uint16_t channel, const std::string &target, const std::string &text);
 	// CEverQuest::Emote: OP_Emote; the zone puts our name in front, so it starts with a space.
-	bool Emote(const std::string &text);
+	// `first` is Emote_Struct's u16 in front: 0 from /emote, 0xffff from a social (send_social).
+	bool Emote(const std::string &text, uint16_t first = 0);
 	// Our target: OP_TargetMouse (clicked) or OP_TargetCommand (/target), 0 for none. The zone
 	// sends the target's HP and, for /target, which target it set (TargetChanged).
 	void SetTarget(uint16_t id, bool command = false);
