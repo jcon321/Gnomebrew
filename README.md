@@ -277,7 +277,12 @@ color-only background: `CXWnd::DoAllDrawing` scales the UI alpha (`DAT_0062a864`
 textured quads (`adjustColorAlphaAndRender`, `CTextureAnimation::DrawTexturedQuadWithAlpha`) and
 DoAllDrawing's own background rect read it. Text, list selections and the caret draw as they are,
 and `CXWndManager::DrawWindows` draws a window at alpha 0 too, so its text still shows
-(`Canvas::SetAlpha`). Their layout is kept in eqgame's own format, in
+(`Canvas::SetAlpha`). A window with style 0x800 draws at its own UnfadedAlpha in place of its
+parent's alpha; of the child controls only gauges set it (`CGaugeWnd`'s constructor @005c1d40,
+mislabeled `KeyBindButton_InitializeKeyBindButton`; the decompile's `CGaugeWnd::CaugeWnd` @005a5be0
+is the spell gem's), so a gauge, bar and empty background, never fades. The main chat window is
+titled Main Chat (eqstr 6623) and has no close or minimize box (`CChatManager::CChatManager` clears
+style bits 0x28), whatever `EQUI_ChatWindow.xml` says. Their layout is kept in eqgame's own format, in
 `UI_<character>_<server>.ini` next to the exe (the server part is the login server's address cut
 to 7 characters, as eqgame names it).
 

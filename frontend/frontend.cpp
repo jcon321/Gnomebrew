@@ -2078,6 +2078,12 @@ void FrontEnd::BuildZoneWindows()
 	m_spell_book.Reset();
 	m_game_values.spell_book = &m_spell_book;
 	m_game_values.spell_cast = &m_spell_cast;
+	// CChatManager::CChatManager: the main chat window is titled "Main Chat" (eqstr 6623), with
+	// no close or minimize box.
+	if (SidlWindow *chat = m_windows.Find("ChatWindow")) {
+		chat->Root().text = EqString(6623, "Main Chat");
+		chat->RemoveTitleBoxes();
+	}
 	m_chat.Attach(m_windows.Find("ChatWindow"));
 	m_chat.SetLinkColor(m_chat_colors.Get(ItemTags::ColorType));
 	auto bag_sound = [this](int wave) {

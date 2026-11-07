@@ -414,6 +414,11 @@ public:
 	// right end and minimize at its left, and how they look: the mouse over one, one held down.
 	enum class TitleBox { None, Close, Minimize };
 	Rect TitleBoxRect(TitleBox box) const; // empty when it has no such box
+	// CXWnd's WindowStyleFlags for them: Style_Closebox and Style_Minimizebox, unless code takes
+	// them off (CChatManager::CChatManager's & ~0x28 on the main chat window).
+	bool HasCloseBox() const { return m_controls.front().def->closebox && !m_no_closebox; }
+	bool HasMinimizeBox() const { return m_controls.front().def->minimizebox && !m_no_minimizebox; }
+	void RemoveTitleBoxes() { m_no_closebox = m_no_minimizebox = true; }
 	TitleBox TitleBoxAt(int x, int y) const;
 	void SetTitleBoxes(TitleBox hover, TitleBox pressed) { m_box_hover = hover; m_box_pressed = pressed; }
 	// The border's thickness on each side (Style_Border), not counting the title bar.
@@ -526,6 +531,7 @@ private:
 	std::string m_pressed_pick; // a list row or combo choice picked by the press, for the release
 	ScrollPart m_scroll_hover_part = ScrollPart::None;
 	bool m_minimized = false;
+	bool m_no_closebox = false, m_no_minimizebox = false;
 	// CXWnd's 0x6c and 0x80: the client background's tint (BGTint), and whether it's the
 	// template's texture (BGType 1) or the tint alone (2).
 	uint32_t m_bg_tint = 0xffffff;

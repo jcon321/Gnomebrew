@@ -785,12 +785,12 @@ Rect SidlWindow::TitleBoxRect(TitleBox box) const
 	// 1 down; each its Normal frame's size.
 	const Rect &t = root.title;
 	if (box == TitleBox::Close) {
-		if (!root.def->closebox)
+		if (!HasCloseBox())
 			return {};
 		Rect size = AnimationSize(root.frame->close_box.normal);
 		return {t.Right() - 7 - size.w, t.y + 1, size.w, size.h};
 	}
-	if (!root.def->minimizebox)
+	if (!HasMinimizeBox())
 		return {};
 	Rect size = AnimationSize(root.frame->minimize_box.normal);
 	return {t.x + 8, t.y + 2, size.w, size.h};
@@ -1793,6 +1793,11 @@ void SidlWindow::DrawGauge(const Control &control, Canvas &canvas, TextRenderer 
 	if (value == -1)
 		return;
 
+	// Unfaded by its window's Alpha and fade: CGaugeWnd's constructor (@005c1d40) sets style 0x800,
+	// so CXWnd::DoAllDrawing draws it at its own UnfadedAlpha (255) in place of its parent's alpha.
+	const int window_alpha = canvas.Alpha();
+	canvas.SetAlpha(255);
+
 	// The left cap, the background at its size with the right cap after it, all from GaugeOffset.
 	const SidlGaugeTemplate &t = def.gauge;
 	const Rect &c = control.client;
@@ -1834,6 +1839,7 @@ void SidlWindow::DrawGauge(const Control &control, Canvas &canvas, TextRenderer 
 	if (!label.empty())
 		text.Draw(canvas, c.x + def.text_offset_x, c.y + def.text_offset_y, label, SidlFontHeight(def.font),
 			def.has_text_color ? control.text_color : 0xf0f0f0, SidlFontWeight(def.font));
+	canvas.SetAlpha(window_alpha);
 }
 
 // ---------------------------------------------------------------- list boxes

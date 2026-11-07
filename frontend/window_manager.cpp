@@ -815,9 +815,9 @@ void WindowManager::OpenMenuAt(int menu, int x, int y, int parent_width)
 		if (menu == 2 && item.submenu == 0)
 			enabled = !owner->wnd.Def().transparent;
 		else if (item.id == MenuMinimize)
-			enabled = owner->wnd.Def().minimizebox;
+			enabled = owner->wnd.HasMinimizeBox();
 		else if (item.id == MenuClose)
-			enabled = owner->wnd.Def().closebox;
+			enabled = owner->wnd.HasCloseBox();
 		else if (item.id == MenuLock)
 			checked = owner->settings.locked;
 		open.enabled.push_back(enabled);
