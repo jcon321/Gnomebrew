@@ -678,16 +678,12 @@ void WindowManager::Draw(Canvas &canvas, TextRenderer &text, uint64_t now_ms)
 		Window &w = *wp;
 		if (!w.shown)
 			continue;
-		int alpha = EffectiveAlpha(w);
-		if (alpha <= 0)
-			continue;
-		const Rect &bounds = w.wnd.Bounds();
-		if (alpha < 255)
-			canvas.Keep(bounds, m_kept);
+		// CXWnd::DoAllDrawing: drawn whatever its alpha (CXWndManager::DrawWindows skips none), at
+		// that alpha for its textures and background only, so its text never fades.
+		canvas.SetAlpha(EffectiveAlpha(w));
 		w.wnd.SetBackground(w.settings.tint, w.settings.texture);
 		w.wnd.Draw(canvas, text, *m_textures, now_ms);
-		if (alpha < 255)
-			canvas.BlendKept(bounds, m_kept, alpha);
+		canvas.SetAlpha(255);
 	}
 	// The menus over them all (CContextMenu's z layer 1000).
 	DrawMenus(canvas, text, now_ms);

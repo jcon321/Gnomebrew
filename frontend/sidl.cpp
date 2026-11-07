@@ -1088,10 +1088,11 @@ void SidlWindow::DrawSpellGem(const Control &control, Canvas &canvas, SidlTextur
 		if (fade == 0)
 			DrawCell(canvas, textures, "A_SpellGems", control.cell, icon);
 		else {
-			std::vector<uint32_t> kept;
-			canvas.Keep(icon, kept);
+			// The quad's alpha, scaled by the window's.
+			const int window_alpha = canvas.Alpha();
+			canvas.SetAlpha(window_alpha * (0xea - 0x15 * (fade - 1)) / 255);
 			DrawCell(canvas, textures, "A_SpellGems", control.cell, icon);
-			canvas.BlendKept(icon, kept, 0xea - 0x15 * (fade - 1));
+			canvas.SetAlpha(window_alpha);
 		}
 	}
 	DrawAnimation(canvas, textures, def.gem_highlight, control.rect, now_ms);
@@ -1181,7 +1182,7 @@ void SidlWindow::DrawFrame(const Control &control, Canvas &canvas, SidlTextures 
 	if (!control.def->transparent) {
 		uint32_t tint = &control == &m_controls.front() ? m_bg_tint : 0xffffff;
 		if (&control == &m_controls.front() && !m_bg_texture)
-			canvas.Fill(control.client, tint);
+			canvas.FillFaded(control.client, tint); // DoAllDrawing's colored rect, at the UI alpha
 		else if (const Image *background = textures.Get(frame->background)) {
 			const Rect &dest = control.client;
 			for (int y = dest.y; y < dest.Bottom(); y += background->height)
@@ -1301,9 +1302,10 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 		// display's icon: CItemDisplayWnd::SetItem makes A_DragItem the Normal and clears the decal, so
 		// the window's RedIconBackground doesn't show).
 		bool cell_background = !control.cell_animation.empty();
-		std::vector<uint32_t> kept;
+		// Its own alpha scales the window's for its pictures (DoAllDrawing), not its text.
+		const int window_alpha = canvas.Alpha();
 		if (control.alpha < 255)
-			canvas.Keep(control.rect, kept);
+			canvas.SetAlpha(window_alpha * std::max(control.alpha, 0) / 255);
 		if (cell_background && control.cell >= 0)
 			DrawCell(canvas, textures, control.cell_animation, control.cell, control.rect);
 		else if (!control.blank && !cell_background && !control.no_background)
@@ -1333,8 +1335,7 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 			                                                    : control.text_color;
 			SidlDrawButtonText(text, canvas, text_rect, control.text, height, color, weight);
 		}
-		if (control.alpha < 255)
-			canvas.BlendKept(control.rect, kept, control.alpha);
+		canvas.SetAlpha(window_alpha);
 	}
 	else if (def.type == "InvSlot") {
 		// CInvSlotWnd: the slot's own picture, and what's in it over that.

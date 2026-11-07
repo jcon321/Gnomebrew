@@ -252,7 +252,6 @@ private:
 	uint64_t m_press_ms = 0;          // when
 	bool m_held = false;              // held long enough to be a hold, not a click
 	SidlWindow::TitleBox m_box_down = SidlWindow::TitleBox::None;
-	std::vector<uint32_t> m_kept;     // Canvas::Keep, for drawing faded windows
 	int m_mouse_x = -1, m_mouse_y = -1;
 	uint64_t m_moved_ms = 0;          // when the mouse last moved (for the tooltips)
 };

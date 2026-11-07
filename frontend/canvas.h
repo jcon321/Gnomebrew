@@ -67,6 +67,15 @@ public:
 	void Keep(const Rect &area, std::vector<uint32_t> &kept) const;
 	void BlendKept(const Rect &area, const std::vector<uint32_t> &kept, int alpha);
 
+	// The UI's alpha (eqgame's DAT_0062a864, 0..255), which CXWnd::DoAllDrawing scales by a window's
+	// Alpha and fade while it draws it. Only textured quads take it (CUITexturePiece's and
+	// CTextureAnimation's draws: Stretch and TileRegion here) and a window's color-only background
+	// (FillFaded); text and plain colored rects (list selections, the caret) draw as they are, so
+	// a window faded to nothing still shows its text.
+	void SetAlpha(int alpha) { m_alpha = alpha < 0 ? 0 : alpha > 255 ? 255 : alpha; }
+	int Alpha() const { return m_alpha; }
+	void FillFaded(const Rect &area, uint32_t color); // Fill at Alpha()
+
 	// SIDL drawing: source rect of an image stretched (bilinear) into dest, alpha-blended
 	// when the image has alpha. This is how eqgame draws Ui2DAnimation frames into controls.
 	void Stretch(const Image &image, const Rect &source, const Rect &dest);
@@ -82,4 +91,5 @@ private:
 	int m_height = 0;
 	int m_stride = 0;
 	Rect m_clip;
+	int m_alpha = 255;
 };

@@ -94,6 +94,24 @@ namespace
 	}
 }
 
+void Canvas::FillFaded(const Rect &area, uint32_t color)
+{
+	if (m_alpha >= 255) {
+		Fill(area, color);
+		return;
+	}
+	if (m_alpha <= 0)
+		return;
+	int x0 = std::max(area.x, m_clip.x), y0 = std::max(area.y, m_clip.y);
+	int x1 = std::min(area.Right(), m_clip.Right()), y1 = std::min(area.Bottom(), m_clip.Bottom());
+	uint32_t src = (static_cast<uint32_t>(m_alpha) << 24) | (color & 0xffffff);
+	for (int y = y0; y < y1; ++y) {
+		uint32_t *row = Row(y);
+		for (int x = x0; x < x1; ++x)
+			row[x] = Blend(row[x], src);
+	}
+}
+
 void Canvas::Stretch(const Image &image, const Rect &source, const Rect &dest)
 {
 	Stretch(image, source, dest, 0xffffff, dest);
@@ -101,11 +119,14 @@ void Canvas::Stretch(const Image &image, const Rect &source, const Rect &dest)
 
 void Canvas::Stretch(const Image &image, const Rect &source, const Rect &dest, uint32_t tint, const Rect &clip)
 {
-	if (source.w <= 0 || source.h <= 0 || dest.w <= 0 || dest.h <= 0 || image.width <= 0)
+	if (source.w <= 0 || source.h <= 0 || dest.w <= 0 || dest.h <= 0 || image.width <= 0 || m_alpha <= 0)
 		return;
 	tint &= 0xffffff;
 	bool whole = clip.x <= dest.x && clip.y <= dest.y && clip.Right() >= dest.Right() && clip.Bottom() >= dest.Bottom();
-	if (source.w == dest.w && source.h == dest.h && !image.has_alpha && tint == 0xffffff && whole) {
+	// The texel's alpha scaled by the UI's (adjustColorAlphaAndRender), out of 256.
+	const bool faded = m_alpha < 255;
+	const uint32_t ui_alpha = static_cast<uint32_t>(m_alpha) + (static_cast<uint32_t>(m_alpha) >> 7);
+	if (source.w == dest.w && source.h == dest.h && !image.has_alpha && !faded && tint == 0xffffff && whole) {
 		BlitPart(image, source, dest.x, dest.y);
 		return;
 	}
@@ -135,7 +156,12 @@ void Canvas::Stretch(const Image &image, const Rect &source, const Rect &dest, u
 			if (tint != 0xffffff)
 				src = (src & 0xff000000) | ((((src >> 16) & 0xff) * tr >> 8) << 16) | ((((src >> 8) & 0xff) * tg >> 8) << 8) |
 				      ((src & 0xff) * tb >> 8);
-			dst[x] = image.has_alpha ? Blend(dst[x], src) : src & 0xffffff;
+			if (faded) {
+				uint32_t a = image.has_alpha ? src >> 24 : 0xff;
+				dst[x] = Blend(dst[x], ((a * ui_alpha >> 8) << 24) | (src & 0xffffff));
+			}
+			else
+				dst[x] = image.has_alpha ? Blend(dst[x], src) : src & 0xffffff;
 		}
 	}
 }

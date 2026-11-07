@@ -272,7 +272,12 @@ Which sides and corners size a window is `CXWnd`'s 0x78, set in code rather than
 and `CSocialEditWnd` 0x44, the sides (bits: 1 top, 2 top right, 8 bottom right, 0x10 bottom, 0x20
 bottom left, 0x40 left and right, 0x80 top left; `CXWndManager::HandleLeftMouseDown`). A border
 piece that doesn't size the window moves it. They fade when the
-mouse has been off them a while. Their layout is kept in eqgame's own format, in
+mouse has been off them a while. A window's Alpha and fade only reach its textures and its
+color-only background: `CXWnd::DoAllDrawing` scales the UI alpha (`DAT_0062a864`) by them, and only
+textured quads (`adjustColorAlphaAndRender`, `CTextureAnimation::DrawTexturedQuadWithAlpha`) and
+DoAllDrawing's own background rect read it. Text, list selections and the caret draw as they are,
+and `CXWndManager::DrawWindows` draws a window at alpha 0 too, so its text still shows
+(`Canvas::SetAlpha`). Their layout is kept in eqgame's own format, in
 `UI_<character>_<server>.ini` next to the exe (the server part is the login server's address cut
 to 7 characters, as eqgame names it).
 
