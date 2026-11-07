@@ -632,6 +632,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	ShowWindow(g_app.window, show);
 
 	Canvas canvas(g_app.surface.pixels, g_app.surface.width, g_app.surface.height, g_app.surface.width);
+	if (gpu)
+		canvas.Track(gpu->CanvasDrawn());
 	MSG message{};
 	bool running = true;
 	bool gpu_lost_logged = false;

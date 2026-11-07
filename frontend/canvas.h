@@ -13,6 +13,7 @@
 
 #include "bitmap.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <vector>
 
@@ -33,6 +34,57 @@ constexpr uint32_t FromColorRef(uint32_t colorref)
 
 constexpr uint32_t ColorKey = 0xff00ff; // transparent pixels in the front-end art
 
+// What has been drawn on a canvas, by tiles of TileWidth x TileHeight, this frame and the one
+// before: the Direct3D host keeps the canvas on the GPU and clears (under the view) and uploads
+// only those tiles, not all of it.
+class CanvasDirty
+{
+public:
+	static constexpr int TileWidth = 64, TileHeight = 16;
+
+	void Resize(int width, int height); // everything drawn on, this frame and the last
+	int Width() const { return m_width; }
+	int Height() const { return m_height; }
+	void Mark(int x0, int y0, int x1, int y1); // [x0, x1) x [y0, y1), clipped to the canvas
+
+	// A GPU Renderer::Finish's block of the canvas (`pixels` its first row) set to 0xff000000, the
+	// view showing through: when the last frame cleared this same block, only the tiles drawn on
+	// since; else all of it, which then counts as drawn.
+	void ClearBlock(uint32_t *pixels, int stride, int x, int y, int w, int h);
+	// Each run of tiles side by side drawn on this frame or the last: what has to go up to the
+	// GPU's copy. `upload(x, y, w, h)`, on the canvas.
+	template <typename Upload>
+	void ForEachRun(Upload upload) const
+	{
+		for (int ty = 0; ty < m_rows; ++ty)
+			for (int tx = 0; tx < m_columns;) {
+				if (!Drawn(tx, ty)) {
+					++tx;
+					continue;
+				}
+				int first = tx;
+				while (tx < m_columns && Drawn(tx, ty))
+					++tx;
+				int x = first * TileWidth, y = ty * TileHeight;
+				upload(x, y, std::min(tx * TileWidth, m_width) - x, std::min(y + TileHeight, m_height) - y);
+			}
+	}
+	void NextFrame(); // a frame shown: this frame's become the last's, and none this frame yet
+
+private:
+	bool Drawn(int tx, int ty) const
+	{
+		size_t i = static_cast<size_t>(ty) * m_columns + tx;
+		return m_this[i] || m_last[i];
+	}
+
+	int m_width = 0, m_height = 0, m_columns = 0, m_rows = 0;
+	std::vector<uint8_t> m_this, m_last; // a tile each, row by row
+	uint64_t m_frames = 0;            // NextFrames so far
+	uint64_t m_cleared_frame = ~0ull; // and when ClearBlock last cleared m_cleared
+	Rect m_cleared;
+};
+
 class Canvas
 {
 public:
@@ -45,7 +97,16 @@ public:
 	int Width() const { return m_width; }
 	int Height() const { return m_height; }
 	int Stride() const { return m_stride; } // in pixels
+	// The pixels themselves. Whoever writes them other than through the calls here says where
+	// with MarkDrawn.
 	uint32_t *Row(int y) { return m_pixels + static_cast<size_t>(y) * m_stride; }
+
+	// Everything drawn on the canvas goes into `dirty` (null: not kept), and a Sub canvas's into its
+	// parent's.
+	void Track(CanvasDirty *dirty) { m_dirty = dirty; }
+	void MarkDrawn(const Rect &area); // clipped to the canvas
+	// The part of this canvas at `area` (within it), as a canvas of its own.
+	Canvas Sub(const Rect &area);
 
 	// Where drawing lands (CXWnd's clip rects): Blit, Tile, Fill, Frame, Darken, Stretch and the
 	// text renderers all stop at it. The whole canvas unless set; SetClip keeps it on the canvas.
@@ -86,10 +147,19 @@ public:
 	void TileRegion(const Image &image, const Rect &source, const Rect &dest);
 
 private:
+	// [x0, x1) x [y0, y1), already on the canvas, into the tracker.
+	void Drawn(int x0, int y0, int x1, int y1)
+	{
+		if (m_dirty && x1 > x0 && y1 > y0)
+			m_dirty->Mark(x0 + m_origin_x, y0 + m_origin_y, x1 + m_origin_x, y1 + m_origin_y);
+	}
+
 	uint32_t *m_pixels = nullptr;
 	int m_width = 0;
 	int m_height = 0;
 	int m_stride = 0;
 	Rect m_clip;
 	int m_alpha = 255;
+	CanvasDirty *m_dirty = nullptr;
+	int m_origin_x = 0, m_origin_y = 0; // where it is on the tracked canvas
 };

@@ -1051,7 +1051,7 @@ void FrontEnd::Render(Canvas &canvas, uint64_t now_ms)
 	Rect area = ScreenArea();
 	if (area.w < canvas.Width() || area.h < canvas.Height())
 		canvas.Fill({0, 0, canvas.Width(), canvas.Height()}, 0x000000);
-	Canvas screen(canvas.Row(area.y) + area.x, area.w, area.h, canvas.Stride());
+	Canvas screen = canvas.Sub(area);
 	switch (m_screen) {
 	case Screen::Start:
 		RenderStart(screen);
@@ -1076,7 +1076,7 @@ void FrontEnd::Render(Canvas &canvas, uint64_t now_ms)
 	if (m_dialog.open) {
 		canvas.DarkenAll();
 		Rect area = DialogArea();
-		Canvas dialog(canvas.Row(area.y) + area.x, area.w, area.h, canvas.Stride());
+		Canvas dialog = canvas.Sub(area);
 		RenderDialog(dialog);
 	}
 

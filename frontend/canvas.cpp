@@ -7,6 +7,77 @@
 #include <emmintrin.h>
 #endif
 
+void CanvasDirty::Resize(int width, int height)
+{
+	m_width = std::max(width, 0);
+	m_height = std::max(height, 0);
+	m_columns = (m_width + TileWidth - 1) / TileWidth;
+	m_rows = (m_height + TileHeight - 1) / TileHeight;
+	m_this.assign(static_cast<size_t>(m_columns) * m_rows, 1);
+	m_last = m_this;
+	m_cleared_frame = ~0ull;
+}
+
+void CanvasDirty::Mark(int x0, int y0, int x1, int y1)
+{
+	x0 = std::max(x0, 0), y0 = std::max(y0, 0);
+	x1 = std::min(x1, m_width), y1 = std::min(y1, m_height);
+	if (x1 <= x0 || y1 <= y0)
+		return;
+	for (int ty = y0 / TileHeight; ty <= (y1 - 1) / TileHeight; ++ty)
+		std::fill_n(m_this.begin() + static_cast<ptrdiff_t>(ty) * m_columns + x0 / TileWidth,
+			(x1 - 1) / TileWidth - x0 / TileWidth + 1, uint8_t{1});
+}
+
+void CanvasDirty::NextFrame()
+{
+	m_last.swap(m_this);
+	std::fill(m_this.begin(), m_this.end(), uint8_t{0});
+	++m_frames;
+}
+
+void CanvasDirty::ClearBlock(uint32_t *pixels, int stride, int x, int y, int w, int h)
+{
+	const bool same = m_cleared_frame + 1 == m_frames && m_cleared.x == x && m_cleared.y == y && m_cleared.w == w &&
+	                  m_cleared.h == h;
+	if (!same) {
+		for (int row = 0; row < h; ++row)
+			std::fill_n(pixels + static_cast<size_t>(row) * stride, w, 0xff000000u);
+		Mark(x, y, x + w, y + h);
+	}
+	else {
+		// The tiles drawn on last frame, where they're in the block.
+		for (int ty = std::max(y, 0) / TileHeight; ty < m_rows && ty * TileHeight < y + h; ++ty)
+			for (int tx = std::max(x, 0) / TileWidth; tx < m_columns && tx * TileWidth < x + w; ++tx) {
+				if (!m_last[static_cast<size_t>(ty) * m_columns + tx])
+					continue;
+				int x0 = std::max(tx * TileWidth, x) - x, x1 = std::min((tx + 1) * TileWidth, x + w) - x;
+				int y0 = std::max(ty * TileHeight, y) - y, y1 = std::min((ty + 1) * TileHeight, y + h) - y;
+				for (int row = y0; row < y1; ++row)
+					std::fill(pixels + static_cast<size_t>(row) * stride + x0, pixels + static_cast<size_t>(row) * stride + x1,
+						0xff000000u);
+			}
+	}
+	m_cleared = {x, y, w, h};
+	m_cleared_frame = m_frames;
+}
+
+void Canvas::MarkDrawn(const Rect &area)
+{
+	Drawn(std::max(area.x, 0), std::max(area.y, 0), std::min(area.Right(), m_width), std::min(area.Bottom(), m_height));
+}
+
+Canvas Canvas::Sub(const Rect &area)
+{
+	int x0 = std::clamp(area.x, 0, m_width), y0 = std::clamp(area.y, 0, m_height);
+	int x1 = std::clamp(area.Right(), x0, m_width), y1 = std::clamp(area.Bottom(), y0, m_height);
+	Canvas sub(Row(y0) + x0, x1 - x0, y1 - y0, m_stride);
+	sub.m_dirty = m_dirty;
+	sub.m_origin_x = m_origin_x + x0;
+	sub.m_origin_y = m_origin_y + y0;
+	return sub;
+}
+
 void Canvas::SetClip(const Rect &clip)
 {
 	int x0 = std::max(clip.x, 0), y0 = std::max(clip.y, 0);
@@ -28,6 +99,7 @@ void Canvas::BlitPart(const Image &image, const Rect &source, int x, int y, bool
 	h = std::min({h, m_clip.Bottom() - y, image.height - sy});
 	if (w <= 0 || h <= 0)
 		return;
+	Drawn(x, y, x + w, y + h);
 
 	for (int row = 0; row < h; ++row) {
 		const uint32_t *src = &image.pixels[static_cast<size_t>(sy + row) * image.width + sx];
@@ -59,6 +131,7 @@ void Canvas::Fill(const Rect &area, uint32_t color)
 	int x1 = std::min(area.Right(), m_clip.Right()), y1 = std::min(area.Bottom(), m_clip.Bottom());
 	if (x0 >= x1)
 		return; // wholly left or right of the canvas
+	Drawn(x0, y0, x1, y1);
 	for (int y = y0; y < y1; ++y)
 		std::fill(Row(y) + x0, Row(y) + x1, color & 0xffffff);
 }
@@ -176,6 +249,7 @@ void Canvas::FillFaded(const Rect &area, uint32_t color)
 	uint32_t src = (static_cast<uint32_t>(m_alpha) << 24) | (color & 0xffffff);
 	if (x1 <= x0)
 		return;
+	Drawn(x0, y0, x1, y1);
 #if defined(__SSE2__)
 	// A row of the color at the alpha, blended four pixels at a time.
 	thread_local std::vector<uint32_t> line;
@@ -220,6 +294,7 @@ void Canvas::Stretch(const Image &image, const Rect &source, const Rect &dest, u
 	int max_y = std::min(source.Bottom(), image.height) - 1;
 	if (x1 <= x0 || y1 <= y0 || max_x < source.x || max_y < source.y)
 		return;
+	Drawn(x0, y0, x1, y1);
 	// By value, so the writes to the canvas can't be taken for changes to what it reads.
 	const bool has_alpha = image.has_alpha, tinted = tint != 0xffffff;
 	auto put = [=](uint32_t *dst, uint32_t src) {
@@ -323,6 +398,7 @@ void Canvas::BlendKept(const Rect &area, const std::vector<uint32_t> &kept, int 
 	if (x1 <= x0 || y1 <= y0 || kept.size() != static_cast<size_t>(x1 - x0) * (y1 - y0) || alpha >= 255)
 		return;
 	// Weights out of 256, so two channels blend at once in their 16-bit lanes (r and b, t and g).
+	Drawn(x0, y0, x1, y1);
 	uint32_t a = static_cast<uint32_t>(std::max(alpha, 0));
 	a += a >> 7;
 	uint32_t b = 256 - a;
@@ -344,6 +420,7 @@ void Canvas::Darken(const Rect &area)
 {
 	int x0 = std::max(area.x, m_clip.x), y0 = std::max(area.y, m_clip.y);
 	int x1 = std::min(area.Right(), m_clip.Right()), y1 = std::min(area.Bottom(), m_clip.Bottom());
+	Drawn(x0, y0, x1, y1);
 	for (int y = y0; y < y1; ++y) {
 		uint32_t *row = Row(y);
 		for (int x = x0; x < x1; ++x)

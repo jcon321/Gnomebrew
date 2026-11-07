@@ -234,11 +234,13 @@ struct D3d11Device::State
 	ComPtr<ID3D11RasterizerState> cull_back, cull_none;
 	ComPtr<ID3D11ShaderResourceView> white;
 
-	// The front end's canvas, uploaded each frame.
+	// The front end's canvas, uploaded each frame: the rows drawn on this frame or the last
+	// (canvas_dirty), the rest being as they were.
 	uint32_t *canvas = nullptr;
 	int canvas_width = 0, canvas_height = 0, canvas_stride = 0;
 	ComPtr<ID3D11Texture2D> canvas_texture;
 	ComPtr<ID3D11ShaderResourceView> canvas_view;
+	CanvasDirty canvas_dirty;
 
 	// A frame's triangles, written whole at Finish.
 	ComPtr<ID3D11Buffer> vertex_buffer, index_buffer;
@@ -580,8 +582,7 @@ namespace
 		ptrdiff_t offset = pixels - m.canvas;
 		int view_x = static_cast<int>(offset % m.canvas_stride), view_y = static_cast<int>(offset / m.canvas_stride);
 		int visible_w = std::min(m_width, m.canvas_width - view_x), visible_h = std::min(m_height, m.canvas_height - view_y);
-		for (int y = 0; y < visible_h; ++y)
-			std::fill_n(pixels + static_cast<size_t>(y) * stride, visible_w, 0xff000000u);
+		m.canvas_dirty.ClearBlock(pixels, stride, view_x, view_y, visible_w, visible_h);
 		if (m.lost)
 			return;
 
@@ -1143,8 +1144,8 @@ bool D3d11Device::Create(HWND window, int width, int height, bool vsync, std::st
 	D3D11_TEXTURE2D_DESC canvas_desc = white_desc;
 	canvas_desc.Width = static_cast<UINT>(width);
 	canvas_desc.Height = static_cast<UINT>(height);
-	canvas_desc.Usage = D3D11_USAGE_DYNAMIC;
-	canvas_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+	canvas_desc.Usage = D3D11_USAGE_DEFAULT; // updated a band at a time (UpdateSubresource)
+	canvas_desc.CPUAccessFlags = 0;
 	made = made && SUCCEEDED(device->CreateTexture2D(&canvas_desc, nullptr, &m->canvas_texture)) &&
 	       SUCCEEDED(device->CreateShaderResourceView(m->canvas_texture.Get(), nullptr, &m->canvas_view));
 
@@ -1161,6 +1162,12 @@ void D3d11Device::SetCanvas(uint32_t *pixels, int width, int height, int stride)
 	m->canvas_width = std::min(width, m->width);
 	m->canvas_height = std::min(height, m->height);
 	m->canvas_stride = stride;
+	m->canvas_dirty.Resize(m->canvas_width, m->canvas_height);
+}
+
+CanvasDirty *D3d11Device::CanvasDrawn()
+{
+	return &m->canvas_dirty;
 }
 
 std::unique_ptr<render::Renderer> D3d11Device::MakeRenderer()
@@ -1189,12 +1196,14 @@ bool D3d11Device::Present()
 	ID3D11DeviceContext *context = m->context.Get();
 
 	auto upload_start = std::chrono::steady_clock::now();
-	D3D11_MAPPED_SUBRESOURCE mapped;
-	if (m->canvas && SUCCEEDED(context->Map(m->canvas_texture.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
-		for (int y = 0; y < m->canvas_height; ++y)
-			memcpy(static_cast<uint8_t *>(mapped.pData) + static_cast<size_t>(y) * mapped.RowPitch,
-				m->canvas + static_cast<size_t>(y) * m->canvas_stride, static_cast<size_t>(m->canvas_width) * 4);
-		context->Unmap(m->canvas_texture.Get(), 0);
+	if (m->canvas) {
+		// What was drawn on this frame or the last (cleared since), a run of tiles at a time.
+		m->canvas_dirty.ForEachRun([&](int x, int y, int w, int h) {
+			D3D11_BOX box{static_cast<UINT>(x), static_cast<UINT>(y), 0, static_cast<UINT>(x + w), static_cast<UINT>(y + h), 1};
+			context->UpdateSubresource(m->canvas_texture.Get(), 0, &box,
+				m->canvas + static_cast<size_t>(y) * m->canvas_stride + x, static_cast<UINT>(m->canvas_stride) * 4, 0);
+		});
+		m->canvas_dirty.NextFrame();
 	}
 	m->upload_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - upload_start).count();
 

@@ -1163,6 +1163,9 @@ void ZoneView::DrawDebugOverlays(Canvas &canvas) const
 {
 	uint32_t *pixels = canvas.Row(0);
 	int stride = canvas.Stride(), width = canvas.Width(), height = canvas.Height();
+	// Lines anywhere on it, straight into its pixels.
+	if (m_debug_draw.wireframe || m_debug_draw.walls || m_debug_draw.floor)
+		canvas.MarkDrawn({0, 0, width, height});
 	auto line = [&](const render::Vec3 &a, const render::Vec3 &b, uint32_t color) {
 		float ax, ay, bx, by;
 		if (m_renderer->Project(a, ax, ay) && m_renderer->Project(b, bx, by))

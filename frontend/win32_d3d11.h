@@ -13,6 +13,8 @@
 #include <memory>
 #include <string>
 
+class CanvasDirty;
+
 class D3d11Device
 {
 public:
@@ -32,6 +34,9 @@ public:
 	// The canvas the front end draws into, the size of the window. A renderer's Finish into
 	// a block of it draws the 3D view in that part of the window.
 	void SetCanvas(uint32_t *pixels, int width, int height, int stride);
+	// Where the canvas is drawn on (Canvas::Track it): Present uploads only that, and a Finish
+	// clears only that of its block.
+	CanvasDirty *CanvasDrawn();
 	// The renderers share the device; only one draws at a time.
 	std::unique_ptr<render::Renderer> MakeRenderer();
 

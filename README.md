@@ -843,6 +843,10 @@ writes 0, and alpha blends and darkening scale it, so the chat backdrop and the 
 look the same as before. GDI doesn't know about that byte, so text that lands on the view is drawn
 white on black into a scratch DIB and blended in by its coverage. Name tags behind walls read the
 depth buffer back a few frames late (the newest copy the GPU has finished, without waiting).
+Only what was drawn on goes up: every draw marks the 64x16 tiles it touches in a `CanvasDirty`
+(the GDI text renderer each string's box), Finish clears only the tiles drawn on last frame (all
+of its block when the block moved or the last frame didn't clear it), and Present uploads each run
+of tiles drawn on this frame or the last (`UpdateSubresource`).
 
 Things learned about the files:
 
