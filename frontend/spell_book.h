@@ -44,6 +44,10 @@
 //     gem's spell (SpellCast), and so does /cast n;
 //   - a right click forgets the gem's spell (OP_MemorizeSpell 2; ForgetMemorizedSpell @0040a662);
 //   - CSPW_SpellBook opens and closes the book, and is down while it's open;
+//   - alt+click or the right button held on a gem (DisplaySpellInfoForGemSlot @0040a480), and on a
+//     book slot (DisplaySpellInfo, DisplaySpellDetails @0043525a), shows its spell in the item
+//     display, or closes it if it's showing anything (CItemDisplayWnd::SetSpell @00425957); the
+//     held button let go closes it again (the book's toggling it once more);
 //   - each gem shows its spell's icon (A_SpellGems' cell new_icon) on a ring in the color of the
 //     spell's target type (UpdateSpellGems @0040a8b7), dimming while it can't be cast and
 //     brightening back once it can (RefreshSpellGemButtons @0040a7d3, ProcessFrameAnimation): its
@@ -88,6 +92,10 @@ public:
 	// A click in the book, the gems or the confirmation dialog; false if it wasn't one of theirs.
 	bool Click(const std::string &window, const std::string &control, bool alt, uint64_t now_ms);
 	bool RightClick(const std::string &window, const std::string &control);
+	// The right button held on a book slot or a gem, and let go after holding: the spell in the
+	// item display (as alt+click), then closed. False if it wasn't one of theirs.
+	bool RightHold(const std::string &window, const std::string &control);
+	bool RightRelease(const std::string &window, const std::string &control);
 	// CCastSpellWnd::HandleSpellLeftClick: a gem's left click, or /cast's (0..7).
 	void GemLeftClick(int gem, uint64_t now_ms);
 	// HandleKeys: Left and Right turn the pages (true: the key's taken), Delete asks to delete the
@@ -113,6 +121,8 @@ private:
 	bool Memorized(int spell) const;
 	void StopAction();
 	void ClickSlot(int slot);
+	bool ShowSlotInfo(const std::string &control); // a book slot's spell in the item display
+	bool ShowGemInfo(const std::string &control);  // a gem's
 	void RightClickSlot(int slot);
 	void StartMemorizationDrag(int slot);
 	void StartScribe(int slot, uint64_t now_ms);

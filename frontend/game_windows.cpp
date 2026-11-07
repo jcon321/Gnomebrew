@@ -756,6 +756,38 @@ void ShowItemDisplay(WindowManager &windows, const GameValues &values, GameWindo
 	if (SidlWindow::Control *icon = display->Find("IconButton")) {
 		icon->cell_animation = "A_DragItem";
 		icon->cell = item.icon >= 500 ? item.icon - 500 : -1;
+		icon->decal.clear();
+		icon->background.clear();
+	}
+	windows.Show("ItemDisplayWindow", true);
+	windows.Raise("ItemDisplayWindow");
+}
+
+void ToggleSpellDisplay(WindowManager &windows, const GameValues &values, GameWindowState &state, int spell_id,
+	bool details)
+{
+	SidlWindow *display = windows.Find("ItemDisplayWindow");
+	const SpellInfo *spell = values.spells ? values.spells->Find(spell_id) : nullptr;
+	if (!display || !spell)
+		return;
+	// Showing already (IsActivated), it goes, whatever it shows.
+	if (windows.Shown("ItemDisplayWindow")) {
+		windows.Show("ItemDisplayWindow", false);
+		return;
+	}
+	state.display_item = {}; // ItemValid 0: the icon links nothing
+	display->Root().text = SpellDisplayTitle(values, *spell);
+	if (SidlWindow::Control *description = display->Find("ItemDescription")) {
+		description->text = SpellDisplayText(values, *spell, details);
+		description->scroll_pos = 0;
+	}
+	// CBuffWindow::SetBuffIcon on the icon: the spell's icon on red (detrimental) or blue.
+	if (SidlWindow::Control *icon = display->Find("IconButton")) {
+		icon->cell_animation.clear();
+		icon->decal = "A_SpellIcons";
+		icon->cell = std::max(spell->icon, 0);
+		icon->no_background = false;
+		icon->background = spell->good_effect == 0 ? "RedIconBackground" : "BlueIconBackground";
 	}
 	windows.Show("ItemDisplayWindow", true);
 	windows.Raise("ItemDisplayWindow");

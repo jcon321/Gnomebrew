@@ -573,6 +573,37 @@ std::string ItemDisplayText(const GameValues &values, const ZoneItem &item)
 	return out;
 }
 
+std::string SpellDisplayTitle(const GameValues &values, const SpellInfo &spell)
+{
+	return Text(values, 3101, "Spell:") + "  " + spell.name;
+}
+
+std::string SpellDisplayText(const GameValues &values, const SpellInfo &spell, bool details)
+{
+	if (!details || !values.zone)
+		return "";
+	const ZoneProfile &me = values.zone->Profile();
+	const int level = spell.ClassLevel(me.class_id);
+	if (level == 255) // and SetSpell's third argument -1, as every caller of ours passes it
+		return Text(values, 3104, "CANNOT USE") + Br;
+	std::string out = Text(values, 506, "Level: %1", {Number(level)}) + Br;
+	out += Text(values, 3105, "Skill: %1", {SkillName(values.eqstr, spell.skill)}) + Br;
+	// The casting skills (abjuration, alteration, channeling, conjuration, divination, evocation and
+	// their specializations, 43..47) say the mana; a song's skills don't.
+	const int s = spell.skill;
+	if (s == 4 || s == 5 || s == 13 || s == 14 || s == 18 || s == 24 || (s >= 43 && s <= 47))
+		out += Text(values, 3006, "Mana Cost: %1", {Number(spell.mana)}) + Br;
+	if (me.class_id == 8) // a bard's songs: no casting time
+		return out;
+	// GetAACastingTimeModifier and GetFocusCastingTimeModifier are both 0 here (spell_cast.h), so
+	// it's always "Cast Time"; with either, "Normal Cast Time: %1    Your Cast Time: %2" (3106), the
+	// second no less than half the first.
+	char seconds[32];
+	snprintf(seconds, sizeof(seconds), "%4.1f", spell.cast_ms * 0.001);
+	out += Text(values, 3107, "Cast Time: %1", {seconds}) + Br;
+	return out;
+}
+
 std::string RaceDescription(const GameValues &values, int race)
 {
 	return RaceDesc(values, race);

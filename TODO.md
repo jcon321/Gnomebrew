@@ -44,8 +44,9 @@ no rules of its own.
      AC, max HP (worked out as `Max_HP` does, not the zone's), max mana and our speed (SoW,
      snares, roots). Still to do: the effects that act as a buff
      lands or fades (levitation, invisibility, see invisible, infravision, illusions, Eye of Zomm,
-     mounts), a bard's instrument mastery, alt+click's spell display, and Alt showing every
-     buff's tooltip (CBuffWindow::PostDraw).
+     mounts), a bard's instrument mastery, and Alt showing every buff's tooltip
+     (CBuffWindow::PostDraw). Alt+click or the right button held on a buff shows its spell's name
+     and icon in the item display (HandleSpellInfoDisplay).
    - Inventory: name, level, class (its title from 51), deity, HP, stats and resists (base, worn
      items, the next food and drink; `GameValues::Stat`, `Resist`), AC, ATK and weight (`GameValues::Ac`, `Atk`, `Weight`), money, the class picture, item icons in the slots, the Alt. Adv. row from 51, Done, and the
      Skills button opening the skills window (`frontend/game_windows.*`), and items picked up, put
@@ -165,8 +166,10 @@ no rules of its own.
      cast or recovering; a bard's song stops on a gem click (an empty OP_ManaChange). Still to do:
      - casting: stuns and divine aura (OP_Stun), the AA and focus cast time and range modifiers,
        abilities (gem 9), and a bard being hit (StopSpellCast 1);
-     - the spell info display: alt+click (or the right button held) on a book slot or a gem shows
-       the spell in the item display (CItemDisplayWnd::SetSpell @00425957);
+     - the spell info display (done: `ToggleSpellDisplay`, CItemDisplayWnd::SetSpell, from a book
+       slot, a gem or a buff): "Your Cast Time" (eqstr 3106) waits on the AA and focus casting
+       time modifiers, and the hot button's call (CHotButtonWnd::WndNotification @00420462, with a
+       third argument other than -1) on spell hot buttons;
      - spell hot buttons: a gem held onto the cursor (CCursorAttachment type 9) and the book button
        (type 5); a spell on the cursor clicked on a hot button;
      - what the book doesn't do yet: on a mount (Activate's own branch), a bard's AA 0x7b doubling

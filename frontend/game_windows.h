@@ -215,6 +215,12 @@ const ZoneItem *SlotItem(WindowManager &windows, const GameValues &values, const
 bool ShowItemDisplay(WindowManager &windows, const GameValues &values, GameWindowState &state, const std::string &window,
 	const std::string &control);
 void ShowItemDisplay(WindowManager &windows, const GameValues &values, GameWindowState &state, const ZoneItem &item);
+// CItemDisplayWnd::SetSpell and Activate as the book, the gems and the buff window call them
+// (DisplaySpellDetails, DisplaySpellInfoForGemSlot, HandleSpellInfoDisplay): the item display
+// closes if it's showing anything, else shows the spell (item_display.h) with its icon as a
+// buff's. Nothing for a spell that isn't in the file.
+void ToggleSpellDisplay(WindowManager &windows, const GameValues &values, GameWindowState &state, int spell_id,
+	bool details);
 // The right button let go over a slot after holding it: the item display closes.
 void GameWindowRightRelease(WindowManager &windows, const std::string &window, const std::string &control);
 

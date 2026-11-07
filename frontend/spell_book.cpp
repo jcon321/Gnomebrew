@@ -209,8 +209,10 @@ bool SpellBook::Click(const std::string &window, const std::string &control, boo
 			Deactivate();
 			return true;
 		}
-		if (alt) // GetKeyboardFlags' 4: nothing but Done
+		if (alt) { // GetKeyboardFlags' 4: Done, or a slot's spell shown (DisplaySpellInfo)
+			ShowSlotInfo(control);
 			return true;
+		}
 		if (control == "SBW_PageUp_Button")
 			TurnToPage(m_page + 2);
 		else if (control == "SBW_PageDown_Button")
@@ -223,8 +225,10 @@ bool SpellBook::Click(const std::string &window, const std::string &control, boo
 		return true;
 	}
 	if (window == "CastSpellWnd") {
-		if (alt) // DisplaySpellInfoForGemSlot: the item display shows the spell (not yet)
+		if (alt) {
+			ShowGemInfo(control);
 			return true;
+		}
 		if (control == "CSPW_SpellBook") {
 			if (m_activated)
 				Deactivate();
@@ -272,6 +276,64 @@ bool SpellBook::RightClick(const std::string &window, const std::string &control
 					m_cast->Wait();
 			}
 		return true;
+	}
+	return false;
+}
+
+bool SpellBook::ShowSlotInfo(const std::string &control)
+{
+	// CSpellBookWnd::DisplaySpellInfo and DisplaySpellDetails: a slot with a spell toggles the item
+	// display.
+	for (int n = 0; n < SlotButtons; ++n)
+		if (control == SlotId("SBW_Spell", n)) {
+			int slot = m_page * SlotsPerPage + n;
+			if (slot < ZoneProfile::BookSlots && Valid(m_zone->Profile().spell_book[slot]))
+				ToggleSpellDisplay(*m_windows, *m_values, *m_state, m_zone->Profile().spell_book[slot], true);
+			return true;
+		}
+	return false;
+}
+
+bool SpellBook::ShowGemInfo(const std::string &control)
+{
+	// CCastSpellWnd::DisplaySpellInfoForGemSlot: a gem with a spell toggles the item display.
+	for (int gem = 0; gem < GemCount; ++gem)
+		if (control == SlotId("CSPW_Spell", gem)) {
+			int spell = m_zone->Profile().mem_spells[gem];
+			if (Valid(spell))
+				ToggleSpellDisplay(*m_windows, *m_values, *m_state, spell, true);
+			return true;
+		}
+	return false;
+}
+
+bool SpellBook::RightHold(const std::string &window, const std::string &control)
+{
+	// WndNotification's 0x17, the right button held on a slot or a gem: as alt+click.
+	if (!m_zone || !m_windows || !m_values || !m_state)
+		return false;
+	if (window == "SpellBookWnd")
+		return ShowSlotInfo(control);
+	if (window == "CastSpellWnd")
+		return ShowGemInfo(control);
+	return false;
+}
+
+bool SpellBook::RightRelease(const std::string &window, const std::string &control)
+{
+	// 0x19, let go after holding: the book toggles again (DisplaySpellInfo), the gems close the
+	// item display if it's showing.
+	if (!m_zone || !m_windows || !m_values || !m_state)
+		return false;
+	if (window == "SpellBookWnd")
+		return ShowSlotInfo(control);
+	if (window == "CastSpellWnd") {
+		for (int gem = 0; gem < GemCount; ++gem)
+			if (control == SlotId("CSPW_Spell", gem)) {
+				if (m_windows->Shown("ItemDisplayWindow"))
+					m_windows->Show("ItemDisplayWindow", false);
+				return true;
+			}
 	}
 	return false;
 }

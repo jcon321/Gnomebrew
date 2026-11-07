@@ -2080,6 +2080,65 @@ int main(int argc, char **argv)
 			h.RunUntil([] { return false; }, 300);
 			book("opened");
 			h.Snapshot("b1-book");
+			// The spell display: alt+click on the first book slot and on the first gem with a spell
+			// (printed, then closed by a second), and the right button held on the slot and let go.
+			{
+				auto alt_click = [&](int ax, int ay) {
+					InputEvent event{InputEvent::Type::MouseMove, ax, ay};
+					frontend.OnEvent(event);
+					event.alt = true;
+					event.type = InputEvent::Type::MouseDown;
+					frontend.OnEvent(event);
+					event.type = InputEvent::Type::MouseUp;
+					frontend.OnEvent(event);
+					frontend.Update(NowMs());
+				};
+				auto show = [&](const char *what) {
+					const SidlWindow *display = windows.Find("ItemDisplayWindow");
+					if (!display)
+						return;
+					printf("[preview] %s: item display %s '%s'\n", what, windows.Shown("ItemDisplayWindow") ? "shown" : "hidden",
+						display->Root().text.c_str());
+					if (!windows.Shown("ItemDisplayWindow"))
+						return;
+					const SidlWindow::Control *description = display->Find("ItemDescription");
+					std::string text = description ? description->text : "";
+					for (size_t start = 0; start < text.size();) {
+						size_t br = text.find("<BR>", start);
+						printf("[preview]   %s\n", text.substr(start, br == std::string::npos ? std::string::npos : br - start).c_str());
+						if (br == std::string::npos)
+							break;
+						start = br + 4;
+					}
+				};
+				int sx, sy;
+				windows.Show("ItemDisplayWindow", false); // the icon test's item, else the first click closes it
+				if (me.spell_book[0] != -1 && at("SpellBookWnd", "SBW_Spell0", sx, sy)) {
+					alt_click(sx, sy);
+					show("alt+click on book slot 0");
+					h.Snapshot("s1-spell-display");
+					alt_click(sx, sy);
+					show("alt+click on it again");
+					frontend.OnEvent({InputEvent::Type::RightDown, sx, sy});
+					h.RunUntil([] { return false; }, 900);
+					show("right button held on it");
+					frontend.OnEvent({InputEvent::Type::RightUp, sx, sy});
+					frontend.Update(NowMs());
+					show("let go");
+				}
+				for (int g = 0; g < ZoneProfile::Gems; ++g)
+					if (spells.Find(me.mem_spells[g]) && at("CastSpellWnd", "CSPW_Spell" + std::to_string(g), sx, sy)) {
+						alt_click(sx, sy);
+						show(("alt+click on gem " + std::to_string(g)).c_str());
+						frontend.OnEvent({InputEvent::Type::RightDown, sx, sy});
+						h.RunUntil([] { return false; }, 900);
+						show("right button held on it");
+						frontend.OnEvent({InputEvent::Type::RightUp, sx, sy});
+						frontend.Update(NowMs());
+						show("let go");
+						break;
+					}
+			}
 			int bx, by, cx, cy;
 			if (frontend.SpellBookState().Activated() && at("SpellBookWnd", "SBW_Spell0", bx, by) &&
 			    at("SpellBookWnd", "SBW_Spell1", cx, cy)) {

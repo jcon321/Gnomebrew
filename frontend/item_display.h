@@ -31,8 +31,15 @@
 #include <string>
 
 class GameValues;
+struct SpellInfo;
 struct ZoneItem;
 
 std::string ItemDisplayText(const GameValues &values, const ZoneItem &item);
+// CItemDisplayWnd::SetSpell (@00425957): a spell's title ("Spell:  " and its name, eqstr 3101) and,
+// with `details` (the book and the gems; the buff window passes none), its text: CANNOT USE (3104)
+// when our class never gets it, else its level for our class (506), its skill (3105), the mana
+// for a casting skill's spell (3006), and but for a bard its cast time (3107, "%4.1f" seconds).
+std::string SpellDisplayTitle(const GameValues &values, const SpellInfo &spell);
+std::string SpellDisplayText(const GameValues &values, const SpellInfo &spell, bool details);
 // CEverQuest_GetRaceDesc2 (@0052db3a): a race's name, "UNKNOWN RACE" past its table.
 std::string RaceDescription(const GameValues &values, int race);

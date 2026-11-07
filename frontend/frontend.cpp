@@ -2171,6 +2171,18 @@ void FrontEnd::SaveDebugSettings()
 		Log("debug menu: couldn't write " + m_config.settings_ini);
 }
 
+bool FrontEnd::BuffSpellInfo(const std::string &control, const std::string &window)
+{
+	// CBuffWindow::HandleSpellInfoDisplay: a buff of a spell we know toggles the item display with
+	// the spell's name and icon only (SetSpell's second argument 0).
+	if (window != "BuffWindow" || control.rfind("Buff", 0) != 0)
+		return false;
+	int slot = std::atoi(control.c_str() + 4);
+	if (m_buffs.SlotSpell(slot))
+		ToggleSpellDisplay(m_windows, m_game_values, m_window_state, m_buffs.Slot(slot).spell, false);
+	return true;
+}
+
 void FrontEnd::HandleWindowClicks()
 {
 	// Nothing goes on the cursor over an item or coins (CCursorAttachment::IsOkToActivate).
@@ -2206,10 +2218,18 @@ void FrontEnd::HandleWindowClicks()
 		}
 		GameWindowRightClick(m_windows, m_window_state, click.window, click.control);
 	}
-	for (const auto &hold : m_windows.TakeRightHolds())
+	// The right button held: a slot's item, a book slot's, a gem's or a buff's spell in the item
+	// display; let go, it closes (WndNotification's 0x17 and 0x19).
+	for (const auto &hold : m_windows.TakeRightHolds()) {
+		if (m_spell_book.RightHold(hold.window, hold.control) || BuffSpellInfo(hold.control, hold.window))
+			continue;
 		ShowItemDisplay(m_windows, m_game_values, m_window_state, hold.window, hold.control);
-	for (const auto &release : m_windows.TakeRightReleases())
+	}
+	for (const auto &release : m_windows.TakeRightReleases()) {
+		if (m_spell_book.RightRelease(release.window, release.control) || BuffSpellInfo(release.control, release.window))
+			continue;
 		GameWindowRightRelease(m_windows, release.window, release.control);
+	}
 	for (WindowManager::Click click : m_windows.TakeClicks()) {
 		if (click.window == "SkillsSelectWindow" && m_abilities.Click(click.window, click.control, m_now_ms))
 			continue;
@@ -2295,9 +2315,11 @@ void FrontEnd::HandleWindowClicks()
 				m_group.TargetByGauge(gauge->def->eq_type);
 				continue;
 			}
-		// CBuffWindow::WndNotification: a buff clicked comes off (with Alt it would show the spell).
+		// CBuffWindow::WndNotification: a buff clicked comes off; with Alt its spell shows.
 		if (click.window == "BuffWindow" && click.control.rfind("Buff", 0) == 0) {
-			if (!m_alt_down)
+			if (m_alt_down || click.alt)
+				BuffSpellInfo(click.control, click.window);
+			else
 				m_buffs.ClickOff(std::atoi(click.control.c_str() + 4));
 			continue;
 		}

@@ -255,6 +255,7 @@ private:
 	void SaveCustom(); // CEverQuest_saveCustom: the hot buttons and the socials changed
 	void SaveDebugSettings(); // the debug menu's, to my-client.ini's [Debug]
 	void HandleWindowClicks();
+	bool BuffSpellInfo(const std::string &control, const std::string &window); // a buff's spell shown; false: not a buff
 	void ActionsClick(const std::string &control); // an Actions window button, clicked or on a hot button
 	// CEverQuest::RightClickedOnPlayer: a corpse's loot, a banker's bank, a merchant's shop, or else
 	// /consider (of our target).

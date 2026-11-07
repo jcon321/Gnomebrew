@@ -1840,6 +1840,22 @@ details and the nearest spawns at the top left and the radar at the top right.
   - recommended and required levels, effect and focus spells, food and drink sizes
   - weight, range and size, and the classes, races and deities that can use it
   `LORE:` shows only when `OP_LogServer` says the world auto-identifies.
+- **Spell display** (`ToggleSpellDisplay`, `CItemDisplayWnd::SetSpell` @00425957): the item display
+  shows a spell too. The title is eqstr 3101 "Spell:", two spaces and the name; the icon is
+  `SetBuffIcon`'s (the `A_SpellIcons` cell on `Red`/`BlueIconBackground`), and `ItemValid` goes to
+  0 so the icon links nothing. With details (the book and the gems) the text is "CANNOT USE" (3104)
+  when our class's level is 255, else "Level: %1" (506), "Skill: %1" (3105), "Mana Cost: %1" (3006)
+  only for skills 4, 5, 13, 14, 18, 24 and 43..47 (the casting skills, not a song's), and, but for
+  a bard, "Cast Time: %1" (3107) in `%4.1f` seconds. With an AA or focus casting time modifier it's
+  "Normal Cast Time: %1    Your Cast Time: %2" (3106), yours no less than half (neither modifier is
+  ours, so we always say 3107). The buff window passes no details: title and icon only. Every
+  caller toggles: with the item display up (`IsActivated`, CItemDisplayWnd +0x140) it closes
+  whatever it shows. Alt+click (`GetKeyboardFlags` 4) and the right button held (`WndNotification`
+  0x17) on a book slot (`DisplaySpellInfo`, `DisplaySpellDetails` @0043525a), a gem
+  (`DisplaySpellInfoForGemSlot` @0040a480) or a buff (`HandleSpellInfoDisplay` @00409072) call it;
+  letting go after the hold (0x19) toggles again for the book and the buffs, and only closes it for
+  the gems. The decompile names the gem's 0x19 check `MemorizingSpellIndex` because it reads the
+  item display through a `CSpellBookWnd` pointer; it's `IsActivated`.
 - **Links** (`frontend/item_tags.*`): an item tag is `0x12`, `'0'`, a six-digit id, the text, `0x12`
   (`CEditWnd::AddItemTag`, `ConvertItemTags`). EQMacEmu sends say links the same way. The chat shows
   a tag in `User_71`'s color (`convertColorIndex` 0x146), blue under the mouse and navy while pressed.
