@@ -1877,8 +1877,13 @@ details and the nearest spawns at the top left and the radar at the top right.
     paladin, shadow knight and rogue more each level from 50), to 500.
   - **Weight** (`cur_encumbrance`): the cursor, worn and general slots and their bags (less weight
     reduction), and the coins (less the coin bags 17201..17230). It's red over our STR.
-- **Skills window** (`CSkillsWnd`): the skills the server says we have (0..73, not 254 or 255),
-  then the languages, with eqstr names and ranks from Awful to Master. `OP_SkillUpdate` prints
+- **Skills window** (`CSkillsWnd`): `Activate` (@0043287a) lists skills 0..99 that
+  `EQ_Character::HasSkill` gives us (the class and level table, plus racial skills the server marks
+  255), then the languages we know any of, and keeps those rows until it's opened again.
+  `UpdateSkill` (@004329d6) shows eqstr names and ranks from Awful to Master (eqstr 3224..3234, the
+  first rank whose limit in 10, 20 .. 100, 2000 the value is no more than; a language at 100 is
+  Master). A 255 shows `HasSkill`'s value; a 254 shows "LEVEL: %1" (eqstr 2161) with the level our
+  class gets it at and no value. `OP_SkillUpdate` prints
   "You have become better at %1! (%2)"; `OP_SkillUpdate2` updates it silently.
 
 ## Sound

@@ -78,11 +78,12 @@
 //     in font 1 in a dark box at its corner (DrawCursorAttachmentText). Escape and clicking the
 //     world leave it there (RemoveAttachment won't take an item; the world click would drop it,
 //     which we don't do yet), and nothing goes on the cursor over it (IsOkToActivate).
-// The skills window (CSkillsWnd, @0043273a on): Activate lists the skills we have, by number,
-// then the languages we know some of; UpdateSkill puts each one's name, rank and value in the list
-// (white, the headings 0x8aa3ff, rows 16 high, the rank and value justified 1). We go by what
-// the server sends: a skill (0..73) that isn't 254 or 255; eqgame's EQ_Character::HasSkill asks
-// its class and level table, and also lists racial skills (a halfling's sneak) the server marks 255.
+// The skills window (CSkillsWnd, @0043273a on): Activate lists the skills EQ_Character::HasSkill
+// gives us (its class and level table, and racial skills such as a halfling's sneak the server
+// marks 255), by number, then the languages we know some of, and the rows stay until it's opened
+// again; UpdateSkill puts each one's name, rank and value in the list (white, the headings
+// 0x8aa3ff, rows 16 high, the rank and value justified 1): a 255 shows HasSkill's value, a 254
+// "LEVEL: %1" with the level our class gets it at and no value.
 //
 // The item display (CItemDisplayWnd, @00423331 on), on the item in an inventory slot:
 //   - CInvSlot::HandleLButtonUp (@00421e48): a click with Alt down shows it, and does nothing else;
@@ -101,6 +102,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <vector>
 
 class Canvas;
 class EqStr;
@@ -184,6 +186,9 @@ struct GameWindowState
 	std::string quantity_text;
 
 	ZoneItem display_item; // the item display's (id 0: none yet)
+	// The skills window's rows as CSkillsWnd::Activate lists them: skills 0..99, languages 100 + n
+	// (empty: list them again).
+	std::vector<int> skill_rows;
 
 	// DAT_007d0254: a request the zone has yet to answer (a combine); the slots take no clicks.
 	bool busy = false;

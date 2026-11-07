@@ -340,7 +340,7 @@ namespace
 			result.coin_sound = CoinsToCursor(state, zone, state.quantity_place, coin, slider->slider_value);
 	}
 
-	void SkillsWindow(SidlWindow &wnd, const GameValues &values)
+	void SkillsWindow(SidlWindow &wnd, const GameValues &values, GameWindowState &state)
 	{
 		SidlWindow::Control *list = wnd.Find("SkillList");
 		if (!list)
@@ -351,28 +351,52 @@ namespace
 		list->row_height = 16;
 		list->justification = {0, 1, 1};
 		const ZoneProfile &me = values.zone->Profile();
+		// CSkillsWnd::Activate: the skills HasSkill gives us (0..99), then the languages we know any
+		// of (100 + n), kept until it's opened again.
+		if (state.skill_rows.empty()) {
+			for (int skill = 0; skill < 100; ++skill)
+				if (Skills::HasSkill(me, skill) != 0)
+					state.skill_rows.push_back(skill);
+			for (int language = 0; language < 32; ++language)
+				if (me.languages[language] != 0)
+					state.skill_rows.push_back(100 + language);
+		}
+		// UpdateSkill: the name, the rank (the first of RankLimits it's no more than; a language
+		// spoken fully is mastered) and the value.
 		auto rank = [&](int value, bool language) {
 			int i = 0;
-			while (i + 1 < static_cast<int>(std::size(RankLimits)) && value > RankLimits[i])
+			while (i < static_cast<int>(std::size(RankLimits)) && value > RankLimits[i])
 				++i;
-			if (i == 9 && language && value == 100) // a language spoken fully is mastered
+			if (i == static_cast<int>(std::size(RankLimits)))
+				i = 0; // past them all: the first (local_18 left 0)
+			if (i == 9 && language && value == 100)
 				i = 10;
 			return EqText(values.eqstr, FirstRankName + i, "");
 		};
 		list->rows.clear();
-		for (int skill = 0; skill < SkillCount; ++skill) {
-			int value = me.skills[skill];
-			if (value < 0 || value >= 254)
+		for (int row : state.skill_rows) {
+			if (row >= 100) {
+				int language = row - 100, value = me.languages[language];
+				uint32_t name = LanguageNameId(language);
+				list->rows.push_back({name ? EqText(values.eqstr, name, "Language " + std::to_string(language)) : "Unknown",
+					rank(value, true), std::to_string(value)});
 				continue;
-			list->rows.push_back({SkillName(values.eqstr, skill), rank(value, false), std::to_string(value)});
-		}
-		for (int language = 0; language < 32; ++language) {
-			int value = me.languages[language];
-			if (value == 0)
-				continue;
-			uint32_t name = LanguageNameId(language);
-			list->rows.push_back({name ? EqText(values.eqstr, name, "Language " + std::to_string(language)) : "Unknown",
-				rank(value, true), std::to_string(value)});
+			}
+			// 255 (can't) is HasSkill's racial level instead; 254 (not yet) says the level our
+			// class gets it at, "LEVEL: %1" (eqstr 2161), and a 255 HasSkill leaves "LEVEL: 66".
+			int value = me.skills[row];
+			if (value == 255)
+				value = Skills::HasSkill(me, row);
+			std::string rank_text;
+			if (value == 254 || value == 255) {
+				int cls = me.class_id;
+				std::string level = value == 255 ? "66"
+				                    : std::to_string(cls >= 1 && cls <= Skills::Classes ? Skills::Get(row).level[cls - 1] : 0);
+				rank_text = FormatEqString(values.eqstr, 2161, "LEVEL: %1", {level});
+			}
+			else
+				rank_text = rank(value, false);
+			list->rows.push_back({SkillName(values.eqstr, row), rank_text, value < 254 ? std::to_string(value) : ""});
 		}
 		wnd.UpdateListScroll(*list);
 	}
@@ -628,6 +652,7 @@ std::string GameWindowClick(WindowManager &windows, GameWindowState &state, cons
 		if (SidlWindow *skills = windows.Find("SkillsWindow"))
 			if (SidlWindow::Control *list = skills->Find("SkillList"))
 				list->scroll_pos = 0;
+		state.skill_rows.clear(); // listed again on the next frame
 		windows.Show("SkillsWindow", true);
 	}
 	if (window != "HotButtonWnd")
@@ -974,7 +999,7 @@ void UpdateGameWindows(WindowManager &windows, const GameValues &values, GameWin
 	if (SidlWindow *wnd = windows.Find("InventoryWindow"); wnd && windows.Shown("InventoryWindow"))
 		InventoryWindow(*wnd, windows, values);
 	if (SidlWindow *wnd = windows.Find("SkillsWindow"); wnd && windows.Shown("SkillsWindow"))
-		SkillsWindow(*wnd, values);
+		SkillsWindow(*wnd, values, state);
 	if (SidlWindow *wnd = windows.Find("QuantityWnd"))
 		QuantityWindow(*wnd, windows, state);
 }

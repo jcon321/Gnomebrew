@@ -147,9 +147,10 @@ no rules of its own.
      Still to do: FV's always-no-drop item ids (`EQ_Item::IsSpecialNoDrop`), open bags, items in
      other windows (loot, trade, merchants), and the item+0xdc check WndNotification makes
      before linking (unknown field).
-   - Skills window: the skills the server says we have (not 254 or 255) and our languages, with
-     their ranks, kept up to date by OP_SkillUpdate. Still to do: the racial skills the server marks
-     255 (`Skills::HasSkill` has eqgame's table now; the window doesn't use it), selecting rows.
+   - Skills window: the skills HasSkill gives us and our languages, listed as CSkillsWnd::Activate
+     lists them, with their ranks (UpdateSkill: 254's "LEVEL: %1", 255 as HasSkill's value), kept
+     up to date by OP_SkillUpdate. Still to do: selecting rows (CListWnd's selection), and checking
+     a racial skill live (the test characters are human).
    - Spellbook and spell gems: done (`frontend/spell_book.*`, eqgame's CSpellBookWnd and
      CCastSpellWnd): the book opens from the gems' book button or /book (casters only, sitting us
      down), pages and page keys, a scroll on the cursor scribed into an empty slot, a book spell
