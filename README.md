@@ -382,7 +382,8 @@ eqgame's `OP_MoveItem`.
   "", since the zone puts our name in front), the target's name, and our or the target's
   he/him/his (12209..12211, 12297..12301 by gender; "You", "you", "your" in the echo). Anything
   typed after the name replaces the text: sent as `" text."`, echoed as "You emote 'text'". A
-  full stop goes after a final letter or digit, the text goes out as `OP_Emote`, and the echo is
+  full stop goes after a final letter or digit, the text goes out as `OP_Emote` (its first u16
+  0xffff, where `/emote` sends 0; the zone ignores it), and the echo is
   printed in the emote color (`0x107`). A social with an animation (`PlayAnimationTrack` id, e.g.
   77 for /smile) plays it on us and sends `OP_Animation {u16 us, pad, i32 id, float 1}`, but only
   standing still. A social with only a lone text (/fidget) does nothing with a target; /nudge has
