@@ -1,6 +1,11 @@
 #include "canvas.h"
 
 #include <algorithm>
+#include <vector>
+
+#if defined(__SSE2__)
+#include <emmintrin.h>
+#endif
 
 void Canvas::SetClip(const Rect &clip)
 {
@@ -68,6 +73,20 @@ void Canvas::Frame(const Rect &area, uint32_t color)
 
 namespace
 {
+	// A pixel's four bytes a 16-bit lane each (0x00AA00RR00GG00BB), and back.
+	inline uint64_t Spread(uint32_t p)
+	{
+		uint64_t x = p;
+		x = (x | (x << 16)) & 0x0000ffff0000ffffull;
+		return (x | (x << 8)) & 0x00ff00ff00ff00ffull;
+	}
+
+	inline uint32_t Pack(uint64_t x)
+	{
+		x = (x | (x >> 8)) & 0x0000ffff0000ffffull;
+		return static_cast<uint32_t>(x | (x >> 16));
+	}
+
 	inline uint32_t Blend(uint32_t dst, uint32_t src)
 	{
 		uint32_t a = src >> 24;
@@ -76,21 +95,71 @@ namespace
 		if (a == 0)
 			return dst;
 		uint32_t inv = 255 - a;
-		uint32_t r = (((src >> 16) & 0xff) * a + ((dst >> 16) & 0xff) * inv) / 255;
-		uint32_t g = (((src >> 8) & 0xff) * a + ((dst >> 8) & 0xff) * inv) / 255;
-		uint32_t b = ((src & 0xff) * a + (dst & 0xff) * inv) / 255;
-		uint32_t t = ((dst >> 24) * inv) / 255; // the 3D view behind shows through less
-		return (t << 24) | (r << 16) | (g << 8) | b;
+		// Each channel (s * a + d * inv) / 255, the four at once: a lane's sum is at most 255 * 255, so
+		// none carries into the next, and (x + 1 + (x >> 8)) >> 8 is x / 255 exactly up to there. The
+		// source's top byte counts as 0, so the 3D view behind (dst's) shows through less.
+		uint64_t x = Spread(src & 0xffffff) * a + Spread(dst) * inv;
+		x = ((x + 0x0001000100010001ull + ((x >> 8) & 0x00ff00ff00ff00ffull)) >> 8) & 0x00ff00ff00ff00ffull;
+		return Pack(x);
 	}
 
-	inline uint32_t Lerp(uint32_t a, uint32_t b, uint32_t t) // t in 0..256
+#if defined(__SSE2__)
+	// Blend's sums four pixels at a time: src[i] over dst[i] while four of the `count` are left, each
+	// at its alpha (has_alpha: its own, else 255) times scale / 256, its color channels first times
+	// the tint's (out of 256: tr, tg, tb; 256 each for none). The same bytes as Blend: at alpha 255
+	// the sum is the source's, at 0 the destination's. Returns how many it did.
+	inline int BlendRow(uint32_t *dst, const uint32_t *src, int count, bool has_alpha, uint32_t scale,
+		uint32_t tr = 256, uint32_t tg = 256, uint32_t tb = 256)
 	{
-		uint32_t out = 0;
-		for (int shift = 0; shift < 32; shift += 8) {
-			uint32_t ca = (a >> shift) & 0xff, cb = (b >> shift) & 0xff;
-			out |= ((ca * (256 - t) + cb * t) >> 8) << shift;
+		const bool tinted = tr != 256 || tg != 256 || tb != 256;
+		// A pixel's lanes are B, G, R, A.
+		const __m128i tint16 = _mm_setr_epi16(static_cast<short>(tb), static_cast<short>(tg), static_cast<short>(tr), 0,
+			static_cast<short>(tb), static_cast<short>(tg), static_cast<short>(tr), 0);
+		const __m128i zero = _mm_setzero_si128();
+		const __m128i rgb_mask = _mm_set1_epi32(0x00ffffff);
+		const __m128i opaque = _mm_set1_epi32(0xff);
+		const __m128i scale32 = _mm_set1_epi32(static_cast<int>(scale));
+		const __m128i one = _mm_set1_epi16(1);
+		const __m128i full = _mm_set1_epi16(255);
+		int x = 0;
+		for (; x + 4 <= count; x += 4) {
+			__m128i s = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src + x));
+			__m128i d = _mm_loadu_si128(reinterpret_cast<const __m128i *>(dst + x));
+			// Each pixel's alpha (a 32-bit lane's low 16 bits; a * scale fits them), then in all four
+			// of its 16-bit channel lanes.
+			__m128i a = has_alpha ? _mm_srli_epi32(s, 24) : opaque;
+			a = _mm_srli_epi32(_mm_mullo_epi16(a, scale32), 8);
+			a = _mm_or_si128(a, _mm_slli_epi32(a, 16));
+			__m128i a_lo = _mm_unpacklo_epi32(a, a), a_hi = _mm_unpackhi_epi32(a, a);
+			s = _mm_and_si128(s, rgb_mask); // the source's top byte counts as 0
+			auto sum = [&](__m128i s16, __m128i d16, __m128i a16) {
+				if (tinted)
+					s16 = _mm_srli_epi16(_mm_mullo_epi16(s16, tint16), 8); // at most 255 * 256: fits
+				__m128i v = _mm_add_epi16(_mm_mullo_epi16(s16, a16), _mm_mullo_epi16(d16, _mm_sub_epi16(full, a16)));
+				return _mm_srli_epi16(_mm_add_epi16(_mm_add_epi16(v, one), _mm_srli_epi16(v, 8)), 8);
+			};
+			__m128i lo = sum(_mm_unpacklo_epi8(s, zero), _mm_unpacklo_epi8(d, zero), a_lo);
+			__m128i hi = sum(_mm_unpackhi_epi8(s, zero), _mm_unpackhi_epi8(d, zero), a_hi);
+			_mm_storeu_si128(reinterpret_cast<__m128i *>(dst + x), _mm_packus_epi16(lo, hi));
 		}
-		return out;
+		return x;
+	}
+#endif
+
+	// Each channel (a * (256 - t) + b * t) >> 8, t in 0..256, on Spread pixels: a lane's sum is at
+	// most 255 * 256, so none carries into the next.
+	inline uint64_t LerpSpread(uint64_t a, uint64_t b, uint32_t t)
+	{
+		return ((a * (256 - t) + b * t) >> 8) & 0x00ff00ff00ff00ffull;
+	}
+
+	// Bilinear: across the top pair and the bottom pair by fx, then down by fy.
+	inline uint32_t Bilinear(uint32_t top_left, uint32_t top_right, uint32_t bottom_left, uint32_t bottom_right,
+		uint32_t fx, uint32_t fy)
+	{
+		uint64_t top = LerpSpread(Spread(top_left), Spread(top_right), fx);
+		uint64_t bottom = LerpSpread(Spread(bottom_left), Spread(bottom_right), fx);
+		return Pack(LerpSpread(top, bottom, fy));
 	}
 }
 
@@ -105,9 +174,20 @@ void Canvas::FillFaded(const Rect &area, uint32_t color)
 	int x0 = std::max(area.x, m_clip.x), y0 = std::max(area.y, m_clip.y);
 	int x1 = std::min(area.Right(), m_clip.Right()), y1 = std::min(area.Bottom(), m_clip.Bottom());
 	uint32_t src = (static_cast<uint32_t>(m_alpha) << 24) | (color & 0xffffff);
+	if (x1 <= x0)
+		return;
+#if defined(__SSE2__)
+	// A row of the color at the alpha, blended four pixels at a time.
+	thread_local std::vector<uint32_t> line;
+	line.assign(static_cast<size_t>(x1 - x0), src);
+#endif
 	for (int y = y0; y < y1; ++y) {
 		uint32_t *row = Row(y);
-		for (int x = x0; x < x1; ++x)
+		int x = x0;
+#if defined(__SSE2__)
+		x = x0 + BlendRow(row + x0, line.data(), x1 - x0, true, 256);
+#endif
+		for (; x < x1; ++x)
 			row[x] = Blend(row[x], src);
 	}
 }
@@ -138,6 +218,59 @@ void Canvas::Stretch(const Image &image, const Rect &source, const Rect &dest, u
 	int x1 = std::min({dest.Right(), clip.Right(), m_clip.Right()}), y1 = std::min({dest.Bottom(), clip.Bottom(), m_clip.Bottom()});
 	int max_x = std::min(source.Right(), image.width) - 1;
 	int max_y = std::min(source.Bottom(), image.height) - 1;
+	if (x1 <= x0 || y1 <= y0 || max_x < source.x || max_y < source.y)
+		return;
+	// By value, so the writes to the canvas can't be taken for changes to what it reads.
+	const bool has_alpha = image.has_alpha, tinted = tint != 0xffffff;
+	auto put = [=](uint32_t *dst, uint32_t src) {
+		if (tinted)
+			src = (src & 0xff000000) | ((((src >> 16) & 0xff) * tr >> 8) << 16) | ((((src >> 8) & 0xff) * tg >> 8) << 8) |
+			      ((src & 0xff) * tb >> 8);
+		if (faded) {
+			uint32_t a = has_alpha ? src >> 24 : 0xff;
+			*dst = Blend(*dst, ((a * ui_alpha >> 8) << 24) | (src & 0xffffff));
+		}
+		else
+			*dst = has_alpha ? Blend(*dst, src) : src & 0xffffff;
+	};
+	// A pixel for a texel (most of the UI, and every faded window's pictures): the samples below land
+	// on the texel centers, so each pixel is its texel as it is.
+	if (source.w == dest.w && source.h == dest.h) {
+		{
+			// In a loop of its own: each texel tinted, at its own alpha (an opaque picture's 255)
+			// scaled by the UI's, over what's there. Locals, so the writes to the canvas can't be
+			// taken for changes to them.
+			const uint32_t r = tr, g = tg, b = tb;
+			const uint32_t scale = faded ? ui_alpha : 256;
+			const int shift = source.x - dest.x;
+			const int last = std::min(x1, max_x - shift + 1); // past it, the image's last column again
+			for (int y = y0; y < y1; ++y) {
+				int row = std::min(y - dest.y + source.y, max_y);
+				const uint32_t *src = &image.pixels[static_cast<size_t>(row) * image.width];
+				uint32_t *dst = Row(y);
+				int x = x0;
+#if defined(__SSE2__)
+				if (x0 < last)
+					x = x0 + BlendRow(dst + x0, src + x0 + shift, std::min(x1, last) - x0, has_alpha, scale, r, g, b);
+#endif
+				for (; x < x1; ++x) {
+					uint32_t s = src[x < last ? x + shift : max_x];
+					uint32_t a = ((has_alpha ? s >> 24 : 0xff) * scale) >> 8;
+					if (tinted)
+						s = ((((s >> 16) & 0xff) * r >> 8) << 16) | ((((s >> 8) & 0xff) * g >> 8) << 8) | ((s & 0xff) * b >> 8);
+					dst[x] = Blend(dst[x], (a << 24) | (s & 0xffffff));
+				}
+			}
+		}
+		return;
+	}
+	// Each column's sample, worked out once rather than a division a pixel.
+	thread_local std::vector<int> columns;
+	columns.resize(static_cast<size_t>(x1 - x0));
+	for (int x = x0; x < x1; ++x) {
+		int sx = ((x - dest.x) * 2 + 1) * source.w * 128 / dest.w - 128 + source.x * 256;
+		columns[static_cast<size_t>(x - x0)] = std::clamp(sx, source.x * 256, max_x * 256);
+	}
 	for (int y = y0; y < y1; ++y) {
 		// Sample at pixel centers, 8 bits of fraction.
 		int sy = ((y - dest.y) * 2 + 1) * source.h * 128 / dest.h - 128 + source.y * 256;
@@ -145,23 +278,14 @@ void Canvas::Stretch(const Image &image, const Rect &source, const Rect &dest, u
 		int row0 = sy >> 8, row1 = std::min(row0 + 1, max_y);
 		uint32_t fy = static_cast<uint32_t>(sy & 0xff);
 		uint32_t *dst = Row(y);
+		const uint32_t *top = image.pixels.data() + static_cast<size_t>(row0) * image.width;
+		const uint32_t *bottom = image.pixels.data() + static_cast<size_t>(row1) * image.width;
+		const int *column = columns.data();
 		for (int x = x0; x < x1; ++x) {
-			int sx = ((x - dest.x) * 2 + 1) * source.w * 128 / dest.w - 128 + source.x * 256;
-			sx = std::clamp(sx, source.x * 256, max_x * 256);
+			int sx = column[x - x0];
 			int col0 = sx >> 8, col1 = std::min(col0 + 1, max_x);
 			uint32_t fx = static_cast<uint32_t>(sx & 0xff);
-			uint32_t top = Lerp(image.At(col0, row0), image.At(col1, row0), fx);
-			uint32_t bottom = Lerp(image.At(col0, row1), image.At(col1, row1), fx);
-			uint32_t src = Lerp(top, bottom, fy);
-			if (tint != 0xffffff)
-				src = (src & 0xff000000) | ((((src >> 16) & 0xff) * tr >> 8) << 16) | ((((src >> 8) & 0xff) * tg >> 8) << 8) |
-				      ((src & 0xff) * tb >> 8);
-			if (faded) {
-				uint32_t a = image.has_alpha ? src >> 24 : 0xff;
-				dst[x] = Blend(dst[x], ((a * ui_alpha >> 8) << 24) | (src & 0xffffff));
-			}
-			else
-				dst[x] = image.has_alpha ? Blend(dst[x], src) : src & 0xffffff;
+			put(&dst[x], Bilinear(top[col0], top[col1], bottom[col0], bottom[col1], fx, fy));
 		}
 	}
 }
