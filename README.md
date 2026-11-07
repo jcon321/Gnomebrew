@@ -1130,7 +1130,11 @@ the rejection).
   (`CreatePlayerActor`). Every model, player races included, is sized by `EQPlayer::SetHeights`: size / 5,
   with the model's origin `ModelHeightOffset` (3.125 x size / 5) over the feet. The models are built for
   that, ~6.5 units tall with their feet ~3.125 under the origin, once their bones' scales are applied:
-  a halfling (3.5) is 4.7 tall, a human (6) 8. Their names float over them within 120 units,
+  a halfling (3.5) is 4.7 tall, a human (6) 8. Races 63, and 42 and 120 neuter, are shrunk to 0.45 of
+  that, for global6's larger `WOL` and `WOE`. We search a zone's own `_chr` files before the globals
+  (eqgame keeps the first loaded, the globals), so Misty Thicket's wolves are `misty_chr`'s old `WOL`: it
+  keeps the usual size, and takes no tracks from global6, whose `WOL` has other bones (its root-only
+  `L01WOL_TRACK` and the like would leave the old wolf in its base pose). Their names float over them within 120 units,
   hidden by anything in front.
 - **How they look:** the spawn's `bodytexture` (byte 101) is the client's `EQPlayer::Texture`. 0xFF (players)
   dresses each slot from the equipment list; anything else is an NPC's texture for every part

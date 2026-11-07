@@ -546,9 +546,29 @@ namespace render
 		int variation = luclin ? AnimVariation(appearance.equip[7], appearance.equip[8]) : 0;
 		auto &animations = m_animation_sets[code + static_cast<char>('A' + variation)];
 		if (!animations) {
+			// A zone's model drawn over a global one of the same name (we search the zone's files first,
+			// eqgame keeps the global's) takes no tracks from the global's file when the two are built on
+			// other bones: global6's WOL (its root WOL_TRACK, L01WOL_TRACK...) would give misty_chr's old
+			// WOL animations that move only the root, the rest of it stuck in its base pose.
+			bool zone_model = source->name.rfind("global", 0) != 0;
+			auto same_bones = [&](const Source &other) {
+				if (!zone_model)
+					return true;
+				int other_actor = other.wld.Find(code + "_ACTORDEF");
+				WldSkeleton other_skeleton;
+				if (other_actor < 0 || other.wld.ActorSkeleton(other_actor) < 0 ||
+					!other.wld.ReadSkeleton(other.wld.ActorSkeleton(other_actor), other_skeleton))
+					return true;
+				if (other_skeleton.bones.size() != skeleton.bones.size())
+					return false;
+				for (size_t i = 0; i < skeleton.bones.size(); ++i)
+					if (Upper(other_skeleton.bones[i].track) != Upper(skeleton.bones[i].track))
+						return false;
+				return true;
+			};
 			std::vector<const WldFile *> wlds = {&source->wld};
 			for (auto &other : m_sources)
-				if (other.get() != source && !Skipped(*other, code))
+				if (other.get() != source && !Skipped(*other, code) && same_bones(*other))
 					wlds.push_back(&other->wld);
 			auto set = std::make_shared<std::map<std::string, SkeletonAnimation>>();
 			std::string from = AnimationSource(code, luclin);
@@ -964,8 +984,12 @@ namespace render
 		// given; races 63, and 42 and 120 neuter, a little under half that), its origin 3.125 * scale
 		// over the feet. The models are built for that, feet ~3.125 under the origin and ~6.5 tall
 		// once their bones' scales are applied (the halfling male's pelvis scales him by 1.6).
+		// The neuter wolves' shrink is for global6's larger WOL and WOE, the ones eqgame draws; a zone's
+		// old WOL (misty_chr's), which we draw over global6's, is built to the usual size.
 		float height = appearance.height > 0 ? appearance.height : player_race ? RaceHeight(appearance.race) : 6;
-		if (appearance.race == 63 || ((appearance.race == 42 || appearance.race == 120) && appearance.gender == 2))
+		bool global6 = source->name.rfind("global6_chr", 0) == 0;
+		if (appearance.race == 63 ||
+			((appearance.race == 42 || appearance.race == 120) && appearance.gender == 2 && global6))
 			height *= 0.45f;
 		model->m_scale = height * 0.2f;
 		model->m_min_z *= model->m_scale;
