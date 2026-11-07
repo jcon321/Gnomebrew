@@ -287,6 +287,14 @@ std::string WindowManager::ScreenAt(int x, int y) const
 	return top >= 0 ? m_windows[top]->screen : "";
 }
 
+std::string WindowManager::TopShown() const
+{
+	for (int i = static_cast<int>(m_windows.size()) - 1; i >= 0; --i)
+		if (m_windows[i]->shown)
+			return m_windows[i]->screen;
+	return "";
+}
+
 void WindowManager::Raise(const std::string &screen)
 {
 	for (int i = 0; i < static_cast<int>(m_windows.size()); ++i)

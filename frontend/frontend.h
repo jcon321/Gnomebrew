@@ -27,6 +27,7 @@
 #include "login_client.h"
 #include "sidl.h"
 #include "bank_window.h"
+#include "book_window.h"
 #include "buffs.h"
 #include "combat.h"
 #include "color_picker.h"
@@ -169,6 +170,7 @@ public:
 	WindowManager &Windows() { return m_windows; }
 	const GameWindowState &WindowState() const { return m_window_state; }
 	const SpellBook &SpellBookState() const { return m_spell_book; }
+	BookWindow &Book() { return m_book; }
 	const std::string &UiLayoutPath() const { return m_ui_layout_path; }
 	CharacterCreation *Creation() { return m_creation.get(); }
 	// For tools: the window-pixel center of a visible SIDL control on character select or creation.
@@ -342,7 +344,7 @@ private:
 	void DoDrinkEatPoison(const ZoneItem &item, int16_t slot);
 	// EQ_Note::SendTextRequestMsg (@004ce45d): the right button on a book or note closes its window,
 	// and asks for its text unless it was this one's (CNoteWnd::CheckNote, CBookWnd::CheckBook); the
-	// answer (OP_ReadBook) fills it (CNoteWnd::SetNote, Activate).
+	// answer (OP_ReadBook) fills it (CNoteWnd::SetNote, CBookWnd::SetBook, Activate).
 	void ReadNote(const ZoneItem &item, int16_t slot);
 	void BookText(int type, const std::string &text);
 	std::string m_note_shown;   // CNoteWnd+0x544: the item whose note is up (ours: its slot and name)
@@ -524,6 +526,7 @@ private:
 	uint64_t m_cycle_ms = 0;        // its last press
 	bool m_attack_sent = false;     // what OP_AutoAttack last said (DAT_0063db29)
 	Buffs m_buffs;                  // the spells on us
+	BookWindow m_book;              // a book's window (CBookWnd)
 	CompassWindow m_compass;
 	ColorPicker m_color_picker;     // CColorPickerWnd, for the window menu's Tint Color
 	Containers m_containers;        // the bag windows

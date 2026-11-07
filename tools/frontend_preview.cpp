@@ -1146,6 +1146,49 @@ int main(int argc, char **argv)
 		};
 		printf("[preview] %d windows, layout %s\n", windows.Count(), frontend.UiLayoutPath().c_str());
 		h.Key(InputEvent::Key::F11); // the debug menu out of the way
+		// A book's window (CBookWnd) with the zone's text for the Quintessence book: its pages as
+		// ParseAndFormatBookContent lays them out, Right and Left, Escape.
+		{
+			BookWindow &book = frontend.Book();
+			auto pages = [&](const char *when) {
+				const SidlWindow *w = windows.Find("BookWindow");
+				const SidlWindow::Control *right = w ? w->Find("RightButton") : nullptr;
+				const SidlWindow::Control *left = w ? w->Find("LeftButton") : nullptr;
+				printf("[preview] book %s: %s '%s', page %d, left %d right %d\n", when,
+					windows.Shown("BookWindow") ? "shown" : "hidden", w ? w->Root().text.c_str() : "", book.Page(),
+					left ? left->enabled : -1, right ? right->enabled : -1);
+			};
+			book.Check("preview", "Quintessence of the Elements");
+			book.SetBook("Soon after the creation of the`elder gods by the Nameless,`while the gods were placing`their "
+			             "creations onto Norrath,`the elemental gods gathered to`make their own creation.`Unlike what "
+			             "the other gods`created on Norrath, Fennin Ro,`Tarew Marr, The Rathe Council,`and Xegony gathered "
+			             "for their`own creation. They combined`the very essence of their`beings and created an object`of "
+			             "infinite power, the`Quintessence of the Elements.`Once created the gods realized`the danger any "
+			             "wielder of it`would possess, so they locked`it away in the Rathe's vault. A line with no breaks in "
+			             "it runs on and on until it wraps.");
+			frontend.Update(NowMs());
+			pages("opened");
+			for (int p = 0; p < 4 && !book.PageText(p).empty(); ++p) {
+				printf("[preview] page %d:\n", p + 1);
+				const std::string &text = book.PageText(p);
+				for (size_t start = 0; start < text.size();) {
+					size_t nl = text.find('\n', start);
+					printf("[preview]   |%s|\n", text.substr(start, nl - start).c_str());
+					start = nl + 1;
+				}
+			}
+			h.Snapshot("k1-book");
+			h.Key(InputEvent::Key::Right);
+			pages("after Right");
+			h.Key(InputEvent::Key::Right);
+			pages("after Right again");
+			h.Key(InputEvent::Key::Left);
+			pages("after Left");
+			h.Key(InputEvent::Key::Escape);
+			pages("after Escape");
+			while (book.Page() > 0) // as it was for the rest
+				book.Click("BookWindow", "LeftButton");
+		}
 		if (argc >= 7 && std::string(argv[6]) == "options")
 			return OptionsTest(frontend, h, config.settings_ini);
 		// The window menu: a right press on the player window off its controls, Background's

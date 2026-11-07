@@ -135,10 +135,12 @@ no rules of its own.
      down here; checked live) and items' click effects (`SpellCast::CastItem`, OP_CastSpell gem 10
      with the slot; not checked live, the test characters have none). Still to do: poisons
      (CEverQues_ApplyPoison), Alcohol Tolerance's skill-up (EQ_PC_CheckSkillImprove 66), what
-     drunkenness does, and the book window: a note (book type 0) is read
-     (EQ_Note::SendTextRequestMsg's OP_ReadBook, CNoteWnd's SetNote and Done; checked live), a book
-     (type 1) asks for its text but CBookWnd (two pages of 12 lines each fitted by the font,
-     ParseAndFormatBookContent, its page buttons and keys) isn't ours yet.
+     drunkenness does. Notes and books are read (EQ_Note::SendTextRequestMsg's OP_ReadBook;
+     CNoteWnd's SetNote, checked live; CBookWnd's pages, buttons and keys in
+     `frontend/book_window.*`, checked through the preview with a zone's book text). Still to do
+     for books: check the lines' fit against the TAKP client on Windows (the preview's box font is
+     wider than Arial), DrawFormattedText's own wrapping in place of measuring the line whole, and
+     keyboard focus (the window takes Left and Right while it's on top, not while it has the focus).
    - Item display: alt+click or the right button held on an inventory slot shows its item
      (`frontend/item_display.*`, eqgame's SetItem text with spells_en.txt's spell names); letting
      the right button go closes it. A link clicked in the chat shows its item (the zone's

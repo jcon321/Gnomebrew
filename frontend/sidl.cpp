@@ -342,6 +342,7 @@ void SidlDefinitions::ReadElement(const XmlNode &node)
 	p.right_offset = node.ChildInt("RightAnchorOffset", 0);
 	p.bottom_offset = node.ChildInt("BottomAnchorOffset", 0);
 	p.transparent = node.ChildBool("Style_Transparent", false);
+	p.multiline = node.ChildBool("Style_Multiline", false);
 	p.titlebar = node.ChildBool("Style_Titlebar", false);
 	p.closebox = node.ChildBool("Style_Closebox", false);
 	p.minimizebox = node.ChildBool("Style_Minimizebox", false);
@@ -1417,6 +1418,11 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 	}
 	else if (def.type == "Combobox") {
 		DrawCombo(control, canvas, text, textures, now_ms);
+	}
+	else if (def.type == "Editbox" && def.multiline) {
+		// A multiline box (CEditWnd's style 4): the text from its top left, wrapped to its width.
+		const Rect &c = control.client;
+		text.DrawWrapped(canvas, c, control.text, height, control.text_color, weight);
 	}
 	else if (def.type == "Editbox") {
 		// The end of the text, as much as fits, with the caret after it. An item tag shows its name,

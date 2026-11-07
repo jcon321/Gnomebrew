@@ -1652,7 +1652,21 @@ details and the nearest spawns at the top left and the radar at the top right.
   item's BookType (byte 228), its Filename (byte 231)\0}. The zone answers with the same opcode
   {u8 type, the text (no terminator)}: 0 a note, `CNoteWnd::SetNote` (the window titled with the
   item's name, the STMLbox `Note` given `<c "#000000">` + text + `</c>`) and Activate; 1 a book,
-  `CBookWnd::SetBook`.
+  `CBookWnd::SetBook` and Activate (`frontend/book_window.*`). Escape closes a book's window, then a
+  note's (`CDisplay_NewUIProcessEscape`, after the trade window), without forgetting the item, so
+  the next right click on it only forgets it.
+- **Book window** (`CBookWnd`, BookWindow): `ParseAndFormatBookContent` (@0040887f) lays the text
+  out in pages of 12 lines, at most 100. A '`' ends a line (the zone's book texts break their lines
+  with it); otherwise a character at a time is added until `CTextureFont::DrawFormattedText` with
+  Page0's font in Page0's client width counts two lines, and the line ends at its last space, or
+  after that character if it had none. The '`' or space it ends at is skipped. We measure the line
+  in one piece against the width (`TextRenderer::Measure`), not by DrawFormattedText's wrapping.
+  `DisplayText` puts the left page (+0x2e8) and the next in the multiline edit boxes Page0 and
+  Page1, their numbers from 1 in Page0Number and Page1Number. `ShowButtons`: RightButton enabled
+  while the page two on has text, LeftButton off the first page. `WndNotification` (@004086b2):
+  Done deactivates, the arrows turn two pages; `HandleKeyboardMsg` (@00408b03) does the same for
+  Left and Right with no Shift, Ctrl or Alt while the window has the keyboard (ours: while it's the
+  top window). Nothing resets the page for another book: it opens where the last was left.
 - **Archery and throwing** (`frontend/ranged_attack.cpp`). DoPassageOfTime readies the Range button
   (`__RangeAttackReady`) when the primary's delay (Delay * 100, hand to hand's reuse without one;
   a weapon is item type under 6, 13 or 22) has passed since ActorInfo's AttackTimer, or the range

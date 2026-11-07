@@ -107,6 +107,7 @@ public:
 	int ScreenWidth() const { return m_width; }
 	int ScreenHeight() const { return m_height; }
 	std::string ScreenAt(int x, int y) const; // the topmost shown window under (x, y), or ""
+	std::string TopShown() const; // the topmost shown window (the last raised), or ""
 
 	// Mouse events, in screen pixels. True when the windows took it (it's over one, or one is
 	// being dragged); the world shouldn't see it then.

@@ -167,6 +167,7 @@ struct SidlPiece
 	std::string draw_template;
 	bool style_border = false;
 	bool transparent = false; // no background
+	bool multiline = false;   // Editbox Style_Multiline: its text from the top, a line per '\n', wrapped
 	bool titlebar = false;    // Style_Titlebar: the template's title bar with <Text> in it
 	bool closebox = false;    // Style_Closebox, Style_Minimizebox: buttons in the title bar
 	bool minimizebox = false;

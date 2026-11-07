@@ -1971,7 +1971,7 @@ namespace
 		{ColorPicker::Screen, false},
 		{"ConfirmationDialogBox", false}, {"CastingWindow", false}, {"BankWnd", false},
 		{"MerchantWnd", false}, {"LootWnd", false}, {"TradeWnd", false}, {"GiveWnd", false},
-		{"SkillsSelectWindow", false}, {"NoteWindow", false},
+		{"SkillsSelectWindow", false}, {"NoteWindow", false}, {"BookWindow", false},
 	};
 
 	// The selector's buttons (EQUI_SelectorWnd.xml) and the windows they open and close.
@@ -2072,6 +2072,7 @@ void FrontEnd::BuildZoneWindows()
 	cast_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
 	m_spell_cast.Attach(m_windows, m_zone, m_ui.spells, m_ui.eqstr, std::move(cast_host));
 	m_buffs.Attach(m_zone, m_ui.spells, m_ui.eqstr, [this](const std::string &text, int type) { ChatOut(text, type); });
+	m_book.Attach(m_windows, m_text);
 	m_game_values.buffs = &m_buffs;
 	m_spell_book.Attach(m_windows, m_window_state, m_zone, m_game_values, m_spell_cast, m_ui.spells, m_ui.eqstr,
 		std::move(host));
@@ -2296,6 +2297,8 @@ void FrontEnd::HandleWindowClicks()
 			continue;
 		}
 		// CNoteWnd's Done.
+		if (m_book.Click(click.window, click.control))
+			continue;
 		if (click.window == "NoteWindow" && click.control == "DoneButton") {
 			m_windows.Show("NoteWindow", false);
 			continue;
@@ -2642,10 +2645,13 @@ void FrontEnd::DoDrinkEatPoison(const ZoneItem &item, int16_t slot)
 
 void FrontEnd::ReadNote(const ZoneItem &item, int16_t slot)
 {
-	// A note (type 0): CNoteWnd's Deactivate, then CheckNote; a book's window (CBookWnd) isn't ours
-	// yet, so a book asks for its text all the same and nothing shows it.
+	// A note (type 0): CNoteWnd's Deactivate, then CheckNote; a book's: CBookWnd's, then CheckBook.
 	std::string which = std::to_string(slot) + ":" + item.name;
-	if (item.book_type == 0) {
+	if (item.book_type != 0) {
+		if (!m_book.Check(which, item.name))
+			return;
+	}
+	else {
 		m_windows.Show("NoteWindow", false);
 		if (m_note_shown == which) {
 			m_note_shown.clear();
@@ -2659,8 +2665,10 @@ void FrontEnd::ReadNote(const ZoneItem &item, int16_t slot)
 
 void FrontEnd::BookText(int type, const std::string &text)
 {
+	if (type == 1)
+		m_book.SetBook(text);
 	if (type != 0)
-		return; // a book: CBookWnd::SetBook and Activate (not ours yet)
+		return;
 	SidlWindow *note = m_windows.Find("NoteWindow");
 	if (!note)
 		return;
@@ -4014,6 +4022,9 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			return;
 		}
 	}
+	// A book with the keyboard turns its pages (CBookWnd::HandleKeyboardMsg).
+	if (m_book.Key(event.key, event.shift, event.ctrl, event.alt))
+		return;
 	// The open spellbook's page keys (HandleKeys, ahead of the movement keys) and Delete.
 	if (m_spell_book.Key(event.key, m_now_ms))
 		return;
@@ -4038,13 +4049,15 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			break;
 		}
 		// ExecuteCmd's escape: no target, then CDisplay_NewUIProcessEscape closes the first of its
-		// windows that's open (of the ones we have: the item display, quantity, the bank, a merchant, loot, a trade, help,
-		// skills, then every bag window at once, options, the spellbook, the social editor, inventory).
+		// windows that's open (of the ones we have: the item display, quantity, the bank, a merchant,
+		// loot, a trade, a book, a note, help, skills, then every bag window at once, options, the
+		// spellbook, the social editor, inventory).
 		SetTarget(0);
 		ChatOut(EqString(12375, "You no longer have a target."), ChatType::Default);
 		for (const char *screen :
-			{"ItemDisplayWindow", "QuantityWnd", "BankWnd", "MerchantWnd", "LootWnd", "TradeWnd", "HelpWindow",
-			 "SkillsWindow", "", "OptionsWindow", "SpellBookWnd", "SocialEditWnd", "InventoryWindow"}) {
+			{"ItemDisplayWindow", "QuantityWnd", "BankWnd", "MerchantWnd", "LootWnd", "TradeWnd", "BookWindow",
+			 "NoteWindow", "HelpWindow", "SkillsWindow", "", "OptionsWindow", "SpellBookWnd", "SocialEditWnd",
+			 "InventoryWindow"}) {
 			if (!*screen) {
 				if (m_containers.CloseAll())
 					break;
