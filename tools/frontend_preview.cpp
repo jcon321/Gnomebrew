@@ -1189,6 +1189,36 @@ int main(int argc, char **argv)
 			while (book.Page() > 0) // as it was for the rest
 				book.Click("BookWindow", "LeftButton");
 		}
+		// The buff window: Alt held over it shows every buff's tooltip (CBuffWindow::PostDraw), and
+		// alt+click on a buff shows its spell's name and icon in the item display.
+		if (const SidlWindow *buffs = windows.Find("BuffWindow"); buffs && buffs->Find("Buff0"))
+			h.RunUntil([&] { return !buffs->Find("Buff0")->tooltip.empty(); }, 2000); // a buff landing soon
+		if (const SidlWindow *buffs = windows.Find("BuffWindow"))
+			printf("[preview] buff window %s, Buff0 '%s'\n", windows.Shown("BuffWindow") ? "shown" : "hidden",
+				buffs->Find("Buff0") ? buffs->Find("Buff0")->tooltip.c_str() : "(none)");
+		if (const SidlWindow *buffs = windows.Find("BuffWindow"); buffs && windows.Shown("BuffWindow"))
+			if (const SidlWindow::Control *b = buffs->Find("Buff0"); b && !b->tooltip.empty()) {
+				int bx = b->rect.x + b->rect.w / 2, by = b->rect.y + b->rect.h / 2;
+				Rect area = frontend.ScreenArea();
+				frontend.OnEvent({InputEvent::Type::MouseMove, area.x + bx, area.y + by});
+				h.Key(InputEvent::Key::Alt);
+				h.RunUntil([] { return false; }, 200);
+				printf("[preview] buff 0 '%s' at %d,%d with Alt held\n", b->tooltip.c_str(), b->rect.x, b->rect.y);
+				h.Snapshot("q1-buff-tooltips");
+				InputEvent event{InputEvent::Type::MouseDown, area.x + bx, area.y + by};
+				event.alt = true;
+				frontend.OnEvent(event);
+				event.type = InputEvent::Type::MouseUp;
+				frontend.OnEvent(event);
+				frontend.Update(NowMs());
+				h.KeyUp(InputEvent::Key::Alt);
+				const SidlWindow *display = windows.Find("ItemDisplayWindow");
+				const SidlWindow::Control *text = display ? display->Find("ItemDescription") : nullptr;
+				printf("[preview] alt+click on buff 0: item display %s '%s', text '%s'\n",
+					windows.Shown("ItemDisplayWindow") ? "shown" : "hidden", display ? display->Root().text.c_str() : "",
+					text ? text->text.c_str() : "");
+				windows.Show("ItemDisplayWindow", false);
+			}
 		if (argc >= 7 && std::string(argv[6]) == "options")
 			return OptionsTest(frontend, h, config.settings_ini);
 		// The window menu: a right press on the player window off its controls, Background's

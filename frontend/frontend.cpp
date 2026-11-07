@@ -2184,6 +2184,32 @@ bool FrontEnd::BuffSpellInfo(const std::string &control, const std::string &wind
 	return true;
 }
 
+void FrontEnd::DrawBuffTooltips(Canvas &canvas, int mouse_x, int mouse_y)
+{
+	// CBuffWindow::PostDraw (@004095fe): with the mouse over the buff window, each button's tooltip
+	// by its top right, 5 in, each column's a little further left than the last (its number times
+	// the button's width over the columns) and down 15 a column, back up every third.
+	if (m_windows.ScreenAt(mouse_x, mouse_y) != "BuffWindow")
+		return;
+	const SidlWindow *wnd = m_windows.Find("BuffWindow");
+	const SidlWindow::Control *first = wnd ? wnd->Find("Buff0") : nullptr;
+	if (!first || wnd->Minimized())
+		return;
+	const Rect &c = wnd->Root().client;
+	int w = first->def->rect.w + 1, h = first->def->rect.h + 1;
+	int columns = c.w / w, rows = c.h / h;
+	if (columns <= 0)
+		return;
+	int step = w / columns, n = 0;
+	for (int column = 0; column < columns; ++column)
+		for (int row = 0; row < rows && n < Buffs::Slots; ++row, ++n) {
+			const SidlWindow::Control *button = wnd->Find("Buff" + std::to_string(n));
+			if (button && !button->tooltip.empty())
+				m_windows.DrawTooltip(canvas, m_text, button->tooltip, button->def->font,
+					button->rect.Right() - column * step - 5, (column % 3) * 15 + button->rect.y, false);
+		}
+}
+
 void FrontEnd::HandleWindowClicks()
 {
 	// Nothing goes on the cursor over an item or coins (CCursorAttachment::IsOkToActivate).
@@ -4164,6 +4190,7 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 		m_merchant.DrawTooltips(canvas, m_text, m_mouse_x - area.x, m_mouse_y - area.y);
 		m_loot.DrawTooltips(canvas, m_text, m_mouse_x - area.x, m_mouse_y - area.y);
 		m_trade.DrawTooltips(canvas, m_text, m_mouse_x - area.x, m_mouse_y - area.y);
+		DrawBuffTooltips(canvas, m_mouse_x - area.x, m_mouse_y - area.y);
 	}
 	// Top left and right: the debug menu's stat card and radar, above the windows.
 	m_debug.Draw(canvas, m_text, m_zone, m_zone_view.get(), height - 10);

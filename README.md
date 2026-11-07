@@ -1353,7 +1353,10 @@ details and the nearest spawns at the top left and the radar at the top right.
 - **Buffs** (`frontend/buffs.*`): the profile's, a spell landing on us (`HitBySpell`, with
   `FindAffectSlot`'s stacking, blocking and overwriting), `OP_Buff` both ways, the 6 s tick and
   expiry, and a click taking a beneficial one off. The buff window shows the icons on red or blue
-  and blinks their last ticks. Buffs count in the stats, resists, AC, max mana and speed (SoW,
+  and blinks their last ticks. With Alt down and the mouse over it, `CBuffWindow::PostDraw`
+  (@004095fe) draws every button's tooltip at the button's right less 5, less its column's number
+  times the button's width (plus 1) over the columns, and at its top plus 15 times the column's
+  number mod 3. Buffs count in the stats, resists, AC, max mana and speed (SoW,
   snares, roots), and max HP is `Max_HP`'s, not the zone's HP updates.
 - **Luclin effects** (`frontend/spell_effects.*`, `render/spell_particles.*`): a spell's
   `SpellsNew.eff` record plays stage 0 while casting and stage 2 on landing, each emitter chosen by

@@ -44,9 +44,9 @@ no rules of its own.
      AC, max HP (worked out as `Max_HP` does, not the zone's), max mana and our speed (SoW,
      snares, roots). Still to do: the effects that act as a buff
      lands or fades (levitation, invisibility, see invisible, infravision, illusions, Eye of Zomm,
-     mounts), a bard's instrument mastery, and Alt showing every buff's tooltip
-     (CBuffWindow::PostDraw). Alt+click or the right button held on a buff shows its spell's name
-     and icon in the item display (HandleSpellInfoDisplay).
+     mounts) and a bard's instrument mastery. Alt+click or the right button held on a buff shows its
+     spell's name and icon in the item display (HandleSpellInfoDisplay), and Alt over the window
+     shows every buff's tooltip (CBuffWindow::PostDraw, `FrontEnd::DrawBuffTooltips`).
    - Inventory: name, level, class (its title from 51), deity, HP, stats and resists (base, worn
      items, the next food and drink; `GameValues::Stat`, `Resist`), AC, ATK and weight (`GameValues::Ac`, `Atk`, `Weight`), money, the class picture, item icons in the slots, the Alt. Adv. row from 51, Done, and the
      Skills button opening the skills window (`frontend/game_windows.*`), and items picked up, put
