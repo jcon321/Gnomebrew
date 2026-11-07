@@ -128,8 +128,8 @@ public:
 	bool StartReplay(const std::string &path, std::string &error);
 
 	void SetCursorVisible(bool visible) { m_cursor_visible = visible; }
-	// How long the host took to show the last frame, ms (the debug menu's Present).
-	// The last frame's Present, and of that the canvas's upload to the GPU.
+	// How long the host took to show the last frame, ms (the debug menu's Present), and of that the
+	// canvas's upload to the GPU.
 	void SetPresentMs(double ms, double upload_ms = 0)
 	{
 		m_present_ms = ms;
