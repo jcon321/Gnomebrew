@@ -1219,6 +1219,48 @@ int main(int argc, char **argv)
 					text ? text->text.c_str() : "");
 				windows.Show("ItemDisplayWindow", false);
 			}
+		// Destroy: the first general slot's item onto the cursor, Destroy and No, then Destroy and Yes.
+		if (SidlWindow *inv = windows.Find("InventoryWindow")) {
+			windows.Show("InventoryWindow", true);
+			windows.Raise("InventoryWindow");
+			frontend.Update(NowMs());
+			int16_t slot = -1;
+			for (int16_t s = Inventory::FirstGeneral; s <= Inventory::LastGeneral && slot < 0; ++s)
+				if (frontend.Zone().Items().count(s) && frontend.Zone().Items().at(s).item_class == 0)
+					slot = s;
+			auto press = [&](const char *id) {
+				SidlWindow *w = windows.Find(id[0] == 'I' ? "InventoryWindow" : "ConfirmationDialogBox");
+				const SidlWindow::Control *c = w ? w->Find(id) : nullptr;
+				if (!c)
+					return;
+				int x = c->rect.x + c->rect.w / 2, y = c->rect.y + c->rect.h / 2;
+				frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+				frontend.OnEvent({InputEvent::Type::MouseDown, x, y});
+				frontend.OnEvent({InputEvent::Type::MouseUp, x, y});
+				frontend.Update(NowMs());
+			};
+			auto report = [&](const char *when) {
+				const SidlWindow *d = windows.Find("ConfirmationDialogBox");
+				const SidlWindow::Control *t = d ? d->Find("TextOutput") : nullptr;
+				auto held = frontend.Zone().Items().find(Inventory::Cursor);
+				printf("[preview] destroy %s: dialog %s '%s', cursor '%s'\n", when,
+					windows.Shown("ConfirmationDialogBox") ? "up" : "down", t ? t->text.c_str() : "",
+					held != frontend.Zone().Items().end() ? held->second.name.c_str() : "");
+			};
+			if (slot >= 0) {
+				press(("InvSlot" + std::to_string(slot)).c_str());
+				report("picked up");
+				press("IW_Destroy");
+				report("asked");
+				h.Snapshot("x1-destroy");
+				press("No_Button");
+				report("no");
+				press("IW_Destroy");
+				press("Yes_Button");
+				report("yes");
+			}
+			windows.Show("InventoryWindow", false);
+		}
 		if (argc >= 7 && std::string(argv[6]) == "options")
 			return OptionsTest(frontend, h, config.settings_ini);
 		// The window menu: a right press on the player window off its controls, Background's

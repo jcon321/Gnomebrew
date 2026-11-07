@@ -52,8 +52,9 @@ no rules of its own.
      Skills button opening the skills window (`frontend/game_windows.*`), and items picked up, put
      down, split through the quantity window and put away on the character view (`core/inventory.*`).
      Still to do: for stats, resists, AC and ATK, items' worn effects, ATK's buffs, AAs,
-     the Resistant Discipline, drunkenness and berserking; Destroy,
-     Alt. Advance, and icons in the hot button window's weapon slots.
+     the Resistant Discipline, drunkenness and berserking; Alt. Advance, icons in the hot button
+     window's weapon slots, and FastItemDestroy for Destroy (the Options General page's checkbox;
+     Destroy always asks until there is one).
    - Coins: done (`Inventory::MoveMoney`, CEverQuest_MoveMoney, OP_MoveCoin): a money button with
      nothing on the cursor asks how many through the quantity window and puts them on the cursor
      (A_DragItem's cell 143 + CursorMoneyType, the count across its bottom), with coins on it takes

@@ -852,6 +852,11 @@ void FrontEnd::Update(uint64_t now_ms)
 		m_loot.Frame(now_ms);
 		m_trade.Frame(now_ms);
 		m_ground.Frame(now_ms);
+		// The Destroy question gives up after its 10 s (ProcessNo).
+		if (m_destroy_until_ms && (now_ms >= m_destroy_until_ms || !m_windows.Shown("ConfirmationDialogBox"))) {
+			m_destroy_until_ms = 0;
+			m_windows.Show("ConfirmationDialogBox", false);
+		}
 		m_options.Frame(now_ms);
 		m_spell_book.Frame(now_ms);
 		m_spell_cast.Frame(now_ms);
@@ -2184,6 +2189,63 @@ bool FrontEnd::BuffSpellInfo(const std::string &control, const std::string &wind
 	return true;
 }
 
+void FrontEnd::DestroyHeld()
+{
+	// CInventoryWnd_DestroyHeld (@00421637): with FastItemDestroy off, the confirmation dialog
+	// (category 5, 10 s) asks about the item on the cursor (eqstr 2043) or the coins (2061).
+	const ZoneProfile &me = m_zone.Profile();
+	auto held = m_zone.Items().find(Inventory::Cursor);
+	if (m_fast_item_destroy) {
+		DestroyHeldItemOrMoney();
+		return;
+	}
+	std::string question;
+	if (held != m_zone.Items().end())
+		question = FormatEqString(m_ui.eqstr, 2043, "Are you absolutely sure you want to destroy your %1?", {held->second.name});
+	else if (Inventory::CursorMoneyType(me))
+		question = EqString(2061, "Are you absolutely sure you want to destroy the money you are holding?");
+	else
+		return;
+	SidlWindow *dialog = m_windows.Find("ConfirmationDialogBox");
+	if (!dialog || m_windows.Shown("ConfirmationDialogBox"))
+		return;
+	for (const char *id : {"Yes_Button", "No_Button"})
+		if (SidlWindow::Control *button = dialog->Find(id))
+			button->visible = true;
+	if (SidlWindow::Control *ok = dialog->Find("OK_Button"))
+		ok->visible = false;
+	if (SidlWindow::Control *text = dialog->Find("TextOutput")) {
+		text->text = question;
+		text->scroll_pos = 0;
+	}
+	const Rect &r = dialog->Bounds();
+	m_windows.MoveTo("ConfirmationDialogBox", (m_windows.ScreenWidth() - r.w) / 2, (m_windows.ScreenHeight() - r.h) / 2);
+	m_windows.Show("ConfirmationDialogBox", true);
+	m_windows.Raise("ConfirmationDialogBox");
+	m_destroy_until_ms = m_now_ms + 10000;
+}
+
+void FrontEnd::DestroyHeldItemOrMoney()
+{
+	// EQ_PC::DestroyHeldItemOrMoney (@004d0d88): the item on the cursor goes (OP_MoveItem from the
+	// cursor to -1, no count), or the biggest coin's pile (OP_MoveCoin from the cursor to -1) and
+	// every coin on the cursor with it.
+	std::map<int16_t, ZoneItem> &items = m_zone.EditItems();
+	if (auto held = items.find(Inventory::Cursor); held != items.end()) {
+		items.erase(held);
+		m_zone.MoveItem(Inventory::Cursor, -1, 0);
+		return;
+	}
+	ZoneProfile &me = m_zone.EditProfile();
+	int32_t coins[4] = {me.cursor_copper, me.cursor_silver, me.cursor_gold, me.cursor_platinum};
+	for (int coin = 3; coin >= 0; --coin)
+		if (coins[coin] > 0) {
+			m_zone.MoveCoin(0, -1, coin, coin, coins[coin]);
+			me.cursor_platinum = me.cursor_gold = me.cursor_silver = me.cursor_copper = 0;
+			return;
+		}
+}
+
 void FrontEnd::DrawBuffTooltips(Canvas &canvas, int mouse_x, int mouse_y)
 {
 	// CBuffWindow::PostDraw (@004095fe): with the mouse over the buff window, each button's tooltip
@@ -2287,6 +2349,20 @@ void FrontEnd::HandleWindowClicks()
 		// item, or about dropping one on the ground.
 		if (m_loot.Click(click.window, click.control, m_now_ms) || m_ground.Click(click.window, click.control))
 			continue;
+		// The inventory's Destroy, and the confirmation dialog asking about it.
+		if (click.window == "InventoryWindow" && click.control == "IW_Destroy") {
+			DestroyHeld();
+			continue;
+		}
+		if (click.window == "ConfirmationDialogBox" && m_destroy_until_ms) {
+			if (click.control == "Yes_Button") // ProcessYes's 5
+				DestroyHeldItemOrMoney();
+			if (click.control == "Yes_Button" || click.control == "No_Button" || click.control == "OK_Button") {
+				m_destroy_until_ms = 0;
+				m_windows.Show("ConfirmationDialogBox", false);
+			}
+			continue;
+		}
 		// The spellbook, the gems and the confirmation dialog.
 		if (m_spell_book.Click(click.window, click.control, click.alt, m_now_ms))
 			continue;

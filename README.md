@@ -1884,6 +1884,13 @@ details and the nearest spawns at the top left and the radar at the top right.
   colored as `getComparisonColor` does: grey at the base, green above, red below. AGI is times
   `encum_factor`. The class is its Kunark title from 51 (`KunarkClass`), and the AA gauge shows
   from 51.
+  - **Destroy** (`CInventoryWnd_DestroyHeld` @00421637): with the options' FastItemDestroy off
+    (`DAT_00798b1c`, the General page's checkbox, not kept in the ini and off at start) the
+    confirmation dialog (category 5, 10 s) asks "Are you absolutely sure you want to destroy your
+    %1?" (eqstr 2043) for the item on the cursor or 2061 for coins; nothing on the cursor, nothing
+    happens. Yes is `EQ_PC::DestroyHeldItemOrMoney` (@004d0d88): `OP_MoveItem` {0, -1, 0} and the
+    item gone, or `OP_MoveCoin` {0, -1, coin, coin, amount} for the biggest coin on the cursor and
+    every coin taken off it.
   - **AC** (`EQ_Main_CalcDefense`): `(old_ac without the soft caps + compute_defense) * 1000 / 847`.
     Worn AC is four thirds for all but the casters. `GetClassACBonus` adds a monk's by weight, a
     rogue's and beastlord's by AGI, and an Iksar's by level.

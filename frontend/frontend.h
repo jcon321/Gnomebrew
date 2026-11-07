@@ -257,6 +257,10 @@ private:
 	void SaveCustom(); // CEverQuest_saveCustom: the hot buttons and the socials changed
 	void SaveDebugSettings(); // the debug menu's, to my-client.ini's [Debug]
 	void HandleWindowClicks();
+	void DestroyHeld();            // the inventory's Destroy (CInventoryWnd_DestroyHeld)
+	void DestroyHeldItemOrMoney(); // EQ_PC::DestroyHeldItemOrMoney
+	uint64_t m_destroy_until_ms = 0; // the confirmation dialog asking about Destroy, until then (0: it isn't)
+	bool m_fast_item_destroy = false; // DAT_00798b1c, the options' FastItemDestroy (no General page yet)
 	void DrawBuffTooltips(Canvas &canvas, int mouse_x, int mouse_y); // Alt held over the buff window
 	bool BuffSpellInfo(const std::string &control, const std::string &window); // a buff's spell shown; false: not a buff
 	void ActionsClick(const std::string &control); // an Actions window button, clicked or on a hot button
