@@ -360,8 +360,11 @@ eqgame's `OP_MoveItem`.
   `PrintConsiderAssessment` does: the faction, the assessment by our level in the con color, and
   the PvP and deity-team rules. `/time` is `CEverQuest_WhatTimeIsIt`: Norrath's date carried on
   from `OP_TimeOfDay` (nothing in the Plane of Time or on Luclin), then Earth's. `/afk` and
-  `/anonymous` are SpawnAppearance 24 and 21. `/assist` sends `OP_Assist`, and the zone's answer
-  becomes the target.
+  `/anonymous` are SpawnAppearance 24 and 21. While we're AFK, `msg_new_text` answers a tell
+  (channel 7 or 14) with a tell back: "AFK Message: " (eqstr 1418) and /afk's message, or eqstr
+  1419 without one, but not a tell starting with eqstr 1417 ("Sorry, I am A.F.K.") or 1418, so two
+  AFK players don't answer each other for ever. It isn't echoed in our chat. `/assist` sends
+  `OP_Assist`, and the zone's answer becomes the target.
 - `/random` (@004f62aa) takes `high` or `low high` either way round, each under 7 characters, not
   below 0 (eqstr 13061) nor over 32000 (13062), and sends `OP_RandomReq {u32 low, u32 high}`. The
   zone rolls (0 to 100 for nothing typed) and sends everyone near `OP_RandomReply {low, high,

@@ -2623,6 +2623,20 @@ void FrontEnd::ToggleTarget()
 	SetTarget(me);
 }
 
+void FrontEnd::AnswerTellAfk(const std::string &sender, const std::string &text)
+{
+	// msg_new_text's tells (channels 7 and 14) while we're AFK: a tell back (OP_ChannelMessage 7)
+	// with "AFK Message: " (eqstr 1418) and /afk's message, or eqstr 1419 without one; not to a
+	// tell that's someone's answer (starting with 1417 or 1418), so two AFK players don't loop.
+	if (!m_zone.Self().afk)
+		return;
+	std::string sorry = EqString(1417, "Sorry, I am A.F.K."), label = EqString(1418, "AFK Message: ");
+	if (text.compare(0, sorry.size(), sorry) == 0 || text.compare(0, label.size(), label) == 0)
+		return;
+	m_zone.SendChannel(7, sender,
+		m_afk_message.empty() ? EqString(1419, "Sorry, I am A.F.K. (Away From Keyboard) right now.") : label + m_afk_message);
+}
+
 void FrontEnd::AddNameToTellList(const std::string &name)
 {
 	auto same = [&](const std::string &other) { return Lower(other) == Lower(name); };
@@ -3336,6 +3350,8 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 				ChatOut(line, type);
 			if (event.chat.channel == 7 && event.chat.sender != m_zone.Profile().name)
 				AddNameToTellList(event.chat.sender);
+			if (event.chat.channel == 7 || event.chat.channel == 14)
+				AnswerTellAfk(event.chat.sender, event.chat.text);
 			break;
 		}
 		case Type::Message:

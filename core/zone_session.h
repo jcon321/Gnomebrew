@@ -533,6 +533,15 @@ public:
 	// its timer runs; a zone line is turned down ("not ready"); a /target is taken.
 	bool BeginReplay(const std::string &path, std::string &error);
 	bool Replaying() const { return m_replay != nullptr; }
+	// A replay's zone sends this packet next, as if it had answered something (the preview's tests:
+	// a tell to us). False, and nothing, when we aren't replaying.
+	bool InjectReplayPacket(uint16_t opcode, const void *body, size_t size)
+	{
+		if (!m_replay)
+			return false;
+		ReplayAnswer(opcode, body, size);
+		return true;
+	}
 	void Pump(int timeout_ms, std::vector<Event> &events);
 
 	bool Say(const std::string &text) { return SendChannel(8, "", text); }

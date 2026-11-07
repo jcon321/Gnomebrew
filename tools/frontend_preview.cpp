@@ -1219,6 +1219,33 @@ int main(int argc, char **argv)
 					text ? text->text.c_str() : "");
 				windows.Show("ItemDisplayWindow", false);
 			}
+		// /afk with a message, then tells from Somebody: answered with it; an AFK answer isn't
+		// answered; after /afk off, nothing is.
+		{
+			auto tell = [&](const std::string &text) {
+				std::vector<uint8_t> body(136 + text.size() + 1, 0);
+				const std::string me = frontend.Zone().Profile().name, from = "Somebody";
+				memcpy(&body[0], me.c_str(), me.size());
+				memcpy(&body[64], from.c_str(), from.size());
+				uint16_t channel = 7, skill = 100;
+				memcpy(&body[130], &channel, 2);
+				memcpy(&body[134], &skill, 2);
+				memcpy(&body[136], text.c_str(), text.size());
+				frontend.ZoneForTests().InjectReplayPacket(static_cast<uint16_t>(ZoneOp::ChannelMessage), body.data(), body.size());
+				h.RunUntil([] { return false; }, 300);
+			};
+			h.Type("/afk gone fishing");
+			h.Key(InputEvent::Key::Enter);
+			h.RunUntil([] { return false; }, 200);
+			printf("[preview] afk: %d\n", frontend.Zone().Self().afk);
+			tell("are you there?");
+			tell("Sorry, I am A.F.K. (Away From Keyboard) right now.");
+			h.Type("/afk off");
+			h.Key(InputEvent::Key::Enter);
+			h.RunUntil([] { return false; }, 200);
+			printf("[preview] afk: %d\n", frontend.Zone().Self().afk);
+			tell("now?");
+		}
 		// Destroy: the first general slot's item onto the cursor, Destroy and No, then Destroy and Yes.
 		if (SidlWindow *inv = windows.Find("InventoryWindow")) {
 			windows.Show("InventoryWindow", true);

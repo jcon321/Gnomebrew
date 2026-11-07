@@ -159,6 +159,7 @@ public:
 	int LootNoDrop() const { return m_config.loot_no_drop; }               // /lootnodrop, to remember
 	int FastDrop() const { return m_config.fast_drop; }                    // /fastdrop, to remember
 	const ZoneSession &Zone() const { return m_zone; }
+	ZoneSession &ZoneForTests() { return m_zone; } // the preview's injected packets
 	const Group &GroupState() const { return m_group; }
 	const ChatWindow &Chat() const { return m_chat; }
 	uint16_t Target() const { return m_game_values.target; } // spawn id, 0 none
@@ -486,7 +487,8 @@ private:
 	bool m_chat_opened_by_key = false;
 	uint16_t m_toggle_target = 0; // Toggle last two targets' (DAT_00799788): the target we left for ourselves
 	std::string m_time_of_day;
-	std::string m_afk_message;                    // /afk's text (DAT_007cf0e0); nothing answers tells with it yet
+	std::string m_afk_message;                    // /afk's text (DAT_007cf0e0), what tells are answered with
+	void AnswerTellAfk(const std::string &sender, const std::string &text); // msg_new_text's AFK reply
 	std::time_t m_started_at = std::time(nullptr); // WinMain's, for /played's session time
 	std::unique_ptr<ZoneView> m_zone_view;
 	uint32_t m_my_look_serial = 0; // ZoneSpawn::look_serial our model was built for

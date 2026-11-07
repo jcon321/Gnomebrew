@@ -227,7 +227,9 @@ no rules of its own.
    /motd, /afk, /anonymous, /assist (OP_Assist; the answer becomes our target), /random
    (OP_RandomReq and OP_RandomReply), /lootnodrop, /fastdrop, and the 88 socials
    (CEverQuest_send_social: OP_Emote, OP_Animation and our echo). Still to do:
-   - /afk: answering tells with its message, and the chat server's "/afk on silent";
+   - /afk: the chat server's "/afk on silent" (CEverQuest::ChatServerMessage), and the language
+     and skill of its answer to a tell (CEverQuest_GetCurrentLanguage; ours common at 100, as all
+     our tells);
    - allowslashcommand's other checks (/safelock's eqstr 12095, the windows that block commands:
      IsNoSlashWnd and eqstr 12084), for /assist, /attack and the other commands that call it;
    - /played: the alarm's time left (no alarm window yet);
@@ -397,7 +399,8 @@ no rules of its own.
     clicked onto the ground dropped (the confirmation dialog, DropHeldItemOnGround), and what the
     zone takes away (its OP_ClickObject). Checked live: the zone's ground spawns and forges drawn, a
     drop, the forge opened and closed. /fastdrop sets whether a drop asks first (`FastDrop`). Still
-    to do: coins dropped on the ground (DropHeldMoneyOnGround), CreateActor's models from
+    to do: coins dropped on the ground (DropHeldMoneyOnGround: OP 0x4007 with an EQMoneyList,
+    which EQMacEmu has no handler for, so it waits on the server), CreateActor's models from
     the zone's _obj.s3d and the `_chr` files (only gequip's are found; the server's data has
     none that would show), `RED_BLOB_ACTORDEF` when even IT63 is missing (a sprite), and
     CreateActor's light argument (whether a lit item on the ground lights things).
