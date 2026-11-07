@@ -183,9 +183,12 @@ no rules of its own.
      fidget), kneeling (105), feign death,
      meditating's regen, and the zone putting us in a stance (stunned, knocked out).
    - Hotbuttons: the Actions window's buttons and socials go on them and come off by holding
-     them, and they're kept in `<char>_<server>.ini` (`frontend/game_windows.*`). Still to do:
-     items, spells, pet commands and AA abilities on them, whether an ability's ready (checked
-     while it isn't), and right-click on anything but a social.
+     them, and they're kept in `<char>_<server>.ini` (`frontend/game_windows.*`). Clicked or by
+     key (Hot1..10) they do what their button does: Attack, Range, the combat skills and the
+     abilities (CHotButtonWnd::DoHotButton), and they're checked while they aren't ready
+     (OnProcessFrame: Attack and Range by __RangeAttackReady, a skill by its timer). Still to do:
+     items, spells, pet commands and AA abilities on them, DoHotButton's refusal while stunned or
+     DAT_007d0254 (string 0x2f34), and right-click on anything but a social.
    - Socials: done (defaults, the editor, running them with `/pause`, `[Socials]`). Still to do:
      the edit boxes take typing only at their end (no caret to move, no Tab between them), and
      a social's lines go to InterpretCommand as typed, without eqgame's switch to the main chat

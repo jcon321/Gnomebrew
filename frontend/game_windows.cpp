@@ -574,17 +574,29 @@ namespace
 		state.cursor_text = HotButtonText(windows, state, button);
 	}
 
-	void HotButtonWindow(SidlWindow &wnd, WindowManager &windows, const GameWindowState &state)
+	void HotButtonWindow(SidlWindow &wnd, WindowManager &windows, const GameWindowState &state, const GameValues &values)
 	{
 		SetText(wnd, "HB_CurrentPageLabel", PageLabel(state.hot_button_page));
 		// CHotButtonWnd::OnProcessFrame: a hot button with something on it shows its text, unchecked;
-		// an empty one has no text and is checked, so it shows its Pressed picture.
+		// an empty one has no text and is checked, so it shows its Pressed picture. One that isn't
+		// ready is checked too (yellow and down): Attack and Range while __RangeAttackReady is
+		// clear (both of them, by it alone), a combat skill or ability while its skill isn't ready
+		// (__AltTimerReady or __DoAbilityAvailable), as its Actions window button shows.
+		SidlWindow *actions = windows.Find("ActionsWindow");
 		for (int i = 1; i <= HotButtonsPerPage; ++i) {
 			std::string n = std::to_string(i);
 			const HotButton &held = state.hot_buttons[state.hot_button_page * HotButtonsPerPage + i - 1];
 			if (SidlWindow::Control *button = wnd.Find("HB_Button" + n)) {
-				button->checked = held.type == HotButton::Empty;
-				button->text = button->checked ? "" : HotButtonText(windows, state, held);
+				bool empty = held.type == HotButton::Empty;
+				button->text = empty ? "" : HotButtonText(windows, state, held);
+				button->checked = empty;
+				if (held.type == HotButton::Combat)
+					button->checked = !values.range_ready;
+				else if (held.type == HotButton::CombatSkill || held.type == HotButton::Ability) {
+					std::string id = SourceButton(windows, held);
+					const SidlWindow::Control *source = actions && !id.empty() ? actions->Find(id) : nullptr;
+					button->checked = source && source->checked;
+				}
 				button->text_color = 0xffffff;
 				if (held.type == HotButton::Social && ValidSocial(held.value))
 					button->text_color = SocialColor(windows, state.socials[held.value].color);
@@ -639,13 +651,15 @@ std::string GameWindowClick(WindowManager &windows, GameWindowState &state, cons
 
 std::string DoHotButton(WindowManager &windows, GameWindowState &state, int slot)
 {
-	// Of what we can do so far, the main page's buttons and socials.
+	// Of what we can do so far, socials, and the Actions window buttons: the main page's, the combat
+	// page's Attack / Range (ExecuteCmd 8, DoAttack 0xb) and the combat skills and abilities
+	// (UseSkill of __DoAbilityList's or the combat list's skill), which the caller clicks.
 	if (slot < 0 || slot >= HotButtonsPerPage)
 		return "";
 	HotButton &button = PageButton(state, slot);
 	if (button.type == HotButton::Social && ValidSocial(button.value) && state.current_social < 0)
 		StartSocial(state, button.value);
-	return button.type == HotButton::Action ? ActionButton(windows, button.value) : "";
+	return SourceButton(windows, button);
 }
 
 void GameWindowHold(WindowManager &windows, GameWindowState &state, const std::string &window, const std::string &control)
@@ -924,7 +938,7 @@ void UpdateGameWindows(WindowManager &windows, const GameValues &values, GameWin
 		SocialsPage(*wnd, windows, state);
 	}
 	if (SidlWindow *wnd = windows.Find("HotButtonWnd"))
-		HotButtonWindow(*wnd, windows, state);
+		HotButtonWindow(*wnd, windows, state, values);
 	if (SidlWindow *wnd = windows.Find("InventoryWindow"); wnd && windows.Shown("InventoryWindow"))
 		InventoryWindow(*wnd, windows, values);
 	if (SidlWindow *wnd = windows.Find("SkillsWindow"); wnd && windows.Shown("SkillsWindow"))

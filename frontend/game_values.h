@@ -46,6 +46,7 @@ public:
 	uint16_t target = 0; // spawn id; 0 none
 	bool running = true; // run mode (eqgame's @0079856d), not walking
 	bool attacking = false; // auto attack (__Attack)
+	bool range_ready = false; // __RangeAttackReady
 	float heading = 0;   // ours, 0..512 (a compass item points by it)
 	bool fv_rules = false, auto_identify = false; // OP_LogServer's (WorldSession)
 

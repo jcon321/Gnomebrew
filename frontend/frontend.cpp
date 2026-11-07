@@ -871,6 +871,7 @@ void FrontEnd::Update(uint64_t now_ms)
 			InterpretCommand(social_line);
 		m_game_values.running = m_run;
 		m_game_values.attacking = m_attack;
+		m_game_values.range_ready = m_range_ready;
 		m_game_values.now_ms = now_ms;
 		if (m_zone_view)
 			m_game_values.heading = m_zone_view->Movement().heading;
