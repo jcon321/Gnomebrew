@@ -126,6 +126,9 @@ public:
 
 	void Update(uint64_t now_ms, int mouse_x, int mouse_y); // the fades, and a button held (either button)
 	void Draw(Canvas &canvas, TextRenderer &text, uint64_t now_ms);
+	// The window that took longest in the last Draw, and how long (the debug menu's Performance).
+	const std::string &SlowestWindow() const { return m_slowest; }
+	double SlowestWindowMs() const { return m_slowest_ms; }
 	// The cursor for the mouse at (x, y), if the windows want their own (moving or sizing one,
 	// or over a sizable one's border): its SIDL animation, drawn at its hotspot. False otherwise.
 	bool DrawCursor(Canvas &canvas, int x, int y, uint64_t now_ms) const;
@@ -255,4 +258,6 @@ private:
 	SidlWindow::TitleBox m_box_down = SidlWindow::TitleBox::None;
 	int m_mouse_x = -1, m_mouse_y = -1;
 	uint64_t m_moved_ms = 0;          // when the mouse last moved (for the tooltips)
+	std::string m_slowest;
+	double m_slowest_ms = 0;
 };

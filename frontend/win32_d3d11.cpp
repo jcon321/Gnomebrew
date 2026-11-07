@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <tuple>
@@ -213,6 +214,7 @@ struct D3d11Device::State
 	bool vsync = true;
 	bool tearing = false; // presents without vsync may tear (flip model otherwise waits for the compositor)
 	bool lost = false;
+	double upload_ms = 0; // the last Present's copy of the canvas into its texture
 	std::string adapter;
 
 	ComPtr<ID3D11Device> device;
@@ -1175,12 +1177,18 @@ void D3d11Device::BeginFrame()
 	m->context->ClearDepthStencilView(m->depth_view.Get(), D3D11_CLEAR_DEPTH, 0.0f, 0);
 }
 
+double D3d11Device::UploadMs() const
+{
+	return m->upload_ms;
+}
+
 bool D3d11Device::Present()
 {
 	if (m->lost)
 		return false;
 	ID3D11DeviceContext *context = m->context.Get();
 
+	auto upload_start = std::chrono::steady_clock::now();
 	D3D11_MAPPED_SUBRESOURCE mapped;
 	if (m->canvas && SUCCEEDED(context->Map(m->canvas_texture.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
 		for (int y = 0; y < m->canvas_height; ++y)
@@ -1188,6 +1196,7 @@ bool D3d11Device::Present()
 				m->canvas + static_cast<size_t>(y) * m->canvas_stride, static_cast<size_t>(m->canvas_width) * 4);
 		context->Unmap(m->canvas_texture.Get(), 0);
 	}
+	m->upload_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - upload_start).count();
 
 	context->OMSetRenderTargets(1, m->back_buffer.GetAddressOf(), nullptr);
 	D3D11_VIEWPORT viewport{0, 0, static_cast<float>(m->width), static_cast<float>(m->height), 0, 1};

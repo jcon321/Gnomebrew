@@ -1,6 +1,7 @@
 #include "win32_text.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 
 std::wstring Widen(const std::string &utf8)
@@ -33,6 +34,18 @@ GdiTextRenderer::~GdiTextRenderer()
 	}
 	if (m_scratch.dib)
 		DeleteObject(m_scratch.dib);
+}
+
+namespace
+{
+	// Adds the time until it goes out of scope, and a call, to the renderer's stats.
+	struct TextTimer
+	{
+		TextStats &stats;
+		std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+		explicit TextTimer(TextStats &s) : stats(s) { ++stats.calls; }
+		~TextTimer() { stats.ms += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count(); }
+	};
 }
 
 HFONT GdiTextRenderer::Font(int height, int weight, bool antialiased)
@@ -164,6 +177,7 @@ void GdiTextRenderer::Output(const Surface &surface, RECT box, const RECT &clip,
 		SetBkMode(surface.dc, TRANSPARENT);
 		draw(surface.dc, 0, 0);
 		RestoreDC(surface.dc, saved);
+		++stats.rasterized;
 		GdiFlush(); // the canvas is the DIB's memory; finish before the next CPU blit
 		return;
 	}
@@ -173,6 +187,7 @@ void GdiTextRenderer::Output(const Surface &surface, RECT box, const RECT &clip,
 	SetTextColor(m_scratch.dc, RGB(255, 255, 255));
 	SetBkMode(m_scratch.dc, TRANSPARENT);
 	draw(m_scratch.dc, -box.left, -box.top);
+	++stats.rasterized;
 	GdiFlush();
 	BlendMask(surface, m_scratch.pixels, m_scratch.width, width, height, box.left, box.top, rgb, box);
 }
@@ -204,6 +219,7 @@ std::string GdiTextRenderer::TextKey(const std::string &utf8, int height, int we
 
 void GdiTextRenderer::Draw(Canvas &canvas, int x, int y, const std::string &utf8, int height, uint32_t rgb, int weight)
 {
+	TextTimer timer(stats);
 	if (weight != 0) {
 		DrawCached(canvas, x, y, utf8, height, rgb, weight);
 		return;
@@ -225,6 +241,7 @@ void GdiTextRenderer::Draw(Canvas &canvas, int x, int y, const std::string &utf8
 		SetBkMode(surface->dc, TRANSPARENT);
 		SetTextAlign(surface->dc, TA_LEFT | TA_TOP);
 		ExtTextOutW(surface->dc, x, y, ETO_CLIPPED, &clip, text.c_str(), static_cast<UINT>(text.size()), nullptr);
+		++stats.rasterized;
 		GdiFlush(); // the canvas is the DIB's memory; finish before the next CPU blit
 		return;
 	}
@@ -275,6 +292,7 @@ const GdiTextRenderer::Glyph &GdiTextRenderer::CachedGlyph(CachedFont &font, int
 	SetBkMode(m_scratch.dc, OPAQUE);
 	SetTextAlign(m_scratch.dc, TA_LEFT | TA_TOP);
 	ExtTextOutW(m_scratch.dc, 0, 0, ETO_OPAQUE, nullptr, &ch, 1, nullptr);
+	++stats.rasterized;
 	GdiFlush();
 	glyph.coverage.resize(static_cast<size_t>(glyph.advance) * font.height);
 	for (int row = 0; row < font.height; ++row) {
@@ -347,6 +365,7 @@ const GdiTextRenderer::Mask *GdiTextRenderer::TextMask(const std::string &utf8, 
 	SetBkMode(m_scratch.dc, TRANSPARENT);
 	SetTextAlign(m_scratch.dc, TA_LEFT | TA_TOP);
 	TextOutW(m_scratch.dc, 1, 0, text.c_str(), static_cast<int>(text.size()));
+	++stats.rasterized;
 	GdiFlush();
 	mask.coverage.resize(static_cast<size_t>(mask.width) * mask.height);
 	for (int row = 0; row < mask.height; ++row)
@@ -360,6 +379,7 @@ const GdiTextRenderer::Mask *GdiTextRenderer::TextMask(const std::string &utf8, 
 void GdiTextRenderer::DrawScaled(Canvas &canvas, int x, int y, const std::string &utf8, int height, float scale,
 	uint32_t rgb, int weight)
 {
+	TextTimer timer(stats);
 	RECT clip;
 	const Surface *surface = Target(canvas, x, y, clip);
 	const Mask *mask = surface && scale > 0 ? TextMask(utf8, height, weight, true) : nullptr;
@@ -409,6 +429,7 @@ bool GdiTextRenderer::Coverage(const std::string &utf8, int height, int weight, 
 
 void GdiTextRenderer::DrawWrapped(Canvas &canvas, const Rect &area, const std::string &utf8, int height, uint32_t rgb, int weight)
 {
+	TextTimer timer(stats);
 	int x = area.x, y = area.y;
 	RECT clip;
 	const Surface *surface = Target(canvas, x, y, clip);

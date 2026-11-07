@@ -4284,8 +4284,18 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 		m_trade.DrawTooltips(canvas, m_text, m_mouse_x - area.x, m_mouse_y - area.y);
 		DrawBuffTooltips(canvas, m_mouse_x - area.x, m_mouse_y - area.y);
 	}
+	times.upload = m_upload_ms;
 	// Top left and right: the debug menu's stat card and radar, above the windows.
 	m_debug.Draw(canvas, m_text, m_zone, m_zone_view.get(), height - 10);
 	times.ui = since(ui_start);
 	m_debug.Frame(times);
 }
+	const TextStats text_before = m_text.stats;
+	Clock::time_point windows_start = Clock::now();
+	times.ui_windows = since(windows_start);
+	times.slowest = m_windows.SlowestWindow();
+	times.slowest_ms = m_windows.SlowestWindowMs();
+	Clock::time_point debug_start = Clock::now();
+	times.ui_debug = since(debug_start);
+	times.ui_text = m_text.stats.ms - text_before.ms;
+	times.ui_rasterized = m_text.stats.rasterized - text_before.rasterized;

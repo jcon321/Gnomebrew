@@ -129,7 +129,12 @@ public:
 
 	void SetCursorVisible(bool visible) { m_cursor_visible = visible; }
 	// How long the host took to show the last frame, ms (the debug menu's Present).
-	void SetPresentMs(double ms) { m_present_ms = ms; }
+	// The last frame's Present, and of that the canvas's upload to the GPU.
+	void SetPresentMs(double ms, double upload_ms = 0)
+	{
+		m_present_ms = ms;
+		m_upload_ms = upload_ms;
+	}
 	// While a mouse drag turns the character or pans the camera, the cursor is hidden and held
 	// where the drag started: the host puts it back at (x, y), in window pixels, after every move
 	// and once more when the drag ends.
@@ -415,7 +420,7 @@ private:
 	FrontEndArt &m_art;
 	const EqText &m_strings;
 	TextRenderer &m_text;
-	double m_present_ms = 0;
+	double m_present_ms = 0, m_upload_ms = 0;
 	FrontEndConfig m_config;
 
 	Screen m_screen = Screen::Start;

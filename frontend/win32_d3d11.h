@@ -39,6 +39,7 @@ public:
 	// Blends the canvas over the frame and shows it (waiting for the vertical blank with
 	// vsync). False once the device is lost.
 	bool Present();
+	double UploadMs() const; // the last Present's canvas upload (the rest of it is the swap chain's)
 
 	struct State; // the Direct3D objects (win32_d3d11.cpp)
 

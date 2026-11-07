@@ -668,7 +668,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 				Log("Direct3D device lost");
 				gpu_lost_logged = true;
 			}
-			frontend.SetPresentMs(present_ms());
+			frontend.SetPresentMs(present_ms(), gpu->UploadMs());
 			continue;
 		}
 		HDC dc = GetDC(g_app.window);

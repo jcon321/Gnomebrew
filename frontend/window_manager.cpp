@@ -3,6 +3,7 @@
 #include "ini_file.h"
 
 #include <algorithm>
+#include <chrono>
 
 namespace
 {
@@ -682,16 +683,24 @@ void WindowManager::Draw(Canvas &canvas, TextRenderer &text, uint64_t now_ms)
 {
 	if (!m_textures)
 		return;
+	m_slowest.clear();
+	m_slowest_ms = 0;
 	for (const auto &wp : m_windows) {
 		Window &w = *wp;
 		if (!w.shown)
 			continue;
 		// CXWnd::DoAllDrawing: drawn whatever its alpha (CXWndManager::DrawWindows skips none), at
 		// that alpha for its textures and background only, so its text never fades.
+		auto start = std::chrono::steady_clock::now();
 		canvas.SetAlpha(EffectiveAlpha(w));
 		w.wnd.SetBackground(w.settings.tint, w.settings.texture);
 		w.wnd.Draw(canvas, text, *m_textures, now_ms);
 		canvas.SetAlpha(255);
+		double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+		if (ms > m_slowest_ms) {
+			m_slowest_ms = ms;
+			m_slowest = w.screen;
+		}
 	}
 	// The menus over them all (CContextMenu's z layer 1000).
 	DrawMenus(canvas, text, now_ms);

@@ -17,10 +17,22 @@ struct TextSize
 	int h = 0;
 };
 
+// What drawing text has cost since it was last cleared (the debug menu's Performance figures):
+// the time in Draw, DrawWrapped and DrawScaled, the calls, and how many of them rasterized text
+// with GDI (not from a cache).
+struct TextStats
+{
+	double ms = 0;
+	int calls = 0;
+	int rasterized = 0;
+};
+
 class TextRenderer
 {
 public:
 	virtual ~TextRenderer() = default;
+
+	TextStats stats;
 
 	// height is CreateFont's lfHeight in pixels. weight 0 is one of eqmain's fonts (default weight),
 	// drawn by GDI a string at a time. Any other weight is one of eqgfx's cached fonts, the in-game

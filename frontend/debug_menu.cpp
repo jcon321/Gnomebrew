@@ -185,6 +185,15 @@ void DebugMenu::Frame(const FrameTimes &times)
 		m_window_times.tags += times.tags;
 		m_window_times.ui += times.ui;
 		m_window_times.present += times.present;
+		m_window_times.ui_windows += times.ui_windows;
+		m_window_times.ui_debug += times.ui_debug;
+		m_window_times.ui_text += times.ui_text;
+		m_window_times.ui_rasterized += times.ui_rasterized;
+		m_window_times.upload += times.upload;
+		if (times.slowest_ms > m_window_times.slowest_ms) {
+			m_window_times.slowest = times.slowest;
+			m_window_times.slowest_ms = times.slowest_ms;
+		}
 	}
 	else
 		m_window_start = now;
@@ -194,8 +203,9 @@ void DebugMenu::Frame(const FrameTimes &times)
 		m_frame_ms = m_window_ms / m_window_frames;
 		m_worst_ms = m_window_worst_ms;
 		double n = m_window_frames;
-		m_times = {m_window_times.zone / n, m_window_times.models / n, m_window_times.submit / n, m_window_times.tags / n,
-			m_window_times.ui / n, m_window_times.present / n};
+		const FrameTimes &w = m_window_times;
+		m_times = {w.zone / n, w.models / n, w.submit / n, w.tags / n, w.ui / n, w.present / n, w.ui_windows / n,
+			w.ui_debug / n, w.ui_text / n, w.ui_rasterized / n, w.upload / n, w.slowest, w.slowest_ms};
 		m_window_start = now;
 		m_window_frames = 0;
 		m_window_ms = m_window_worst_ms = 0;
@@ -351,6 +361,10 @@ void DebugMenu::DrawCard(Canvas &canvas, TextRenderer &text, const ZoneSession &
 		if (world) {
 			row(Format("Zone %.1f  Models %.1f  Submit %.1f ms", m_times.zone, m_times.models, m_times.submit));
 			row(Format("Tags %.1f  UI %.1f  Present %.1f ms", m_times.tags, m_times.ui, m_times.present));
+			row(Format("UI: windows %.1f  this card %.1f  text %.1f ms", m_times.ui_windows, m_times.ui_debug, m_times.ui_text));
+			row(Format("Text rasterized %.0f a frame   Upload %.1f ms", m_times.ui_rasterized, m_times.upload));
+			if (!m_times.slowest.empty())
+				row(Format("Slowest window %s %.1f ms (worst)", m_times.slowest.c_str(), m_times.slowest_ms));
 			row(Format("%zuk triangles   %s", (stats.triangles + 500) / 1000, stats.renderer));
 			row(Format("Models %zu drawn, %zu built, %zu spawns", stats.spawns_drawn, stats.spawns_built, stats.spawns));
 			if (!m_draw.no_culling)
