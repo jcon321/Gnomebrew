@@ -681,38 +681,52 @@ int WindowManager::EffectiveAlpha(const Window &w) const
 
 void WindowManager::Draw(Canvas &canvas, TextRenderer &text, uint64_t now_ms)
 {
-	if (!m_textures)
-		return;
+	std::vector<RetainedUi::Piece> pieces;
+	Pieces(text, now_ms, pieces);
+	for (const RetainedUi::Piece &piece : pieces)
+		piece.draw(canvas);
+}
+
+void WindowManager::Pieces(TextRenderer &text, uint64_t now_ms, std::vector<RetainedUi::Piece> &out)
+{
 	m_slowest.clear();
 	m_slowest_ms = 0;
+	if (!m_textures)
+		return;
 	for (const auto &wp : m_windows) {
 		Window &w = *wp;
 		if (!w.shown)
 			continue;
-		// CXWnd::DoAllDrawing: drawn whatever its alpha (CXWndManager::DrawWindows skips none), at
-		// that alpha for its textures and background only, so its text never fades.
-		auto start = std::chrono::steady_clock::now();
-		canvas.SetAlpha(EffectiveAlpha(w));
-		w.wnd.SetBackground(w.settings.tint, w.settings.texture);
-		w.wnd.Draw(canvas, text, *m_textures, now_ms);
-		canvas.SetAlpha(255);
-		double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-		if (ms > m_slowest_ms) {
-			m_slowest_ms = ms;
-			m_slowest = w.screen;
-		}
+		out.push_back({reinterpret_cast<uintptr_t>(&w), [this, &w, &text, now_ms](Canvas &canvas) {
+			// CXWnd::DoAllDrawing: drawn whatever its alpha (CXWndManager::DrawWindows skips none), at
+			// that alpha for its textures and background only, so its text never fades.
+			auto start = std::chrono::steady_clock::now();
+			canvas.SetAlpha(EffectiveAlpha(w));
+			w.wnd.SetBackground(w.settings.tint, w.settings.texture);
+			w.wnd.Draw(canvas, text, *m_textures, now_ms);
+			canvas.SetAlpha(255);
+			if (canvas.Recording())
+				return;
+			double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+			if (ms > m_slowest_ms) {
+				m_slowest_ms = ms;
+				m_slowest = w.screen;
+			}
+		}});
 	}
-	// The menus over them all (CContextMenu's z layer 1000).
-	DrawMenus(canvas, text, now_ms);
-	if (!m_open_menus.empty())
-		return;
-	// The tooltip of what the mouse rests on (the window itself has none), unless a window's moving.
-	if (m_drag != Drag::None || now_ms - m_moved_ms <= TooltipMs)
-		return;
-	int top = TopAt(m_mouse_x, m_mouse_y);
-	const SidlWindow::Control *control = top >= 0 ? m_windows[top]->wnd.ControlAt(m_mouse_x, m_mouse_y) : nullptr;
-	if (control && !control->tooltip.empty())
-		DrawTooltip(canvas, text, control->tooltip, control->def->font, m_mouse_x, m_mouse_y, true);
+	out.push_back({MenusPiece, [this, &text, now_ms](Canvas &canvas) {
+		// The menus over them all (CContextMenu's z layer 1000).
+		DrawMenus(canvas, text, now_ms);
+		if (!m_open_menus.empty())
+			return;
+		// The tooltip of what the mouse rests on (the window itself has none), unless a window's moving.
+		if (m_drag != Drag::None || now_ms - m_moved_ms <= TooltipMs)
+			return;
+		int top = TopAt(m_mouse_x, m_mouse_y);
+		const SidlWindow::Control *control = top >= 0 ? m_windows[top]->wnd.ControlAt(m_mouse_x, m_mouse_y) : nullptr;
+		if (control && !control->tooltip.empty())
+			DrawTooltip(canvas, text, control->tooltip, control->def->font, m_mouse_x, m_mouse_y, true);
+	}});
 }
 
 void WindowManager::DrawTooltip(Canvas &canvas, TextRenderer &text, const std::string &tip, int font, int x, int y,

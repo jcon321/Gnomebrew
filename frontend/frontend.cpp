@@ -1052,6 +1052,8 @@ void FrontEnd::Render(Canvas &canvas, uint64_t now_ms)
 	if (area.w < canvas.Width() || area.h < canvas.Height())
 		canvas.Fill({0, 0, canvas.Width(), canvas.Height()}, 0x000000);
 	Canvas screen = canvas.Sub(area);
+	m_screen_fills_window = area.x == 0 && area.y == 0 && area.w == canvas.Width() && area.h == canvas.Height();
+	m_cursor_drawn = false;
 	switch (m_screen) {
 	case Screen::Start:
 		RenderStart(screen);
@@ -1080,7 +1082,10 @@ void FrontEnd::Render(Canvas &canvas, uint64_t now_ms)
 		RenderDialog(dialog);
 	}
 
-	// The item or button on the cursor, over everything but the cursor.
+	// The item or button on the cursor, over everything but the cursor (RenderZone's own, when it
+	// drew them).
+	if (m_cursor_drawn)
+		return;
 	if (m_cursor_visible && !m_mouse_grabbed && m_screen == Screen::Zone && !m_dialog.open)
 		DrawCursorAttachment(screen, m_text, m_windows, m_window_state, m_game_values, m_mouse_x - area.x,
 			m_mouse_y - area.y, now_ms);
@@ -4262,41 +4267,81 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 
 	Clock::time_point ui_start = Clock::now();
 	const TextStats text_before = m_text.stats;
-	if (world) {
-		std::string help = std::string("Arrows/WASD move   Space jump   Ctrl+R ") + (m_run ? "walk" : "run") +
-		                   "   Right drag look   Wheel zoom   F9 camera   F11 debug   Enter chat";
-		TextSize size = m_text.Measure(help, FontSize::Small);
-		m_text.Draw(canvas, width - size.w - 10, height - size.h - 8, help, FontSize::Small, ZoneGrey);
-	}
-
+	// The 2D drawing over the world, a piece at a time (RetainedUi), in order.
+	enum : uint64_t { HelpPiece = 2, AltTooltipsPiece, StatCardPiece, CursorPiece };
+	std::vector<RetainedUi::Piece> pieces;
+	if (world)
+		pieces.push_back({HelpPiece, [this, width, height](Canvas &c) {
+			std::string help = std::string("Arrows/WASD move   Space jump   Ctrl+R ") + (m_run ? "walk" : "run") +
+			                   "   Right drag look   Wheel zoom   F9 camera   F11 debug   Enter chat";
+			TextSize size = m_text.Measure(help, FontSize::Small);
+			m_text.Draw(c, width - size.w - 10, height - size.h - 8, help, FontSize::Small, ZoneGrey);
+		}});
 	m_chat.Layout(m_text);
-	Clock::time_point windows_start = Clock::now();
-	m_windows.Draw(canvas, m_text, now_ms);
-	times.ui_windows = since(windows_start);
+	m_windows.Pieces(m_text, now_ms, pieces);
+	pieces.push_back({AltTooltipsPiece, [this](Canvas &c) {
+		// CCastSpellWnd::DrawSpellButtonTooltips: Alt held shows each gem's tooltip, by its top right.
+		if (m_alt_down && m_windows.Shown("CastSpellWnd"))
+			if (const SidlWindow *gems = m_windows.Find("CastSpellWnd"); gems && !gems->Minimized())
+				for (int gem = 0; gem < ZoneProfile::Gems; ++gem)
+					if (const SidlWindow::Control *g = gems->Find("CSPW_Spell" + std::to_string(gem)); g && gems->Shown(*g))
+						m_windows.DrawTooltip(c, m_text, g->tooltip, g->def->font, g->rect.Right() + 2, g->rect.y + 2, false);
+		// CContainerWnd::PostDraw and CBankWnd's: Alt held over a bag or the bank shows each slot's tooltip.
+		if (m_alt_down) {
+			Rect area = ScreenArea();
+			m_containers.DrawTooltips(c, m_text, m_mouse_x - area.x, m_mouse_y - area.y);
+			m_bank.DrawTooltips(c, m_text, m_mouse_x - area.x, m_mouse_y - area.y);
+			m_merchant.DrawTooltips(c, m_text, m_mouse_x - area.x, m_mouse_y - area.y);
+			m_loot.DrawTooltips(c, m_text, m_mouse_x - area.x, m_mouse_y - area.y);
+			m_trade.DrawTooltips(c, m_text, m_mouse_x - area.x, m_mouse_y - area.y);
+			DrawBuffTooltips(c, m_mouse_x - area.x, m_mouse_y - area.y);
+		}
+	}});
+	// Top left and right: the debug menu's stat card and radar, above the windows.
+	double card_ms = 0;
+	pieces.push_back({StatCardPiece, [this, height, &card_ms, since](Canvas &c) {
+		Clock::time_point start = Clock::now();
+		m_debug.Draw(c, m_text, m_zone, m_zone_view.get(), height - 10);
+		if (!c.Recording())
+			card_ms += since(start);
+	}});
+	// The item or button on the cursor, and the cursor, over it all: here when the world fills the
+	// window and no dialog's over it (else Render draws them, after the dialog).
+	m_cursor_drawn = m_screen_fills_window && !m_dialog.open;
+	if (m_cursor_drawn)
+		pieces.push_back({CursorPiece, [this, now_ms](Canvas &c) {
+			if (!m_cursor_visible || m_mouse_grabbed)
+				return;
+			DrawCursorAttachment(c, m_text, m_windows, m_window_state, m_game_values, m_mouse_x, m_mouse_y, now_ms);
+			if (!m_windows.DrawCursor(c, m_mouse_x, m_mouse_y, now_ms))
+				c.Blit(m_art.Get("cursor.bmp"), m_mouse_x, m_mouse_y, true);
+		}});
+
+	// Kept from frame to frame on a GPU host's canvas when it's all ours over the view: the world
+	// fills the window and Finish cleared all of it, no dialog darkens it, and no debug lines are
+	// drawn straight into it.
+	CanvasDirty *dirty = canvas.Tracker();
+	bool retained = world && dirty && m_screen_fills_window && !m_dialog.open && !m_zone_view->DrawsDebugLines() &&
+	                dirty->BlockThisFrame() && dirty->Block().x == 0 && dirty->Block().y == 0 &&
+	                dirty->Block().w == width && dirty->Block().h == height;
+	if (retained)
+		m_retained_ui.Frame(canvas, pieces);
+	else {
+		for (const RetainedUi::Piece &piece : pieces) {
+			canvas.SetAlpha(255);
+			canvas.ResetClip();
+			piece.draw(canvas);
+		}
+		if (dirty)
+			m_retained_ui.Forget(canvas);
+	}
+	times.ui_debug = card_ms;
+	times.ui = since(ui_start);
+	times.ui_windows = times.ui - card_ms;
 	times.slowest = m_windows.SlowestWindow();
 	times.slowest_ms = m_windows.SlowestWindowMs();
-	// CCastSpellWnd::DrawSpellButtonTooltips: Alt held shows each gem's tooltip, by its top right.
-	if (m_alt_down && m_windows.Shown("CastSpellWnd"))
-		if (const SidlWindow *gems = m_windows.Find("CastSpellWnd"); gems && !gems->Minimized())
-			for (int gem = 0; gem < ZoneProfile::Gems; ++gem)
-				if (const SidlWindow::Control *c = gems->Find("CSPW_Spell" + std::to_string(gem)); c && gems->Shown(*c))
-					m_windows.DrawTooltip(canvas, m_text, c->tooltip, c->def->font, c->rect.Right() + 2, c->rect.y + 2, false);
-	// CContainerWnd::PostDraw and CBankWnd's: Alt held over a bag or the bank shows each slot's tooltip.
-	if (m_alt_down) {
-		Rect area = ScreenArea();
-		m_containers.DrawTooltips(canvas, m_text, m_mouse_x - area.x, m_mouse_y - area.y);
-		m_bank.DrawTooltips(canvas, m_text, m_mouse_x - area.x, m_mouse_y - area.y);
-		m_merchant.DrawTooltips(canvas, m_text, m_mouse_x - area.x, m_mouse_y - area.y);
-		m_loot.DrawTooltips(canvas, m_text, m_mouse_x - area.x, m_mouse_y - area.y);
-		m_trade.DrawTooltips(canvas, m_text, m_mouse_x - area.x, m_mouse_y - area.y);
-		DrawBuffTooltips(canvas, m_mouse_x - area.x, m_mouse_y - area.y);
-	}
-	// Top left and right: the debug menu's stat card and radar, above the windows.
-	Clock::time_point debug_start = Clock::now();
-	m_debug.Draw(canvas, m_text, m_zone, m_zone_view.get(), height - 10);
-	times.ui_debug = since(debug_start);
-	times.ui = since(ui_start);
 	times.ui_text = m_text.stats.ms - text_before.ms;
 	times.ui_rasterized = m_text.stats.rasterized - text_before.rasterized;
+	times.ui_redrawn = retained ? 100.0 * static_cast<double>(m_retained_ui.RedrawnPixels()) / std::max(width * height, 1) : 100;
 	m_debug.Frame(times);
 }

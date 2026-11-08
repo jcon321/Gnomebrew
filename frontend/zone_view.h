@@ -292,6 +292,8 @@ public:
 	Vision CurrentVision() const;
 	Vision OwnVision() const;
 	void SetDebugDraw(const DebugDraw &draw) { m_debug_draw = draw; }
+	// The debug draws that put lines straight onto the canvas (DrawDebugOverlays).
+	bool DrawsDebugLines() const { return m_debug_draw.wireframe || m_debug_draw.walls || m_debug_draw.floor; }
 	const render::Vec3 &Feet() const { return m_feet; }
 
 	// The options' Clip Plane slider (0.1 to 4 in steps of 0.2; 1, eqgame's default, is the zone's

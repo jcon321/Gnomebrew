@@ -422,6 +422,9 @@ private:
 	const EqText &m_strings;
 	TextRenderer &m_text;
 	double m_present_ms = 0, m_upload_ms = 0, m_update_ms = 0;
+	RetainedUi m_retained_ui;            // the zone's 2D drawing, kept on a GPU host's canvas
+	bool m_screen_fills_window = false;  // this frame's ScreenArea is the whole canvas
+	bool m_cursor_drawn = false;         // RenderZone drew the cursor (and what's on it) this frame
 	FrontEndConfig m_config;
 
 	Screen m_screen = Screen::Start;

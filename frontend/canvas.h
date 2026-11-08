@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 struct Rect
@@ -71,6 +72,15 @@ public:
 	}
 	void NextFrame(); // a frame shown: this frame's become the last's, and none this frame yet
 
+	// The block holds the front end's own drawing over the view, kept from frame to frame (the
+	// RetainedUi redraws what changes): ClearBlock then leaves it as it is.
+	void SetRetained(bool retained) { m_retained = retained; }
+	// ClearBlock set all of its block to the view this frame (anything kept there is gone), and
+	// the block it last cleared.
+	bool ClearedAll() const { return m_cleared_all_frame == m_frames; }
+	const Rect &Block() const { return m_cleared; }
+	bool BlockThisFrame() const { return m_cleared_frame == m_frames; }
+
 private:
 	bool Drawn(int tx, int ty) const
 	{
@@ -82,7 +92,24 @@ private:
 	std::vector<uint8_t> m_this, m_last; // a tile each, row by row
 	uint64_t m_frames = 0;            // NextFrames so far
 	uint64_t m_cleared_frame = ~0ull; // and when ClearBlock last cleared m_cleared
+	uint64_t m_cleared_all_frame = ~0ull;
 	Rect m_cleared;
+	bool m_retained = false;
+};
+
+// What a canvas would have drawn, while it only records (Canvas::Record): a hash of every call and
+// its arguments (the images by address, the text by content), and the box around it all.
+struct CanvasRecording
+{
+	uint64_t hash = 0xcbf29ce484222325ull;
+	Rect bounds; // empty when nothing would be drawn
+	void Add(const void *data, size_t size);
+	template <typename T>
+	void Add(const T &value)
+	{
+		Add(&value, sizeof value);
+	}
+	void Cover(const Rect &area); // grows bounds to take in area (already clipped)
 };
 
 class Canvas
@@ -90,7 +117,8 @@ class Canvas
 public:
 	Canvas() = default;
 	Canvas(uint32_t *pixels, int width, int height, int stride_pixels)
-		: m_pixels(pixels), m_width(width), m_height(height), m_stride(stride_pixels), m_clip{0, 0, width, height}
+		: m_pixels(pixels), m_width(width), m_height(height), m_stride(stride_pixels), m_clip{0, 0, width, height},
+		  m_limit{0, 0, width, height}
 	{
 	}
 
@@ -104,15 +132,30 @@ public:
 	// Everything drawn on the canvas goes into `dirty` (null: not kept), and a Sub canvas's into its
 	// parent's.
 	void Track(CanvasDirty *dirty) { m_dirty = dirty; }
+	CanvasDirty *Tracker() const { return m_dirty; }
 	void MarkDrawn(const Rect &area); // clipped to the canvas
-	// The part of this canvas at `area` (within it), as a canvas of its own.
+	// The part of this canvas at `area` (within it), as a canvas of its own (sharing its tracker,
+	// recording and limit).
 	Canvas Sub(const Rect &area);
 
 	// Where drawing lands (CXWnd's clip rects): Blit, Tile, Fill, Frame, Darken, Stretch and the
-	// text renderers all stop at it. The whole canvas unless set; SetClip keeps it on the canvas.
+	// text renderers all stop at it. The whole canvas unless set; SetClip keeps it on the canvas,
+	// and within the limit.
 	void SetClip(const Rect &clip);
-	void ResetClip() { m_clip = {0, 0, m_width, m_height}; }
+	void ResetClip() { m_clip = m_limit; }
 	const Rect &Clip() const { return m_clip; }
+	// A clip no SetClip gets out of (the part a RetainedUi redraws); the whole canvas to lift it.
+	void SetLimit(const Rect &limit);
+	void ResetLimit() { SetLimit({0, 0, m_width, m_height}); }
+
+	// While `recording` is set, nothing is drawn: every call (and the text renderers' draws) goes
+	// into it instead. Null to draw again.
+	void Record(CanvasRecording *recording) { m_record = recording; }
+	CanvasRecording *Recording() const { return m_record; }
+	// A text renderer's draw while recording: its kind, the string and how, and the box it covers.
+	void RecordText(int kind, const std::string &text, const Rect &box, int height, uint32_t rgb, int weight, float scale);
+	// The view showing through `area` again (0xff000000), as a GPU Renderer::Finish leaves it.
+	void ClearToView(const Rect &area);
 
 	void Blit(const Image &image, int x, int y, bool color_key = false);
 	void BlitPart(const Image &image, const Rect &source, int x, int y, bool color_key = false);
@@ -162,4 +205,20 @@ private:
 	int m_alpha = 255;
 	CanvasDirty *m_dirty = nullptr;
 	int m_origin_x = 0, m_origin_y = 0; // where it is on the tracked canvas
+	Rect m_limit{0, 0, 0x3fffffff, 0x3fffffff}; // set to the canvas by the constructor
+	CanvasRecording *m_record = nullptr;
+	// While recording: the call (a kind and its arguments) into the hash, and what it covers.
+	template <typename... Args>
+	bool Recorded(int kind, const Rect &covers, const Args &...args)
+	{
+		if (!m_record)
+			return false;
+		m_record->Add(kind);
+		m_record->Add(m_alpha);
+		m_record->Add(m_clip);
+		m_record->Add(covers);
+		(m_record->Add(args), ...);
+		m_record->Cover(covers);
+		return true;
+	}
 };

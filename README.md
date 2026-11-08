@@ -847,6 +847,14 @@ Only what was drawn on goes up: every draw marks the 64x16 tiles it touches in a
 (the GDI text renderer each string's box), Finish clears only the tiles drawn on last frame (all
 of its block when the block moved or the last frame didn't clear it), and Present uploads each run
 of tiles drawn on this frame or the last (`UpdateSubresource`).
+In the zone the 2D drawing is kept on the canvas from frame to frame (`frontend/retained_ui.cpp`):
+nothing on it depends on the view, so what was drawn last frame is still right wherever nothing
+would draw differently. Every piece (each window, the menus and tooltip, the Alt tooltips, the stat
+card, the cursor) is first drawn into a `CanvasRecording`, which draws nothing but hashes every call
+and its arguments; where a piece's hash or box changed (or it came or went), its old and new boxes
+are cleared to the view and everything over them drawn again in order, clipped to them. Finish
+leaves the block alone then. Not with the software renderer, under a dialog, or with the debug
+menu's wireframe, wall or floor lines.
 
 Things learned about the files:
 

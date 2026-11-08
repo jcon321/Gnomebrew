@@ -98,6 +98,7 @@ target_compile_options(eqrender PRIVATE ${MYCLIENT_WARNINGS})
 # only the window, GDI text and input glue (win32_main.cpp) are Windows-specific.
 add_library(eqfrontend STATIC
     frontend/canvas.cpp
+    frontend/retained_ui.cpp
     frontend/art.cpp
     frontend/widgets.cpp
     frontend/frontend.cpp

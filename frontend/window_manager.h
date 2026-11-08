@@ -35,6 +35,7 @@
 // YPos<W>x<H> per resolution, Width and Height for sizable windows, Show, Locked, Fades, Delay,
 // Duration, Alpha, FadeToAlpha and BGTint.
 
+#include "retained_ui.h"
 #include "sidl.h"
 
 #include <cstdint>
@@ -126,8 +127,12 @@ public:
 
 	void Update(uint64_t now_ms, int mouse_x, int mouse_y); // the fades, and a button held (either button)
 	void Draw(Canvas &canvas, TextRenderer &text, uint64_t now_ms);
+	// The same drawing a piece at a time, in order (each shown window, then the menus and the
+	// tooltip), for a RetainedUi; valid until the windows change.
+	void Pieces(TextRenderer &text, uint64_t now_ms, std::vector<RetainedUi::Piece> &out);
 	// The window that took longest in the last Draw, and how long (the debug menu's Performance).
 	const std::string &SlowestWindow() const { return m_slowest; }
+	static constexpr uint64_t MenusPiece = 1; // Pieces' id for the menus and tooltip
 	double SlowestWindowMs() const { return m_slowest_ms; }
 	// The cursor for the mouse at (x, y), if the windows want their own (moving or sizing one,
 	// or over a sizable one's border): its SIDL animation, drawn at its hotspot. False otherwise.

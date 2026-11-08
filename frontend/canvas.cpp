@@ -15,7 +15,8 @@ void CanvasDirty::Resize(int width, int height)
 	m_rows = (m_height + TileHeight - 1) / TileHeight;
 	m_this.assign(static_cast<size_t>(m_columns) * m_rows, 1);
 	m_last = m_this;
-	m_cleared_frame = ~0ull;
+	m_cleared_frame = m_cleared_all_frame = ~0ull;
+	m_retained = false;
 }
 
 void CanvasDirty::Mark(int x0, int y0, int x1, int y1)
@@ -44,6 +45,10 @@ void CanvasDirty::ClearBlock(uint32_t *pixels, int stride, int x, int y, int w, 
 		for (int row = 0; row < h; ++row)
 			std::fill_n(pixels + static_cast<size_t>(row) * stride, w, 0xff000000u);
 		Mark(x, y, x + w, y + h);
+		m_cleared_all_frame = m_frames;
+	}
+	else if (m_retained) {
+		// The front end's drawing is kept: it clears what it redraws itself.
 	}
 	else {
 		// The tiles drawn on last frame, where they're in the block.
@@ -62,6 +67,66 @@ void CanvasDirty::ClearBlock(uint32_t *pixels, int stride, int x, int y, int w, 
 	m_cleared_frame = m_frames;
 }
 
+void CanvasRecording::Add(const void *data, size_t size)
+{
+	// FNV-1a.
+	const uint8_t *bytes = static_cast<const uint8_t *>(data);
+	for (size_t i = 0; i < size; ++i)
+		hash = (hash ^ bytes[i]) * 0x100000001b3ull;
+}
+
+void CanvasRecording::Cover(const Rect &area)
+{
+	if (area.w <= 0 || area.h <= 0)
+		return;
+	if (bounds.w <= 0 || bounds.h <= 0) {
+		bounds = area;
+		return;
+	}
+	int x0 = std::min(bounds.x, area.x), y0 = std::min(bounds.y, area.y);
+	int x1 = std::max(bounds.Right(), area.Right()), y1 = std::max(bounds.Bottom(), area.Bottom());
+	bounds = {x0, y0, x1 - x0, y1 - y0};
+}
+
+void Canvas::RecordText(int kind, const std::string &text, const Rect &box, int height, uint32_t rgb, int weight,
+	float scale)
+{
+	if (!m_record)
+		return;
+	m_record->Add(kind + 100);
+	m_record->Add(m_clip);
+	m_record->Add(text.data(), text.size());
+	m_record->Add(text.size());
+	m_record->Add(box);
+	m_record->Add(height);
+	m_record->Add(rgb);
+	m_record->Add(weight);
+	m_record->Add(scale);
+	int x0 = std::max(box.x, m_clip.x), y0 = std::max(box.y, m_clip.y);
+	int x1 = std::min(box.Right(), m_clip.Right()), y1 = std::min(box.Bottom(), m_clip.Bottom());
+	if (x1 > x0 && y1 > y0)
+		m_record->Cover({x0, y0, x1 - x0, y1 - y0});
+}
+
+void Canvas::ClearToView(const Rect &area)
+{
+	int x0 = std::max(area.x, 0), y0 = std::max(area.y, 0);
+	int x1 = std::min(area.Right(), m_width), y1 = std::min(area.Bottom(), m_height);
+	if (x1 <= x0 || y1 <= y0)
+		return;
+	Drawn(x0, y0, x1, y1);
+	for (int y = y0; y < y1; ++y)
+		std::fill(Row(y) + x0, Row(y) + x1, 0xff000000u);
+}
+
+void Canvas::SetLimit(const Rect &limit)
+{
+	int x0 = std::max(limit.x, 0), y0 = std::max(limit.y, 0);
+	int x1 = std::min(limit.Right(), m_width), y1 = std::min(limit.Bottom(), m_height);
+	m_limit = {x0, y0, std::max(x1 - x0, 0), std::max(y1 - y0, 0)};
+	m_clip = m_limit;
+}
+
 void Canvas::MarkDrawn(const Rect &area)
 {
 	Drawn(std::max(area.x, 0), std::max(area.y, 0), std::min(area.Right(), m_width), std::min(area.Bottom(), m_height));
@@ -75,13 +140,16 @@ Canvas Canvas::Sub(const Rect &area)
 	sub.m_dirty = m_dirty;
 	sub.m_origin_x = m_origin_x + x0;
 	sub.m_origin_y = m_origin_y + y0;
+	sub.m_record = m_record;
+	sub.m_alpha = m_alpha;
+	sub.SetLimit({m_limit.x - x0, m_limit.y - y0, m_limit.w, m_limit.h});
 	return sub;
 }
 
 void Canvas::SetClip(const Rect &clip)
 {
-	int x0 = std::max(clip.x, 0), y0 = std::max(clip.y, 0);
-	int x1 = std::min(clip.Right(), m_width), y1 = std::min(clip.Bottom(), m_height);
+	int x0 = std::max(clip.x, m_limit.x), y0 = std::max(clip.y, m_limit.y);
+	int x1 = std::min(clip.Right(), m_limit.Right()), y1 = std::min(clip.Bottom(), m_limit.Bottom());
 	m_clip = {x0, y0, std::max(x1 - x0, 0), std::max(y1 - y0, 0)};
 }
 
@@ -98,6 +166,8 @@ void Canvas::BlitPart(const Image &image, const Rect &source, int x, int y, bool
 	w = std::min({w, m_clip.Right() - x, image.width - sx});
 	h = std::min({h, m_clip.Bottom() - y, image.height - sy});
 	if (w <= 0 || h <= 0)
+		return;
+	if (Recorded(1, {x, y, w, h}, static_cast<const void *>(&image), sx, sy, x, y, w, h, color_key))
 		return;
 	Drawn(x, y, x + w, y + h);
 
@@ -131,6 +201,8 @@ void Canvas::Fill(const Rect &area, uint32_t color)
 	int x1 = std::min(area.Right(), m_clip.Right()), y1 = std::min(area.Bottom(), m_clip.Bottom());
 	if (x0 >= x1)
 		return; // wholly left or right of the canvas
+	if (Recorded(2, {x0, y0, x1 - x0, y1 - y0}, color & 0xffffff))
+		return;
 	Drawn(x0, y0, x1, y1);
 	for (int y = y0; y < y1; ++y)
 		std::fill(Row(y) + x0, Row(y) + x1, color & 0xffffff);
@@ -249,6 +321,8 @@ void Canvas::FillFaded(const Rect &area, uint32_t color)
 	uint32_t src = (static_cast<uint32_t>(m_alpha) << 24) | (color & 0xffffff);
 	if (x1 <= x0)
 		return;
+	if (Recorded(5, {x0, y0, x1 - x0, y1 - y0}, color & 0xffffff))
+		return;
 	Drawn(x0, y0, x1, y1);
 #if defined(__SSE2__)
 	// A row of the color at the alpha, blended four pixels at a time.
@@ -293,6 +367,8 @@ void Canvas::Stretch(const Image &image, const Rect &source, const Rect &dest, u
 	int max_x = std::min(source.Right(), image.width) - 1;
 	int max_y = std::min(source.Bottom(), image.height) - 1;
 	if (x1 <= x0 || y1 <= y0 || max_x < source.x || max_y < source.y)
+		return;
+	if (Recorded(6, {x0, y0, x1 - x0, y1 - y0}, static_cast<const void *>(&image), source, dest, tint, x0, y0, x1, y1))
 		return;
 	Drawn(x0, y0, x1, y1);
 	// By value, so the writes to the canvas can't be taken for changes to what it reads.
@@ -379,6 +455,10 @@ void Canvas::TileRegion(const Image &image, const Rect &source, const Rect &dest
 
 void Canvas::Keep(const Rect &area, std::vector<uint32_t> &kept) const
 {
+	if (m_record) {
+		kept.clear(); // nothing to keep: nothing's drawn
+		return;
+	}
 	int x0 = std::max(area.x, 0), y0 = std::max(area.y, 0);
 	int x1 = std::min(area.Right(), m_width), y1 = std::min(area.Bottom(), m_height);
 	kept.clear();
@@ -395,6 +475,8 @@ void Canvas::BlendKept(const Rect &area, const std::vector<uint32_t> &kept, int 
 {
 	int x0 = std::max(area.x, 0), y0 = std::max(area.y, 0);
 	int x1 = std::min(area.Right(), m_width), y1 = std::min(area.Bottom(), m_height);
+	if (x1 > x0 && y1 > y0 && Recorded(4, {x0, y0, x1 - x0, y1 - y0}, alpha))
+		return;
 	if (x1 <= x0 || y1 <= y0 || kept.size() != static_cast<size_t>(x1 - x0) * (y1 - y0) || alpha >= 255)
 		return;
 	// Weights out of 256, so two channels blend at once in their 16-bit lanes (r and b, t and g).
@@ -420,6 +502,8 @@ void Canvas::Darken(const Rect &area)
 {
 	int x0 = std::max(area.x, m_clip.x), y0 = std::max(area.y, m_clip.y);
 	int x1 = std::min(area.Right(), m_clip.Right()), y1 = std::min(area.Bottom(), m_clip.Bottom());
+	if (x1 > x0 && y1 > y0 && Recorded(3, {x0, y0, x1 - x0, y1 - y0}))
+		return;
 	Drawn(x0, y0, x1, y1);
 	for (int y = y0; y < y1; ++y) {
 		uint32_t *row = Row(y);

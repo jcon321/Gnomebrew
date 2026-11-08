@@ -222,7 +222,12 @@ void GdiTextRenderer::Draw(Canvas &canvas, int x, int y, const std::string &utf8
 	TextTimer timer(stats);
 	// GDI and BlendMask write the DIB itself: the string's box, with room for overhangs.
 	TextSize drawn = Measure(utf8, height, weight);
-	canvas.MarkDrawn({x - 2, y - 2, drawn.w + 6, std::max(drawn.h, height) + 4});
+	const Rect covers{x - 2, y - 2, drawn.w + 6, std::max(drawn.h, height) + 4};
+	if (canvas.Recording()) {
+		canvas.RecordText(0, utf8, covers, height, rgb, weight, 1);
+		return;
+	}
+	canvas.MarkDrawn(covers);
 	if (weight != 0) {
 		DrawCached(canvas, x, y, utf8, height, rgb, weight);
 		return;
@@ -384,6 +389,15 @@ void GdiTextRenderer::DrawScaled(Canvas &canvas, int x, int y, const std::string
 {
 	TextTimer timer(stats);
 	const int local_x = x, local_y = y;
+	if (canvas.Recording()) {
+		// The coverage (Measure's size and its slack) stretched, from the slack pixel on.
+		TextSize size = Measure(utf8, height, weight);
+		int slack = static_cast<int>(scale + 0.5f);
+		canvas.RecordText(1, utf8,
+			{x - slack - 1, y - 1, static_cast<int>((size.w + 3) * scale) + 4, static_cast<int>(size.h * scale) + 4}, height,
+			rgb, weight, scale);
+		return;
+	}
 	RECT clip;
 	const Surface *surface = Target(canvas, x, y, clip);
 	const Mask *mask = surface && scale > 0 ? TextMask(utf8, height, weight, true) : nullptr;
@@ -435,6 +449,10 @@ bool GdiTextRenderer::Coverage(const std::string &utf8, int height, int weight, 
 void GdiTextRenderer::DrawWrapped(Canvas &canvas, const Rect &area, const std::string &utf8, int height, uint32_t rgb, int weight)
 {
 	TextTimer timer(stats);
+	if (canvas.Recording()) {
+		canvas.RecordText(2, utf8, {area.x - 2, area.y - 2, area.w + 4, area.h + 4}, height, rgb, weight, 1);
+		return;
+	}
 	canvas.MarkDrawn({area.x - 2, area.y - 2, area.w + 4, area.h + 4});
 	int x = area.x, y = area.y;
 	RECT clip;
