@@ -35,6 +35,8 @@ void BankWindow::Attach(WindowManager &windows, ZoneSession &zone, GameWindowSta
 
 void BankWindow::Reset()
 {
+	if (Active() && m_host.music)
+		m_host.music(false);
 	m_banker = 0;
 	m_opened_inventory = false;
 	if (m_state)
@@ -55,11 +57,15 @@ void BankWindow::Activate(uint16_t banker)
 {
 	if (!m_windows || !m_zone || Active() || !m_windows->Find("BankWnd"))
 		return;
+	if (m_host.make_visible)
+		m_host.make_visible();
 	m_banker = banker;
 	m_state->bank_open = true;
 	std::string name = BankerName();
 	if (m_host.chat)
 		m_host.chat(Said(m_eqstr, 1465, name, " tells you, 'Welcome to my bank!'"), ChatType::Default);
+	if (m_host.music)
+		m_host.music(true);
 	if (SidlWindow *wnd = m_windows->Find("BankWnd")) {
 		if (SidlWindow::Control *label = wnd->Find("BW_BankerName"))
 			label->text = name;
@@ -77,6 +83,8 @@ void BankWindow::Deactivate(bool say)
 	if (!Active())
 		return;
 	m_windows->Show("BankWnd", false);
+	if (m_host.music)
+		m_host.music(false);
 	if (say && m_host.chat)
 		m_host.chat(Said(m_eqstr, 12143, BankerName(), " tells you, 'Come back soon!'"), ChatType::Default);
 	m_banker = 0;

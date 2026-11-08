@@ -64,7 +64,10 @@ namespace audio
 		{
 			Opening = 1,         // CDisplay::InitDDraw, until the main loop starts
 			Combat = 2,          // auto attack
+			Bank = 3,            // CBankWnd::Activate
 			CharacterSelect = 4, // character select
+			Merchant = 6,        // CMerchantWnd::Activate
+			Trainer = 7,         // msg_req_guildmaster, CTrainWnd::Activate
 			Death = 8,           // EQPlayer::IDied
 		};
 		// SetGenericEnvironment's (and an emitter's "environment" column).

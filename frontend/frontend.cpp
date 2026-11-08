@@ -2146,18 +2146,27 @@ void FrontEnd::BuildZoneWindows()
 	BankWindow::Host bank_host;
 	bank_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
 	bank_host.close_bags = [this] { m_containers.CloseAll(); };
+	bank_host.music = [this](bool on) {
+		if (m_sound)
+			m_sound->SetMusicSelection(audio::EqSound::Bank, on);
+	};
+	bank_host.make_visible = [this] { m_abilities.MakeMeVisible(); };
 	m_bank.Attach(m_windows, m_zone, m_window_state, m_game_values, m_ui.eqstr, std::move(bank_host)); // hidden too
 	MerchantWindow::Host merchant_host;
 	merchant_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
 	merchant_host.sound = bag_sound;
 	merchant_host.close_bag = [this](int16_t slot) { m_containers.Close(slot); };
 	merchant_host.clear_target = [this] { m_game_values.target = 0; }; // pinstTarget, not the zone's
+	merchant_host.music = [this](bool on) {
+		if (m_sound)
+			m_sound->SetMusicSelection(audio::EqSound::Merchant, on);
+	};
 	m_merchant.Attach(m_windows, m_zone, m_window_state, m_game_values, std::move(merchant_host));
 	TrainWindow::Host train_host;
 	train_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
 	train_host.music = [this](bool on) {
 		if (m_sound)
-			m_sound->SetMusicSelection(7, on); // the trainer's
+			m_sound->SetMusicSelection(audio::EqSound::Trainer, on);
 	};
 	train_host.clear_target = [this] { m_game_values.target = 0; }; // pinstTarget
 	m_train.Attach(m_windows, m_zone, m_ui.eqstr, std::move(train_host));
@@ -3070,6 +3079,7 @@ void FrontEnd::RightClickedOnPlayer(uint16_t spawn)
 		return;
 	constexpr int Banker = 16, Merchant = 32;
 	if (who.npc < 2 && who.class_id == Merchant && m_zone.SpawnDistance(spawn) <= 20) {
+		m_abilities.MakeMeVisible();
 		AutoAttackOff(1466); // "Auto attack off."
 		m_merchant.Request(spawn);
 		return;

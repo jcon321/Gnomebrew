@@ -68,8 +68,8 @@ no rules of its own.
      change into others there) and the inventory with it; Done, Escape, the close box and walking
      more than 20 away (checked every 500 ms) close it with "Come back soon!", the inventory if it
      opened it, the quantity window if it was the bank's, and every bag window. Alt shows every
-     slot's tooltip. Still to do: Activate's MakeMeVisible and SetMusicSelection(3);
-     Deactivate's SavePC.
+     slot's tooltip. Activate makes us visible (MakeMeVisible) and plays the bank's music
+     (SetMusicSelection 3) until Deactivate. Still to do: Deactivate's SavePC.
    - Merchant window: done (`frontend/merchant_window.*`, eqgame's CMerchantWnd): the right button
      on a merchant asks for its shop (OP_ShopRequest), the answer opens it with its items
      (OP_ShopInventoryPacket, OP_ShopDelItem) in the scrolling slots, a
@@ -79,8 +79,9 @@ no rules of its own.
      the close box, Escape and walking away (OP_ShopEnd). Checked live against the server for
      opening, the prices and the welcome; buying and selling only through their refusals (the
      test character has no coins or anything worth selling). Still to do: a Bazaar trader's
-     (Type 0: OP_TraderShop, OP_TraderBuy), MakeMeVisible and SetMusicSelection(6), and the item display of a merchant's item (the slots' alt+click goes
-     through the selection now).
+     (Type 0: OP_TraderShop, OP_TraderBuy), Deactivate's SavePC, and the item display of a
+     merchant's item (the slots' alt+click goes through the selection now). The right button makes
+     us visible (MakeMeVisible) and the window plays the merchant's music (SetMusicSelection 6).
    - Loot window: done (`frontend/loot_window.*`, eqgame's CLootWnd): the right button on a corpse
      in reach asks to loot it (CEverQuest_LootCorpse, OP_LootRequest); OP_MoneyOnCorpse's answer
      says why not, or gives its coins and opens the window kneeling, its items

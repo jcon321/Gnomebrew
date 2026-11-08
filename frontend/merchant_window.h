@@ -2,10 +2,12 @@
 
 // eqgame's merchant window, CMerchantWnd (@00426d4c on):
 //   - CEverQuest::RightClickedOnPlayer (@00532949): the right button on a merchant (class 32) no
-//     more than 20 away, with none going, asks the zone (OP_ShopRequest) and waits (DAT_007d0258:
+//     more than 20 away, with none going, makes us visible (MakeMeVisible, the front end's), asks
+//     the zone (OP_ShopRequest) and waits (DAT_007d0258:
 //     nothing else is dealt with meanwhile);
 //   - msg_req_merchantitems (@004e5531): the zone's answer opens the window (Activate @00426f18:
-//     the merchant's name on MW_MerchantName, the rate it sent kept as MerchantGreed, the
+//     the merchant's music on (SetMusicSelection 6), the merchant's name on MW_MerchantName, the
+//     rate it sent kept as MerchantGreed, the
 //     inventory too if it wasn't up), or with command 0 just stops waiting; its items come in
 //     OP_ShopInventoryPacket, each in its slot (AddEquipmentToMercArray
 //     and the others: item 0 is "Got a bogus item, deleting it", eqstr 1366), and
@@ -32,7 +34,7 @@
 //     that many of a stack) gone from its slot, as the zone doesn't say; -1 is "not interested"
 //     (1364);
 //   - Deactivate (@00426faf), from Done, the close box, Escape and walking away: the window down,
-//     its items forgotten, OP_ShopEnd, our target cleared, the inventory down if it put it up;
+//     its items forgotten, the music off, OP_ShopEnd, our target cleared, the inventory down if it put it up;
 //   - PostDraw (@004270dc): with Alt down, every merchant slot's tooltip that's in view.
 
 #include "zone_session.h"
@@ -56,6 +58,7 @@ public:
 		std::function<void(int)> sound;                     // EqSoundManager::WavePlay
 		std::function<void(int16_t)> close_bag;              // CContainerMgr::CloseContainer
 		std::function<void()> clear_target;
+		std::function<void(bool)> music;                    // SetMusicSelection(6, on)
 	};
 
 	void Attach(WindowManager &windows, ZoneSession &zone, GameWindowState &state, const GameValues &values, Host host);

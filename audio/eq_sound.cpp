@@ -404,9 +404,9 @@ namespace audio
 		else
 			SetTrack(Death, gl, 3, 1, 2, 1500, 1500, 2500, 0);
 		// gl.xmi's sequences, for the merchant, bank, trainer and guild windows.
-		SetTrack(3, gl, 21, 0, 5, 1500, 2500, 3500, 0);
-		SetTrack(6, gl, 21, 0, 5, 1500, 2500, 3500, 0);
-		SetTrack(7, gl, 23, 0, 5, 1500, 2500, 3500, 0);
+		SetTrack(Bank, gl, 21, 0, 5, 1500, 2500, 3500, 0);
+		SetTrack(Merchant, gl, 21, 0, 5, 1500, 2500, 3500, 0);
+		SetTrack(Trainer, gl, 23, 0, 5, 1500, 2500, 3500, 0);
 		SetTrack(15, gl, 19, 0, 5, 1500, 2500, 3500, 0);
 		SetTrack(9, gl, 20, 0, 5, 1500, 2500, 3500, 0);
 		SetTrack(10, gl, 7, 0, 6, 1500, 2500, 3500, 0);

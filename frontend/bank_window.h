@@ -4,15 +4,16 @@
 //   - CEverQuest::RightClickedOnPlayer (@00532949): the right button on a banker (class 16), no
 //     more than 20 away, with no bank up already and nothing else going on (IsOkToTransact),
 //     activates it;
-//   - Activate (@00404758): "%1 tells you, 'Welcome to my bank!'" (eqstr 1465) with the banker's
-//     name, auto attack off (we have none), the banker's name on BW_BankerName, the bank's coins
-//     on BW_Money0..3 (UpdateMoneyDisplay), the window up, and the inventory with it if it wasn't;
+//   - Activate (@00404758): visible again (MakeMeVisible), "%1 tells you, 'Welcome to my bank!'"
+//     (eqstr 1465) with the banker's name, auto attack off (the front end's, after it), the bank's
+//     music on (SetMusicSelection 3), the banker's name on BW_BankerName, the bank's coins on
+//     BW_Money0..3 (UpdateMoneyDisplay), the window up, and the inventory with it if it wasn't;
 //   - OnProcessFrame (@004049f4): every 500 ms, the banker more than 20 away leaves the bank
 //     (CEverQuest_LeaveBankMode, saying so);
 //   - WndNotification (@00404a60): BW_DoneButton leaves the bank; a money button is
 //     ClickedMoneyButton (game_windows.h's MoneyClick): coins change into others at the bank;
 //   - Deactivate (@00404877), from Done, Escape (first of the windows it closes after the item
-//     display and quantity windows) and walking away: the window down, "%1 tells you, 'Come back
+//     display and quantity windows) and walking away: the window down, the music off, "%1 tells you, 'Come back
 //     soon!'" (12143), the quantity window down if it was the bank's, the inventory down if the
 //     bank put it up, and every bag window closed (CloseAllContainers);
 //   - PostDraw (@0040495c): with Alt down and the mouse over it, every bank slot's tooltip, as
@@ -38,6 +39,8 @@ public:
 	{
 		std::function<void(const std::string &, int)> chat; // a message, in a chat color type
 		std::function<void()> close_bags;                   // CloseAllContainers
+		std::function<void(bool)> music;                    // SetMusicSelection(3, on)
+		std::function<void()> make_visible;                 // EQ_Character::MakeMeVisible
 	};
 
 	void Attach(WindowManager &windows, ZoneSession &zone, GameWindowState &state, const GameValues &values, const EqStr *eqstr,

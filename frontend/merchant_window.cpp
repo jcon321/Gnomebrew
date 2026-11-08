@@ -46,6 +46,8 @@ void MerchantWindow::Attach(WindowManager &windows, ZoneSession &zone, GameWindo
 
 void MerchantWindow::Reset()
 {
+	if (m_active && m_host.music)
+		m_host.music(false);
 	m_merchant = 0;
 	m_active = false;
 	m_selected = -1;
@@ -115,6 +117,8 @@ void MerchantWindow::ZoneEvent(const ZoneSession::Event &event)
 		}
 		m_active = true;
 		m_greed = event.merchant.rate;
+		if (m_host.music)
+			m_host.music(true);
 		m_selected = -1;
 		m_busy = 0;
 		if (SidlWindow *wnd = m_windows->Find("MerchantWnd")) {
@@ -162,6 +166,8 @@ void MerchantWindow::Deactivate()
 	Select(-1);
 	if (!was_active)
 		return;
+	if (m_host.music)
+		m_host.music(false);
 	if (m_host.clear_target)
 		m_host.clear_target();
 	if (m_opened_inventory)
