@@ -285,10 +285,12 @@ no rules of its own.
    (Cycle reply's name; eqstr 12364 and 12365 with no tells), `'` and `:`, without the key's
    own character after it. Zoom in and out held move the chase camera 2 units a frame unit
    (ProcessControls; no nearer than our ModelHeightOffset, DoCamAi's 2..200), and Look up and down
-   held pitch faster each frame, to 12 EQ units a frame unit. Still to do:
+   held pitch faster each frame, to 12 EQ units a frame unit. Toggle UI Display (0x15, __ScreenMode
+   2 and 3) hides the windows and the cursor (DoMainLoop's DrawWindows and DrawCursor), the hidden
+   windows still taking the mouse and the world only in mouse look, until it's pressed again or a
+   zone is entered; the mouse look check is our right button held (no Toggle mouse look yet). Still to do:
    - ExecuteCmd's commands not done yet (the page's "No"): Toggle mouse look, Duck, Use
-     centerscreen, Center view, Toggle UI Display (ScreenMode 3), Toggle netstat, the clip plane,
-     voice input, screenshots, the chat line's cursor and page up and down (CChatWindow::ScrollChatWindowUp),
+     centerscreen, Center view, Toggle netstat, the clip plane, voice input, screenshots, the chat line's cursor and page up and down (CChatWindow::ScrollChatWindowUp),
      the AA, bazaar, bazaar search, raid and music player
      windows, and the six camera moves (ExecuteCmd 0x6f..0x74, ProcessControls).
    - Send tell for a GM helping a petitioner (`/tell <petitioner> `, CPetitionQWnd), and

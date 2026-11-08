@@ -37,7 +37,7 @@ namespace KeyMap
 			{ZoomIn, 6537, "Zoom in", Camera, true},
 			{ZoomOut, 6538, "Zoom out", Camera, true},
 			{ToggleCam, 6536, "Toggle camera view", Camera, true},
-			{FullScreen, 3153, "Toggle UI Display", UI, false},
+			{FullScreen, 3153, "Toggle UI Display", UI, true},
 			{TargetMe, 6543, "Target myself", Target, true},
 			{Party1, 6544, "Target party member 1", Target, true},
 			{Party2, 6545, "Target party member 2", Target, true},

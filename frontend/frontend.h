@@ -583,6 +583,10 @@ private:
 	// button (in the chase view) circles the camera around them, and both run forward. Drags
 	// measure from where they started (m_look_x, m_look_y), where the host holds the cursor.
 	bool m_mouse_turn = false, m_mouse_pan = false;
+	// Toggle UI Display (ExecuteCmd 0x15): __ScreenMode 3 rather than 2. DoMainLoop skips
+	// DrawWindows and DrawCursor (the windows still take the mouse: FindWnd goes by where they
+	// are), and the world takes no clicks but in mouse look. Shown again entering a zone.
+	bool m_ui_hidden = false;
 	bool m_mouse_grabbed = false;
 	int m_look_x = 0, m_look_y = 0;
 	bool m_world_click = false; // the left button went down on the world

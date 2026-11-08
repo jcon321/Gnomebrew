@@ -1411,6 +1411,20 @@ int main(int argc, char **argv)
 		h.RunUntil([&] { return frontend.ZoneScene() && frontend.ZoneScene()->Loaded(); }, 30000);
 		h.RunUntil([] { return false; }, 500);
 		h.Snapshot("r0-zone");
+		// Toggle UI Display (F10, ExecuteCmd 0x15): the windows and cursor gone, then back.
+		auto ui_toggle = [&] {
+			InputEvent down;
+			down.type = InputEvent::Type::Key;
+			down.scan = 0x44;
+			frontend.OnEvent(down);
+			InputEvent up = down;
+			up.type = InputEvent::Type::KeyUp;
+			frontend.OnEvent(up);
+			h.RunUntil([] { return false; }, 100);
+		};
+		ui_toggle();
+		h.Snapshot("r0-ui-hidden");
+		ui_toggle();
 		for (int t = 3; t <= seconds; t += 3) {
 			h.RunUntil([] { return false; }, 3000);
 			h.Snapshot("r" + std::to_string(t) + "s");

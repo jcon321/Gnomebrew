@@ -1098,6 +1098,8 @@ void FrontEnd::Render(Canvas &canvas, uint64_t now_ms)
 	// drew them).
 	if (m_cursor_drawn)
 		return;
+	if (m_screen == Screen::Zone && m_ui_hidden && !m_dialog.open)
+		return; // no DrawCursor either
 	if (m_cursor_visible && !m_mouse_grabbed && m_screen == Screen::Zone && !m_dialog.open)
 		DrawCursorAttachment(screen, m_text, m_windows, m_window_state, m_game_values, m_mouse_x - area.x,
 			m_mouse_y - area.y, now_ms);
@@ -1954,6 +1956,7 @@ void FrontEnd::EnterZoneScreen(bool zoning)
 	m_debug.Reset();
 	m_mouse_turn = m_mouse_pan = m_mouse_grabbed = false;
 	m_keys = HeldKeys{};
+	m_ui_hidden = false; // ProcessGameLoop: __ScreenMode 2 in the world
 	m_autorun = false;
 	m_jump_requested = m_crouch_sent = false;
 	m_main_loop_started = false;
@@ -3841,6 +3844,10 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 	case KeyMap::ZoomOut:
 		m_keys.zoom_out = down;
 		break;
+	case KeyMap::FullScreen:
+		if (down && in_zone)
+			m_ui_hidden = !m_ui_hidden;
+		break;
 	case KeyMap::ToggleCam:
 		// CDisplay_ToggleView: first person and the chase camera.
 		if (down && in_zone && m_zone_view)
@@ -4184,7 +4191,7 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 	case InputEvent::Type::RightUp:
 		// EQ_3DView_MouseUp's right button, let go within 500 ms of going down on the world: the
 		// spawn under the cursor (CEverQuest::RMouseUp, RightClickedOnPlayer).
-		if (m_right_world_ms && m_now_ms - m_right_world_ms <= 500 && m_zone_view)
+		if (m_right_world_ms && m_now_ms - m_right_world_ms <= 500 && m_zone_view && !m_ui_hidden)
 			if (uint16_t id = m_zone_view->PickSpawn(event.x, event.y, m_zone.MySpawnId()))
 				RightClickedOnPlayer(id);
 		m_right_world_ms = 0;
@@ -4218,7 +4225,7 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 		// trade); else, not trading, an item on the cursor goes on the ground and with nothing on
 		// it the ground item under it comes up (GroundItems); else the door or switch under it
 		// (CEverQuest_ClickedSwitch). Nobody: the target stays.
-		if (m_world_click && m_click_travel <= 3 && !m_window_state.busy) {
+		if (m_world_click && m_click_travel <= 3 && !m_window_state.busy && (!m_ui_hidden || m_mouse_turn)) {
 			m_window_state.ClearCursor(); // RemoveAttachment, and the click goes on
 			if (m_zone_view)
 				WorldClick(event.x, event.y);
@@ -4441,8 +4448,11 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 			m_text.Draw(c, width - size.w - 10, height - size.h - 8, help, FontSize::Small, ZoneGrey);
 		}});
 	m_chat.Layout(m_text);
-	m_windows.Pieces(m_text, now_ms, pieces);
+	if (!m_ui_hidden) // DrawWindows
+		m_windows.Pieces(m_text, now_ms, pieces);
 	pieces.push_back({AltTooltipsPiece, [this](Canvas &c) {
+		if (m_ui_hidden) // the windows' PostDraws, from DrawWindows
+			return;
 		// CCastSpellWnd::DrawSpellButtonTooltips: Alt held shows each gem's tooltip, by its top right.
 		if (m_alt_down && m_windows.Shown("CastSpellWnd"))
 			if (const SidlWindow *gems = m_windows.Find("CastSpellWnd"); gems && !gems->Minimized())
@@ -4473,7 +4483,7 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 	m_cursor_drawn = m_screen_fills_window && !m_dialog.open;
 	if (m_cursor_drawn)
 		pieces.push_back({CursorPiece, [this, now_ms](Canvas &c) {
-			if (!m_cursor_visible || m_mouse_grabbed)
+			if (!m_cursor_visible || m_mouse_grabbed || m_ui_hidden)
 				return;
 			DrawCursorAttachment(c, m_text, m_windows, m_window_state, m_game_values, m_mouse_x, m_mouse_y, now_ms);
 			if (!m_windows.DrawCursor(c, m_mouse_x, m_mouse_y, now_ms))
