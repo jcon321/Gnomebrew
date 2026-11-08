@@ -443,6 +443,101 @@ no rules of its own.
     - TotalSpellAffects adds the worn items' effects only for attack speed; the other SPAs
       (`Buffs::Total`) leave them out.
 
+25. **What eqgame tells the zone that we don't.** Packets the client sends on its own, found in the
+    decompile's `send_message_OpCode` calls, with no `ZoneOp` here:
+    - `OP_Save` (0x402e, 0x210c bytes: `CEverQuest::SavePC` @00535eca), sent on camping, zoning,
+      closing the bank, merchant and loot windows, /anonymous, /roleplay and the options; never
+      sent here.
+    - `OP_SetRunMode` (0x401f: `EQ_Character::DoPassageOfTime`, as `__RunWalkState` changes): the
+      zone isn't told we walk.
+    - `OP_EnvDamage` (0x401e, 0x24 bytes: `EQ_Character::ApplyDamage` @004c0150 for our own damage
+      of types 0xf4, 0xf6 and 0xfa..0xfd): falling (`TakeFallDamage`), lava and drowning are the
+      client's to report, so ours never take any. Needs ApplyDamage's local half and breath (see
+      34).
+    - `OP_SpellTextMessage` (0x41d3: `StopSpellCast`, `ReportSuccessfulHit`), `OP_TGB` (0x4220:
+      /targetgroupbuff and `DoMainLoop`), `OP_ClientError`.
+26. **Guilds.** Guild names show (the guild list, `get_player_guild_name`). Still to do: /guildinvite
+    (`CEverQuest::GuildInvite` @0052edc0, `OP_GuildInvite`), the invite's question
+    (`msg_invite_guild` @004dbfc5, turned down by the options' Receive Guild Invites, then
+    `OP_GuildInviteAccept`), /guildremove, /guilddelete, /guildstatus, /guildleader
+    (`CEverQuest_GuildRemove` @0052f075, `_GuildDelete` @0052f29f, `::GuildStatus` @0052f36b,
+    `_GuildLeader` @0052f49e), /guildwar and /guildpeace (`CEverQuest_GuildWar` @00530a45,
+    `_GuildPeace` @00530b05; `msg_guild_war` @004e493c, `msg_guild_peace` @004e4b09), /guildmotd
+    (@004f4972, `OP_GuildMOTD`, `OP_SetGuildMOTD`), a guild added or disbanded
+    (`HandleWorldMessage_GuildDisband` @004e473f, `OP_GuildAdded`), and the guilds file eqgame keeps
+    (`load_guilds`, `save_guilds`, `GuildFileChecksum`).
+27. **Raids.** `CRaid` (@0049cf43: `HandleS2CRaidMessage` @0049cfcf, `HandleC2SRaidMessage`,
+    `AddRaidMember`, `ChangeLeadership`, `ResetFromDeath`) on `OP_RaidInvite` and `OP_RaidUpdate`;
+    the raid window (`CRaidWnd` @0042fc89: the members by group, ranks, `UpdateRaidTargetHighlight`)
+    and raid options (`CRaidOptionsWnd` @0042f6db: loot type and looters); /raidinvite, /raidaccept,
+    /raiddecline, /raiddisband, /makeraidleader, /setloottype, /addraidlooter, /removeraidlooter,
+    /rsay, /raidwindow. The places that already ask about raids are listed under 2 and 24.
+28. **Alternate advancement.** The AA window (`CAAWnd` @00401000: `Init`, `Update`, `UpdateSelected`,
+    `UpdateTimer`, `ShowAbility`, `CAAWnd_WndNotification_AAAction` @004020d2), the AA table from
+    `OP_RespondAA`, buying and activating with `OP_AAAction`, /alternateadv, the keymap's command and
+    the inventory's Alt. Adv. button; then the AA effects the other items list as missing.
+29. **Friends, ignore, inspect and notes.**
+    - The friends window opens empty: `CFriendsWnd` (@0041c285: `UpdateFriendsList`,
+      `UpdateIgnoreList`, `AddFriend`, `AddIgnore`), /friends and /ignore, `__FriendsList` and
+      `__IgnoreList` kept in the character's ini, and `CEverQuest_BeingIgnored` leaving out tells,
+      says and /random rolls from the ignored (`zone_session.cpp`'s rolls note it).
+    - Inspecting: /inspect and a click with the inspect mode (`CEverQuest_doInspect` @0054390e,
+      `OP_InspectRequest`), the request from another (`msg_req_inspect` @004e769d) and the answer
+      (`msg_inspect` @00420efe) in the inspect window (`CInspectWnd` @00420e01:
+      `CheckInspectionDistance`, `AcceptInspectText`).
+    - The player notes window (`CPlayerNotesWnd` @0042e779: `SaveNotes`, `AppendText`).
+30. **Pets.** The pet window opens empty: `CPetInfoWnd` (@0042cbd6: `Update`, `WndNotification`,
+    `GetButton`), the pet's health and its command buttons; /pet and the hot buttons' pet commands
+    (`OP_PetCommands`).
+31. **Death's dialogs and corpses.** Resurrection's question (`msg_resurrect` @004e1f5f on
+    `OP_RezzRequest`, answered with `OP_RezzAnswer`; `msg_resurrect_complete` @004e212b on
+    `OP_RezzComplete`); /consent (@004fb39e, `OP_Consent`; `msg_consent_verify` @004e3314 on
+    `OP_ConsentResponse`); /corpse dragging (`OP_CorpseDrag`) and /hidecorpses; a corpse's notes
+    (`msg_send_corpse_notes` @004df1f5); the sacrifice and translocate questions (`msg_sacrifice`
+    @004e1afe, `msg_translocate` @004e1c3e: the confirmation dialog, `OP_Sacrifice`,
+    `OP_Translocate` back from `ProcessConfirmation`).
+32. **Duels.** /duel (@004fca55, `OP_RequestDuel`), the challenge's question and /decline (`msg_duel`
+    @004e31b7, `OP_DuelResponse`); AllowedToAttack's and ReportDeath's duel branches are under 24.
+33. **The Bazaar.** Trader mode (/trader, `OP_BecomeTrader`, `OP_Trader`), a trader's shop
+    (`OP_TraderShop`, `OP_TraderBuy`; the merchant window's trader branch under 2), the bazaar
+    window (`CBazaarWnd`) and search (`CBazaarSearchWnd` @00404e21: `PerformBazaarSearch`,
+    `HandleBazaarMsg`, `OP_BazaarSearch`), /bazaar, and the trader tag on names (under 9).
+34. **The smaller windows**, each opened by its command or key and none built yet:
+    - Breath (`CBreathWnd` @00408bee, `UpdateBreathIndicator`): the air left under water
+      (`EQ_PC::ProcessAirSupply` @004d0568) and drowning.
+    - Alarm (`CAlarmWnd` @00403bc2, `ProcessAlarmTrigger`), which /played's time left reads, and the
+      time left window (`CTimeLeftWnd` @00437c5b).
+    - Help (`CHelpWnd_SetFile` @0041f6ef; the help window opens empty) and /help.
+    - Music player (`MusicPlayerWnd` @004285e3, its file picker `CFileSelectionWnd`), /mp3 and
+      /music.
+    - Load UI skin (`CLoadskinWnd` @00425e1d, /loadskin and the options' button) and video modes
+      (`CVideoModesWnd` @0043b198, the options' button).
+    - Bug report and feedback (`CBugReportWnd` @004097ea, `CFeedbackWnd` @0041acaf, /bug,
+      /feedback, `OP_Bug`, `OP_Feedback`), /petition (`OP_Petition`), and /report (@004f3e8e,
+      `OP_Report`).
+    - The text entry window (`CTextEntryWnd` @004377db), which /surname's question uses
+      (`OP_Surname` from `ProcessYes`), and the gems game (`CGemsGameWnd` @0041cd06, /gems).
+35. **The other slash commands** that still say they aren't supported, not under another item:
+    /split (`CEverQuest_DoSplit` @00537476, `OP_Split`), /yell (@004f82ea, `OP_YellForHelp`;
+    `msg_yell` @004e17cc), /shield (@004fd688, `OP_Shielding`), /discipline (@004f4fb5,
+    `OP_Discipline`; `OP_DisciplineChange` back), /surname, /stopsong, /language,
+    /dismount, /facepick, /hotbutton, /alias, /log, /note, /keys, /quit and /exit, the chat
+    channels (/channel, /join, /leave, /leaveall, /list, /announce, /autojoin, /1../10, /chat,
+    /toggletell), and the client settings (/wincolor, /resetwindows, /chatfontsize, /invwinlabels,
+    /particledensity, /showspelleffects, /mousespeed, /viewport, /showgrass, /dynamiclights,
+    /mixahead, /reverb, /reversesound, /vrdelay, /audiodebug, /dopropertinting, /newui).
+36. **GM tools**, for a GM account: /goto, /summon, /zone, /kill, /kick, /hideme, /becomenpc,
+    /searchcorpse, /delcorpse, /emotezone, /servers, /find, /broadcast, /lastname, /approval and the
+    `OP_GM*` packets; the petition queue (`CPetitionQWnd` @0042d1ca, `msg_pq_update` @004dce71,
+    /viewpetition, /deletepetition); soulmarks (`CSoulmarkWnd` @00433258, /inquire, /praise,
+    /warn, `OP_SoulMarkAdd`, `OP_SoulMarkList`, `OP_SoulMarkUpdate`).
+37. **What the zone sends that isn't handled yet:** `OP_ManaUpdate`, `OP_Charm`, `OP_Reward`,
+    `OP_MultiLineMsg`, `OP_PlaySound`, `OP_DespawnDoor`, `OP_ResetSkill`, `OP_SetTitle`,
+    `OP_FreezeClientControl`, `OP_UnfreezeClientControl` and `OP_ReturnClientControl`,
+    `OP_RequestClientZoneChange` (a zone change the server asks for), and boats: boarding and
+    leaving (`OP_BoardBoat` and 0x41bc from `DoPassageOfTime` on a boat's spawn), `OP_ControlBoat`,
+    `msg_vehicle_reset` @004de593, /adriver and /sdriver (with 22's MovePlayer boat branch).
+
 ## Rendering / presentation
 
 9. ~~**Nameplates**~~: done (`frontend/name_sprites.*`, eqgame's name sprites), lit as
