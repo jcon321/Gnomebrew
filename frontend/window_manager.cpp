@@ -374,6 +374,25 @@ bool WindowManager::OnMouse(const InputEvent &event, uint64_t now_ms)
 	}
 	case Type::MouseDown:
 	case Type::DoubleClick: {
+		// A combo box's list that's down has the mouse (HandleComboWindowClick made it CXWndManager's
+		// 0x34): a press anywhere but on it goes to it and puts it away, and goes no further
+		// (HandleLeftMouseDown).
+		for (int i = 0; i < static_cast<int>(m_windows.size()); ++i) {
+			Window &w = *m_windows[i];
+			if (!w.shown || !w.wnd.ComboOpen())
+				continue;
+			if (w.wnd.ComboListAt(event.x, event.y)) {
+				m_press = i;
+				m_press_ms = now_ms;
+				m_held = false;
+				w.wnd.OnMouse(event);
+				return true;
+			}
+			if (TopAt(event.x, event.y) != i) {
+				w.wnd.CloseCombos();
+				return true;
+			}
+		}
 		int top = TopAt(event.x, event.y);
 		if (top < 0)
 			return false;

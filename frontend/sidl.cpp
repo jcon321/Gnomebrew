@@ -2005,6 +2005,12 @@ int SidlWindow::OpenCombo() const
 	return -1;
 }
 
+bool SidlWindow::ComboListAt(int x, int y) const
+{
+	int open = OpenCombo();
+	return open >= 0 && ComboListRect(m_controls[open]).Contains(x, y);
+}
+
 void SidlWindow::CloseCombos()
 {
 	for (auto &control : m_controls)

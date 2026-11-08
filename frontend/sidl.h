@@ -462,6 +462,7 @@ public:
 	void CancelPress();
 	// Whether a combo box's list is down, and putting it away.
 	bool ComboOpen() const { return OpenCombo() >= 0; }
+	bool ComboListAt(int x, int y) const; // the list that's down is under (x, y)
 	void CloseCombos();
 
 private:

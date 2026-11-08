@@ -264,8 +264,11 @@ no rules of its own.
    `[TextColors]`; /usercolor (@004fe3a2) sets, resets and lists them from the chat line). Still
    to do: the General, Display, Mouse and Filters pages, which show empty (SyncGeneralPage,
    SyncDisplayPage, InitKeyboardAssignments' mouse settings, SyncChatPage); the Keyboard page's
-   temporary Implemented column and the wider window it needs come out once every command is done. A combo box's list doesn't go when the click is outside its
-   window, and has no scrollbar when ListHeight cuts it short (CListWnd's style 1). Scrollbars
+   temporary Implemented column and the wider window it needs come out once every command is done.
+   A combo box's list that's down takes any press (CXWndManager's 0x34): off it, the list goes
+   and the press goes no further. Still to do: its scrollbar when ListHeight cuts it short
+   (InsertChoice sets CListWnd style 1; no combo box in the default options window gets there),
+   and its own selected row color (ours the dark blue bar). Scrollbars
    step by pixels in eqgame, not rows: a press on an arrow is HandleVScroll 0 or 2
    (adjustScrollPosition @005744d0: 2 pixels; CListWnd's @0057c780 the same, then its update), and
    CXWndManager::ProcessWindowTransitions (@005a07d0) calls it again (1 or 3) every frame while the

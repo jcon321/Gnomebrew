@@ -1195,6 +1195,16 @@ namespace
 		click(r.x + 20, r.Bottom() + 4 + line * 8 + line / 2 - 2); // the ninth choice, All (inside the border)
 		printf("[preview] combo after pick: open %d, choice %d (%s), %zu rows\n", combo->list_open, combo->choice,
 			combo->choice >= 0 ? combo->choices[combo->choice].c_str() : "", list->rows.size());
+		// Down again, then a press off the options window: it goes away, and nothing else hears of it.
+		click(combo->rect.x + combo->rect.w / 2, combo->rect.y + combo->rect.h / 2);
+		{
+			const Rect &b = options->Bounds();
+			int ox = b.x > 20 ? b.x - 10 : b.Right() + 10, oy = b.y + 10;
+			bool open = combo->list_open;
+			click(ox, oy);
+			printf("[preview] combo open %d, then a press at %d,%d (on '%s'): open %d\n", open, ox, oy,
+				frontend.Windows().ScreenAt(ox, oy).c_str(), combo->list_open);
+		}
 		// Back to Movement, then bind Move forward's alternate to Shift+F.
 		combo->choice = 0;
 		frontend.Windows().Find("OptionsWindow");
