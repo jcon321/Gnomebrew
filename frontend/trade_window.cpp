@@ -259,7 +259,9 @@ void TradeWindow::ZoneEvent(const ZoneSession::Event &event)
 			said = Text(1449, {}, "The trade has been cancelled.");
 		if (m_host.chat)
 			m_host.chat(said, SaidColor);
-		Close(false); // ours: Deactivate would cancel and say so again
+		// Deactivate: with the trade target still set, it cancels again (a second OP_CancelTrade)
+		// and says "You have cancelled the trade." after the zone's line.
+		Deactivate();
 		break;
 	}
 	case Type::TradeReady:

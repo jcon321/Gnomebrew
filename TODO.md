@@ -104,9 +104,9 @@ no rules of its own.
      walking off cancelling (OP_CancelTrade). The give window checked through the replay (an
      NPC's answers as the zone gives them); a trade with another player not yet. Still to do:
      /trade's setting (DAT_00798ad8: nobody 'b', group only 'c'), the
-     bags in a trade window (BagTrade1..16 open, but their contents aren't checked), OP_TradeReset,
-     and Deactivate's second OP_CancelTrade and "You have cancelled the trade." after the zone's
-     cancel (ours leaves them out).
+     bags in a trade window (BagTrade1..16 open, but their contents aren't checked) and
+     OP_TradeReset. The zone's cancel runs Deactivate, which cancels again and says "You have
+     cancelled the trade." (1450) after the zone's line, as msg_cancel_trade does.
    - The right button on a spawn (CEverQuest::RMouseUp within 500 ms, RightClickedOnPlayer): a
      corpse's loot, a banker's bank, a merchant's shop, else /consider of our target. A
      despawning merchant, banker or corpse closes its window. Our class's guildmaster asks the zone

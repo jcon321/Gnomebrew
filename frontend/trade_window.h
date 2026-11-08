@@ -27,7 +27,8 @@
 //     own packets;
 //   - Cancel (ClickedCancelButton): OP_CancelTrade, and the zone's OP_CancelTrade closes it
 //     (msg_cancel_trade: "You have cancelled the trade." 1450, "%1 has cancelled the trade."
-//     1448, "The trade has been cancelled." 1449); so do Escape, the close box and walking
+//     1448, "The trade has been cancelled." 1449, then Deactivate, which with the trade target
+//     still set sends OP_CancelTrade again and says 1450 too); so do Escape, the close box and walking
 //     further than their ModelHeightOffset + 20 (OnProcessFrame, every 500 ms), which cancel
 //     (Deactivate @004393a7);
 //   - closing, our items and coins in it are forgotten: the zone hands them back.
