@@ -650,10 +650,13 @@ std::string GameWindowClick(WindowManager &windows, GameWindowState &state, cons
 	if ((window == "InventoryWindow" || window == "SkillsWindow") && control == "DoneButton")
 		windows.Show(window, false);
 	if (window == "InventoryWindow" && control == "IW_Skills" && !windows.Shown("SkillsWindow")) {
-		// CSkillsWnd::Activate: the list from the top.
+		// CSkillsWnd::Activate: the list from the top, nothing selected (UpdateAll's
+		// CListWnd::DeleteAll). A press on a row selects it, as any list's does.
 		if (SidlWindow *skills = windows.Find("SkillsWindow"))
-			if (SidlWindow::Control *list = skills->Find("SkillList"))
+			if (SidlWindow::Control *list = skills->Find("SkillList")) {
 				list->scroll_pos = 0;
+				list->selected_row = list->selected_column = -1;
+			}
 		state.skill_rows.clear(); // listed again on the next frame
 		windows.Show("SkillsWindow", true);
 	}

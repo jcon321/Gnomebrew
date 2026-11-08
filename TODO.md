@@ -161,8 +161,9 @@ no rules of its own.
      before linking (unknown field).
    - Skills window: the skills HasSkill gives us and our languages, listed as CSkillsWnd::Activate
      lists them, with their ranks (UpdateSkill: 254's "LEVEL: %1", 255 as HasSkill's value), kept
-     up to date by OP_SkillUpdate. Still to do: selecting rows (CListWnd's selection), and checking
-     a racial skill live (the test characters are human).
+     up to date by OP_SkillUpdate. A press on a row selects it (CListWnd's own), none selected as
+     it opens (UpdateAll's DeleteAll). Still to do: checking a racial skill live (the test
+     characters are human).
    - Spellbook and spell gems: done (`frontend/spell_book.*`, eqgame's CSpellBookWnd and
      CCastSpellWnd): the book opens from the gems' book button or /book (casters only, sitting us
      down), pages and page keys, a scroll on the cursor scribed into an empty slot, a book spell

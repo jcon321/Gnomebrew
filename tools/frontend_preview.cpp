@@ -1782,6 +1782,12 @@ int main(int argc, char **argv)
 						list->scroll_page);
 					for (const auto &row : list->rows)
 						printf("[preview]   %-24s %-12s %s\n", row[0].c_str(), row[1].c_str(), row[2].c_str());
+					// A press on the list's third row selects it (CListWnd's own selection).
+					Rect content = skills->ContentRect(*list);
+					click(content.x + 30, content.y + 40);
+					h.RunUntil([] { return false; }, 100);
+					printf("[preview] skills list: row %d selected\n", list->selected_row);
+					h.Snapshot("w2-skills-selected");
 				}
 				h.Key(InputEvent::Key::Escape);
 				where("SkillsWindow");
