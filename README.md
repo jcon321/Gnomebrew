@@ -489,8 +489,11 @@ additions of ours, or ones taken from TAKP's eqgame.dll or Zeal rather than stoc
   open (see Keymap), the arrows don't move you while you type with these defaults; with the arrows
   as the keys and W A S D as the alternates, they would.
 - **Options window's not-implemented rows:** for now the Keyboard page lists a command my-client
-  doesn't do yet in red. The window keeps its EQUI size. The General, Display and Mouse pages show
-  empty.
+  doesn't do yet in red. The window keeps its EQUI size. The Mouse page shows empty.
+- **Far Clip Plane** starts at its maximum (`[Defaults] ClipPlane=20` in my-client.ini, 4.0, the view
+  out to the zone's max clip) where eqgame starts at 5 (1.0, the zone's own fog).
+- **Sky** starts at Double Layer (`[Defaults] Sky=2`, the cloud layer drawn) where eqgame starts at
+  Single Layer.
 - **Look up and Look down** tilt the view 5 degrees a press and keep going with Windows' key repeat;
   eqgame's `ProcessControls` speeds the tilt up while the key's held.
 - **Debug menu** (F11, ahead of the keymap's Toggle netstat): the stat card with its folding sections, the 2D radar, the RENDER toggles
@@ -1367,6 +1370,42 @@ details and the nearest spawns at the top left and the radar at the top right.
   the chat keep their color. Reset Default Colors asks eqstr 6602 for 20 s (`CConfirmationDialog`
   0x21), then `RestoreDefaultColors` (@0042ca2a) saves each `GetDefaultUserDefinedColor`. The page
   scrolls (Style_VScroll): a scrolling Page moves its pieces as a scrolling Screen does.
+- **The Display page** (`COptionsWnd`'s `OptionsDisplayPage`, `frontend/options_window.*`):
+  `SyncDisplayPage` (@0042a5e5) sets it when the window's made and, from
+  `DisplayPageOnProcessFrame`, every frame the page is up; `DisplayPageWndNotification` (@0042bba3)
+  takes a click, a pick or a slider's move, then `saveOptions`. The value labels change only when
+  their slider does (`"%d %c"` or `"%.1f"`). Kept in my-client.ini's `[Defaults]` (eqgame:
+  eqOptions1.opt, eqOptions2.opt, eqclient.ini) and, for the windows, the layout's `[Main]`.
+  - Show PC Names (`__PCNames`, `TurnCharacterNameSpritesOn`/`Off`) and Show NPC Names
+    (`DAT_00798af8`; TAKP's names for the two NPC functions are swapped): `SetNameSpriteState` shows
+    a name only when its kind's switch is on, players' (ours too) by the first, NPCs' and corpses'
+    by the second. Both on by default.
+  - Level of Detail (`DAT_00798ae8`, on): `setLOD` says 6650 or 6651 and calls eqgfx's
+    `s3dSetDynamicLOD(on, 1, 100)`.
+  - Video Modes: `CVideoModesWnd::Activate`.
+  - Sky (`DAT_00798ae0`, 1 by default): 0 sets `CDisplay`+0x12, the sky type, to 0 (no 3D sky; also at
+    `SetFog`), 1 the zone's with `t3dSetSkyDualLayer(0)`, 2 with `(1)`: `t3dPaintSky` draws the
+    LAYERn1 dome always and the LAYERn3 cloud layer only with the dual layer.
+  - Other Particles density (`DAT_00798ae4`, 3): `SetPCloudDensity`'s 0, 0.33, 0.66 or 1 into
+    eqgfx's multiplier, which `t3dCreateParticleCloud` gives each cloud as it's made (the
+    weather's, the old spell effects', models'); `...AndRecalc` redoes the zone's own cloud actors.
+  - Spell Particles: Near Clip Plane (`_DAT_007f6f74`, 2: Near 2, Medium 4, Far 6, Farthest 8;
+    `RealRender_World` gives it to `t3dParticleSystemSetNearClipPlane` every frame, and
+    `renderParticleSystem` leaves out particles nearer than it, less their depth bias), Density
+    (`_DAT_007f6f6c`, Off 0, Low 0.25, Medium 0.5, High 1) and Opacity (`_DAT_007f6f70`, 101 ticks of
+    hundredths), eqclient.ini's `SpellParticle*` (1, 1, 2 there).
+  - Gamma (`_DAT_00798acc`, 8 ticks: the gamma - 1; eqclient.ini's `Gamma`, 3.0 without one):
+    `t3dSetGammaLevel` sets a ramp only full screen with the device's gamma caps, which the windowed
+    TAKP client never is, so it does nothing.
+  - Far Clip Plane (`DAT_00798b28`, 21 ticks): `_DAT_00799660` = value * 0.2, at least 0.1, which
+    `SetFog` moves the fog's end by (see Far Clip Plane above for ours).
+  - Fade Delay (21 ticks, value * 500 ms), Fade Duration (20, value * 500 + 500), Window Transparency
+    (230, alpha value + 26) and Fade-to Transparency (256, the alpha): `CXWndManager`'s
+    `SetGlobalFadeDelay`, `SetGlobalFadeDuration`, `SetGlobalAlphaForAllWindows` and
+    `SetGlobalFadeAlpha` (that one also turns fading on and refades), each only when it differs
+    from the UI ini's `[Main]` `GlobalFadeDelay` (2000), `GlobalFadeDuration` (500), `GlobalAlpha`
+    (255), `GlobalFadeToAlpha` (128), put on every window and kept there. `SetBagOptions` writes the
+    bag windows' sections too (ours are all built, so they get it as the rest do).
 - **The General page** (`COptionsWnd`'s `OptionsGeneralPage`, `frontend/options_window.*`):
   `SyncGeneralPage` (@0042a4b2) sets it when the window's made and when the tab's picked
   (`ProcessGeneralOptionsTab`); `GeneralPageWndNotification` (@0042b532) takes a click (1), a
@@ -1398,8 +1437,8 @@ details and the nearest spawns at the top left and the radar at the top right.
   - Load UI Skin: `CLoadskinWnd::Activate` (not ours yet).
   - The sliders, 21 ticks (`SetNumTicks(0x15)`): Sound Realism (`DAT_00798b04`,
     `EqSoundManager::SetEffectsLevel`), Music Volume (`DAT_00798afc`) and Sound Volume
-    (`DAT_00798b00`), each at value * 100 / 20 hundredths, and the value label beside each "%d%c"
-    (the same percentage and '%'). `CSliderWnd::SetValue` notifies only when the value changes, so
+    (`DAT_00798b00`), each at value * 100 / 20 hundredths, and the value label beside each "%d %c"
+    (the same percentage, a space and '%'). `CSliderWnd::SetValue` notifies only when the value changes, so
     a label keeps the XML's "0 %" until its slider first moves off 0.
 - **The Filters page** (`COptionsWnd`'s `OptionsChatPage`, `frontend/options_window.*`): `Chat0`..`Chat9`
   are guild chat, socials, group chat, shouts, auctions, OOC, my misses, others' misses, others'

@@ -33,6 +33,14 @@ namespace render
 		}
 	}
 
+	namespace
+	{
+		float g_density = 1;
+	}
+
+	void SetPCloudDensity(float density) { g_density = density; }
+	float PCloudDensity() { return g_density; }
+
 	ParticleCloud::ParticleCloud(const ParticleCloudDef &def, float density, ParticleCloud *ground, ParticleCloud *water)
 		: m_def(def), m_ground(ground), m_water(water), m_random(static_cast<uint32_t>(time(nullptr)))
 	{

@@ -126,6 +126,29 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 			m_sound_realism = number("Sound", "SoundRealism", 0, 0, 20);
 			m_music_volume = number("Sound", "MusicVolume", 10, 0, 20);
 			m_sound_volume = number("Sound", "SoundVolume", 10, 0, 20);
+			// The Display page's.
+			auto real = [&](const char *key, float fallback, float low, float high) {
+				std::string value = ini.Get("Defaults", key);
+				float f = fallback;
+				try {
+					if (!value.empty())
+						f = std::stof(value);
+				}
+				catch (...) {
+				}
+				return std::clamp(f, low, high);
+			};
+			m_pc_names = number("Defaults", "PCNames", 1, 0, 1) == 1;
+			m_npc_names = number("Defaults", "NPCNames", 1, 0, 1) == 1;
+			m_level_of_detail = number("Defaults", "LevelOfDetail", 1, 0, 1) == 1;
+			m_sky = number("Defaults", "Sky", 2, 0, 2); // both layers to start with (eqgame: 1)
+			m_particle_density = number("Defaults", "ParticleDensity", 3, 0, 3); // 3
+			m_gamma = real("Gamma", 3, 1, 8);                                     // 4 if out of range
+			m_clip_slider = number("Defaults", "ClipPlane", 20, 0, 20);
+			m_clip_plane = std::max(m_clip_slider * 0.2f, 0.1f);
+			m_spell_density = real("SpellParticleDensity", 1, 0, 1);
+			m_spell_opacity = real("SpellParticleOpacity", 1, 0, 1);
+			m_spell_near_clip = real("SpellParticleNearClipPlane", 2, 1, 8);
 			// SetEffectsLevel with Sound Realism's hundredths.
 			m_ui.sound.effects_level = (m_sound_realism * 100 / 20) * 0.01f;
 			if (m_sound)
@@ -1849,6 +1872,9 @@ void FrontEnd::BuildNameSprites(uint64_t now_ms)
 				continue;
 			spawn = &it->second;
 		}
+		// SetNameSpriteState's state: players' (us too) with Show PC Names, the rest with Show NPC Names.
+		if (spawn->npc == 0 ? !m_pc_names : !m_npc_names)
+			continue;
 		std::string text = NameSpriteText(*spawn, m_config.show_names, m_zone.Guilds(), m_ui.eqstr, targeted);
 		if (text.empty())
 			continue;
@@ -2243,6 +2269,10 @@ void FrontEnd::BuildZoneWindows()
 	options_host.general = [this](OptionsWindow::Host::General setting) { return GeneralOption(setting); };
 	options_host.set_general = [this](OptionsWindow::Host::General setting, int value) {
 		SetGeneralOption(setting, value);
+	};
+	options_host.display = [this](OptionsWindow::Host::Display setting) { return DisplayOption(setting); };
+	options_host.set_display = [this](OptionsWindow::Host::Display setting, float value) {
+		SetDisplayOption(setting, value);
 	};
 	options_host.filters = &m_filters;
 	options_host.filters_changed = [this] { FiltersChanged(); };
@@ -3428,13 +3458,125 @@ void FrontEnd::SetGeneralOption(OptionsWindow::Host::General setting, int value)
 	}
 }
 
+float FrontEnd::DisplayOption(OptionsWindow::Host::Display setting) const
+{
+	using Display = OptionsWindow::Host::Display;
+	const WindowManager::Globals &windows = m_windows.Global();
+	switch (setting) {
+	case Display::PCNames: return m_pc_names ? 1.0f : 0.0f;
+	case Display::NPCNames: return m_npc_names ? 1.0f : 0.0f;
+	case Display::LevelOfDetail: return m_level_of_detail ? 1.0f : 0.0f;
+	case Display::Sky: return static_cast<float>(m_sky);
+	case Display::SpellNearClip: return m_spell_near_clip;
+	case Display::SpellDensity: return m_spell_density;
+	case Display::SpellOpacity: return m_spell_opacity;
+	case Display::ParticleDensity: return static_cast<float>(m_particle_density);
+	case Display::Gamma: return m_gamma;
+	case Display::ClipPlane: return static_cast<float>(m_clip_slider);
+	case Display::FadeDelay: return static_cast<float>(windows.delay);
+	case Display::FadeDuration: return static_cast<float>(windows.duration);
+	case Display::WindowAlpha: return static_cast<float>(windows.alpha);
+	case Display::FadeToAlpha: return static_cast<float>(windows.fade_to);
+	case Display::VideoModes: break;
+	}
+	return 0;
+}
+
+void FrontEnd::SetDisplayOption(OptionsWindow::Host::Display setting, float value)
+{
+	// COptionsWnd::DisplayPageWndNotification (@0042bba3), then saveOptions.
+	using Display = OptionsWindow::Host::Display;
+	auto real = [](float f) {
+		char text[32];
+		snprintf(text, sizeof(text), "%f", f);
+		return std::string(text);
+	};
+	switch (setting) {
+	case Display::PCNames: // TurnCharacterNameSpritesOn / Off
+		m_pc_names = value != 0;
+		SaveSetting("Defaults", "PCNames", m_pc_names ? 1 : 0);
+		break;
+	case Display::NPCNames: // TAKP's TurnNPCNameSpritesOff (which turns them on) / On
+		m_npc_names = value != 0;
+		SaveSetting("Defaults", "NPCNames", m_npc_names ? 1 : 0);
+		break;
+	case Display::LevelOfDetail:
+		// setLOD: said (6650, 6651), then s3dSetDynamicLOD (not ours: models are drawn whole).
+		m_level_of_detail = value != 0;
+		ChatOut(m_level_of_detail ? EqString(6650, "Level of Detail *ON*") : EqString(6651, "Level of Detail *OFF*"),
+			ChatType::Default);
+		SaveSetting("Defaults", "LevelOfDetail", m_level_of_detail ? 1 : 0);
+		break;
+	case Display::Sky: // the sky type (0 none), t3dSetSkyDualLayer
+		m_sky = std::clamp(static_cast<int>(value), 0, 2);
+		ApplyDisplayOptions();
+		SaveSetting("Defaults", "Sky", m_sky);
+		break;
+	case Display::ParticleDensity: // CDisplay::SetPCloudDensity
+		m_particle_density = std::clamp(static_cast<int>(value), 0, 3);
+		ApplyDisplayOptions();
+		SaveSetting("Defaults", "ParticleDensity", m_particle_density);
+		break;
+	case Display::SpellDensity:
+		m_spell_density = value;
+		ApplyDisplayOptions();
+		SaveSetting("Defaults", "SpellParticleDensity", real(value));
+		break;
+	case Display::SpellNearClip:
+		m_spell_near_clip = value;
+		ApplyDisplayOptions();
+		SaveSetting("Defaults", "SpellParticleNearClipPlane", real(value));
+		break;
+	case Display::SpellOpacity:
+		m_spell_opacity = value;
+		ApplyDisplayOptions();
+		SaveSetting("Defaults", "SpellParticleOpacity", real(value));
+		break;
+	case Display::Gamma:
+		// CDisplay_SetGammaCorrection: t3dSetGammaLevel changes the ramp only full screen, which
+		// the TAKP client never is; kept, and nothing more.
+		m_gamma = value;
+		SaveSetting("Defaults", "Gamma", real(value));
+		break;
+	case Display::ClipPlane: // DAT_00798b28, _DAT_00799660 (saveOptions2)
+		m_clip_slider = std::clamp(static_cast<int>(value), 0, 20);
+		m_clip_plane = std::max(m_clip_slider * 0.2f, 0.1f);
+		ApplyDisplayOptions();
+		SaveSetting("Defaults", "ClipPlane", m_clip_slider);
+		break;
+	case Display::FadeDelay: m_windows.SetGlobalFadeDelay(static_cast<int>(value)); break;
+	case Display::FadeDuration: m_windows.SetGlobalFadeDuration(static_cast<int>(value)); break;
+	case Display::WindowAlpha: m_windows.SetGlobalAlpha(static_cast<int>(value)); break;
+	case Display::FadeToAlpha: m_windows.SetGlobalFadeTo(static_cast<int>(value)); break;
+	case Display::VideoModes:
+		// CVideoModesWnd::Activate: not ours yet (TODO).
+		break;
+	}
+}
+
+void FrontEnd::ApplyDisplayOptions()
+{
+	static const float densities[] = {0, 0.33f, 0.66f, 1}; // SetPCloudDensity's
+	render::SetPCloudDensity(densities[std::clamp(m_particle_density, 0, 3)]);
+	if (!m_zone_view)
+		return;
+	m_zone_view->SetSkyMode(m_sky);
+	m_zone_view->SetClipPlane(m_clip_plane);
+	m_zone_view->SetSpellParticles(m_spell_density, m_spell_opacity, m_spell_near_clip);
+}
+
 void FrontEnd::SaveSetting(const char *section, const char *key, int value)
+{
+	SaveSetting(section, key, std::to_string(value));
+}
+
+void FrontEnd::SaveSetting(const char *section, const char *key, const std::string &value)
 {
 	if (m_config.settings_ini.empty())
 		return;
 	IniFile ini;
 	ini.Load(m_config.settings_ini); // keep the rest
-	ini.Set(section, key, std::to_string(value));
+	ini.Set(section, key, value);
 	if (!ini.Save(m_config.settings_ini))
 		Log(std::string("settings: couldn't write ") + section + " " + key + " to " + m_config.settings_ini);
 }
@@ -3608,6 +3750,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			m_zone_view->SetVeliousTextures(m_config.velious_textures);
 			m_zone_view->SetLuclinModels(m_config.luclin_models);
 			m_zone_view->SetSpellFile(m_ui.spells);
+			ApplyDisplayOptions();
 			m_zone_view->StartLoading(m_zone.Info());
 			m_zone_view->SetSound(m_sound.get());
 			if (m_sound) // StartWorldDisplay
@@ -3922,7 +4065,7 @@ void FrontEnd::WeatherFrame(uint64_t now_ms)
 	place.outdoors = time_type == 1 || time_type == 2 || time_type == 5;
 	place.zone_id = m_zone.Profile().zone_id;
 	m_zone_view->ZoneFog(place.fog_start, place.fog_end);
-	place.clip_plane = ZoneView::ClipPlane;
+	place.clip_plane = m_clip_plane;
 	int message = m_weather.Frame(m_sound.get(), now_ms, place);
 	m_zone_view->SetWeather(m_weather.GetEffects());
 	if (message)

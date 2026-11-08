@@ -1047,12 +1047,12 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 	start = Clock::now();
 	// The sky dims with the day period, toward a deep blue at night. RealRender_World draws none
 	// while there's weather: the fog's color is all past it.
-	bool sky = m_sky.Loaded() && !(WeatherShown() && m_weather.active);
+	bool sky = m_sky.Loaded() && m_sky_mode != 0 && !(WeatherShown() && m_weather.active);
 	render::Vec3 sky_tint{light.sky + 0.03f * (1 - light.sky), light.sky + 0.04f * (1 - light.sky), light.sky + 0.10f * (1 - light.sky)};
 	if (sky) {
 		m_renderer->BeginBackground();
 		m_renderer->SetVertexLight(sky_tint, {0, 0, 0});
-		m_sky.Draw(*m_renderer, now_ms);
+		m_sky.Draw(*m_renderer, now_ms, m_sky_mode == 2);
 		m_renderer->EndBackground();
 	}
 	m_triangles_drawn = m_renderer->TriangleCount();
@@ -1075,6 +1075,7 @@ void ZoneView::ZoneFog(float &start, float &end) const
 {
 	start = m_info.fog_start;
 	end = m_info.fog_end;
+	const float ClipPlane = m_clip_plane;
 	if (ClipPlane != 1) {
 		// Below 1 the end comes in from the fog's toward the min clip (at 0.1); above, it goes out
 		// toward the max clip (at 4).
@@ -1100,8 +1101,7 @@ float ZoneView::FarPlane() const
 namespace
 {
 	// do_rain's RAINS_CLOUD, RAINW_CLOUD and RAIN_CLOUD, and do_snow's SNOWS_CLOUD, SNOWW_CLOUD and
-	// SNOW_CLOUD, at CDisplay::SetPCloudDensity's highest (1).
-	constexpr float WeatherDensity = 1;
+	// SNOW_CLOUD, at the options' density (render::PCloudDensity) as they're made.
 
 	void MakeWeatherDefs(bool rain, const render::Texture *ring, const render::Texture *flake, render::ParticleCloudDef &ground,
 		render::ParticleCloudDef &water, render::ParticleCloudDef &falling)
@@ -1155,10 +1155,11 @@ void ZoneView::DrawWeather(uint64_t now_ms)
 			render::ParticleCloudDef ground, water, falling;
 			MakeWeatherDefs(want == Weather::Kind::Rain, m_rain_ring, m_snowflake, ground, water, falling);
 			WeatherClouds clouds;
-			clouds.ground = std::make_unique<render::ParticleCloud>(ground, WeatherDensity, nullptr, nullptr);
-			clouds.water = std::make_unique<render::ParticleCloud>(water, WeatherDensity, nullptr, nullptr);
+			float density = render::PCloudDensity();
+			clouds.ground = std::make_unique<render::ParticleCloud>(ground, density, nullptr, nullptr);
+			clouds.water = std::make_unique<render::ParticleCloud>(water, density, nullptr, nullptr);
 			clouds.falling =
-				std::make_unique<render::ParticleCloud>(falling, WeatherDensity, clouds.ground.get(), clouds.water.get());
+				std::make_unique<render::ParticleCloud>(falling, density, clouds.ground.get(), clouds.water.get());
 			m_weather_clouds.push_back(std::move(clouds));
 		}
 		m_cloud_kind = want;

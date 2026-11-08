@@ -279,6 +279,20 @@ private:
 	int m_trade_with = 2;             // DAT_00798ad8, Allow trading with: 0 no one, 1 party members only, 2 everyone
 	int m_sound_realism = 0;          // DAT_00798b04 ([Sound] SoundRealism, 0..20)
 	int m_music_volume = 10, m_sound_volume = 10; // DAT_00798afc and b00 ([Sound] MusicVolume, SoundVolume)
+	// The Display page's (eqOptions1.opt and eqclient.ini in eqgame; my-client.ini's [Defaults]
+	// here, the windows' fades in the layout's [Main]).
+	bool m_pc_names = true, m_npc_names = true; // __PCNames, DAT_00798af8: the name sprites over players', NPCs' heads
+	bool m_level_of_detail = true;              // DAT_00798ae8 (s3dSetDynamicLOD: not ours)
+	int m_sky = 2;                              // DAT_00798ae0: 0 off, 1 one layer, 2 two (eqgame's 1; ours both)
+	int m_particle_density = 3;                 // DAT_00798ae4: 0 off .. 3 high
+	float m_spell_density = 1, m_spell_opacity = 1, m_spell_near_clip = 2; // _DAT_007f6f6c, 70, 74
+	float m_gamma = 3;                          // _DAT_00798acc, 1..8 (t3dSetGammaLevel: only full screen; none)
+	int m_clip_slider = 20;                     // DAT_00798b28, 0..20 (eqgame's 5; ours starts at the max)
+	float m_clip_plane = 4;                     // _DAT_00799660: the slider * 0.2, at least 0.1
+	float DisplayOption(OptionsWindow::Host::Display setting) const;          // SyncDisplayPage's values
+	void SetDisplayOption(OptionsWindow::Host::Display setting, float value); // DisplayPageWndNotification
+	void ApplyDisplayOptions(); // the zone view's sky, clip plane and spell particles, the clouds' density
+	void SaveSetting(const char *section, const char *key, const std::string &value);
 	int GeneralOption(OptionsWindow::Host::General setting) const;          // SyncGeneralPage's values
 	void SetGeneralOption(OptionsWindow::Host::General setting, int value); // GeneralPageWndNotification
 	void SaveSetting(const char *section, const char *key, int value);      // into my-client.ini

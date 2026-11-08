@@ -6,6 +6,7 @@ namespace render
 	{
 		m_layers.clear();
 		m_base_uvs.clear();
+		m_numbers.clear();
 		std::vector<uint8_t> data;
 		WldFile wld;
 		if (!m_archive.Open(eq_dir + "/sky.s3d") || !m_archive.Read("sky.wld", data) || !wld.Load(std::move(data))) {
@@ -52,6 +53,7 @@ namespace render
 			}
 			m_layers.push_back(std::move(out));
 			m_base_uvs.push_back(std::move(uvs));
+			m_numbers.push_back(layer);
 		}
 		if (m_layers.empty()) {
 			error = "sky type " + std::to_string(type) + " not in sky.s3d";
@@ -60,11 +62,13 @@ namespace render
 		return true;
 	}
 
-	void Sky::Draw(Renderer &renderer, uint64_t now_ms)
+	void Sky::Draw(Renderer &renderer, uint64_t now_ms, bool dual)
 	{
 		for (size_t i = 0; i < m_layers.size(); ++i) {
 			StaticMesh &layer = m_layers[i];
-			if (i > 0) {
+			if (m_numbers[i] == 3 && !dual)
+				continue;
+			if (m_numbers[i] == 3) {
 				// Clouds drift a texture width every couple of minutes.
 				float drift = static_cast<float>(now_ms % 120000) / 120000.0f;
 				for (size_t v = 0; v < layer.vertices.size(); ++v)

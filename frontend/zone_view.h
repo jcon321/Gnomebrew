@@ -307,9 +307,20 @@ public:
 	bool DrawsDebugLines() const { return m_debug_draw.wireframe || m_debug_draw.walls || m_debug_draw.floor; }
 	const render::Vec3 &Feet() const { return m_feet; }
 
-	// The options' Clip Plane slider (0.1 to 4 in steps of 0.2; 1, eqgame's default, is the zone's
-	// own fog), at its maximum: the view reaches the zone's max clip.
-	static constexpr float ClipPlane = 4;
+	// The options' Far Clip Plane slider (_DAT_00799660: 0.1 to 4 in steps of 0.2; 1, eqgame's
+	// default, is the zone's own fog; my-client starts at the maximum, the view reaching the zone's
+	// max clip).
+	void SetClipPlane(float clip_plane) { m_clip_plane = clip_plane; }
+	float ClipPlane() const { return m_clip_plane; }
+	// The options' Sky (DAT_00798ae0): 0 3D sky off (CDisplay's sky type 0), 1 one layer, 2 both
+	// (t3dSetSkyDualLayer).
+	void SetSkyMode(int mode) { m_sky_mode = mode; }
+	// The options' Spell Particles: density (0, 0.25, 0.5, 1), opacity (0..1), near clip plane.
+	void SetSpellParticles(float density, float opacity, float near_clip)
+	{
+		m_spell_effects.SetDetail(density, opacity);
+		m_spell_effects.SetNearClip(near_clip);
+	}
 	// CDisplay::SetFog: the zone's fog moved out by the Clip Plane slider (it keeps its depth),
 	// without the weather's.
 	void ZoneFog(float &start, float &end) const;
@@ -383,6 +394,8 @@ private:
 
 	render::ZoneScene m_zone;
 	render::Sky m_sky;
+	int m_sky_mode = 2;
+	float m_clip_plane = 4;
 	render::CharacterModels m_models;
 	bool m_velious_textures = true;
 	render::LuclinModels m_luclin;

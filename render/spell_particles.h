@@ -99,11 +99,15 @@ namespace render
 
 		// renderParticleSystem: `camera` for the level of detail; then Draw under the renderer's camera.
 		void Update(uint64_t now_ms, const Vec3 &camera, const Locate &locate);
+		// t3dParticleSystemSetNearClipPlane: particles nearer the camera than this (less their
+		// depth bias) aren't drawn (renderParticleSystem); the options' 2, 4, 6 or 8.
+		void SetNearClip(float distance) { m_near_clip = distance; }
 		void Draw(Renderer &renderer);
 		size_t EmitterCount() const { return m_emitters.size(); }
 		size_t ParticleCount() const;
 
 	private:
+		float m_near_clip = 2;
 		struct Particle
 		{
 			Vec3 origin;

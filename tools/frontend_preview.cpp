@@ -1174,6 +1174,88 @@ namespace
 			frontend.Update(NowMs());
 			colors("after the defaults");
 		}
+		// The Display page: its settings; Show PC Names, the sky, the densities and near clip picked,
+		// the gamma, fade delay, window transparency and clip plane sliders moved; then back.
+		int display_tab = -1;
+		for (size_t i = 0; i < tabs->children.size(); ++i)
+			if (options->Item(tabs->children[i]).def->screen_id == "OptionsDisplayPage")
+				display_tab = static_cast<int>(i);
+		if (display_tab >= 0) {
+			auto page = [&](const char *what) {
+				printf("[preview] display %s:", what);
+				for (const char *id : {"ODP_PCNamesCheckbox", "ODP_NPCNamesCheckbox", "ODP_LevelOfDetailCheckbox"})
+					if (const SidlWindow::Control *b = options->Find(id))
+						printf(" %s=%d", b->text.c_str(), b->checked);
+				for (const char *id : {"ODP_SkyCombobox", "ODP_SpellParticlesNearClipCombobox", "ODP_SpellParticlesDensityCombobox",
+					     "ODP_ParticleDensityCombobox"})
+					if (const SidlWindow::Control *c = options->Find(id))
+						printf(" %s=%s", id + 4,
+							c->choice >= 0 && c->choice < static_cast<int>(c->choices.size()) ? c->choices[c->choice].c_str() : "?");
+				for (const char *id : {"ODP_Gamma", "ODP_ClipPlane", "ODP_FadeDelay", "ODP_FadeDuration", "ODP_WindowAlpha",
+					     "ODP_FadeToAlpha", "ODP_SpellParticlesOpacity"}) {
+					const SidlWindow::Control *slider = options->Find(std::string(id) + "Slider");
+					const SidlWindow::Control *label = options->Find(std::string(id) + "ValueLabel");
+					if (slider && label)
+						printf(" %s=%d/%d '%s'", id + 4, slider->slider_value, slider->slider_ticks, label->text.c_str());
+				}
+				printf("\n");
+				const WindowManager::Globals &g = windows.Global();
+				const WindowManager::Settings *chat = windows.SettingsOf("ChatWindow");
+				printf("[preview]   globals alpha %d fade-to %d delay %d duration %d; ChatWindow alpha %d delay %d\n", g.alpha,
+					g.fade_to, g.delay, g.duration, chat ? chat->alpha : -1, chat ? chat->delay : -1);
+			};
+			auto ini_display = [&] {
+				IniFile ini;
+				ini.Load(settings_ini);
+				printf("[preview] ini PCNames=%s Sky=%s ParticleDensity=%s SpellParticleNearClipPlane=%s Gamma=%s ClipPlane=%s\n",
+					ini.Get("Defaults", "PCNames", "-").c_str(), ini.Get("Defaults", "Sky", "-").c_str(),
+					ini.Get("Defaults", "ParticleDensity", "-").c_str(), ini.Get("Defaults", "SpellParticleNearClipPlane", "-").c_str(),
+					ini.Get("Defaults", "Gamma", "-").c_str(), ini.Get("Defaults", "ClipPlane", "-").c_str());
+			};
+			auto press_on = [&](const char *id) {
+				if (const SidlWindow::Control *b = options->Find(id))
+					click(b->rect.x + b->rect.w / 2, b->rect.y + b->rect.h / 2);
+			};
+			auto pick = [&](const char *id, int row) {
+				if (const SidlWindow::Control *c = options->Find(id)) {
+					click(c->rect.x + c->rect.w / 2, c->rect.y + c->rect.h / 2);
+					click(c->rect.x + 20, c->rect.Bottom() + 4 + 15 * row + 15 / 2 - 2);
+				}
+			};
+			auto slide = [&](const char *id, float at) {
+				if (const SidlWindow::Control *slider = options->Find(id))
+					click(slider->rect.x + static_cast<int>(slider->rect.w * at), slider->rect.y + slider->rect.h / 2);
+			};
+			options->SelectTab(*tabs, display_tab);
+			frontend.Update(NowMs());
+			page("page picked");
+			h.Snapshot("o0-display");
+			press_on("ODP_PCNamesCheckbox");
+			pick("ODP_SkyCombobox", 2);
+			pick("ODP_SpellParticlesNearClipCombobox", 3);
+			pick("ODP_ParticleDensityCombobox", 1);
+			slide("ODP_GammaSlider", 0.9f);
+			slide("ODP_FadeDelaySlider", 0.25f);
+			slide("ODP_WindowAlphaSlider", 0.5f);
+			slide("ODP_ClipPlaneSlider", 0.5f);
+			for (int i = 0; i < 3; ++i)
+				frontend.Update(NowMs()); // the page set again each frame: the moves stay
+			chat();
+			page("after the clicks");
+			ini_display();
+			h.Snapshot("o0-display-clicked");
+			press_on("ODP_PCNamesCheckbox");
+			pick("ODP_SkyCombobox", 1);
+			pick("ODP_SpellParticlesNearClipCombobox", 0);
+			pick("ODP_ParticleDensityCombobox", 3);
+			slide("ODP_GammaSlider", 0.3f);
+			slide("ODP_FadeDelaySlider", 0.2f);
+			slide("ODP_WindowAlphaSlider", 0.99f);
+			slide("ODP_ClipPlaneSlider", 0.99f);
+			frontend.Update(NowMs());
+			page("restored");
+			ini_display();
+		}
 		// The General page: its settings as the page is picked; Fast Item Destroy, Anonymous and
 		// Autosplit clicked, trading with no one, Fast Drop never, the music slider moved; the ini;
 		// then back.

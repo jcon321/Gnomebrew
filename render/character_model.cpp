@@ -1261,8 +1261,8 @@ namespace render
 				auto old = std::find(m_keys.begin(), m_keys.end(), key);
 				if (old != m_keys.end() && m_clouds[old - m_keys.begin()])
 					clouds.push_back(std::move(m_clouds[old - m_keys.begin()]));
-				else // at CDisplay's highest density
-					clouds.push_back(std::make_unique<ParticleCloud>(emitter.def, 1.0f, nullptr, nullptr));
+				else // at the options' density (t3dCreateParticleCloud)
+					clouds.push_back(std::make_unique<ParticleCloud>(emitter.def, PCloudDensity(), nullptr, nullptr));
 				keys.push_back(key);
 			}
 			m_keys = std::move(keys);

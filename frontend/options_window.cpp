@@ -4,6 +4,8 @@
 #include "window_manager.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdio>
 
 namespace
 {
@@ -41,6 +43,43 @@ namespace
 		{"OGP_MusicVolumeSlider", "OGP_MusicVolumeValueLabel", General::MusicVolume},
 		{"OGP_SoundVolumeSlider", "OGP_SoundVolumeValueLabel", General::SoundVolume}};
 	constexpr int SliderTicks = 0x15;
+	const char *const DisplayPage = "OptionsDisplayPage";
+	using Display = OptionsWindow::Host::Display;
+	struct DisplayCheck
+	{
+		const char *id;
+		Display setting;
+	};
+	constexpr DisplayCheck DisplayChecks[] = {{"ODP_PCNamesCheckbox", Display::PCNames},
+		{"ODP_NPCNamesCheckbox", Display::NPCNames}, {"ODP_LevelOfDetailCheckbox", Display::LevelOfDetail}};
+	const char *const VideoModesButton = "ODP_VideoModesButton";
+	const char *const SkyCombo = "ODP_SkyCombobox";
+	const char *const SpellNearClipCombo = "ODP_SpellParticlesNearClipCombobox";
+	const char *const SpellDensityCombo = "ODP_SpellParticlesDensityCombobox";
+	const char *const ParticleDensityCombo = "ODP_ParticleDensityCombobox";
+	// The sliders (COptionsWnd::COptionsWnd's SetNumTicks) and their value labels.
+	struct DisplaySlider
+	{
+		const char *id, *label;
+		Display setting;
+		int ticks;
+	};
+	constexpr DisplaySlider DisplaySliders[7] = {
+		{"ODP_GammaSlider", "ODP_GammaValueLabel", Display::Gamma, 8},
+		{"ODP_ClipPlaneSlider", "ODP_ClipPlaneValueLabel", Display::ClipPlane, 0x15},
+		{"ODP_FadeDelaySlider", "ODP_FadeDelayValueLabel", Display::FadeDelay, 0x15},
+		{"ODP_FadeDurationSlider", "ODP_FadeDurationValueLabel", Display::FadeDuration, 0x14},
+		{"ODP_WindowAlphaSlider", "ODP_WindowAlphaValueLabel", Display::WindowAlpha, 0xe6},
+		{"ODP_FadeToAlphaSlider", "ODP_FadeToAlphaValueLabel", Display::FadeToAlpha, 0x100},
+		{"ODP_SpellParticlesOpacitySlider", "ODP_SpellParticlesOpacityValueLabel", Display::SpellOpacity, 0x65}};
+	// CXStr_PrintString's "%d %c" with '%', and "%.1f".
+	std::string Percent(int value) { return std::to_string(value) + " %"; }
+	std::string Tenths(double value)
+	{
+		char text[32];
+		snprintf(text, sizeof(text), "%.1f", value);
+		return text;
+	}
 	const char *const ChatPage = "OptionsChatPage";
 	// COptionsWnd's ChatArray ("Chat%d"): DAT_00798bf4..c18, 1 shown.
 	constexpr int32_t ChatFilters::*const ChatSwitches[] = {&ChatFilters::guild, &ChatFilters::socials,
@@ -88,7 +127,7 @@ void OptionsWindow::Attach(WindowManager &windows, KeyBindings &keys, Host host)
 		for (int page : tabs->children) {
 			SidlWindow::Control &p = wnd->Item(page);
 			const std::string &id = p.def->screen_id;
-			if (id != KeyboardPage && id != ColorPage && id != ChatPage && id != GeneralPage)
+			if (id != KeyboardPage && id != ColorPage && id != ChatPage && id != GeneralPage && id != DisplayPage)
 				for (int piece : p.children)
 					wnd->Item(piece).visible = false;
 		}
@@ -108,8 +147,15 @@ void OptionsWindow::Attach(WindowManager &windows, KeyBindings &keys, Host host)
 			wnd->SetSlider(*slider, slider->slider_value);
 			m_slider_values[i] = slider->slider_value;
 		}
+	for (int i = 0; i < 7; ++i)
+		if (SidlWindow::Control *slider = wnd->Find(DisplaySliders[i].id)) {
+			slider->slider_ticks = DisplaySliders[i].ticks;
+			wnd->SetSlider(*slider, slider->slider_value);
+			m_display_sliders[i] = slider->slider_value;
+		}
 	UpdateUserColors(); // COptionsWnd::COptionsWnd
 	SyncGeneralPage();
+	SyncDisplayPage();
 	SyncChatPage();
 }
 
@@ -151,12 +197,127 @@ void OptionsWindow::GeneralPageSliders()
 		if (!control || control->slider_value == m_slider_values[i])
 			continue;
 		m_slider_values[i] = control->slider_value;
-		// The value label, "%d%c" with the value * 100 / 20 and '%'; the level, saved.
+		// The value label, "%d %c" with the value * 100 / 20 and '%'; the level, saved.
 		if (SidlWindow::Control *label = wnd->Find(slider.label))
-			label->text = std::to_string(control->slider_value * 100 / 20) + "%";
+			label->text = Percent(control->slider_value * 100 / 20);
 		if (m_host.set_general)
 			m_host.set_general(slider.setting, control->slider_value);
 	}
+}
+
+void OptionsWindow::SyncDisplayPage()
+{
+	SidlWindow *wnd = m_windows ? m_windows->Find(Screen) : nullptr;
+	if (!wnd || !m_host.display)
+		return;
+	auto value = [this](Display setting) { return m_host.display(setting); };
+	for (const DisplayCheck &check : DisplayChecks)
+		if (SidlWindow::Control *button = wnd->Find(check.id))
+			button->checked = value(check.setting) == 1;
+	if (SidlWindow::Control *combo = wnd->Find(SkyCombo)) {
+		int sky = static_cast<int>(value(Display::Sky));
+		combo->choice = sky >= 0 && sky <= 2 ? sky : 0;
+	}
+	if (SidlWindow::Control *combo = wnd->Find(SpellNearClipCombo)) {
+		float clip = value(Display::SpellNearClip);
+		combo->choice = clip > 2 ? (clip > 4 ? (clip > 6 ? 3 : 2) : 1) : 0;
+	}
+	if (SidlWindow::Control *combo = wnd->Find(SpellDensityCombo)) {
+		float density = value(Display::SpellDensity);
+		combo->choice = density > 0 ? (density > 0.25f ? (density > 0.5f ? 3 : 2) : 1) : 0;
+	}
+	if (SidlWindow::Control *combo = wnd->Find(ParticleDensityCombo)) {
+		int density = static_cast<int>(value(Display::ParticleDensity));
+		combo->choice = density >= 0 && density <= 3 ? density : 0;
+	}
+	// The sliders' values (CSliderWnd::SetValue clamps them to their ticks).
+	auto opacity = [](float x) { // COptionsWnd_SyncDisplayPage2: up from a half
+		return static_cast<int>(std::fmod(x, 1.0f) < 0.5f ? std::floor(x) : std::ceil(x));
+	};
+	int values[7] = {
+		static_cast<int>(value(Display::Gamma)) - 1,
+		static_cast<int>(value(Display::ClipPlane)),
+		static_cast<int>(static_cast<unsigned>(value(Display::FadeDelay)) / 500),
+		static_cast<int>(std::min<unsigned>((static_cast<unsigned>(value(Display::FadeDuration)) - 500u) / 500u, 0x7fffffffu)),
+		(static_cast<int>(value(Display::WindowAlpha)) & 0xff) - 0x1a,
+		static_cast<int>(value(Display::FadeToAlpha)) & 0xff,
+		opacity(value(Display::SpellOpacity) * 100),
+	};
+	for (int i = 0; i < 7; ++i)
+		if (SidlWindow::Control *slider = wnd->Find(DisplaySliders[i].id))
+			wnd->SetSlider(*slider, values[i]);
+	DisplayPageSliders(); // SetValue's notification, for those it moved
+}
+
+void OptionsWindow::DisplayPageSliders()
+{
+	SidlWindow *wnd = m_windows ? m_windows->Find(Screen) : nullptr;
+	if (!wnd)
+		return;
+	for (int i = 0; i < 7; ++i) {
+		const DisplaySlider &slider = DisplaySliders[i];
+		const SidlWindow::Control *control = wnd->Find(slider.id);
+		if (!control || control->slider_value == m_display_sliders[i])
+			continue;
+		int v = m_display_sliders[i] = control->slider_value;
+		std::string text;
+		float setting = 0;
+		switch (slider.setting) {
+		case Display::Gamma: text = Percent(v * 100 / 7), setting = static_cast<float>(v + 1); break;
+		case Display::ClipPlane: text = Percent(v * 100 / 20), setting = static_cast<float>(v); break;
+		case Display::FadeDelay: text = Tenths(v * 0.5), setting = static_cast<float>(v * 500); break;
+		case Display::FadeDuration: text = Tenths(v * 0.5 + 0.5), setting = static_cast<float>(v * 500 + 500); break;
+		case Display::WindowAlpha: text = Percent((v + 0x1a) * 100 / 0xff), setting = static_cast<float>(v + 0x1a); break;
+		case Display::FadeToAlpha: text = Percent(v * 100 / 0xff), setting = static_cast<float>(v); break;
+		case Display::SpellOpacity: text = Percent(v), setting = v * 0.01f; break;
+		default: break;
+		}
+		if (SidlWindow::Control *label = wnd->Find(slider.label))
+			label->text = text;
+		if (m_host.set_display)
+			m_host.set_display(slider.setting, setting);
+	}
+}
+
+bool OptionsWindow::DisplayPageClick(const std::string &control)
+{
+	SidlWindow *wnd = m_windows->Find(Screen);
+	const SidlWindow::Control *clicked = wnd ? wnd->Find(control) : nullptr;
+	if (!clicked || !m_host.set_display)
+		return false;
+	for (const DisplayCheck &check : DisplayChecks)
+		if (control == check.id) {
+			m_host.set_display(check.setting, clicked->checked ? 1.0f : 0.0f);
+			return true;
+		}
+	if (control == VideoModesButton) {
+		m_host.set_display(Display::VideoModes, 0);
+		return true;
+	}
+	int choice = clicked->choice;
+	if (control == SkyCombo) {
+		if (choice >= 0 && choice <= 2)
+			m_host.set_display(Display::Sky, static_cast<float>(choice));
+		return true;
+	}
+	if (control == ParticleDensityCombo) {
+		if (choice >= 0 && choice <= 3)
+			m_host.set_display(Display::ParticleDensity, static_cast<float>(choice));
+		return true;
+	}
+	if (control == SpellDensityCombo) {
+		static const float densities[] = {0, 0.25f, 0.5f, 1};
+		if (choice >= 0 && choice <= 3)
+			m_host.set_display(Display::SpellDensity, densities[choice]);
+		return true;
+	}
+	if (control == SpellNearClipCombo) {
+		static const float clips[] = {2, 4, 6, 8};
+		if (choice >= 0 && choice <= 3)
+			m_host.set_display(Display::SpellNearClip, clips[choice]);
+		return true;
+	}
+	return false;
 }
 
 bool OptionsWindow::GeneralPageClick(const std::string &control)
@@ -357,7 +518,7 @@ bool OptionsWindow::Click(const std::string &window, const std::string &control,
 		}
 		return true;
 	}
-	if (GeneralPageClick(control) || ChatPageClick(control))
+	if (GeneralPageClick(control) || DisplayPageClick(control) || ChatPageClick(control))
 		return true;
 	if (control.rfind("UserColor", 0) == 0) {
 		int index = -1;
@@ -469,6 +630,13 @@ void OptionsWindow::Frame(uint64_t now_ms)
 		SyncGeneralPage();
 	m_general_page_shown = general;
 	GeneralPageSliders();
+	// DisplayPageOnProcessFrame: SyncDisplayPage every frame the page is up (a slider moved first,
+	// as its notification would have come at once).
+	const SidlWindow::Control *display_page = options ? options->Find(DisplayPage) : nullptr;
+	if (display_page && display_page->visible && m_windows->Shown(Screen)) {
+		DisplayPageSliders();
+		SyncDisplayPage();
+	}
 	// ProcessChatOptionsTab's SyncChatPage, as the Filters page is picked.
 	const SidlWindow::Control *chat_page = options ? options->Find(ChatPage) : nullptr;
 	bool chat = chat_page && chat_page->visible;

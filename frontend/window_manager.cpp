@@ -54,6 +54,7 @@ void WindowManager::Reset(const SidlDefinitions *defs, SidlTextures *textures, i
 	m_width = screen_width;
 	m_height = screen_height;
 	m_windows.clear();
+	m_globals = Globals{};
 	m_clicks.clear();
 	m_holds.clear();
 	m_right_clicks.clear();
@@ -139,6 +140,11 @@ Rect WindowManager::Clamped(const Rect &rect) const
 
 void WindowManager::Load(const IniFile &ini)
 {
+	m_globals = Globals{};
+	m_globals.alpha = ini.GetInt("Main", "GlobalAlpha", m_globals.alpha) & 0xff;
+	m_globals.fade_to = ini.GetInt("Main", "GlobalFadeToAlpha", m_globals.fade_to) & 0xff;
+	m_globals.delay = ini.GetInt("Main", "GlobalFadeDelay", m_globals.delay);
+	m_globals.duration = ini.GetInt("Main", "GlobalFadeDuration", m_globals.duration);
 	for (auto &wp : m_windows) {
 		Window &w = *wp;
 		const std::string &section = w.screen;
@@ -175,6 +181,10 @@ void WindowManager::Load(const IniFile &ini)
 
 void WindowManager::Store(IniFile &ini) const
 {
+	ini.SetInt("Main", "GlobalAlpha", m_globals.alpha);
+	ini.SetInt("Main", "GlobalFadeToAlpha", m_globals.fade_to);
+	ini.SetInt("Main", "GlobalFadeDelay", m_globals.delay);
+	ini.SetInt("Main", "GlobalFadeDuration", m_globals.duration);
 	for (const auto &wp : m_windows) {
 		const Window &w = *wp;
 		const std::string &section = w.screen;
@@ -1093,6 +1103,48 @@ void WindowManager::SetAlpha(const std::string &screen, int alpha)
 			w->alpha = w->fade_target = w->settings.alpha;
 		m_changed = true;
 	}
+}
+
+void WindowManager::SetGlobalAlpha(int alpha)
+{
+	alpha &= 0xff;
+	if (alpha == m_globals.alpha)
+		return;
+	m_globals.alpha = alpha;
+	for (auto &w : m_windows)
+		SetAlpha(w->screen, alpha);
+	m_changed = true;
+}
+
+void WindowManager::SetGlobalFadeTo(int alpha)
+{
+	alpha &= 0xff;
+	if (alpha == m_globals.fade_to)
+		return;
+	m_globals.fade_to = alpha;
+	for (auto &w : m_windows)
+		SetFadeTo(w->screen, alpha);
+	m_changed = true;
+}
+
+void WindowManager::SetGlobalFadeDelay(int ms)
+{
+	if (ms == m_globals.delay)
+		return;
+	m_globals.delay = ms;
+	for (auto &w : m_windows)
+		w->settings.delay = ms;
+	m_changed = true;
+}
+
+void WindowManager::SetGlobalFadeDuration(int ms)
+{
+	if (ms == m_globals.duration)
+		return;
+	m_globals.duration = ms;
+	for (auto &w : m_windows)
+		w->settings.duration = ms;
+	m_changed = true;
 }
 
 void WindowManager::SetFadeTo(const std::string &screen, int alpha)

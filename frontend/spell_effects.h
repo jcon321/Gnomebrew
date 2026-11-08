@@ -125,6 +125,9 @@ public:
 		m_density = density;
 		m_opacity = opacity;
 	}
+	// The options' Spell Particles Near Clip Plane (t3dParticleSystemSetNearClipPlane, as
+	// RealRender_World sets it every frame): 2, 4, 6 or 8.
+	void SetNearClip(float distance) { m_particles.SetNearClip(distance); }
 	// The debug menu's: off, every spell has its old effect, as eqgame does without SpellsNew.eff
 	// (loadSpellEffectsFromFile @004d77a6 makes a table of two blank records then).
 	void SetNewEffects(bool on) { m_new_effects = on; }

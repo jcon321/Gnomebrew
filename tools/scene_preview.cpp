@@ -297,7 +297,7 @@ namespace
 				Weather::Place place;
 				place.outdoors = info.time_type == 1 || info.time_type == 2 || info.time_type == 5;
 				view.ZoneFog(place.fog_start, place.fog_end);
-				place.clip_plane = ZoneView::ClipPlane;
+				place.clip_plane = view.ClipPlane();
 				if (int message = weather.Frame(nullptr, spawn_clock, place))
 					printf("  %5d ms: eqstr %d\n", ms, message);
 				view.SetWeather(weather.GetEffects());

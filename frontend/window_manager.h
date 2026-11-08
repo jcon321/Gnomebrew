@@ -174,6 +174,19 @@ public:
 	void SetTint(const std::string &screen, uint32_t rgb);  // the color picker's 0x1e
 	void SetAlpha(const std::string &screen, int alpha);    // Normal Level: UnfadedAlpha
 	void SetFadeTo(const std::string &screen, int alpha);   // Faded Level: FadeToAlpha, fading on (Refade)
+	// CXWndManager's global fade settings, kept in the layout's [Main] (GetGlobalAlpha and the
+	// rest: GlobalAlpha 255, GlobalFadeToAlpha 128, GlobalFadeDelay 2000, GlobalFadeDuration 500).
+	// Setting one that differs puts it on every window (SetGlobalAlphaForAllWindows: Alpha;
+	// SetGlobalFadeAlpha: FadeToAlpha, fading on and Refade; SetGlobalFadeDelay, Duration).
+	struct Globals
+	{
+		int alpha = 255, fade_to = 128, delay = 2000, duration = 500;
+	};
+	const Globals &Global() const { return m_globals; }
+	void SetGlobalAlpha(int alpha);
+	void SetGlobalFadeTo(int alpha);
+	void SetGlobalFadeDelay(int ms);
+	void SetGlobalFadeDuration(int ms);
 
 	int Count() const { return static_cast<int>(m_windows.size()); }
 
@@ -241,7 +254,8 @@ private:
 	SidlTextures *m_textures = nullptr;
 	SidlValues *m_values = nullptr;
 	int m_width = 640, m_height = 480;
-	std::vector<std::unique_ptr<Window>> m_windows; // back to front
+	std::vector<std::unique_ptr<Window>> m_windows;
+	Globals m_globals; // back to front
 	std::vector<Click> m_clicks;
 	std::vector<Click> m_holds;
 	std::vector<Click> m_right_clicks;

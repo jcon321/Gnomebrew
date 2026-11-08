@@ -537,7 +537,7 @@ namespace render
 				          p.axes[2] * (p.radius * Sin512(p.angle));
 				at = at - forward * def.depth_bias;
 				float depth = Dot(at - camera.position, forward);
-				if (depth < camera.near_plane || depth > camera.far_plane)
+				if (depth < std::max(m_near_clip, camera.near_plane) || depth > camera.far_plane)
 					continue;
 				float age = p.life - p.left;
 				float grown = 1;

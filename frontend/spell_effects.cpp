@@ -440,7 +440,7 @@ void SpellEffects::MakeCloud(int pcloud, const OldEmitter &emitter, const render
 	if (duration_ms > 0)
 		def.duration_ms = static_cast<uint32_t>(duration_ms);
 	OldCloud cloud;
-	cloud.cloud = std::make_unique<render::ParticleCloud>(def, 1.0f, nullptr, nullptr);
+	cloud.cloud = std::make_unique<render::ParticleCloud>(def, render::PCloudDensity(), nullptr, nullptr);
 	cloud.binding = binding;
 	render::Transform place;
 	place.translation = at;

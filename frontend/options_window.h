@@ -1,14 +1,26 @@
 #pragma once
 
 // eqgame's COptionsWnd on the "OptionsWindow" SIDL screen (EQUI_OptionsWindow.xml). So far its
-// General, Keyboard, Filters and Colors pages do something; the Display and Mouse pages show empty.
+// General, Display, Keyboard, Filters and Colors pages do something; the Mouse page shows empty.
+//
+// The Display page (SyncDisplayPage @0042a5e5, DisplayPageWndNotification @0042bba3): Show PC Names,
+// Show NPC Names and Level of Detail checked by their settings; Sky (3D sky off, one layer, two),
+// the spell particles' Near Clip Plane (2, 4, 6, 8 as Near .. Farthest) and Density (0, 0.25, 0.5,
+// 1) and the other particles' Density (0..3) on their combo boxes; and the sliders, each with its
+// value label, which changes only when the slider does: Gamma (8 ticks, the gamma 1..8, "%d %c" of
+// value * 100 / 7), Far Clip Plane (21, value * 0.2 at least 0.1, value * 100 / 20 %), Fade Delay
+// (21, value * 500 ms, "%.1f" seconds), Fade Duration (20, value * 500 + 500 ms), Window
+// Transparency (230, alpha value + 26, as a percentage of 255), Fade-to Transparency (256, the
+// alpha) and the spell particles' Opacity (101, hundredths). DisplayPageOnProcessFrame sets the
+// page from the settings every frame it's up, so it follows what changes them elsewhere (the
+// window menu's levels, /shownames). Video Modes is CVideoModesWnd (not ours).
 //
 // The General page (SyncGeneralPage @0042a4b2, GeneralPageWndNotification @0042b532): Fast Item
 // Destroy, Receive Guild Invites, Autosplit, Anonymous and Roleplaying checked by their settings
 // (the last two from one state: 1 anonymous, 2 roleplaying, 3 both); "Allow trading with" on
 // everyone, party members only or no one (the setting's 2, 1, 0); Fast Drop on with confirmation,
 // without or never (/fastdrop's 0, 1, -1); the three sliders 0..20 (SetNumTicks 0x15), each with
-// its value label ("%d%c", the value * 100 / 20), which changes only when the slider does. The page
+// its value label ("%d %c", the value * 100 / 20), which changes only when the slider does. The page
 // shows them as the window's made and as the page is picked (ProcessGeneralOptionsTab); a click, a
 // pick or a slider moved sets the setting through the host, which does what eqgame does with it.
 //
@@ -74,6 +86,18 @@ public:
 		};
 		std::function<int(General)> general;
 		std::function<void(General, int)> set_general;
+		// The Display page: a setting as eqgame keeps it (__PCNames, DAT_00798af8 and ae8 0 or 1;
+		// the sky 0..2; the spell particles' near clip plane, density and opacity as floats;
+		// the other particles' density 0..3; the gamma 1..8; the clip plane slider's value
+		// DAT_00798b28; the windows' global fade delay and duration in ms, alpha and fade-to
+		// alpha), and one set from the page. VideoModes is the button.
+		enum class Display
+		{
+			PCNames, NPCNames, LevelOfDetail, Sky, SpellNearClip, SpellDensity, SpellOpacity, ParticleDensity,
+			Gamma, ClipPlane, FadeDelay, FadeDuration, WindowAlpha, FadeToAlpha, VideoModes
+		};
+		std::function<float(Display)> display;
+		std::function<void(Display, float)> set_display;
 		// The Filters page: the /filter switches, and a click having changed one of them.
 		ChatFilters *filters = nullptr;
 		std::function<void()> filters_changed;
@@ -106,6 +130,9 @@ private:
 	void SyncGeneralPage();
 	bool GeneralPageClick(const std::string &control); // GeneralPageWndNotification's clicks and picks
 	void GeneralPageSliders();                          // and its sliders (notification 0xd)
+	void SyncDisplayPage();
+	bool DisplayPageClick(const std::string &control); // DisplayPageWndNotification's clicks and picks
+	void DisplayPageSliders();                          // and its sliders (notification 0xd)
 	void SyncChatPage();
 	bool ChatPageClick(const std::string &control); // ChatPageWndNotification
 
@@ -119,6 +146,7 @@ private:
 	bool m_color_page_shown = false;
 	bool m_chat_page_shown = false;
 	bool m_general_page_shown = false;
+	int m_display_sliders[7] = {}; // the Display page's sliders as last seen
 	int m_slider_values[3] = {}; // the General page's sliders as last seen (a change is CSliderWnd's 0xd)
 	uint64_t m_confirm_until_ms = 0;
 };

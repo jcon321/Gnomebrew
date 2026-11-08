@@ -271,9 +271,12 @@ no rules of its own.
    Anonymous, Roleplaying, Allow trading with, Fast Drop, the music and sound volumes; kept in
    my-client.ini). Still to do on the General page: Load UI Skin (CLoadskinWnd, the skin picker),
    Receive Guild Invites' effect (msg_invite_guild
-   turns down another guild's invite with it off; guild invites aren't ours yet). Still to do:
-   the Display and Mouse pages, which show empty (SyncDisplayPage, InitKeyboardAssignments'
-   mouse settings); the combo boxes' list colors
+   turns down another guild's invite with it off; guild invites aren't ours yet). The Display page
+   (SyncDisplayPage, DisplayPageWndNotification, DisplayPageOnProcessFrame: names, sky, particles,
+   clip plane, the windows' global fades) is done; still to do there: Video Modes (CVideoModesWnd)
+   and Level of Detail's effect (s3dSetDynamicLOD: models are always drawn whole); Gamma does
+   nothing, as in eqgame windowed. Still to do: the Mouse page, which shows empty
+   (InitKeyboardAssignments' mouse settings); the combo boxes' list colors
    (CComboWnd::SetColors 0xff808080, on the Keyboard and Filters pages); the reverb's drugged room (23) while stunned (StunMe;
    OP_Stun isn't ours) or drunk at 40 and over (DoPassageOfTime's drunkenness wearing off isn't
    ours); the Keyboard page's
@@ -485,8 +488,7 @@ no rules of its own.
     the caster's animation and a spell's stage 1 on them). Still to do: a missile's old (spells.eff)
     stage 1, blit-sprite actors as a missile's model (`GENC00_ACTORDEF`: only item meshes are built;
     the server sends `IT68`), the static kind 9 missiles' checks on who walks into them (MoveMissile's
-    sentinel and trap spells), our own archery and throwing making their missile (DoAttack), the options'
-    spell particle density and opacity (fixed at eqgame's 1 and 1), the chat filters for PC and NPC
+    sentinel and trap spells), our own archery and throwing making their missile (DoAttack), the chat filters for PC and NPC
     spells and bard songs, and OP 0x4265 (destroy a cast's emitters; this server never sends it).
 13. **The other camera modes F9 cycles through:** overhead and the two user-set cameras, plus zoom
     and field of view.

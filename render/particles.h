@@ -85,6 +85,12 @@ namespace render
 		bool fog = true;
 	};
 
+	// t3dSetPCloudDensityMultiplierAndRecalc's multiplier (eqgfx's DAT_100f6a00): the options'
+	// Other Particles density (CDisplay::SetPCloudDensity: 0, 0.33, 0.66, 1). Clouds made from now on
+	// take it (t3dCreateParticleCloud); the ones already going keep theirs.
+	void SetPCloudDensity(float density);
+	float PCloudDensity();
+
 	class ParticleCloud
 	{
 	public:
@@ -93,7 +99,8 @@ namespace render
 		using Collide = std::function<bool(const Vec3 &from, const Vec3 &to, float &fraction, uint32_t &flags)>;
 		static constexpr uint32_t WaterRegion = 0x80000000, LavaRegion = 0x40000000, SlimeRegion = 0x20000000;
 
-		// density: CDisplay::SetPCloudDensity's (0, 0.33, 0.66 or 1). A particle that hits water
+		// density: CDisplay::SetPCloudDensity's (0, 0.33, 0.66 or 1; PCloudDensity() as
+		// t3dCreateParticleCloud passes it). A particle that hits water
 		// carries on into `water`, and one that hits anything else into `ground` (or, with none,
 		// into `water` too).
 		ParticleCloud(const ParticleCloudDef &def, float density, ParticleCloud *ground, ParticleCloud *water);
