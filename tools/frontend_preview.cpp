@@ -208,7 +208,8 @@ namespace
 		for (const char *line : {"/random", "/random 50 10", "/random -1 5", "/random 1234567", "/random 40000",
 			"/lootnodrop", "/lootnodrop sometimes", "/lootnodrop", "/lootnodrop always", "/fastdrop", "/fastdrop never",
 			"/fastdrop off", "/smile", "/wave", "/hug", "/boggle", "/tap", "/fidget", "/smile nobodyhere", "/flipoff",
-			"/kiss blows you a kiss"})
+			"/kiss blows you a kiss", "/usercolor", "/usercolor help", "/usercolor page7", "/usercolor 1 255 0 0",
+			"/usercolor 1 reset", "/usercolor 73 1 2 3"})
 			type(line);
 		// The nearest spawn, by name.
 		const ZoneProfile &me = zone.Profile();

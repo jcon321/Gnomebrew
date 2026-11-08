@@ -229,8 +229,9 @@ private:
 	void ExecuteCmd(int cmd, bool down, int typed);
 	uint32_t KeyWithModifiers(const InputEvent &event) const; // the scan code and Shift, Ctrl, Alt bits
 	void SaveKeyBinding(int id, bool alternate, uint32_t key); // _writeKeyMapToIni
-	void ResetKeyBindings();
-	void SaveUserColor(int index, uint32_t rgb); // COptionsWnd::SaveColors                                   // DeleteKeyBindingFromConfig for all
+	void ResetKeyBindings(); // DeleteKeyBindingFromConfig for all
+	void SaveUserColor(int index, uint32_t rgb); // COptionsWnd::SaveColors
+	void WriteUserColor(int index, uint32_t rgb); // only [TextColors] User_<index+1>_Red, _Green, _Blue
 	MoveControls ZoneControls();
 	bool ZoneCanMove() const; // in the zone, with no dialog up
 

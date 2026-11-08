@@ -4028,6 +4028,11 @@ void FrontEnd::SaveUserColor(int index, uint32_t rgb)
 	// _Green and _Blue (my-client.ini for eqclient.ini).
 	m_chat_colors.Set(index, rgb);
 	m_chat.SetLinkColor(m_chat_colors.Get(ItemTags::ColorType));
+	WriteUserColor(index, rgb);
+}
+
+void FrontEnd::WriteUserColor(int index, uint32_t rgb)
+{
 	if (m_config.settings_ini.empty())
 		return;
 	IniFile ini;

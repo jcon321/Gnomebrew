@@ -18,6 +18,7 @@ namespace
 		None, Say, Tell, Group, Shout, Auction, Ooc, Guild, Reply, Emote, Hail, Location, Target, Camp,
 		ClearChat, ShowNames, Sit, Stand, Book, Cast, Consider, Played, Motd, Time, Afk, Anonymous, Assist,
 		Random, LootNoDrop, FastDrop, Social, Attack, CombatMusic, DoAbility, Filter, ServerFilter, Invite, Disband, Who, WhoTarget, Follow, MakeLeader, Lfg,
+		UserColor,
 	};
 
 	struct CommandEntry
@@ -97,7 +98,7 @@ namespace
 		{"/doability", 0, Command::DoAbility}, {"/whotarget", 0, Command::WhoTarget}, {"/language", 0, Command::None},
 		{"/target", 0, Command::Target}, {"/camp", 0, Command::Camp}, {"/attack", 0, Command::Attack},
 		{"/invite", 0, Command::Invite}, {"/disband", 0, Command::Disband}, {"/note", 0, Command::None},
-		{"/wincolor", 0, Command::None}, {"/usercolor", 0, Command::None}, {"/resetwindows", 0, Command::None},
+		{"/wincolor", 0, Command::None}, {"/usercolor", 0, Command::UserColor}, {"/resetwindows", 0, Command::None},
 		{"/mcicontrol", 0, Command::None}, {"/popmail", 0, Command::None}, {"/audiodebug", 0, Command::None},
 		{"/dynamiclights", 0, Command::None}, {"/chatfontsize", 0, Command::None}, {"/lootnodrop", 0, Command::LootNoDrop},
 		{"/reversesound", 0, Command::None}, {"/emotezone", 4, Command::None}, {"/invwinlabels", 0, Command::None},
@@ -336,6 +337,51 @@ namespace
 		uint32_t id = race >= 1 && race <= 12 ? 1469 + race : race == 128 ? 1482 : race == 130 ? 1483 : race == 330 ? 2482 : 1484;
 		return FormatEqString(strings, id, race >= 1 && race <= 12 ? RaceName(static_cast<uint16_t>(race)) : "Unknown", {});
 	}
+
+	// is_number (@004f3739): an optional sign, then digits only, and something there.
+	bool IsNumber(const std::string &text)
+	{
+		size_t i = !text.empty() && (text[0] == '+' || text[0] == '-') ? 1 : 0;
+		if (text.empty())
+			return false;
+		for (; i < text.size(); ++i)
+			if (!std::isdigit(static_cast<unsigned char>(text[i])))
+				return false;
+		return true;
+	}
+
+	// /usercolor's list of the color numbers, page by page (eqgame's own lines, not eqstr's).
+	const char *const UserColorPages[7][11] = {
+		{"Here is a list of usercolor numbers:", " 1 - Say", " 2 - Tell", " 3 - Group", " 4 - Guild", " 5 - OOC",
+			" 6 - Auction", " 7 - Shout", " 8 - Emote", " 9 - Spells (meming, scribing, casting, etc.)",
+			" 10 - You hit other"},
+		{" 11 - Other hits you", " 12 - You miss other", " 13 - Other misses you", " 14 - Some broadcasts (duels)",
+			" 15 - Skills (ups, non-combat use, etc.)", " 16 - Disciplines or special abilities",
+			" 17 - Unused at this time", " 18 - Default text and stuff you type", " 19 - Unused at this time",
+			" 20 - Merchant Offer Price", nullptr},
+		{" 21 - Merchant Buy/Sell", " 22 - Your death message", " 23 - Others death message",
+			" 24 - Other damage other", " 25 - Other miss other", " 26 - /who command", " 27 - yell for help",
+			" 28 - Hit for non-melee", " 29 - Spell worn off", " 30 - Money splits", nullptr},
+		{" 31 - Loot message", " 32 - Dice Roll (/random)", " 33 - Others spells",
+			" 34 - Spell Failures (resists, fizzles, missing component, bad target, etc.)",
+			" 35 - Chat Channel Messages", " 36 - Chat Channel 1", " 37 - Chat Channel 2", " 38 - Chat Channel 3",
+			" 39 - Chat Channel 4", " 40 - Chat Channel 5", nullptr},
+		{" 41 - Chat Channel 6", " 42 - Chat Channel 7", " 43 - Chat Channel 8", " 44 - Chat Channel 9",
+			" 45 - Chat Channel 10", " 46 - Melee Crits", " 47 - Spell Crits", " 48 - Too far away (melee)",
+			" 49 - NPC Rampage", " 50 - NPC Flurry", nullptr},
+		{" 51 - NPC Enrage", " 52 - Say echo", " 53 - Tell echo", " 54 - Group echo", " 55 - Guild echo",
+			" 56 - OOC echo", " 57 - Auction echo", " 58 - Shout echo", " 59 - Emote echo",
+			" 60 - Chat Channel 1 echo", nullptr},
+		{" 61 - Chat Channel 2 echo", " 62 - Chat Channel 3 echo", " 63 - Chat Channel 4 echo",
+			" 64 - Chat Channel 5 echo", " 65 - Chat Channel 6 echo", " 66 - Chat Channel 7 echo",
+			" 67 - Chat Channel 8 echo", " 68 - Chat Channel 9 echo", " 69 - Chat Channel 10 echo", nullptr, nullptr},
+	};
+	// Each page's last line: where the next starts (the seventh's is its own 69).
+	const char *const UserColorNext[6] = {
+		" Type /usercolor page2 for numbers 11 - 20", " Type /usercolor page3 for numbers 21 - 30",
+		" Type /usercolor page4 for numbers 31 - 40", " Type /usercolor page5 for numbers 41 - 50",
+		" Type /usercolor page6 for numbers 51 and up", " Type /usercolor page7 for numbers 61 and up",
+	};
 
 	// CEverQuest_GrabFirstWord (@00545aae): past the spaces, a word up to a space (or a quoted one,
 	// ' or "), the rest after it.
@@ -1080,6 +1126,62 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 		if (allow())
 			m_abilities.DoAbility(args, m_now_ms);
 		break;
+	case Command::UserColor: {
+		// /usercolor (@004fe3a2): "<n> <red> <green> <blue>", or "<n> reset" for its built-in color
+		// (GetDefaultUserDefinedColor), sets color n (1..72, though it says 69) as the Colors page's
+		// Accept does, into [TextColors] (my-client.ini for eqclient.ini); "help" or "page1".."page7"
+		// list the numbers; anything else, the format.
+		std::string rest = args;
+		std::string number = GrabFirstWord(rest);
+		std::string second = GrabFirstWord(rest);
+		std::string third = GrabFirstWord(rest);
+		std::string fourth = GrabFirstWord(rest);
+		int n = IsNumber(number) ? std::atoi(number.c_str()) : -1;
+		int red = -1, green = -1, blue = -1;
+		int page = -1;
+		if (SameText(second, "reset")) {
+			// GetDefaultUserDefinedColor (@004aa2ee): a color out of 0..71 is color 0's, and it writes
+			// the built-in color to [TextColors] itself.
+			int index = n - 1 >= 0 && n - 1 < ChatColors::UserColors ? n - 1 : 0;
+			uint32_t rgb = ChatColors::Default(index);
+			WriteUserColor(index, rgb);
+			red = rgb >> 16 & 0xff, green = rgb >> 8 & 0xff, blue = rgb & 0xff;
+		}
+		else {
+			if (SameText(number, "help") || SameText(number, "page1"))
+				page = 0;
+			for (int i = 2; i <= 7 && page < 0; ++i)
+				if (SameText(number, "page" + std::to_string(i)))
+					page = i - 1;
+			if (page < 0 && IsNumber(second)) {
+				red = std::atoi(second.c_str());
+				if (IsNumber(third))
+					green = std::atoi(third.c_str());
+				if (IsNumber(fourth))
+					blue = std::atoi(fourth.c_str());
+			}
+		}
+		if (page >= 0) {
+			for (const char *line : UserColorPages[page])
+				if (line)
+					ChatOut(line, ChatType::Default);
+			if (page < 6)
+				ChatOut(UserColorNext[page], ChatType::Default);
+			break;
+		}
+		if (!args.empty() && red >= 0 && red < 256 && green >= 0 && green < 256 && blue >= 0 && blue < 256 && n >= 0 &&
+			n < 73) {
+			// CDisplay_SetUserDefinedColor takes 0..71 only: color 0 is written but changes nothing.
+			SaveUserColor(n - 1, static_cast<uint32_t>(red << 16 | green << 8 | blue));
+			break;
+		}
+		ChatOut("Format: /usercolor <number> <red> <green> <blue>", ChatType::Default);
+		ChatOut("<number> -> 1 to 69", ChatType::Default);
+		ChatOut("<red> <green> <blue> -> 0 to 255", ChatType::Default);
+		ChatOut("To reset a user color use /usercolor <number> reset", ChatType::Default);
+		ChatOut("To display a list of usercolor #'s use /usercolor help", ChatType::Default);
+		break;
+	}
 	case Command::CombatMusic:
 		// /combatmusic (@004fa035): with nothing after it, the format; "off" or anything else, set
 		// (kept as CombatMusic). Either way, the setting said.

@@ -261,10 +261,10 @@ no rules of its own.
 5. **Options window.** The Keyboard page is done (`frontend/options_window.*`, COptionsWnd's
    keyboard page; see 6), with a combo box (CComboWnd) in `frontend/sidl.*`, and the Colors page
    (ColorPageWndNotification, SaveColors, RestoreDefaultColors, into my-client.ini's
-   `[TextColors]`). Still to do: the General, Display, Mouse and Filters pages, which show empty
-   (SyncGeneralPage, SyncDisplayPage, InitKeyboardAssignments' mouse settings, SyncChatPage);
-   /usercolor (@004fe3a2, CDisplay_SetUserDefinedColor from chat); the Keyboard page's temporary Implemented column and the wider window it needs come
-   out once every command is done. A combo box's list doesn't go when the click is outside its
+   `[TextColors]`; /usercolor (@004fe3a2) sets, resets and lists them from the chat line). Still
+   to do: the General, Display, Mouse and Filters pages, which show empty (SyncGeneralPage,
+   SyncDisplayPage, InitKeyboardAssignments' mouse settings, SyncChatPage); the Keyboard page's
+   temporary Implemented column and the wider window it needs come out once every command is done. A combo box's list doesn't go when the click is outside its
    window, and has no scrollbar when ListHeight cuts it short (CListWnd's style 1).
 6. ~~**A configurable keymap**~~: done (`frontend/key_map.*`, eqgame's two maps,
    `default_key_bindings` with W A S D, `ProcessMovementKeys`, `ProcessKeyUp`, ExecuteCmd's
