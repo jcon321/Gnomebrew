@@ -18,8 +18,8 @@
 // one of those two cells shows "Press a key" there; the next key (with whatever of Shift, Ctrl and
 // Alt is held) is bound to it and saved, Escape unbinds it, a key eqgame keeps for itself (Enter,
 // /, the Windows keys) leaves it as it was and says so. "Reload defaults" asks first, then puts
-// every key back (ResetKeysToDefault @0042b399). Ours, for now: a fourth column saying whether
-// my-client does what the command does.
+// every key back (ResetKeysToDefault @0042b399). Ours, for now: a command my-client doesn't do
+// yet is listed in red.
 
 #include "key_map.h"
 

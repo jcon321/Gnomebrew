@@ -269,7 +269,7 @@ no rules of its own.
    `[TextColors]`; /usercolor (@004fe3a2) sets, resets and lists them from the chat line). Still
    to do: the General, Display, Mouse and Filters pages, which show empty (SyncGeneralPage,
    SyncDisplayPage, InitKeyboardAssignments' mouse settings, SyncChatPage); the Keyboard page's
-   temporary Implemented column and the wider window it needs come out once every command is done.
+   temporary red rows (commands not yet done) go once every command is done.
    A combo box's list that's down takes any press (CXWndManager's 0x34): off it, the list goes
    and the press goes no further. Still to do: its scrollbar when ListHeight cuts it short
    (InsertChoice sets CListWnd style 1; no combo box in the default options window gets there),

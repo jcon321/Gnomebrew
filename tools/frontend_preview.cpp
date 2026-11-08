@@ -1180,9 +1180,12 @@ namespace
 		auto dump = [&](const char *what) {
 			printf("[preview] %s: combo '%s', %zu rows\n", what,
 				combo->choice >= 0 ? combo->choices[combo->choice].c_str() : "", list->rows.size());
-			for (const auto &row : list->rows)
+			for (size_t i = 0; i < list->rows.size(); ++i) {
+				const auto &row = list->rows[i];
+				bool red = i < list->row_colors.size() && list->row_colors[i] != 0;
 				printf("[preview]   %-28s | %-12s | %-12s | %s\n", row[0].c_str(), row[1].c_str(), row[2].c_str(),
-					row[3].c_str());
+					red ? "not implemented (red)" : "");
+			}
 		};
 		dump("keyboard page");
 		h.Snapshot("o1-keyboard");

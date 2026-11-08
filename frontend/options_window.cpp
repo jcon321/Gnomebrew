@@ -19,8 +19,8 @@ namespace
 	const char *const Dialog = "ConfirmationDialogBox";
 	constexpr uint64_t ConfirmMs = 20000; // CConfirmationDialog::Activate(0x1c, 20000)
 
-	// Ours, for now: whether my-client does what the command does.
-	const SidlPiece::Column ImplementedColumn{"Implemented", 75};
+	// Ours, for now: a command my-client doesn't do yet is listed in red.
+	constexpr uint32_t NotImplementedColor = 0xff0000;
 }
 
 void OptionsWindow::Attach(WindowManager &windows, KeyBindings &keys, Host host)
@@ -42,20 +42,8 @@ void OptionsWindow::Attach(WindowManager &windows, KeyBindings &keys, Host host)
 				for (int piece : p.children)
 					wnd->Item(piece).visible = false;
 		}
-	// The Implemented column, and the window wide enough for it (it only sizes up and down).
-	if (SidlWindow::Control *list = wnd->Find(AssignmentList)) {
+	if (SidlWindow::Control *list = wnd->Find(AssignmentList))
 		list->header_color = 0x8aa3ff; // COptionsWnd::COptionsWnd: the list's +0x14c, 0xff8aa3ff
-		if (list->columns.size() == 3)
-			list->columns.push_back(ImplementedColumn);
-		int wanted = 0;
-		for (const auto &column : list->columns)
-			wanted += column.width;
-		int short_by = wanted - wnd->ContentRect(*list).w;
-		if (short_by > 0) {
-			const Rect &r = wnd->Bounds();
-			windows.Resize(Screen, r.w + short_by, r.h);
-		}
-	}
 	// UpdateKeyboardAssignmentList: the first category.
 	if (SidlWindow::Control *combo = wnd->Find(FilterCombo))
 		combo->choice = 0;
@@ -86,13 +74,14 @@ void OptionsWindow::Fill()
 	const SidlWindow::Control *combo = wnd->Find(FilterCombo);
 	uint32_t mask = KeyMap::CategoryMask(combo ? combo->choice : 8);
 	list->rows.clear();
+	list->row_colors.clear();
 	m_row_ids.clear();
 	for (const KeyMap::Command &command : KeyMap::List()) {
 		if (!(command.categories & mask))
 			continue;
 		list->rows.push_back({m_host.eqstr && command.eqstr ? m_host.eqstr(command.eqstr, command.name) : command.name,
-			KeyMap::Describe(m_keys->Get(command.id, false)), KeyMap::Describe(m_keys->Get(command.id, true)),
-			command.implemented ? "Yes" : "No"});
+			KeyMap::Describe(m_keys->Get(command.id, false)), KeyMap::Describe(m_keys->Get(command.id, true))});
+		list->row_colors.push_back(command.implemented ? 0 : NotImplementedColor);
 		m_row_ids.push_back(command.id);
 	}
 	list->selected_row = list->selected_column = -1;
@@ -152,7 +141,7 @@ bool OptionsWindow::Click(const std::string &window, const std::string &control,
 		const SidlWindow::Control *list = wnd->Find(AssignmentList);
 		Cancel();
 		// The key's or the alternate's cell: "Press a key" there until one comes (eqstr 6598). The
-		// command's own, and our Implemented column, do nothing.
+		// command's own does nothing.
 		if (list && (list->selected_column == 1 || list->selected_column == 2) && list->selected_row >= 0 &&
 		    list->selected_row < static_cast<int>(m_row_ids.size())) {
 			m_row = list->selected_row;

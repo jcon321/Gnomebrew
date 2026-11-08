@@ -483,9 +483,8 @@ additions of ours, or ones taken from TAKP's eqgame.dll or Zeal rather than stoc
   eqgame's. Because ExecuteCmd runs nothing whose own key types a character while the chat line is
   open (see Keymap), the arrows don't move you while you type with these defaults; with the arrows
   as the keys and W A S D as the alternates, they would.
-- **Options window's Implemented column:** for now the Keyboard page has a fourth column saying
-  whether my-client does what each command does, and the window is widened to fit it. The other
-  pages show empty.
+- **Options window's not-implemented rows:** for now the Keyboard page lists a command my-client
+  doesn't do yet in red. The window keeps its EQUI size. The other pages show empty.
 - **Look up and Look down** tilt the view 5 degrees a press and keep going with Windows' key repeat;
   eqgame's `ProcessControls` speeds the tilt up while the key's held.
 - **Debug menu** (F11, ahead of the keymap's Toggle netstat): the stat card with its folding sections, the 2D radar, the RENDER toggles
