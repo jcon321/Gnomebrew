@@ -2176,6 +2176,8 @@ void FrontEnd::BuildZoneWindows()
 	loot_host.change_stance = [this](uint8_t stance) { ChangeStance(stance); };
 	loot_host.clear_target = [this] { m_game_values.target = 0; };
 	loot_host.height = [this](uint16_t id) { return m_zone_view ? m_zone_view->CenterHeight(id) : 0.0f; };
+	loot_host.dead = [this] { return m_dead; };
+	loot_host.make_visible = [this] { m_abilities.MakeMeVisible(); };
 	m_loot.Attach(m_windows, m_zone, m_window_state, m_game_values, std::move(loot_host));
 	m_loot.loot_no_drop = m_config.loot_no_drop;
 	TradeWindow::Host trade_host;

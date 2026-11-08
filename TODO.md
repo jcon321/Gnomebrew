@@ -92,7 +92,8 @@ no rules of its own.
      against a server yet (the test character hasn't killed anything of its own to loot). /lootnodrop sets whether a
      NO DROP item asks first (`LootNoDrop`). Still to do: /autosplit's "as your split" (12071), the
      items in a corpse's bags (shown only to GMs and on player corpses past the eighth), the
-     PvP item (Loot_Request_Type 5), MakeMeVisible, and the dead or mounted checks.
+     PvP item (Loot_Request_Type 5) and the mounted check (ActorInfo's AttachedEntity; no mounts
+     yet). Dead (DeathTimer) and deity 20000 don't ask; asking makes us visible (MakeMeVisible).
    - Trade and give windows: done (`frontend/trade_window.*`, eqgame's CTradeWnd and CGiveWnd): an
      item or coins on the cursor clicked onto a player or NPC in reach asks to trade
      (DropItemOrMoneyOnPlayer, OP_TradeRequest), the go-ahead opens the trade window with it in

@@ -63,7 +63,7 @@ bool LootWindow::LootCorpse(uint16_t corpse)
 {
 	auto it = m_zone->Spawns().find(corpse);
 	if (it == m_zone->Spawns().end() || it->second.npc < 2 || m_corpse != 0 || m_busy != 0 ||
-	    m_zone->CampRemainingMs() != 0)
+	    m_zone->CampRemainingMs() != 0 || (m_host.dead && m_host.dead()) || m_zone->Profile().deity == 20000)
 		return false;
 	// PlayerDistance(corpse, us, 1.2): up and down counts 1 / 1.2.
 	const ZoneSpawn &body = it->second;
@@ -76,6 +76,8 @@ bool LootWindow::LootCorpse(uint16_t corpse)
 			m_host.chat(Text(12390, {}, "You are too far away to loot that corpse."), ChatType::Red);
 		return false;
 	}
+	if (m_host.make_visible)
+		m_host.make_visible();
 	m_corpse = corpse;
 	m_open = m_ended = false;
 	m_zone->LootRequest(corpse);

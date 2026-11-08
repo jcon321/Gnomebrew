@@ -3,8 +3,10 @@
 // eqgame's loot window, CLootWnd (@004261b9 on):
 //   - CEverQuest::RightClickedOnPlayer: the right button on a corpse is CEverQuest_LootCorpse
 //     (@00547808): with nothing else going on (no request waiting, DAT_007d0258, nor anything
-//     locked, DAT_007d0254, no camp, no corpse already), and the corpse within its
-//     ModelHeightOffset * 1.6 + 14 (up and down counting 1 / 1.2), OP_LootRequest; else "You are
+//     locked, DAT_007d0254, no camp, no corpse already), not dead (DeathTimer), not of deity
+//     20000, and the corpse within its
+//     ModelHeightOffset * 1.6 + 14 (up and down counting 1 / 1.2), visible again (MakeMeVisible)
+//     and OP_LootRequest; else "You are
 //     too far away to loot that corpse." (eqstr 12390), and it's considered as anything else is;
 //   - DoLoot_handleLootCorpse (@00426308), OP_MoneyOnCorpse's answer: 2 "You may not loot this
 //     corpse at this time." (12070) and 0 "Someone is already looting that corpse." (12073); 1 or 3
@@ -50,6 +52,8 @@ public:
 		std::function<void(uint8_t)> change_stance;         // EQPlayer::ChangeStance
 		std::function<void()> clear_target;
 		std::function<float(uint16_t)> height;              // a spawn's ModelHeightOffset
+		std::function<bool()> dead;                         // ActorInfo's DeathTimer running
+		std::function<void()> make_visible;                 // EQ_Character::MakeMeVisible
 	};
 
 	void Attach(WindowManager &windows, ZoneSession &zone, GameWindowState &state, const GameValues &values, Host host);
