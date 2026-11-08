@@ -1,7 +1,16 @@
 #pragma once
 
 // eqgame's COptionsWnd on the "OptionsWindow" SIDL screen (EQUI_OptionsWindow.xml). So far its
-// Keyboard, Filters and Colors pages do something; the General, Display and Mouse pages show empty.
+// General, Keyboard, Filters and Colors pages do something; the Display and Mouse pages show empty.
+//
+// The General page (SyncGeneralPage @0042a4b2, GeneralPageWndNotification @0042b532): Fast Item
+// Destroy, Receive Guild Invites, Autosplit, Anonymous and Roleplaying checked by their settings
+// (the last two from one state: 1 anonymous, 2 roleplaying, 3 both); "Allow trading with" on
+// everyone, party members only or no one (the setting's 2, 1, 0); Fast Drop on with confirmation,
+// without or never (/fastdrop's 0, 1, -1); the three sliders 0..20 (SetNumTicks 0x15), each with
+// its value label ("%d%c", the value * 100 / 20), which changes only when the slider does. The page
+// shows them as the window's made and as the page is picked (ProcessGeneralOptionsTab); a click, a
+// pick or a slider moved sets the setting through the host, which does what eqgame does with it.
 //
 // The Filters page ("OptionsChatPage"; SyncChatPage @0042a897, ChatPageWndNotification @0042c747):
 // Chat0..Chat9 checked for the channels and messages shown (guild, socials, group, shouts,
@@ -55,13 +64,24 @@ public:
 		std::function<uint32_t(int index)> user_color;
 		std::function<void(int index, uint32_t rgb)> save_color;
 		std::function<void(uint32_t color, std::function<void(uint32_t)> done)> pick_color;
+		// The General page: a setting as eqgame keeps it (the check boxes 0 or 1; the anonymous
+		// state 0..3 for Anonymous and Roleplaying; DAT_00798ad8 for the trade; /fastdrop's -1..1;
+		// the sliders 0..20), and one set from the page, the same way. LoadSkin is the button.
+		enum class General
+		{
+			FastItemDestroy, GuildInvites, Autosplit, Anonymous, Roleplaying, PlayerTrade, ItemDropping,
+			SoundRealism, MusicVolume, SoundVolume, LoadSkin
+		};
+		std::function<int(General)> general;
+		std::function<void(General, int)> set_general;
 		// The Filters page: the /filter switches, and a click having changed one of them.
 		ChatFilters *filters = nullptr;
 		std::function<void()> filters_changed;
 	};
 
-	// The window's pages emptied but the keyboard's, filters' and colors', the keyboard page filled
-	// (UpdateKeyboardAssignmentList: the first category) and the filters page set (SyncChatPage).
+	// The window's pages emptied but the general, keyboard, filters and colors pages', the keyboard
+	// page filled (UpdateKeyboardAssignmentList: the first category), and the general and filters
+	// pages set (SyncGeneralPage, SyncChatPage).
 	void Attach(WindowManager &windows, KeyBindings &keys, Host host);
 
 	// A click on the keyboard page, or on the confirmation dialog while it asks about the
@@ -83,6 +103,9 @@ private:
 	bool KeyboardPageShowing() const;
 	void ShowConfirmation(uint64_t now_ms); // CConfirmationDialog::Activate with eqstr 6602
 	void UpdateUserColors();                // COptionsWnd_GetUserDefinedColor
+	void SyncGeneralPage();
+	bool GeneralPageClick(const std::string &control); // GeneralPageWndNotification's clicks and picks
+	void GeneralPageSliders();                          // and its sliders (notification 0xd)
 	void SyncChatPage();
 	bool ChatPageClick(const std::string &control); // ChatPageWndNotification
 
@@ -95,5 +118,7 @@ private:
 	bool m_confirming_colors = false; // the dialog's 0x21: RestoreDefaultColors on yes
 	bool m_color_page_shown = false;
 	bool m_chat_page_shown = false;
+	bool m_general_page_shown = false;
+	int m_slider_values[3] = {}; // the General page's sliders as last seen (a change is CSliderWnd's 0xd)
 	uint64_t m_confirm_until_ms = 0;
 };

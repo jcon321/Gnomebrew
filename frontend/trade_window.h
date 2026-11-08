@@ -12,7 +12,8 @@
 //     with what's on the cursor put in; for an NPC the give window instead of the trade window.
 //     Busy, it turns it down: a tell "I'm busy right now." (1446) and OP_CancelTrade;
 //   - msg_req_trade (@004e7231), someone asking us (OP_TradeRequest): Activate with
-//     OP_TradeRequestAck, or busy, OP_TradeRefused and "%1 is interested in making a trade." (1447);
+//     OP_TradeRequestAck, or turned down by "Allow trading with" ('b' no one, 'c' party members
+//     only) or busy (1), OP_TradeRefused and "%1 is interested in making a trade." (1447);
 //   - msg_refuse_trade (@004e7554): their no, 1444 ('b' nobody), 1445 ('c' only their group) or 1446;
 //   - DropItemIntoTrade (@00439d48): onto the same stack in our slots, else into the first empty
 //     one (8 for a player, 4 for an NPC), as moves to 3000 + n; none free, "All your trade slots
@@ -55,6 +56,9 @@ public:
 		std::function<void(uint16_t)> set_target;            // pinstTarget
 		std::function<float(uint16_t)> height;               // a spawn's ModelHeightOffset
 		std::function<bool()> ok_to_transact;                // CEverQuest_IsOkToTransact
+		// msg_req_trade's turn-down from the options' "Allow trading with" (DAT_00798ad8) for a
+		// player by name: 'b' (no one), 'c' (party members only, and not one), or 0.
+		std::function<uint8_t(const std::string &)> refusal;
 	};
 
 	void Attach(WindowManager &windows, ZoneSession &zone, GameWindowState &state, const GameValues &values, Host host);

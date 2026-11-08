@@ -273,7 +273,15 @@ private:
 	void DestroyHeld();            // the inventory's Destroy (CInventoryWnd_DestroyHeld)
 	void DestroyHeldItemOrMoney(); // EQ_PC::DestroyHeldItemOrMoney
 	uint64_t m_destroy_until_ms = 0; // the confirmation dialog asking about Destroy, until then (0: it isn't)
-	bool m_fast_item_destroy = false; // DAT_00798b1c, the options' FastItemDestroy (no General page yet)
+	// The options' General page settings eqgame keeps in eqOptions1.opt, in my-client.ini here.
+	bool m_fast_item_destroy = false; // DAT_00798b1c, Fast Item Destroy ([Defaults] FastItemDestroy)
+	bool m_guild_invites = true;      // DAT_00798adc, Receive Guild Invites ([Defaults] GuildInvites)
+	int m_trade_with = 2;             // DAT_00798ad8, Allow trading with: 0 no one, 1 party members only, 2 everyone
+	int m_sound_realism = 0;          // DAT_00798b04 ([Sound] SoundRealism, 0..20)
+	int m_music_volume = 10, m_sound_volume = 10; // DAT_00798afc and b00 ([Sound] MusicVolume, SoundVolume)
+	int GeneralOption(OptionsWindow::Host::General setting) const;          // SyncGeneralPage's values
+	void SetGeneralOption(OptionsWindow::Host::General setting, int value); // GeneralPageWndNotification
+	void SaveSetting(const char *section, const char *key, int value);      // into my-client.ini
 	void DrawBuffTooltips(Canvas &canvas, int mouse_x, int mouse_y); // Alt held over the buff window
 	bool BuffSpellInfo(const std::string &control, const std::string &window); // a buff's spell shown; false: not a buff
 	void ActionsClick(const std::string &control); // an Actions window button, clicked or on a hot button

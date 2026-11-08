@@ -25,6 +25,7 @@ namespace
 	// SpawnAppearance types for what the name over a head shows (AppearanceType in eq_constants.h)
 	constexpr uint16_t AppearanceInvis = 3, AppearancePvp = 4, AppearanceLinkdead = 18, AppearanceGm = 20,
 	                   AppearanceAnonymous = 21, AppearanceGuild = 22, AppearanceAfk = 24;
+	constexpr uint16_t AppearanceAutoSplit = 28; // CEverQuest_ToggleAutoSplit's 0x1c
 	constexpr uint16_t AppearanceSneak = 15;     // msg_stat_change's IsSneaking
 	constexpr size_t SpawnSize = 224;            // Mac::structs::Spawn_Struct
 	constexpr size_t ProfileSize = 8460;         // Mac::structs::PlayerProfile_Struct
@@ -1435,6 +1436,19 @@ void ZoneSession::SetAfk(bool afk)
 	m_self.afk = static_cast<uint8_t>(value);
 }
 
+void ZoneSession::SetAutoSplit(bool on)
+{
+	m_profile.autosplit = on;
+	if (m_state != State::InZone)
+		return;
+	uint8_t body[8] = {};
+	uint32_t value = on ? 1 : 0;
+	memcpy(body, &m_my_id, 2);
+	memcpy(body + 2, &AppearanceAutoSplit, 2);
+	memcpy(body + 4, &value, 4);
+	Send(ZoneOp::SpawnAppearance, body, sizeof(body), "OP_SpawnAppearance autosplit " + std::to_string(value));
+}
+
 void ZoneSession::SetAnonymous(uint8_t anon)
 {
 	if (m_state != State::InZone)
@@ -1649,6 +1663,7 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		p.cursor_silver = Read<int32_t>(data, 2964);
 		p.cursor_copper = Read<int32_t>(data, 2968);
 		p.zone_id = Read<uint32_t>(data, 3444);
+		p.autosplit = Read<uint8_t>(data, 3348) != 0;
 		p.bind_zone = Read<uint32_t>(data, 3784); // bind_point_zone[0]
 		p.deity = Read<uint16_t>(data, 4944);
 		p.hunger = Read<int32_t>(data, 3416);

@@ -75,6 +75,7 @@ struct ZoneProfile
 	int16_t skills[100] = {};
 	int16_t practice_points = 0; // PracticePoints (+0x98): training sessions to spend at a guildmaster
 	uint32_t expansions = 0;     // +0xd3c: the expansions the account has (bits; 0x1f the skill caps')
+	bool autosplit = false;      // IsAutoSplitEnabled: our share of a corpse's coins split with the group
 	// groupMembers (EQ_PC+0x1390 in eqgame): the group's names as the zone has them, ours among them.
 	std::string group_members[6];
 	// The spells scribed in the book's 256 slots (eight to a page) and memorized in the eight gems,
@@ -589,6 +590,9 @@ public:
 	// tells everyone else.
 	void SetAfk(bool afk);
 	void SetAnonymous(uint8_t anon);
+	// CEverQuest_ToggleAutoSplit (@005376af): OP_SpawnAppearance 28 with the setting, kept in
+	// Profile(); the zone keeps it in the profile.
+	void SetAutoSplit(bool on);
 	// /consider: OP_Consider about a spawn (OP_ConsiderCorpse a corpse). The zone answers a
 	// spawn's with Considered.
 	bool Consider(uint16_t id, bool corpse);

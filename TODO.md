@@ -53,8 +53,7 @@ no rules of its own.
      down, split through the quantity window and put away on the character view (`core/inventory.*`).
      Still to do: for stats, resists, AC and ATK, items' worn effects, ATK's buffs, AAs,
      the Resistant Discipline, drunkenness and berserking; Alt. Advance, icons in the hot button
-     window's weapon slots, and FastItemDestroy for Destroy (the Options General page's checkbox;
-     Destroy always asks until there is one).
+     window's weapon slots.
    - Coins: done (`Inventory::MoveMoney`, CEverQuest_MoveMoney, OP_MoveCoin): a money button with
      nothing on the cursor asks how many through the quantity window and puts them on the cursor
      (A_DragItem's cell 143 + CursorMoneyType, the count across its bottom), with coins on it takes
@@ -104,7 +103,7 @@ no rules of its own.
      Give (OP_TradeAcceptClick), OP_FinishTrade closing it, Cancel, Escape, the close box and
      walking off cancelling (OP_CancelTrade). The give window checked through the replay (an
      NPC's answers as the zone gives them); a trade with another player not yet. Still to do:
-     /trade's setting (DAT_00798ad8: nobody 'b', group only 'c'), the
+     the
      bags in a trade window (BagTrade1..16 open, but their contents aren't checked) and
      OP_TradeReset. The zone's cancel runs Deactivate, which cancels again and says "You have
      cancelled the trade." (1450) after the zone's line, as msg_cancel_trade does.
@@ -266,10 +265,17 @@ no rules of its own.
 5. **Options window.** The Keyboard page is done (`frontend/options_window.*`, COptionsWnd's
    keyboard page; see 6), with a combo box (CComboWnd) in `frontend/sidl.*`, and the Colors page
    (ColorPageWndNotification, SaveColors, RestoreDefaultColors, into my-client.ini's
-   `[TextColors]`; /usercolor (@004fe3a2) sets, resets and lists them from the chat line), and the
-   Filters page (SyncChatPage, ChatPageWndNotification: the /filter switches, sent and kept). Still
-   to do: the General, Display and Mouse pages, which show empty (SyncGeneralPage,
-   SyncDisplayPage, InitKeyboardAssignments' mouse settings); the combo boxes' list colors
+   `[TextColors]`; /usercolor (@004fe3a2) sets, resets and lists them from the chat line), the
+   Filters page (SyncChatPage, ChatPageWndNotification: the /filter switches, sent and kept), and
+   the General page (SyncGeneralPage, GeneralPageWndNotification: Fast Item Destroy, Autosplit,
+   Anonymous, Roleplaying, Allow trading with, Fast Drop, the music and sound volumes; kept in
+   my-client.ini). Still to do on the General page: Load UI Skin (CLoadskinWnd, the skin picker),
+   Sound Realism's effect (kept, but EmitterManager_SetEffectsLevel's level isn't heard yet:
+   WavePlay scales a sound's +0x24 by it), Receive Guild Invites' effect (msg_invite_guild
+   turns down another guild's invite with it off; guild invites aren't ours yet), and the
+   /autosplit and /roleplay commands (Command::None; the page does what they do). Still to do:
+   the Display and Mouse pages, which show empty (SyncDisplayPage, InitKeyboardAssignments'
+   mouse settings); the combo boxes' list colors
    (CComboWnd::SetColors 0xff808080, on the Keyboard and Filters pages); the Keyboard page's
    temporary red rows (commands not yet done) go once every command is done.
    A combo box's list that's down takes any press (CXWndManager's 0x34): off it, the list goes

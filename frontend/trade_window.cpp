@@ -206,15 +206,17 @@ void TradeWindow::ZoneEvent(const ZoneSession::Event &event)
 	using Type = ZoneSession::Event::Type;
 	switch (event.type) {
 	case Type::TradeRequested: {
-		// msg_req_trade (anyone may trade with us: /trade's setting isn't ours yet).
+		// msg_req_trade: turned down by the options' "Allow trading with" ('b', 'c'), else busy (1)
+		// or the trade window up.
 		std::string name = Name(event.id);
 		if (name.empty())
 			break;
-		if (!m_active && (!m_host.ok_to_transact || m_host.ok_to_transact())) {
+		uint8_t reason = m_host.refusal ? m_host.refusal(name) : 0;
+		if (reason == 0 && !m_active && (!m_host.ok_to_transact || m_host.ok_to_transact())) {
 			Activate(event.id, false);
 			break;
 		}
-		m_zone->TradeRefuse(event.id, Busy);
+		m_zone->TradeRefuse(event.id, reason ? reason : Busy);
 		if (m_host.chat)
 			m_host.chat(Text(1447, {name}, name + " is interested in making a trade."), SaidColor);
 		break;

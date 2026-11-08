@@ -1174,6 +1174,82 @@ namespace
 			frontend.Update(NowMs());
 			colors("after the defaults");
 		}
+		// The General page: its settings as the page is picked; Fast Item Destroy, Anonymous and
+		// Autosplit clicked, trading with no one, Fast Drop never, the music slider moved; the ini;
+		// then back.
+		int general_tab = -1;
+		for (size_t i = 0; i < tabs->children.size(); ++i)
+			if (options->Item(tabs->children[i]).def->screen_id == "OptionsGeneralPage")
+				general_tab = static_cast<int>(i);
+		if (general_tab >= 0) {
+			auto page = [&](const char *what) {
+				printf("[preview] general %s:", what);
+				for (const char *id : {"OGP_FastItemDestroyCheckbox", "OGP_GuildInvitesCheckbox", "OGP_LootAutosplitCheckbox",
+					     "OGP_AnonymousCheckbox", "OGP_RoleplayingCheckbox"})
+					if (const SidlWindow::Control *b = options->Find(id))
+						printf(" %s=%d", b->text.c_str(), b->checked);
+				for (const char *id : {"OGP_PlayerTradeCombobox", "OGP_ItemDroppingCombobox"})
+					if (const SidlWindow::Control *c = options->Find(id))
+						printf(" %s=%s", id + 4,
+							c->choice >= 0 && c->choice < static_cast<int>(c->choices.size()) ? c->choices[c->choice].c_str() : "?");
+				for (const char *id : {"OGP_SoundRealism", "OGP_MusicVolume", "OGP_SoundVolume"}) {
+					const SidlWindow::Control *slider = options->Find(std::string(id) + "Slider");
+					const SidlWindow::Control *label = options->Find(std::string(id) + "ValueLabel");
+					if (slider && label)
+						printf(" %s=%d/%d '%s'", id + 4, slider->slider_value, slider->slider_ticks, label->text.c_str());
+				}
+				printf("\n");
+			};
+			auto ini_general = [&] {
+				IniFile ini;
+				ini.Load(settings_ini);
+				printf("[preview] ini FastItemDestroy=%s PlayerTrade=%s FastDrop=%s MusicVolume=%s\n",
+					ini.Get("Defaults", "FastItemDestroy", "-").c_str(), ini.Get("Defaults", "PlayerTrade", "-").c_str(),
+					ini.Get("Defaults", "FastDrop", "-").c_str(), ini.Get("Sound", "MusicVolume", "-").c_str());
+			};
+			auto press_on = [&](const char *id) {
+				if (const SidlWindow::Control *b = options->Find(id))
+					click(b->rect.x + b->rect.w / 2, b->rect.y + b->rect.h / 2);
+			};
+			auto pick = [&](const char *id, int row) {
+				if (const SidlWindow::Control *c = options->Find(id)) {
+					click(c->rect.x + c->rect.w / 2, c->rect.y + c->rect.h / 2);
+					click(c->rect.x + 20, c->rect.Bottom() + 4 + 15 * row + 15 / 2 - 2);
+				}
+			};
+			options->SelectTab(*tabs, general_tab);
+			frontend.Update(NowMs());
+			page("page picked");
+			h.Snapshot("o0-general");
+			press_on("OGP_FastItemDestroyCheckbox");
+			press_on("OGP_AnonymousCheckbox");
+			press_on("OGP_LootAutosplitCheckbox");
+			pick("OGP_PlayerTradeCombobox", 2);
+			pick("OGP_ItemDroppingCombobox", 2);
+			if (const SidlWindow::Control *slider = options->Find("OGP_MusicVolumeSlider"))
+				click(slider->rect.x + slider->rect.w * 3 / 4, slider->rect.y + slider->rect.h / 2);
+			frontend.Update(NowMs());
+			chat();
+			page("after the clicks");
+			ini_general();
+			h.Snapshot("o0-general-clicked");
+			options->SelectTab(*tabs, 0 == general_tab ? 1 : 0);
+			frontend.Update(NowMs());
+			options->SelectTab(*tabs, general_tab);
+			frontend.Update(NowMs());
+			page("picked again");
+			press_on("OGP_FastItemDestroyCheckbox");
+			press_on("OGP_AnonymousCheckbox");
+			press_on("OGP_LootAutosplitCheckbox");
+			pick("OGP_PlayerTradeCombobox", 0);
+			pick("OGP_ItemDroppingCombobox", 0);
+			if (const SidlWindow::Control *slider = options->Find("OGP_MusicVolumeSlider"))
+				click(slider->rect.x + slider->rect.w / 2, slider->rect.y + slider->rect.h / 2);
+			frontend.Update(NowMs());
+			chat();
+			page("restored");
+			ini_general();
+		}
 		// The Filters page: the switches as the page is picked; Guild Chat and Damage Shields
 		// clicked, Bard Songs set to Group; then the ini, and a /filter shown on the next pick.
 		int filter_tab = -1;

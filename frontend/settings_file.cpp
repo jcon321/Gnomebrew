@@ -37,8 +37,11 @@ namespace
 
 		{"Sound", "Sound", "1", "0: no sound at all (eqclient.ini's Sound=FALSE)."},
 		{"Sound", "MusicVolume", "10",
-			"The options' music and sound levels, 0 to 20 (10: half, as the real client starts)."},
+			"The options' music and sound levels, 0 to 20 (10: half, as the real client starts). The\n"
+			"General page's sliders set them, kept as they move."},
 		{"Sound", "SoundVolume", "10", ""},
+		{"Sound", "SoundRealism", "0",
+			"The General page's Sound Realism, 0 to 20. Kept, but it doesn't change the sound yet."},
 		{"Sound", "Music", "midi",
 			"Where the XMI music (the zones before Luclin) plays. midi: Windows' MIDI synth, like the\n"
 			"real client (the SoundFont without a MIDI out). sf2: our own mix through SoundFont.\n"
@@ -115,8 +118,14 @@ namespace
 			"/lootnodrop: whether looting a NO DROP item asks first. 0 always, 1 only for what you can't\n"
 			"use, 2 never. Kept on exit."},
 		{"Defaults", "FastDrop", "0",
-			"/fastdrop: 1 drops an item clicked onto the ground at once, 0 asks first, -1 never drops it.\n"
-			"Kept on exit."},
+			"/fastdrop and the General page's Fast Drop: 1 drops an item clicked onto the ground at once,\n"
+			"0 asks first, -1 never drops it. Kept on exit."},
+		{"Defaults", "FastItemDestroy", "0",
+			"The General page's Fast Item Destroy: 1 destroys what's on the cursor without asking."},
+		{"Defaults", "GuildInvites", "1",
+			"The General page's Receive Guild Invites (kept; guild invites aren't handled yet)."},
+		{"Defaults", "PlayerTrade", "2",
+			"The General page's Allow trading with: 2 everyone, 1 party members only, 0 no one."},
 
 		{"Filters", "DamageShields", "0",
 			"/filter's switches, kept as they change and sent to the zone (OP_SetServerFilter).\n"

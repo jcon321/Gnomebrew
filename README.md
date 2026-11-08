@@ -205,7 +205,11 @@ WeatherSounds=1
 - eqmain's screens (start, login, server select) are 640x480 art. They're
   drawn at their native size in the middle of the window, black around them, not scaled.
 - `Sound=0` turns all sound off (the real client's `Sound=FALSE`). `MusicVolume` and `SoundVolume` are
-  the options' music and sound levels, 0 to 20 (10 by default, half volume, as the client starts).
+  the options' music and sound levels, 0 to 20 (10 by default, half volume, as the client starts),
+  set by the General page's sliders. `SoundRealism` is that page's third slider, kept but not heard yet.
+- `[Defaults]` `FastItemDestroy`, `GuildInvites` and `PlayerTrade` are the General page's Fast Item
+  Destroy (1: Destroy doesn't ask), Receive Guild Invites and Allow trading with (2 everyone, 1 party
+  members only, 0 no one), kept as they change (eqgame keeps them in eqOptions1.opt).
   `Music` is where the XMI music (the zones before Luclin) goes: `midi`, Windows' MIDI synth (the
   Microsoft GS Wavetable Synth), which is where the real client's went (Miles' XMIDI driver on the MIDI
   mapper); or `sf2`, our own mix through `SoundFont`, one of the General MIDI banks EverQuest ships
@@ -1362,6 +1366,34 @@ details and the nearest spawns at the top left and the radar at the top right.
   the chat keep their color. Reset Default Colors asks eqstr 6602 for 20 s (`CConfirmationDialog`
   0x21), then `RestoreDefaultColors` (@0042ca2a) saves each `GetDefaultUserDefinedColor`. The page
   scrolls (Style_VScroll): a scrolling Page moves its pieces as a scrolling Screen does.
+- **The General page** (`COptionsWnd`'s `OptionsGeneralPage`, `frontend/options_window.*`):
+  `SyncGeneralPage` (@0042a4b2) sets it when the window's made and when the tab's picked
+  (`ProcessGeneralOptionsTab`); `GeneralPageWndNotification` (@0042b532) takes a click (1), a
+  combo's pick or a slider's move (0xd), then `saveOptions`.
+  - Fast Item Destroy: `DAT_00798b1c` (1 checked); a click says 12032 "Fast Item Destroy is ON." or
+    12031 in color 15.
+  - Receive Guild Invites: `DAT_00798adc` (1 checked, by default); `msg_invite_guild` reads it.
+  - Autosplit: `IsAutoSplitEnabled` (the profile's byte at 3348); a click says 12036 or 12037 in
+    0x111 and `CEverQuest_ToggleAutoSplit` (@005376af) sends `OP_SpawnAppearance` 28 (0x1c) with it.
+  - Anonymous and Roleplaying: one state, `DAT_00798ad0` (our spawn's `AnonymousState`): 1
+    anonymous, 2 roleplaying, 3 both. Anonymous checked at 1 or 3, Roleplaying at 2 or 3; a click
+    adds or takes 1 (Anonymous) or 2 (Roleplaying), says 12034/12035 or 13233/13234 in 0x111, sends
+    `OP_SpawnAppearance` 21 with the state, and `SavePC`; Roleplaying also retints our name
+    (`CDisplay_SetNameSpriteTint`). Unlike /anonymous, the page doesn't stop Anonymous while
+    roleplaying.
+  - Allow trading with: `DAT_00798ad8`, 2 everyone (by default), 1 party members only, 0 no one, on
+    the combo box's choices the other way round. `msg_req_trade` (@004e7231) turns a request down
+    with `OP_TradeRefused` reason 'b' at 0 and 'c' at 1 unless the trader's in our group, then says
+    1447.
+  - Fast Drop: `/fastdrop`'s setting (`DAT_0079966c`): -1 never is the third choice, 1 the second
+    (without confirmation), anything else the first. A pick runs `_fastdrop` with eqstr 12946 "off",
+    12947 "on" or 12989 "never", which says so.
+  - Load UI Skin: `CLoadskinWnd::Activate` (not ours yet).
+  - The sliders, 21 ticks (`SetNumTicks(0x15)`): Sound Realism (`DAT_00798b04`,
+    `EqSoundManager::SetEffectsLevel`), Music Volume (`DAT_00798afc`) and Sound Volume
+    (`DAT_00798b00`), each at value * 100 / 20 hundredths, and the value label beside each "%d%c"
+    (the same percentage and '%'). `CSliderWnd::SetValue` notifies only when the value changes, so
+    a label keeps the XML's "0 %" until its slider first moves off 0.
 - **The Filters page** (`COptionsWnd`'s `OptionsChatPage`, `frontend/options_window.*`): `Chat0`..`Chat9`
   are guild chat, socials, group chat, shouts, auctions, OOC, my misses, others' misses, others'
   hits and attacker missing me (`ChatArray`, DAT_00798bf4..c18), checked when shown; `DamageShields`
@@ -1949,8 +1981,8 @@ details and the nearest spawns at the top left and the radar at the top right.
   12294), a NO DROP item only to an NPC (12921, 12922): `OP_TradeRequest` (0x40d1,
   `BeginTrade_Struct` {target, source}). The zone answers an NPC's at once with
   `OP_TradeRequestAck` (0x40e6) and passes a player's on; their `msg_req_trade` opens the window
-  and acks, or (busy) sends `OP_TradeRefused` (0x40d6, {target, source, reason}: 'b' nobody, 'c'
-  group only, 1 busy) and says 1447. The ack (`msg_begin_trade`) opens ours with the cursor's item
+  and acks, or sends `OP_TradeRefused` (0x40d6, {target, source, reason}: 'b' nobody and 'c' group
+  only from the General page's "Allow trading with", 1 busy) and says 1447. The ack (`msg_begin_trade`) opens ours with the cursor's item
   or coins in it, the give window for an NPC. Items go onto the same stack in our slots, else into
   the first empty one (8 for a player, 4 for an NPC), as `OP_MoveItem` to 3000 + n; full is 12319
   in color 10. Coins on the cursor onto our money buttons go in (`OP_MoveCoin` to 3). Theirs come
@@ -2067,7 +2099,7 @@ details and the nearest spawns at the top left and the radar at the top right.
   `encum_factor`. The class is its Kunark title from 51 (`KunarkClass`), and the AA gauge shows
   from 51.
   - **Destroy** (`CInventoryWnd_DestroyHeld` @00421637): with the options' FastItemDestroy off
-    (`DAT_00798b1c`, the General page's checkbox, not kept in the ini and off at start) the
+    (`DAT_00798b1c`, the General page's checkbox, `[Defaults] FastItemDestroy`, off to start with) the
     confirmation dialog (category 5, 10 s) asks "Are you absolutely sure you want to destroy your
     %1?" (eqstr 2043) for the item on the cursor or 2061 for coins; nothing on the cursor, nothing
     happens. Yes is `EQ_PC::DestroyHeldItemOrMoney` (@004d0d88): `OP_MoveItem` {0, -1, 0} and the

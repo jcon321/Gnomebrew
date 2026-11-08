@@ -108,6 +108,24 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 			m_debug.Load(ini);
 			m_key_bindings.Load(ini); // CEverQuest_loadOptions' readKeyMapFromIni
 			m_filters.Load(ini);
+			// The General page's settings (CEverQuest_loadOptions' eqOptions1.opt, its defaults).
+			auto number = [&](const char *section, const char *key, int fallback, int low, int high) {
+				std::string value = ini.Get(section, key);
+				int n = fallback;
+				try {
+					if (!value.empty())
+						n = std::stoi(value);
+				}
+				catch (...) {
+				}
+				return std::clamp(n, low, high);
+			};
+			m_fast_item_destroy = number("Defaults", "FastItemDestroy", 0, 0, 1) == 1;
+			m_guild_invites = number("Defaults", "GuildInvites", 1, 0, 1) == 1;
+			m_trade_with = number("Defaults", "PlayerTrade", 2, 0, 2);
+			m_sound_realism = number("Sound", "SoundRealism", 0, 0, 20);
+			m_music_volume = number("Sound", "MusicVolume", 10, 0, 20);
+			m_sound_volume = number("Sound", "SoundVolume", 10, 0, 20);
 		}
 	}
 	m_zone.SetServerFilters(m_filters.Packet());
@@ -2192,6 +2210,14 @@ void FrontEnd::BuildZoneWindows()
 	trade_host.height = [this](uint16_t id) { return m_zone_view ? m_zone_view->CenterHeight(id) : 0.0f; };
 	// msg_req_trade: busy too while auto attack's on.
 	trade_host.ok_to_transact = [this] { return IsOkToTransact() && !m_attack; };
+	trade_host.refusal = [this](const std::string &name) -> uint8_t {
+		// msg_req_trade: 'b' with no one; 'c' with party members only, unless they're in ours.
+		if (m_trade_with == 0)
+			return 'b';
+		if (m_trade_with == 1 && !(m_group.InGroup() && m_group.IsAGroupMember(name)))
+			return 'c';
+		return 0;
+	};
 	m_trade.Attach(m_windows, m_zone, m_window_state, m_game_values, std::move(trade_host));
 	GroundItems::Host ground_host;
 	ground_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
@@ -2209,6 +2235,10 @@ void FrontEnd::BuildZoneWindows()
 	options_host.save_color = [this](int index, uint32_t rgb) { SaveUserColor(index, rgb); };
 	options_host.pick_color = [this](uint32_t color, std::function<void(uint32_t)> done) {
 		m_color_picker.Activate(color, std::move(done));
+	};
+	options_host.general = [this](OptionsWindow::Host::General setting) { return GeneralOption(setting); };
+	options_host.set_general = [this](OptionsWindow::Host::General setting, int value) {
+		SetGeneralOption(setting, value);
 	};
 	options_host.filters = &m_filters;
 	options_host.filters_changed = [this] { FiltersChanged(); };
@@ -3306,6 +3336,99 @@ void FrontEnd::ApplyCombat(const Combat::Report &report)
 	if (m_zone_view)
 		for (const Combat::Sound &sound : report.sounds)
 			m_zone_view->PlayActorSound(sound.spawn, sound.wave);
+}
+
+int FrontEnd::GeneralOption(OptionsWindow::Host::General setting) const
+{
+	using General = OptionsWindow::Host::General;
+	switch (setting) {
+	case General::FastItemDestroy: return m_fast_item_destroy ? 1 : 0;
+	case General::GuildInvites: return m_guild_invites ? 1 : 0;
+	case General::Autosplit: return m_zone.Profile().autosplit ? 1 : 0;
+	case General::Anonymous:
+	case General::Roleplaying: return m_zone.Self().anon;
+	case General::PlayerTrade: return m_trade_with;
+	case General::ItemDropping: return m_ground.fast_drop;
+	case General::SoundRealism: return m_sound_realism;
+	case General::MusicVolume: return m_music_volume;
+	case General::SoundVolume: return m_sound_volume;
+	case General::LoadSkin: break;
+	}
+	return 0;
+}
+
+void FrontEnd::SetGeneralOption(OptionsWindow::Host::General setting, int value)
+{
+	// COptionsWnd::GeneralPageWndNotification (@0042b532), then saveOptions.
+	using General = OptionsWindow::Host::General;
+	switch (setting) {
+	case General::FastItemDestroy:
+		m_fast_item_destroy = value != 0;
+		ChatOut(m_fast_item_destroy ? EqString(12032, "Fast Item Destroy is ON.") : EqString(12031, "Fast Item Destroy is OFF."),
+			ChatType::Yellow);
+		SaveSetting("Defaults", "FastItemDestroy", value != 0);
+		break;
+	case General::GuildInvites:
+		m_guild_invites = value != 0;
+		SaveSetting("Defaults", "GuildInvites", value != 0);
+		break;
+	case General::Autosplit:
+		// IsAutoSplitEnabled, said (12036, 12037), and CEverQuest_ToggleAutoSplit.
+		ChatOut(value ? EqString(12036, "You will now automatically split money with your group.")
+		              : EqString(12037, "You will no longer split money with your group."),
+			ChatType::Default);
+		m_zone.SetAutoSplit(value != 0);
+		break;
+	case General::Anonymous:
+	case General::Roleplaying: {
+		// The state said (12034, 12035; 13233, 13234), OP_SpawnAppearance 21 with it, our name
+		// sprite's tint after it (it follows Self()).
+		bool anonymous = setting == General::Anonymous;
+		bool on = anonymous ? value == 1 || value == 3 : value == 2 || value == 3;
+		std::string text = anonymous ? (on ? EqString(12034, "You are now anonymous.") : EqString(12035, "You are no longer anonymous."))
+		                             : (on ? EqString(13233, "You are now roleplaying.")
+		                                   : EqString(13234, "You are no longer roleplaying."));
+		ChatOut(text, ChatType::Default);
+		m_zone.SetAnonymous(static_cast<uint8_t>(std::clamp(value, 0, 3)));
+		break;
+	}
+	case General::PlayerTrade:
+		m_trade_with = std::clamp(value, 0, 2);
+		SaveSetting("Defaults", "PlayerTrade", m_trade_with);
+		break;
+	case General::ItemDropping:
+		// _fastdrop with "off", "on" or "never".
+		InterpretCommand("/fastdrop " + (value == 0 ? EqString(12946, "off") : value == 1 ? EqString(12947, "on") : EqString(12989, "never")));
+		break;
+	case General::SoundRealism:
+		// EqSoundManager::SetEffectsLevel: kept, not yet heard (TODO).
+		m_sound_realism = value;
+		SaveSetting("Sound", "SoundRealism", value);
+		break;
+	case General::MusicVolume:
+	case General::SoundVolume:
+		// SetWaveVolume and SetMusicVolume with the value * 100 / 20 hundredths.
+		(setting == General::MusicVolume ? m_music_volume : m_sound_volume) = value;
+		(setting == General::MusicVolume ? m_ui.sound.music_volume : m_ui.sound.sound_volume) = (value * 100 / 20) * 0.01f;
+		if (m_sound)
+			m_sound->SetVolumes(m_ui.sound);
+		SaveSetting("Sound", setting == General::MusicVolume ? "MusicVolume" : "SoundVolume", value);
+		break;
+	case General::LoadSkin:
+		// CLoadskinWnd::Activate: not ours yet (TODO).
+		break;
+	}
+}
+
+void FrontEnd::SaveSetting(const char *section, const char *key, int value)
+{
+	if (m_config.settings_ini.empty())
+		return;
+	IniFile ini;
+	ini.Load(m_config.settings_ini); // keep the rest
+	ini.Set(section, key, std::to_string(value));
+	if (!ini.Save(m_config.settings_ini))
+		Log(std::string("settings: couldn't write ") + section + " " + key + " to " + m_config.settings_ini);
 }
 
 void FrontEnd::FiltersChanged()

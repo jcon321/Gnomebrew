@@ -15,6 +15,32 @@ namespace
 	const char *const DefaultsButton = "OKP_DefaultKeysButton";
 	const char *const ColorPage = "OptionsColorPage";
 	const char *const ColorDefaultsButton = "UserColorDefault";
+	const char *const GeneralPage = "OptionsGeneralPage";
+	using General = OptionsWindow::Host::General;
+	// The General page's check boxes (SyncGeneralPage: checked when the setting is 1).
+	struct GeneralCheck
+	{
+		const char *id;
+		General setting;
+	};
+	constexpr GeneralCheck GeneralChecks[] = {{"OGP_FastItemDestroyCheckbox", General::FastItemDestroy},
+		{"OGP_GuildInvitesCheckbox", General::GuildInvites}, {"OGP_LootAutosplitCheckbox", General::Autosplit}};
+	const char *const AnonymousCheck = "OGP_AnonymousCheckbox";
+	const char *const RoleplayingCheck = "OGP_RoleplayingCheckbox";
+	const char *const LoadSkinButton = "OGP_LoadSkinButton";
+	const char *const PlayerTradeCombo = "OGP_PlayerTradeCombobox";
+	const char *const ItemDroppingCombo = "OGP_ItemDroppingCombobox";
+	// The sliders and their value labels, 21 ticks each (COptionsWnd::COptionsWnd's SetNumTicks).
+	struct GeneralSlider
+	{
+		const char *id, *label;
+		General setting;
+	};
+	constexpr GeneralSlider GeneralSliders[] = {
+		{"OGP_SoundRealismSlider", "OGP_SoundRealismValueLabel", General::SoundRealism},
+		{"OGP_MusicVolumeSlider", "OGP_MusicVolumeValueLabel", General::MusicVolume},
+		{"OGP_SoundVolumeSlider", "OGP_SoundVolumeValueLabel", General::SoundVolume}};
+	constexpr int SliderTicks = 0x15;
 	const char *const ChatPage = "OptionsChatPage";
 	// COptionsWnd's ChatArray ("Chat%d"): DAT_00798bf4..c18, 1 shown.
 	constexpr int32_t ChatFilters::*const ChatSwitches[] = {&ChatFilters::guild, &ChatFilters::socials,
@@ -62,7 +88,7 @@ void OptionsWindow::Attach(WindowManager &windows, KeyBindings &keys, Host host)
 		for (int page : tabs->children) {
 			SidlWindow::Control &p = wnd->Item(page);
 			const std::string &id = p.def->screen_id;
-			if (id != KeyboardPage && id != ColorPage && id != ChatPage)
+			if (id != KeyboardPage && id != ColorPage && id != ChatPage && id != GeneralPage)
 				for (int piece : p.children)
 					wnd->Item(piece).visible = false;
 		}
@@ -75,8 +101,98 @@ void OptionsWindow::Attach(WindowManager &windows, KeyBindings &keys, Host host)
 	m_confirming_colors = false;
 	m_color_page_shown = false;
 	m_chat_page_shown = false;
+	m_general_page_shown = false;
+	for (int i = 0; i < 3; ++i)
+		if (SidlWindow::Control *slider = wnd->Find(GeneralSliders[i].id)) {
+			slider->slider_ticks = SliderTicks;
+			wnd->SetSlider(*slider, slider->slider_value);
+			m_slider_values[i] = slider->slider_value;
+		}
 	UpdateUserColors(); // COptionsWnd::COptionsWnd
+	SyncGeneralPage();
 	SyncChatPage();
+}
+
+void OptionsWindow::SyncGeneralPage()
+{
+	SidlWindow *wnd = m_windows ? m_windows->Find(Screen) : nullptr;
+	if (!wnd || !m_host.general)
+		return;
+	for (const GeneralCheck &check : GeneralChecks)
+		if (SidlWindow::Control *button = wnd->Find(check.id))
+			button->checked = m_host.general(check.setting) == 1;
+	int anon = m_host.general(General::Anonymous);
+	if (SidlWindow::Control *button = wnd->Find(AnonymousCheck))
+		button->checked = anon == 1 || anon == 3;
+	if (SidlWindow::Control *button = wnd->Find(RoleplayingCheck))
+		button->checked = anon == 2 || anon == 3;
+	if (SidlWindow::Control *combo = wnd->Find(PlayerTradeCombo)) {
+		int trade = m_host.general(General::PlayerTrade);
+		combo->choice = trade == 0 ? 2 : trade == 1 ? 1 : 0;
+	}
+	if (SidlWindow::Control *combo = wnd->Find(ItemDroppingCombo)) {
+		int drop = m_host.general(General::ItemDropping);
+		combo->choice = drop == -1 ? 2 : drop == 1 ? 1 : 0;
+	}
+	for (const GeneralSlider &slider : GeneralSliders)
+		if (SidlWindow::Control *control = wnd->Find(slider.id))
+			wnd->SetSlider(*control, m_host.general(slider.setting)); // CSliderWnd::SetValue
+	GeneralPageSliders(); // SetValue's notification, for those it moved
+}
+
+void OptionsWindow::GeneralPageSliders()
+{
+	SidlWindow *wnd = m_windows ? m_windows->Find(Screen) : nullptr;
+	if (!wnd)
+		return;
+	for (int i = 0; i < 3; ++i) {
+		const GeneralSlider &slider = GeneralSliders[i];
+		const SidlWindow::Control *control = wnd->Find(slider.id);
+		if (!control || control->slider_value == m_slider_values[i])
+			continue;
+		m_slider_values[i] = control->slider_value;
+		// The value label, "%d%c" with the value * 100 / 20 and '%'; the level, saved.
+		if (SidlWindow::Control *label = wnd->Find(slider.label))
+			label->text = std::to_string(control->slider_value * 100 / 20) + "%";
+		if (m_host.set_general)
+			m_host.set_general(slider.setting, control->slider_value);
+	}
+}
+
+bool OptionsWindow::GeneralPageClick(const std::string &control)
+{
+	SidlWindow *wnd = m_windows->Find(Screen);
+	const SidlWindow::Control *clicked = wnd ? wnd->Find(control) : nullptr;
+	if (!clicked || !m_host.general || !m_host.set_general)
+		return false;
+	for (const GeneralCheck &check : GeneralChecks)
+		if (control == check.id) {
+			m_host.set_general(check.setting, clicked->checked ? 1 : 0);
+			return true;
+		}
+	// Anonymous adds or takes 1 from the state, Roleplaying 2.
+	if (control == AnonymousCheck || control == RoleplayingCheck) {
+		bool anonymous = control == AnonymousCheck;
+		int step = anonymous ? 1 : 2;
+		int anon = m_host.general(General::Anonymous) + (clicked->checked ? step : -step);
+		m_host.set_general(anonymous ? General::Anonymous : General::Roleplaying, anon);
+		return true;
+	}
+	if (control == LoadSkinButton) {
+		m_host.set_general(General::LoadSkin, 0);
+		return true;
+	}
+	if (control == PlayerTradeCombo) {
+		if (clicked->choice >= 0 && clicked->choice <= 2)
+			m_host.set_general(General::PlayerTrade, 2 - clicked->choice);
+		return true;
+	}
+	if (control == ItemDroppingCombo) {
+		// /fastdrop with eqstr 12946 "off", 12947 "on" or 12989 "never".
+		m_host.set_general(General::ItemDropping, clicked->choice == 0 ? 0 : clicked->choice == 1 ? 1 : -1);
+		return true;
+	}
+	return false;
 }
 
 void OptionsWindow::SyncChatPage()
@@ -241,7 +357,7 @@ bool OptionsWindow::Click(const std::string &window, const std::string &control,
 		}
 		return true;
 	}
-	if (ChatPageClick(control))
+	if (GeneralPageClick(control) || ChatPageClick(control))
 		return true;
 	if (control.rfind("UserColor", 0) == 0) {
 		int index = -1;
@@ -346,6 +462,13 @@ void OptionsWindow::Frame(uint64_t now_ms)
 	if (colors && !m_color_page_shown)
 		UpdateUserColors();
 	m_color_page_shown = colors;
+	// ProcessGeneralOptionsTab's SyncGeneralPage, as the General page is picked; a slider moved.
+	const SidlWindow::Control *general_page = options ? options->Find(GeneralPage) : nullptr;
+	bool general = general_page && general_page->visible;
+	if (general && !m_general_page_shown)
+		SyncGeneralPage();
+	m_general_page_shown = general;
+	GeneralPageSliders();
 	// ProcessChatOptionsTab's SyncChatPage, as the Filters page is picked.
 	const SidlWindow::Control *chat_page = options ? options->Find(ChatPage) : nullptr;
 	bool chat = chat_page && chat_page->visible;
