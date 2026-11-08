@@ -218,7 +218,7 @@ no rules of its own.
 3. ~~**A real chat window**~~: done (`frontend/chat_window.*`, `chat_text.*`, `chat_commands.cpp`).
    Still to do: more windows and the channel map (eqgame's `CChatManager`: which window each
    channel goes to, set from the right-click menu; there were no tabs in this era), the chat font
-   size, hold-to-repeat on the scrollbar's arrows, languages scrambled by skill
+   size, scrolling by pixels (below), languages scrambled by skill
    (`HearBabel`), and the commands that still say they aren't supported (/lfg, /rtarget...).
    /who (CEverQuest::Who: this zone's players filtered by class, race, levels, GM, LFG, guild or
    name, and our corpses; `all` through OP_WhoAllRequest and msg_who_response's lines), /whotarget,
@@ -265,7 +265,14 @@ no rules of its own.
    to do: the General, Display, Mouse and Filters pages, which show empty (SyncGeneralPage,
    SyncDisplayPage, InitKeyboardAssignments' mouse settings, SyncChatPage); the Keyboard page's
    temporary Implemented column and the wider window it needs come out once every command is done. A combo box's list doesn't go when the click is outside its
-   window, and has no scrollbar when ListHeight cuts it short (CListWnd's style 1). Lists draw the
+   window, and has no scrollbar when ListHeight cuts it short (CListWnd's style 1). Scrollbars
+   step by pixels in eqgame, not rows: a press on an arrow is HandleVScroll 0 or 2
+   (adjustScrollPosition @005744d0: 2 pixels; CListWnd's @0057c780 the same, then its update), and
+   CXWndManager::ProcessWindowTransitions (@005a07d0) calls it again (1 or 3) every frame while the
+   arrow's still pressed under the mouse (field 0x5c 10, 0xd), the gutter a page a frame (5, 6;
+   0xb, 0xc) until the thumb reaches the cursor. Ours keep `scroll_pos` in rows (lists, STML
+   boxes, the chat, scrolling pages) and step a row a press with no repeat; holding needs pixel
+   positions first. Lists draw the
    row under the cursor yellow and the selected one on their selection color (CListWnd::DrawItem,
    DrawLine; red, or SetColors' gray in the train, skills and skills select windows); still to do:
    IsLineEnabled for lists other than the context menus', a multiselect list's own selected rows,
