@@ -1174,6 +1174,70 @@ namespace
 			frontend.Update(NowMs());
 			colors("after the defaults");
 		}
+		// The Filters page: the switches as the page is picked; Guild Chat and Damage Shields
+		// clicked, Bard Songs set to Group; then the ini, and a /filter shown on the next pick.
+		int filter_tab = -1;
+		for (size_t i = 0; i < tabs->children.size(); ++i)
+			if (options->Item(tabs->children[i]).def->screen_id == "OptionsChatPage")
+				filter_tab = static_cast<int>(i);
+		if (filter_tab >= 0) {
+			auto page = [&](const char *what) {
+				printf("[preview] filters %s:", what);
+				for (int i = 0; i < 10; ++i)
+					if (const SidlWindow::Control *b = options->Find("Chat" + std::to_string(i)))
+						printf(" %s=%d", b->text.c_str(), b->checked);
+				for (const char *id : {"DamageShields", "NPCSpells"})
+					if (const SidlWindow::Control *b = options->Find(id))
+						printf(" %s=%d", b->text.c_str(), b->checked);
+				for (const char *id : {"PCSpellsComboBox", "BardSongsComboBox", "CriticalSpellsComboBox", "CriticalMeleeComboBox"})
+					if (const SidlWindow::Control *c = options->Find(id))
+						printf(" %s=%s", id, c->choice >= 0 && c->choice < static_cast<int>(c->choices.size()) ? c->choices[c->choice].c_str() : "?");
+				printf("\n");
+			};
+			auto ini_filters = [&] {
+				IniFile ini;
+				ini.Load(settings_ini);
+				printf("[preview] ini [Filters] GuildSay=%s DamageShields=%s BardSongs=%s Ooc=%s\n",
+					ini.Get("Filters", "GuildSay", "-").c_str(), ini.Get("Filters", "DamageShields", "-").c_str(),
+					ini.Get("Filters", "BardSongs", "-").c_str(), ini.Get("Filters", "Ooc", "-").c_str());
+			};
+			options->SelectTab(*tabs, filter_tab);
+			frontend.Update(NowMs());
+			page("page picked");
+			h.Snapshot("o0-filters");
+			for (const char *id : {"Chat0", "DamageShields"})
+				if (const SidlWindow::Control *b = options->Find(id))
+					click(b->rect.x + b->rect.w / 2, b->rect.y + b->rect.h / 2);
+			if (SidlWindow::Control *bard = options->Find("BardSongsComboBox")) {
+				click(bard->rect.x + bard->rect.w / 2, bard->rect.y + bard->rect.h / 2);
+				int line = 15;
+				click(bard->rect.x + 20, bard->rect.Bottom() + 4 + line * 2 + line / 2 - 2); // the third, Group
+			}
+			page("after the clicks");
+			ini_filters();
+			h.Snapshot("o0-filters-clicked");
+			h.Key(InputEvent::Key::Enter);
+			h.Type("/filter ooc");
+			h.Key(InputEvent::Key::Enter);
+			frontend.Update(NowMs());
+			chat();
+			page("after /filter ooc (as before until picked)");
+			options->SelectTab(*tabs, 0);
+			frontend.Update(NowMs());
+			options->SelectTab(*tabs, filter_tab);
+			frontend.Update(NowMs());
+			page("picked again");
+			ini_filters();
+			// Back as they were.
+			for (const char *id : {"Chat0", "Chat5", "DamageShields"})
+				if (const SidlWindow::Control *b = options->Find(id))
+					click(b->rect.x + b->rect.w / 2, b->rect.y + b->rect.h / 2);
+			if (SidlWindow::Control *bard = options->Find("BardSongsComboBox")) {
+				click(bard->rect.x + bard->rect.w / 2, bard->rect.y + bard->rect.h / 2);
+				click(bard->rect.x + 20, bard->rect.Bottom() + 4 + 15 / 2 - 2); // the first, All
+			}
+			page("restored");
+		}
 		options->SelectTab(*tabs, 3);
 		SidlWindow::Control *list = options->Find("OKP_KeyboardAssignmentList");
 		SidlWindow::Control *combo = options->Find("OKP_KeyboardFilterCombobox");

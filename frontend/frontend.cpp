@@ -2210,6 +2210,8 @@ void FrontEnd::BuildZoneWindows()
 	options_host.pick_color = [this](uint32_t color, std::function<void(uint32_t)> done) {
 		m_color_picker.Activate(color, std::move(done));
 	};
+	options_host.filters = &m_filters;
+	options_host.filters_changed = [this] { FiltersChanged(); };
 	m_options.Attach(m_windows, m_key_bindings, std::move(options_host));
 	m_windows.TakeChanged();
 }

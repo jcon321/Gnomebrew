@@ -266,9 +266,11 @@ no rules of its own.
 5. **Options window.** The Keyboard page is done (`frontend/options_window.*`, COptionsWnd's
    keyboard page; see 6), with a combo box (CComboWnd) in `frontend/sidl.*`, and the Colors page
    (ColorPageWndNotification, SaveColors, RestoreDefaultColors, into my-client.ini's
-   `[TextColors]`; /usercolor (@004fe3a2) sets, resets and lists them from the chat line). Still
-   to do: the General, Display, Mouse and Filters pages, which show empty (SyncGeneralPage,
-   SyncDisplayPage, InitKeyboardAssignments' mouse settings, SyncChatPage); the Keyboard page's
+   `[TextColors]`; /usercolor (@004fe3a2) sets, resets and lists them from the chat line), and the
+   Filters page (SyncChatPage, ChatPageWndNotification: the /filter switches, sent and kept). Still
+   to do: the General, Display and Mouse pages, which show empty (SyncGeneralPage,
+   SyncDisplayPage, InitKeyboardAssignments' mouse settings); the combo boxes' list colors
+   (CComboWnd::SetColors 0xff808080, on the Keyboard and Filters pages); the Keyboard page's
    temporary red rows (commands not yet done) go once every command is done.
    A combo box's list that's down takes any press (CXWndManager's 0x34): off it, the list goes
    and the press goes no further. Still to do: its scrollbar when ListHeight cuts it short

@@ -1,7 +1,16 @@
 #pragma once
 
 // eqgame's COptionsWnd on the "OptionsWindow" SIDL screen (EQUI_OptionsWindow.xml). So far its
-// Keyboard and Colors pages do something; the General, Display, Mouse and Filters pages show empty.
+// Keyboard, Filters and Colors pages do something; the General, Display and Mouse pages show empty.
+//
+// The Filters page ("OptionsChatPage"; SyncChatPage @0042a897, ChatPageWndNotification @0042c747):
+// Chat0..Chat9 checked for the channels and messages shown (guild, socials, group, shouts,
+// auctions, OOC, my misses, others' misses, others' hits, misses of me), DamageShields and
+// NPCSpells checked when they're shown (their switches are 1 when hidden), and the PC spells, bard
+// songs, critical spells and critical melee combo boxes on their switch. They show the /filter
+// switches as the window's made and as the page is picked (ProcessChatOptionsTab), not as /filter
+// changes them. A click sets the switch, and the zone's told and they're kept
+// (CEverQuest_send_update_filters, saveOptions, saveOptions2).
 //
 // The Colors page (ColorPageWndNotification @0042c85b): UserColor0..71 each show their label in the
 // player's text color they stand for (COptionsWnd_GetUserDefinedColor @0042a953, black as white),
@@ -21,6 +30,7 @@
 // every key back (ResetKeysToDefault @0042b399). Ours, for now: a command my-client doesn't do
 // yet is listed in red.
 
+#include "filters.h"
 #include "key_map.h"
 
 #include <cstdint>
@@ -45,10 +55,13 @@ public:
 		std::function<uint32_t(int index)> user_color;
 		std::function<void(int index, uint32_t rgb)> save_color;
 		std::function<void(uint32_t color, std::function<void(uint32_t)> done)> pick_color;
+		// The Filters page: the /filter switches, and a click having changed one of them.
+		ChatFilters *filters = nullptr;
+		std::function<void()> filters_changed;
 	};
 
-	// The window's pages emptied but the keyboard's, and the keyboard page filled
-	// (UpdateKeyboardAssignmentList: the first category).
+	// The window's pages emptied but the keyboard's, filters' and colors', the keyboard page filled
+	// (UpdateKeyboardAssignmentList: the first category) and the filters page set (SyncChatPage).
 	void Attach(WindowManager &windows, KeyBindings &keys, Host host);
 
 	// A click on the keyboard page, or on the confirmation dialog while it asks about the
@@ -70,6 +83,8 @@ private:
 	bool KeyboardPageShowing() const;
 	void ShowConfirmation(uint64_t now_ms); // CConfirmationDialog::Activate with eqstr 6602
 	void UpdateUserColors();                // COptionsWnd_GetUserDefinedColor
+	void SyncChatPage();
+	bool ChatPageClick(const std::string &control); // ChatPageWndNotification
 
 	WindowManager *m_windows = nullptr;
 	KeyBindings *m_keys = nullptr;
@@ -79,5 +94,6 @@ private:
 	bool m_confirming = false;
 	bool m_confirming_colors = false; // the dialog's 0x21: RestoreDefaultColors on yes
 	bool m_color_page_shown = false;
+	bool m_chat_page_shown = false;
 	uint64_t m_confirm_until_ms = 0;
 };

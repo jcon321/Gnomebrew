@@ -484,7 +484,8 @@ additions of ours, or ones taken from TAKP's eqgame.dll or Zeal rather than stoc
   open (see Keymap), the arrows don't move you while you type with these defaults; with the arrows
   as the keys and W A S D as the alternates, they would.
 - **Options window's not-implemented rows:** for now the Keyboard page lists a command my-client
-  doesn't do yet in red. The window keeps its EQUI size. The other pages show empty.
+  doesn't do yet in red. The window keeps its EQUI size. The General, Display and Mouse pages show
+  empty.
 - **Look up and Look down** tilt the view 5 degrees a press and keep going with Windows' key repeat;
   eqgame's `ProcessControls` speeds the tilt up while the key's held.
 - **Debug menu** (F11, ahead of the keymap's Toggle netstat): the stat card with its folding sections, the 2D radar, the RENDER toggles
@@ -1361,6 +1362,18 @@ details and the nearest spawns at the top left and the radar at the top right.
   the chat keep their color. Reset Default Colors asks eqstr 6602 for 20 s (`CConfirmationDialog`
   0x21), then `RestoreDefaultColors` (@0042ca2a) saves each `GetDefaultUserDefinedColor`. The page
   scrolls (Style_VScroll): a scrolling Page moves its pieces as a scrolling Screen does.
+- **The Filters page** (`COptionsWnd`'s `OptionsChatPage`, `frontend/options_window.*`): `Chat0`..`Chat9`
+  are guild chat, socials, group chat, shouts, auctions, OOC, my misses, others' misses, others'
+  hits and attacker missing me (`ChatArray`, DAT_00798bf4..c18), checked when shown; `DamageShields`
+  and `NPCSpells` are checked when their switch is 0 (DAT_00799670, DAT_00799658, 1 hidden); the
+  `PCSpellsComboBox` (all, off, group), `BardSongsComboBox` (all, me, group, off),
+  `CriticalSpellsComboBox` and `CriticalMeleeComboBox` (all, me, off) show their switch as the
+  choice. `SyncChatPage` (@0042a897) sets them when the window's made and when the tab's picked
+  (`ProcessChatOptionsTab`), so a `/filter` while the page is up shows on the next pick.
+  `ChatPageWndNotification` (@0042c747) takes a click's check or a combo's choice (in range) into
+  the switch, then `CEverQuest_send_update_filters`, `saveOptions` and `saveOptions2` (eqOptions1.opt
+  and eqOptions2.opt in eqgame; my-client.ini's `[Filters]` here). The constructor also gives the
+  four combo boxes `CComboWnd::SetColors(0xff808080, ...)`, which we don't do yet.
 - **Combo boxes** (`CComboWnd`): the choice in white (grey disabled) down the middle of the client
   area left of the button, which is as wide as its `Button` template's Normal and drawn Pressed
   while the list is down. The list hangs from the box's bottom, as wide as the box left of the

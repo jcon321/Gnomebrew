@@ -15,6 +15,29 @@ namespace
 	const char *const DefaultsButton = "OKP_DefaultKeysButton";
 	const char *const ColorPage = "OptionsColorPage";
 	const char *const ColorDefaultsButton = "UserColorDefault";
+	const char *const ChatPage = "OptionsChatPage";
+	// COptionsWnd's ChatArray ("Chat%d"): DAT_00798bf4..c18, 1 shown.
+	constexpr int32_t ChatFilters::*const ChatSwitches[] = {&ChatFilters::guild, &ChatFilters::socials,
+		&ChatFilters::group, &ChatFilters::shouts, &ChatFilters::auctions, &ChatFilters::ooc, &ChatFilters::my_misses,
+		&ChatFilters::others_misses, &ChatFilters::others_hits, &ChatFilters::misses_me};
+	// Checked when the switch is 0 (shown): DAT_00799670 and DAT_00799658.
+	struct ShownAtZero
+	{
+		const char *id;
+		int32_t ChatFilters::*value;
+	};
+	constexpr ShownAtZero ChatToggles[] = {
+		{"DamageShields", &ChatFilters::damage_shields}, {"NPCSpells", &ChatFilters::npc_spells}};
+	// The combo boxes: the choice is the switch, up to its count.
+	struct ChatCombo
+	{
+		const char *id;
+		int32_t ChatFilters::*value;
+		int count;
+	};
+	constexpr ChatCombo ChatCombos[] = {{"PCSpellsComboBox", &ChatFilters::pc_spells, 3},
+		{"BardSongsComboBox", &ChatFilters::bard_songs, 4}, {"CriticalSpellsComboBox", &ChatFilters::critical_spells, 3},
+		{"CriticalMeleeComboBox", &ChatFilters::critical_melee, 3}};
 	constexpr int UserColorButtons = 72; // ColorPageWndNotification's 0x48
 	const char *const Dialog = "ConfirmationDialogBox";
 	constexpr uint64_t ConfirmMs = 20000; // CConfirmationDialog::Activate(0x1c, 20000)
@@ -33,12 +56,13 @@ void OptionsWindow::Attach(WindowManager &windows, KeyBindings &keys, Host host)
 	SidlWindow *wnd = windows.Find(Screen);
 	if (!wnd)
 		return;
-	// Every page's pieces hidden but the keyboard and color pages' (ours, until the others do
-	// something).
+	// Every page's pieces hidden but the keyboard, filters and color pages' (ours, until the others
+	// do something).
 	if (SidlWindow::Control *tabs = wnd->Find(Tabs))
 		for (int page : tabs->children) {
 			SidlWindow::Control &p = wnd->Item(page);
-			if (p.def->screen_id != KeyboardPage && p.def->screen_id != ColorPage)
+			const std::string &id = p.def->screen_id;
+			if (id != KeyboardPage && id != ColorPage && id != ChatPage)
 				for (int piece : p.children)
 					wnd->Item(piece).visible = false;
 		}
@@ -50,7 +74,57 @@ void OptionsWindow::Attach(WindowManager &windows, KeyBindings &keys, Host host)
 	Fill();
 	m_confirming_colors = false;
 	m_color_page_shown = false;
+	m_chat_page_shown = false;
 	UpdateUserColors(); // COptionsWnd::COptionsWnd
+	SyncChatPage();
+}
+
+void OptionsWindow::SyncChatPage()
+{
+	SidlWindow *wnd = m_windows ? m_windows->Find(Screen) : nullptr;
+	if (!wnd || !m_host.filters)
+		return;
+	const ChatFilters &filters = *m_host.filters;
+	for (int i = 0; i < static_cast<int>(std::size(ChatSwitches)); ++i)
+		if (SidlWindow::Control *button = wnd->Find("Chat" + std::to_string(i)))
+			button->checked = filters.*ChatSwitches[i] != 0;
+	for (const ShownAtZero &toggle : ChatToggles)
+		if (SidlWindow::Control *button = wnd->Find(toggle.id))
+			button->checked = filters.*toggle.value == 0;
+	for (const ChatCombo &combo : ChatCombos)
+		if (SidlWindow::Control *box = wnd->Find(combo.id))
+			box->choice = filters.*combo.value; // CComboWnd::SetChoice
+}
+
+bool OptionsWindow::ChatPageClick(const std::string &control)
+{
+	SidlWindow *wnd = m_windows->Find(Screen);
+	const SidlWindow::Control *clicked = wnd ? wnd->Find(control) : nullptr;
+	if (!clicked || !m_host.filters)
+		return false;
+	ChatFilters &filters = *m_host.filters;
+	bool changed = false;
+	for (int i = 0; i < static_cast<int>(std::size(ChatSwitches)); ++i)
+		if (control == "Chat" + std::to_string(i)) {
+			filters.*ChatSwitches[i] = clicked->checked ? 1 : 0;
+			changed = true;
+		}
+	for (const ShownAtZero &toggle : ChatToggles)
+		if (control == toggle.id) {
+			filters.*toggle.value = clicked->checked ? 0 : 1;
+			changed = true;
+		}
+	for (const ChatCombo &combo : ChatCombos)
+		if (control == combo.id && clicked->choice >= 0 && clicked->choice < combo.count) {
+			filters.*combo.value = clicked->choice;
+			changed = true;
+		}
+	if (!changed)
+		return false;
+	// CEverQuest_send_update_filters, saveOptions, saveOptions2.
+	if (m_host.filters_changed)
+		m_host.filters_changed();
+	return true;
 }
 
 void OptionsWindow::UpdateUserColors()
@@ -167,6 +241,8 @@ bool OptionsWindow::Click(const std::string &window, const std::string &control,
 		}
 		return true;
 	}
+	if (ChatPageClick(control))
+		return true;
 	if (control.rfind("UserColor", 0) == 0) {
 		int index = -1;
 		const std::string digits = control.substr(9);
@@ -270,6 +346,12 @@ void OptionsWindow::Frame(uint64_t now_ms)
 	if (colors && !m_color_page_shown)
 		UpdateUserColors();
 	m_color_page_shown = colors;
+	// ProcessChatOptionsTab's SyncChatPage, as the Filters page is picked.
+	const SidlWindow::Control *chat_page = options ? options->Find(ChatPage) : nullptr;
+	bool chat = chat_page && chat_page->visible;
+	if (chat && !m_chat_page_shown)
+		SyncChatPage();
+	m_chat_page_shown = chat;
 	if (SidlWindow *wnd = m_windows->Find(Screen); wnd && !m_windows->Shown(Screen))
 		wnd->CloseCombos();
 	if (m_confirming && (now_ms >= m_confirm_until_ms || !m_windows->Shown(Dialog))) {
