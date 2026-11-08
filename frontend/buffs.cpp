@@ -420,6 +420,87 @@ int Buffs::Total(int spa) const
 	return sum;
 }
 
+int Buffs::AttackSpeed() const
+{
+	int slow = 999, spell_haste = 0, over = 0, bard = 0;
+	for (const ZoneBuff &b : m_slots) {
+		const SpellInfo *spell = b.type != 0 ? Spell(b.spell) : nullptr;
+		if (!spell)
+			continue;
+		for (int i = 0; i < 12; ++i) {
+			int spa = spell->spas[i];
+			if (spa == 98)
+				over = std::max(over, Value(*spell, b.level, i, &b));
+			else if (spa == 119)
+				bard = std::max(bard, Value(*spell, b.level, i, &b));
+			else if (spa == 11) {
+				int value = static_cast<int16_t>(Value(*spell, b.level, i, &b));
+				if (value < 100) {
+					if (value < slow && value > 0)
+						slow = value;
+				}
+				else
+					spell_haste = std::max(spell_haste, value);
+			}
+		}
+	}
+	// The worn items (slots 1..21): not a bag, not stackable (Stackable over 1), a worn effect
+	// (EffectType1 2) of a buff spell, at its EffectLevel1.
+	int level = m_zone ? m_zone->Profile().level : 1;
+	int item_slow = 999, item_haste = 0;
+	if (m_zone)
+		for (int16_t slot = 1; slot <= 21; ++slot) {
+			auto it = m_zone->Items().find(slot);
+			if (it == m_zone->Items().end())
+				continue;
+			const ZoneItem &item = it->second;
+			if (item.item_class != 0 || item.stackable < 2 || item.effect_type != 2)
+				continue;
+			const SpellInfo *spell = Spell(item.effect1);
+			if (!spell || spell->duration_formula == 0)
+				continue;
+			for (int i = 0; i < 12; ++i) {
+				if (spell->spas[i] != 11)
+					continue;
+				int value = static_cast<int16_t>(Value(*spell, item.effect_level, i, nullptr));
+				if (value < 100) {
+					if (value < item_slow && value > 0)
+						item_slow = value;
+				}
+				else {
+					if (level < 26 && value > 110)
+						value = 110;
+					item_haste = std::max(item_haste, value);
+				}
+			}
+		}
+	if (item_slow < slow && item_slow != 999)
+		slow = item_slow;
+	if (slow < 101)
+		return slow;
+	int haste = item_haste + spell_haste;
+	int cap = level + 125;
+	if (bard > 0) {
+		if (bard > 100)
+			bard -= 100;
+		bard = std::min(bard, level < 51 ? 10 : 25);
+		cap += bard;
+	}
+	if (spell_haste > 99 && item_haste > 99)
+		haste -= 100;
+	if (over > 100 && level > 49)
+		haste += std::min(over, 110) - 100;
+	if (level > 50)
+		cap = bard + 185;
+	if (level > 59)
+		cap = bard + 200;
+	if (haste == 0)
+		haste = bard != 0 ? bard + 100 : 0;
+	else
+		haste += bard;
+	return std::min(haste, cap);
+}
+
 float Buffs::SpeedModifier(float run_speed) const
 {
 	int root = Total(99);

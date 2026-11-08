@@ -36,6 +36,7 @@
 #include "ground_items.h"
 #include "loot_window.h"
 #include "merchant_window.h"
+#include "train_window.h"
 #include "options_window.h"
 #include "group.h"
 #include "trade_window.h"
@@ -136,6 +137,7 @@ public:
 		m_upload_ms = upload_ms;
 	}
 	void SetUpdateMs(double ms) { m_update_ms = ms; } // how long the host's Update took this frame
+
 	// While a mouse drag turns the character or pans the camera, the cursor is hidden and held
 	// where the drag started: the host puts it back at (x, y), in window pixels, after every move
 	// and once more when the drag ends.
@@ -168,6 +170,7 @@ public:
 	ZoneSession &ZoneForTests() { return m_zone; } // the preview's injected packets
 	const Group &GroupState() const { return m_group; }
 	const ChatWindow &Chat() const { return m_chat; }
+	Abilities &Skills() { return m_abilities; } // the ability buttons and UseSkill (for the preview tool)
 	uint16_t Target() const { return m_game_values.target; } // spawn id, 0 none
 	const CharacterSelectView *CharacterScene() const { return m_charselect_view.get(); }
 	const CharSelectAnimWindow *AnimationsWindow() const { return m_anim_window.get(); }
@@ -352,6 +355,16 @@ private:
 	void RangedAttack(uint16_t target);
 	int HandleAmmo();
 	void DoMissileHit(uint16_t target, const ZoneItem &item);
+	// Melee (melee_attack.cpp): ProcessControls' swings of each hand while auto attack's on,
+	// DoAttack(13 / 14), what DoAttack does first for any attack (invisibility and hiding end) and
+	// the fatigue of a swing or shot, and DoPassageOfTime's readying of the secondary hand (by the
+	// primary's delay, `primary_delay`, when it holds no weapon).
+	void MeleeControls();
+	void MeleeAttack(int16_t hand, uint16_t target);
+	void AttackBegins();
+	void AttackFatigue(const ZoneItem *weapon);
+	void MeleePassageOfTime(uint32_t primary_delay);
+	int Rand(); // RandNbr
 	// CInvSlot_DoDrinkEatPoison (@004223ca): the right button on a common item (frontend.cpp).
 	void DoDrinkEatPoison(const ZoneItem &item, int16_t slot);
 	// EQ_Note::SendTextRequestMsg (@004ce45d): the right button on a book or note closes its window,
@@ -521,6 +534,9 @@ private:
 	uint8_t m_autorun_stance = 0; // our stance when it was last looked at, to see it change
 	uint64_t m_attack_timer_ms = 0; // ActorInfo's AttackTimer
 	bool m_range_ready = false;     // __RangeAttackReady
+	uint64_t m_secondary_timer_ms = 0; // ActorInfo +0xd0: the secondary hand's swing
+	bool m_secondary_ready = false;    // DAT_007cd845
+	uint32_t m_random = 0x5eed1234u;
 	int m_last_attack = 0;          // ActorInfo's LastAttack: 11 shooting, 13 the primary's swing
 	bool m_ranged_look = false;     // the held items changed for shooting or back: our model again
 	bool m_lfg = false;           // DAT_007cf1fc: we're looking for a group
@@ -548,6 +564,7 @@ private:
 	Containers m_containers;        // the bag windows
 	BankWindow m_bank;
 	MerchantWindow m_merchant;
+	TrainWindow m_train;            // a guildmaster's training window
 	LootWindow m_loot;
 	TradeWindow m_trade;            // and the give window
 	Group m_group;

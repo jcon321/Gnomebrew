@@ -79,6 +79,7 @@ struct SidlWindowTemplate
 struct SidlFrameTemplate
 {
 	std::string border[BorderPieceCount];
+	std::string middle; // Middle: a list heading's picture (Header_PlatCoin's coin)
 	int overlap_left = 0, overlap_top = 0, overlap_right = 0, overlap_bottom = 0;
 };
 
@@ -129,6 +130,7 @@ struct SidlPiece
 	{
 		std::string heading;
 		int width = 0;
+		std::string header; // Header: an animation drawn in the heading's place (the coin columns')
 	};
 	std::vector<Column> columns;
 
@@ -342,6 +344,10 @@ public:
 		// would.
 		int selected_row = -1;
 		int selected_column = -1;
+		// CListWnd's notification 0xe, a press on a column's heading: reported (the column in
+		// header_clicked, its screen id returned) only for a list whose owner takes it.
+		bool column_clicks = false;
+		int header_clicked = -1;
 		// Its columns: the Listbox's own to start with; its window can add more.
 		std::vector<SidlPiece::Column> columns;
 		// Combobox: its choices (its Choices to start with), the one showing (-1 none:
@@ -481,7 +487,7 @@ private:
 	void DrawTab(const Control &tab_box, int index, Canvas &canvas, TextRenderer &text, SidlTextures &textures,
 		uint64_t now_ms, const Rect &clip) const;
 	void DrawGauge(const Control &control, Canvas &canvas, TextRenderer &text, SidlTextures &textures, uint64_t now_ms) const;
-	void DrawListbox(const Control &control, Canvas &canvas, TextRenderer &text) const;
+	void DrawListbox(const Control &control, Canvas &canvas, TextRenderer &text, SidlTextures &textures, uint64_t now_ms) const;
 	// CComboWnd: its button down the right (GetButtonRect), and the list under the rest of it
 	// (GetListRect: as tall as half a line and a line a choice, ListHeight at most).
 	Rect ComboButtonRect(const Control &combo) const;

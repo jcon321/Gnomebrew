@@ -2,6 +2,8 @@
 
 #include "zone_session.h"
 
+#include <algorithm>
+
 namespace Skills
 {
 	namespace
@@ -83,6 +85,141 @@ namespace Skills
 			{13869, 7500, 1, 1, 0, {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}}, // 72
 			{13902, 6000, 1, 1, 0, {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}, {200, 0, 180, 150, 180, 0, 0, 100, 0, 0, 0, 0, 0, 0, 100}}, // 73
 		};
+
+		// __SkillDict +0x98: the expansion caps by class, skills 0..73.
+		const uint16_t ExpansionCaps[Count][Classes] = {
+			{250, 175, 225, 250, 225, 175, 252, 250, 250, 200, 110, 110, 110, 110, 225}, // 0
+			{250, 0, 225, 250, 225, 175, 0, 250, 250, 0, 0, 0, 0, 0, 0}, // 1
+			{250, 175, 225, 250, 225, 175, 252, 0, 250, 200, 110, 110, 110, 110, 225}, // 2
+			{250, 0, 225, 250, 225, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // 3
+			{0, 235, 235, 235, 235, 235, 0, 0, 0, 235, 235, 235, 235, 235, 235}, // 4
+			{0, 235, 235, 235, 235, 235, 0, 0, 0, 235, 235, 235, 235, 235, 235}, // 5
+			{0, 0, 0, 0, 0, 0, 0, 0, 200, 0, 0, 0, 0, 0, 0}, // 6
+			{240, 0, 75, 240, 75, 0, 0, 0, 240, 0, 0, 0, 0, 0, 0}, // 7
+			{0, 0, 0, 0, 0, 0, 0, 0, 225, 0, 0, 0, 0, 0, 0}, // 8
+			{210, 210, 210, 200, 200, 210, 210, 200, 210, 210, 100, 100, 100, 100, 210}, // 9
+			{240, 165, 200, 0, 200, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // 10
+			{0, 0, 0, 0, 0, 0, 225, 0, 0, 0, 0, 0, 0, 0, 200}, // 11
+			{0, 0, 0, 0, 0, 0, 0, 235, 0, 0, 0, 0, 0, 0, 0}, // 12
+			{0, 220, 215, 215, 215, 220, 0, 0, 0, 220, 220, 220, 220, 220, 215}, // 13
+			{0, 235, 235, 235, 235, 235, 0, 0, 0, 235, 235, 235, 235, 235, 235}, // 14
+			{252, 200, 252, 240, 252, 200, 252, 252, 252, 200, 145, 145, 145, 145, 240}, // 15
+			{200, 0, 70, 55, 70, 0, 200, 0, 200, 0, 0, 0, 0, 0, 0}, // 16
+			{0, 0, 0, 0, 0, 0, 0, 100, 200, 0, 0, 0, 0, 0, 0}, // 17
+			{0, 235, 235, 235, 235, 235, 0, 0, 0, 235, 235, 235, 235, 235, 235}, // 18
+			{190, 75, 170, 170, 170, 75, 230, 170, 210, 75, 75, 75, 75, 75, 170}, // 19
+			{245, 0, 235, 245, 235, 0, 250, 0, 245, 0, 0, 0, 0, 0, 0}, // 20
+			{0, 0, 0, 0, 0, 0, 225, 0, 0, 0, 0, 0, 0, 0, 0}, // 21
+			{245, 0, 0, 245, 0, 0, 252, 245, 245, 0, 0, 0, 0, 0, 245}, // 22
+			{0, 0, 0, 0, 0, 0, 225, 0, 0, 0, 0, 0, 0, 0, 0}, // 23
+			{0, 235, 235, 235, 235, 235, 0, 0, 0, 235, 235, 235, 235, 235, 235}, // 24
+			{0, 0, 0, 0, 0, 0, 200, 0, 0, 0, 0, 0, 0, 0, 0}, // 25
+			{0, 0, 0, 0, 0, 0, 225, 0, 0, 0, 0, 0, 0, 0, 0}, // 26
+			{0, 0, 0, 200, 0, 200, 0, 55, 0, 0, 0, 0, 0, 0, 0}, // 27
+			{100, 75, 100, 100, 100, 75, 252, 100, 100, 75, 75, 75, 75, 75, 250}, // 28
+			{0, 0, 0, 75, 75, 0, 0, 40, 200, 0, 0, 0, 0, 0, 0}, // 29
+			{210, 0, 0, 205, 0, 0, 250, 0, 0, 0, 0, 0, 0, 0, 230}, // 30
+			{0, 252, 226, 226, 226, 252, 0, 1, 0, 252, 252, 252, 252, 252, 226}, // 31
+			{0, 0, 0, 0, 0, 0, 200, 0, 0, 0, 0, 0, 0, 0, 0}, // 32
+			{252, 200, 225, 252, 225, 200, 252, 252, 252, 200, 140, 140, 140, 140, 252}, // 33
+			{230, 0, 205, 220, 205, 0, 0, 185, 230, 0, 0, 0, 0, 0, 0}, // 34
+			{0, 0, 0, 0, 0, 0, 0, 100, 210, 0, 0, 0, 0, 0, 0}, // 35
+			{240, 0, 225, 240, 225, 0, 0, 250, 250, 200, 110, 110, 110, 110, 225}, // 36
+			{225, 0, 200, 185, 200, 0, 225, 75, 225, 0, 0, 0, 0, 0, 185}, // 37
+			{0, 0, 0, 0, 0, 0, 225, 0, 0, 0, 0, 0, 0, 0, 0}, // 38
+			{0, 0, 0, 0, 0, 0, 200, 40, 94, 0, 0, 0, 0, 0, 0}, // 39
+			{200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200}, // 40
+			{0, 0, 0, 0, 0, 0, 0, 235, 0, 0, 0, 0, 0, 0, 0}, // 41
+			{0, 0, 0, 75, 0, 0, 113, 75, 200, 0, 0, 0, 0, 0, 0}, // 42
+			{0, 200, 0, 0, 0, 200, 0, 0, 0, 200, 200, 200, 200, 200, 0}, // 43
+			{0, 200, 0, 0, 0, 200, 0, 0, 0, 200, 200, 200, 200, 200, 0}, // 44
+			{0, 200, 0, 0, 0, 200, 0, 0, 0, 200, 200, 200, 200, 200, 0}, // 45
+			{0, 200, 0, 0, 0, 200, 0, 0, 0, 200, 200, 200, 200, 200, 0}, // 46
+			{0, 200, 0, 0, 0, 200, 0, 0, 0, 200, 200, 200, 200, 200, 0}, // 47
+			{0, 0, 0, 0, 0, 0, 0, 0, 200, 0, 0, 0, 0, 0, 0}, // 48
+			{0, 0, 0, 0, 0, 0, 0, 235, 0, 0, 0, 0, 0, 0, 0}, // 49
+			{200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200}, // 50
+			{200, 0, 0, 113, 0, 0, 200, 113, 250, 0, 75, 75, 75, 75, 113}, // 51
+			{0, 0, 0, 0, 0, 0, 225, 0, 0, 0, 0, 0, 0, 0, 0}, // 52
+			{0, 0, 0, 200, 0, 125, 0, 100, 0, 0, 0, 0, 0, 0, 0}, // 53
+			{0, 0, 0, 0, 0, 0, 0, 235, 0, 0, 0, 0, 0, 0, 0}, // 54
+			{200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200}, // 55
+			{0, 0, 0, 0, 0, 0, 0, 0, 250, 0, 0, 0, 0, 0, 0}, // 56
+			{250, 250, 250, 200, 250, 200, 200, 200, 250, 200, 250, 250, 250, 250, 200}, // 57
+			{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 200, 200, 200, 200, 0}, // 58
+			{0, 0, 0, 0, 0, 0, 0, 0, 0, 200, 0, 0, 0, 0, 0}, // 59
+			{250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250}, // 60
+			{250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250}, // 61
+			{0, 0, 0, 0, 0, 0, 0, 75, 200, 0, 0, 0, 0, 0, 0}, // 62
+			{250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250}, // 63
+			{250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250}, // 64
+			{250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250}, // 65
+			{200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200}, // 66
+			{200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 200}, // 67
+			{250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250}, // 68
+			{250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250}, // 69
+			{0, 0, 0, 0, 0, 0, 0, 235, 0, 0, 0, 0, 0, 0, 0}, // 70
+			{0, 0, 0, 0, 0, 0, 200, 100, 200, 0, 0, 0, 0, 0, 0}, // 71
+			{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // 72
+			{230, 0, 220, 150, 220, 0, 0, 100, 0, 0, 0, 0, 0, 0, 100}, // 73
+		};
+
+		// +0xb: clear for the trade skills setskill counts against each other.
+		bool Capped(int skill)
+		{
+			switch (skill) {
+			case 57: case 60: case 61: case 63: case 64: case 65: case 68: case 69: return false;
+			default: return true;
+			}
+		}
+
+		// DAT_0060b0ac: the level each race learns each language at, 14 to a language and indexed
+		// by language * 14 + race (an Iksar's at 13, a Vah Shir's at 14: the next language's first).
+		const int8_t LanguageLevels[25 * 14 + 1] = {
+			 0,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,
+			 1, 10,  1, 15, 20, 20, 10, 15, 25, 15, 15, 10, 20, 15,
+			30,  5, 20,  1, 35, 35, 23, 25, 35, 20, 20, 20, 35, 20,
+			10, 20, 25, 30,  1,  1, 25,  1, 10, 25, 25, 25, 10, 25,
+			30, 25, 10, 25, 15, 15,  1, 15, 15, 30, 30, 15, 15, 30,
+			30, 20, 25, 30, 10, 10, 25, 10,  1, 20, 20, 25, 10, 20,
+			30, 15, 15, 25, 25, 25, 13, 20, 25,  1,  5, 20, 30, 15,
+			30, 15, 15, 25, 25, 25, 13, 20, 25,  5,  1, 20, 30, 15,
+			30, 20, 25, 15, 10, 10, 25, 10, 15, 25, 25, 30,  1, 20,
+			30, 15, 10, 20, 20, 20, 10, 15, 20, 20, 20,  1, 25, 25,
+			30, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99,
+			99, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12,
+			12, 25, 30, 30, 15, 15, 30, 15, 30, 30, 30, 15, 20, 30,
+			30, 15, 20, 20, 20, 20, 20, 20, 20, 15, 15, 20, 20, 15,
+			20, 20, 15, 20, 15, 15, 15, 15, 20, 20, 20, 15, 15, 15,
+			20, 10, 15, 10, 10, 10, 10, 10, 10, 10, 10, 10, 15, 15,
+			15, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20,
+			 1, 12, 30, 30, 15, 15, 12, 15, 30, 12, 12, 15, 20, 12,
+			30, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,  1,
+			15, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20,
+			20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20,
+			20, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30,
+			30, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40,
+			40, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99,
+			99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99,
+			1,
+		};
+
+		// EQ_PC_GetKunarkThreshold (@004d074f): past level 50 with an expansion, the classic cap
+		// rises a tenth of the way to the expansion cap (2 at least) a level, up to it.
+		int KunarkThreshold(const ZoneProfile &me, int skill, int limit, uint32_t expansions)
+		{
+			int cls = me.class_id;
+			if (cls < 1 || cls > Classes)
+				return limit;
+			int classic = Get(skill).cap[cls - 1], threshold = classic;
+			if (me.level >= 51 && expansions != 0) {
+				int expansion = ExpansionCaps[skill][cls - 1];
+				int gap = std::max(expansion - classic, 0);
+				int step = std::max(gap / 10 + (gap % 10 != 0 ? 1 : 0), 2);
+				threshold = std::min((me.level - 50) * step + classic, expansion);
+			}
+			return std::min(limit, threshold);
+		}
 	}
 
 	const Info &Get(int skill)
@@ -118,5 +255,127 @@ namespace Skills
 		if (info.level[cls - 1] <= me.level)
 			return value < 1 ? 1 : value;
 		return value > 0 ? racial : 0;
+	}
+
+	int ExpansionCap(int skill, int cls)
+	{
+		return skill >= 0 && skill < Count && cls >= 1 && cls <= Classes ? ExpansionCaps[skill][cls - 1] : 0;
+	}
+
+	int SkillLimit(const ZoneProfile &me, int skill)
+	{
+		int cls = me.class_id;
+		if (skill < 0 || skill >= Count || cls < 1 || cls > Classes)
+			return 0;
+		return (me.expansions & 0x1f) != 0 ? ExpansionCaps[skill][cls - 1] : Get(skill).cap[cls - 1];
+	}
+
+	bool AtLevelCap(const ZoneProfile &me, int skill)
+	{
+		if (skill < 0 || skill >= Count)
+			return false;
+		const Info &info = Get(skill);
+		int cls = me.class_id, level = me.level;
+		int value = me.skills[skill];
+		if (!Capped(skill)) {
+			// Tinkering never is.
+			if (skill == 57)
+				return false;
+			int over = 0;
+			for (int other : {60, 61, 63, 64, 65, 68, 69})
+				if (other != skill && me.skills[other] > 200)
+					++over;
+			// GetAbility(0x8d), Trade Skill Mastery: we don't have AAs yet, so none.
+			constexpr int Mastery = 0;
+			return value >= (Mastery + 1 <= over ? 200 : 250);
+		}
+		int class_level = cls >= 1 && cls <= Classes ? info.level[cls - 1] : 0;
+		auto specialized = [&](int self) { // another specialization over 50 holds this one to 50
+			for (int other = 43; other <= 47; ++other)
+				if (other != self && me.skills[other] > 50)
+					return true;
+			return false;
+		};
+		int limit;
+		switch (skill) {
+		case 0: case 1: case 2: case 3: case 36: // the weapon skills and archery's
+			if (cls == 2 || cls == 6 || cls == 10)
+				limit = level * 4 + 4;
+			else if (cls == 7)
+				limit = (level + 1) * 5;
+			else if (cls >= 11 && cls <= 14)
+				limit = (level + 1) * 3;
+			else
+				limit = (level + 1) * 5;
+			break;
+		case 15: // defense
+			if (cls >= 11 && cls <= 14)
+				limit = level < 6 ? level * 5 : level < 11 ? level * 4 + 5 : (level + 5) * 3;
+			else if (cls == 1)
+				limit = (level + 1) * 5;
+			else
+				limit = level * 5;
+			break;
+		case 22: // dodge
+			limit = cls == 7 ? level * 7 + 5 : cls == 9 ? level * 6 + 5 : (level + 1) * 5;
+			break;
+		case 28: // hand to hand
+			limit = cls == 7 || cls == 15 ? (level + 1) * 5 : (level + 1) * 3;
+			break;
+		case 33: // offense
+			if (cls == 1)
+				limit = (level + 1) * 5;
+			else if (cls == 7)
+				limit = (level < 15 ? level : level < 30 ? level + 1 : level + 2) * 5;
+			else if (cls >= 11 && cls <= 14)
+				limit = level * 4;
+			else
+				limit = level * 5;
+			break;
+		case 43: case 44: case 45: case 46: case 47: // the specializations
+			limit = specialized(skill) ? 50 : (level + 1) * 5;
+			break;
+		case 50: // swimming
+			limit = me.race == 128 ? (level + 20) * 5 : (level + 1) * 5;
+			break;
+		case 58: case 59:
+			limit = level < class_level ? 0 : (level - class_level + 1) * 5;
+			break;
+		default:
+			limit = (level + 1) * 5;
+			break;
+		}
+		if ((me.expansions & 0x1f) == 0) {
+			int cap = cls >= 1 && cls <= Classes ? info.cap[cls - 1] : 0;
+			limit = std::min(limit, cap);
+		}
+		else
+			limit = KunarkThreshold(me, skill, limit, me.expansions);
+		return value >= limit;
+	}
+
+	bool FieldTradeSkill(int skill)
+	{
+		return skill == 57 || (skill >= 59 && skill <= 61) || (skill >= 63 && skill <= 65) || skill == 68 || skill == 69;
+	}
+
+	bool CanLearnLanguage(const ZoneProfile &me, int language)
+	{
+		if (language < 0 || language > 24)
+			return false;
+		int race = me.race == 128 ? 13 : me.race == 130 ? 14 : me.race;
+		if (race < 0 || race > 14) // only a player's races are in it
+			return false;
+		bool can = LanguageLevels[language * 14 + race] <= me.level;
+		int cls = me.class_id, level = me.level;
+		if (cls == 11 && ((level > 7 && language == 12) || (level > 19 && language == 17)))
+			can = true;
+		if (cls == 12 && level > 7 && language == 11)
+			can = true;
+		if (cls == 14 && language == 11)
+			can = true;
+		if (cls == 13 && level > 7 && language == 11)
+			can = true;
+		return can;
 	}
 }

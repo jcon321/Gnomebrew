@@ -27,7 +27,7 @@ uint32_t FrontEnd::ModifyAttackSpeed(uint32_t delay, bool bow) const
 	// EQPlayer::ModifyAttackSpeed (@0050a039): haste, then for a bow the first quiver in the general
 	// slots with any weight reduction takes WR * 0.25% of the delay and 1 more off, unless that
 	// leaves 1000 ms or less.
-	delay = Abilities::ModifyAttackSpeed(delay, m_buffs.Total(11));
+	delay = Abilities::ModifyAttackSpeed(delay, m_buffs.AttackSpeed());
 	if (delay == 0 || !bow)
 		return delay;
 	const auto &items = m_zone.Items();
@@ -59,10 +59,11 @@ uint32_t FrontEnd::WeaponDelay(int16_t slot) const
 
 void FrontEnd::RangedPassageOfTime(uint64_t now_ms)
 {
-	// Auto attack takes the timer (and the ready shot) for itself.
+	// A ready swing ProcessControls didn't take (we had no control): both hands start over.
 	if (m_attack && m_range_ready) {
 		m_range_ready = false;
-		m_attack_timer_ms = now_ms;
+		m_secondary_ready = false;
+		m_attack_timer_ms = m_secondary_timer_ms = now_ms;
 	}
 	uint32_t delay = WeaponDelay(Inventory::Primary);
 	uint32_t range = WeaponDelay(Inventory::Range);
@@ -70,6 +71,7 @@ void FrontEnd::RangedPassageOfTime(uint64_t now_ms)
 		delay = range;
 	if (delay <= now_ms - m_attack_timer_ms)
 		m_range_ready = true;
+	MeleePassageOfTime(delay);
 }
 
 void FrontEnd::RangeAttackButton()
@@ -87,9 +89,7 @@ void FrontEnd::RangedAttack(uint16_t target_id)
 	auto text = [this](uint32_t id, const char *fallback) { return EqString(id, fallback); };
 	if (m_spell_cast.Casting() && m_zone.Profile().class_id != 8)
 		return;
-	// Attacking ends our invisibility (SPAs 12, 28, 29, 94); hiding's end isn't ours yet.
-	for (int spa : {12, 28, 29, 94})
-		m_buffs.RemoveAffect(spa);
+	AttackBegins();
 	auto &items = m_zone.EditItems();
 	auto range_it = items.find(Inventory::Range);
 	// The bow (or what's thrown) in the hand while shooting (UpdateItemSlot 7 and 8).
@@ -152,6 +152,7 @@ void FrontEnd::RangedAttack(uint16_t target_id)
 		m_attack_timer_ms = was;
 		return;
 	}
+	AttackFatigue(&weapon);
 	// HandleAmmo, and what's used up.
 	int how = HandleAmmo();
 	range_it = items.find(Inventory::Range);

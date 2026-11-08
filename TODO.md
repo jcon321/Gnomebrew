@@ -108,9 +108,17 @@ no rules of its own.
      cancel (ours leaves them out).
    - The right button on a spawn (CEverQuest::RMouseUp within 500 ms, RightClickedOnPlayer): a
      corpse's loot, a banker's bank, a merchant's shop, else /consider of our target. A
-     despawning merchant, banker or corpse closes its window. Still to do: our class's guildmaster
-     (OP_GMTraining) and the message for another's (eqstr 1467), a trader in the Bazaar (OP_TraderShop), a horse (race 141), and the
-     inspect of a player (doInspect).
+     despawning merchant, banker or corpse closes its window. Our class's guildmaster asks the zone
+     to train us (OP_GMTraining) and another's says eqstr 1467. Still to do: a trader in the Bazaar
+     (OP_TraderShop), a horse (race 141), the inspect of a player (doInspect), and `_consider`'s
+     TargetType refusals (0xb, 0x3c, 0x41, 0x43) after it.
+   - Guildmaster training: done (`frontend/train_window.*`, CTrainWnd): msg_req_guildmaster's
+     SetGMData and Activate, UpdateSkill's rows and CostToTrain's prices, the headings' sorts,
+     Train through BitchCanTrain (`frontend/skills.*`: setskill, GetSkillLimit2,
+     EQ_PC_GetKunarkThreshold, EQ_PC_checkLang) and OP_GMTrainSkill, OP_GMEndTraining on leaving,
+     the coin pictures as list headings, and OP_LevelUpdate's 5 practices. Still to do:
+     setskill's Trade Skill Mastery (GetAbility 0x8d, taken as 0: no AAs yet), and the selected
+     row's colors (CListWnd::SetColors' yellow 0xffff00 highlight; ours is the list's blue bar).
    - Bag windows: done (`frontend/containers.*`, eqgame's CContainerMgr and CContainerWnd): the right
      button on a bag opens or closes its window, laid out for its slots with Combine and Done
      under them, kept in the layout as BagInv1..8 (BagBank, BagTrade), picking up or swapping out
@@ -186,8 +194,9 @@ no rules of its own.
      (ProcessControls takes the movement keys only standing or crouching), nor does the right
      button turn us (the left still circles the chase camera); forward stands us up (and closes
      the book) and we move off at once, getting up playing out all the same. In first person the
-     view goes down and up with our head. Still to do: sitting's idle and fidgets (P07, the sitting
-     fidget), kneeling (105), feign death,
+     view goes down and up with our head. Kneeling (105: P05, up by P05 backwards) and lying (115,
+     feign death: D05 held, up by P02 backwards) are ChangeStance's too, and nothing but standing
+     or crouching moves us. Still to do: sitting's idle and fidgets (P07, the sitting fidget),
      meditating's regen, and the zone putting us in a stance (stunned, knocked out).
    - Hotbuttons: the Actions window's buttons and socials go on them and come off by holding
      them, and they're kept in `<char>_<server>.ini` (`frontend/game_windows.*`). Clicked or by
@@ -335,6 +344,23 @@ no rules of its own.
     takes off our invisibility and pushes us (IWasHit); our death lays us down (D05) to the death
     music, and nothing moves us; 2 s on, "Returning to home point, please wait..." (eqstr 539) and
     OP_ZoneChange to the bind zone with reason 10 (RealRender_World's DeathTimer, MoveToZone).
+    Our own swings (`frontend/melee_attack.cpp`): ProcessControls swings each hand while auto
+    attack's on and we have control, on `__RangeAttackReady` and DAT_007cd845 (DoPassageOfTime
+    readies the secondary by its weapon, hand to hand empty, else the primary's delay), through
+    DoAttack 13 and 14: its hastened delay (a monk's and beastlord's fists by level), the stance
+    messages, CanIHitTarget's ("too far away", "cannot see"), and the fatigue a swing or shot costs
+    by the weapon's weight; any attack ends invisibility and hiding (eqstr 12682) and puts the
+    weapons back in hand after shooting. Haste is TotalSpellAffects' SPA 11 branch
+    (`Buffs::AttackSpeed`): the worst slow, else the best spell and worn haste (110 under level 26)
+    less the doubled 100, overhaste, bard haste, capped by level. UseSkill's sneak (OP_Sneak, the
+    zone's SpawnAppearance 15, InitSneakMod's speed), hide (OP_Hide, VisibilityState through
+    UpdateMyVisibleStatus, ended by moving, attacking or using it again), feign death (stance 115,
+    OP_FeignDeath), bind wound (kneeling, OP_Bind_Wound and its answers 1432..1436), begging and
+    pick pockets (one timer, msg_beg and msg_steal's coins and stolen item), fishing (pole and bait
+    checks, the cast's animation, DoFishingEvent's hook and splash sound, moving calls it off) and
+    tracking's OP_Track (`frontend/abilities.*`). Checked live: the swings' messages, sneak, and
+    bind wound's, begging's and fishing's refusals; hide, feign death and pick pockets not (the
+    test rogue is level 1).
     Still to do:
     - range attacks: done (`frontend/ranged_attack.cpp`): the Range button and a hot button
       holding it when `__RangeAttackReady` (DoPassageOfTime: the primary's delay, or the range
@@ -345,16 +371,24 @@ no rules of its own.
       last of a stack taken from the general slots or bags) or the weapon thrown (OP_MoveItem to
       -1), and the bow held while shooting. Not checked live: none of the test characters has a
       bow or anything to throw. Still to do: AimAtTarget's pitch, the Endless Quiver AA (GetAbility
-      0x54), hide and sneak ending, the fatigue a shot costs (SetFatigue), our own missile drawn
-      (EQMissile), and the weapons back in hand on the zone's swings rather than auto attack's
-      being on;
-    - ProcessControls' own swings while auto attack's on (DoAttack 0xd primary, 0xe the off hand,
-      on `__RangeAttackReady` and DAT_007cd845): their timers, the fatigue, CanIHitTarget's says
-      ("too far away") as well as the zone's;
-    - UseSkill's sneak, hide (DAT_00798780 and its breaking on moving, 12682), feign death (stance
-      115), bind wound, begging, pick pockets, tracking (CTrackingWnd), fishing; the AA abilities
-      (105, 107, 111) and the timers' AA reductions (GetAbility 0x79, 100), being on a horse
-      (12393), stunned (125), AllowedToAttack's duels, the server's PvP types and the water;
+      0x54) and our own missile drawn (EQMissile);
+    - DoAttack's stunned states (StunnedState 1 says eqstr 125; 2..4 and 7 nothing), the
+      ActorInfo +0xc8c+0x74 and DAT_007985f0 refusals, and DAT_00798560 (CanIHitTarget always
+      passing);
+    - the tracking window (CTrackingWnd, TrackingWnd: GenerateTrackingList within the skill's range,
+      DoTrackSort and DoTrackFilter with /tracksort, /trackfilter and /trackplayers, the colors of
+      GetTrackingColorIndex, the Track button setting DAT_007989e2 53 for 6 minutes, eqstr 12040)
+      and DoPassageOfTime's direction lines every 2 s and its end (12674..12681) and the lost target (12499);
+      UseSkill only sends OP_Track;
+    - the AA abilities (105 Harm Touch and 107 Lay on Hands: CastSpell gem 9 of spell 88 and 87, the
+      profile's timers at +0xc7a and +0xc7e; 111 Slam as bash), the timers' AA reductions
+      (GetAbility 0x79 for sense and disarm traps, 100 feign death, 0xd1 hide), the hiding AA
+      (CheckHidingSkillBonus), a real mount (ActorInfo's Mount; only the SPA 113 buff here),
+      stealing under the PvP deity rules (DAT_006ec740 4: NotOnSameDeity, the level range, 12412,
+      12413), being stunned (12407), fishing's splash particles (DoParticleEffect 2) and the pole
+      shown in hand as the cast starts (UpdateItemSlot), and someone picking our pockets (msg_steal
+      0xff: 12897 and the answer);
+    - AllowedToAttack's duels, the server's PvP types and the water;
     - /filter's client side: the spell lines by PC spells, NPC spells and bard songs
       (ReportSuccessfulHit's spell branch, StartCasting), the chat channels and the bad word filter
       (msg_new_text), and the hit modes (/hitsmode, CChatManager's MyHitsMode and the rest: eqstr
@@ -370,10 +404,8 @@ no rules of its own.
       live only through a recording's replay;
     - being hit on a mount (DeacSpellScreen, ChangeStance), and the guildmaster window turning auto
       attack off (pinstActiveGMaster) once there is one;
-    - the haste ModifyAttackSpeed divides by is `Buffs::Total(11)`, a sum of our buffs' SPA 11:
-      TotalSpellAffects' own SPA 11 branch (@004c6b6d) takes the best spell haste, the best worn
-      item's (110 at most under level 26), the worst slow, overhaste (SPA 98, over level 49) and
-      bard haste (SPA 119), capped by level; worn and over haste aren't ours yet.
+    - TotalSpellAffects adds the worn items' effects only for attack speed; the other SPAs
+      (`Buffs::Total`) leave them out.
 
 ## Rendering / presentation
 

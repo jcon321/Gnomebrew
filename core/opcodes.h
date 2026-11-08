@@ -111,6 +111,19 @@ namespace ZoneOp
 	constexpr uint16_t SenseTraps = 0x4188;
 	constexpr uint16_t DisarmTraps = 0x41f3;
 	constexpr uint16_t InstillDoubt = 0x419c; // intimidation
+	// UseSkill's others: BindWound_Struct {u16 target, u8 type, u8} (the zone answers with its type:
+	// 0 and 1 done, 3 under way, 4..7 why it stopped); FeignDeath {u16 us, u16, u8}; PickPocket_Struct
+	// and Begging_Struct (18 bytes: {u16 target, u16 us, i16 skill, i8 result (0xff asking), u8, u32
+	// coins, 6}), answered with the result (PickPocket's item after its 12 bytes); Track, Sneak, Hide
+	// and Fishing empty.
+	constexpr uint16_t BindWound = 0x4093;
+	constexpr uint16_t FeignDeath = 0x40ac;
+	constexpr uint16_t PickPocket = 0x40ad;
+	constexpr uint16_t Begging = 0x4125;
+	constexpr uint16_t Track = 0x4184;
+	constexpr uint16_t Sneak = 0x4185;
+	constexpr uint16_t Hide = 0x4186;
+	constexpr uint16_t Fishing = 0x418f;
 	constexpr uint16_t Animation = 0x40a1;
 	constexpr uint16_t WearChange = 0x4092;
 	constexpr uint16_t LevelUpdate = 0x4198;
@@ -163,6 +176,11 @@ namespace ZoneOp
 	constexpr uint16_t ShopEnd = 0x4037;             // ours: {u16 merchant, u16 us}
 	constexpr uint16_t ShopEndConfirm = 0x4146;
 	constexpr uint16_t ShopDelItem = 0x4038;         // Merchant_DelItem_Struct {u16 npc, u16, u8 slot, u8 type}
+	// A guildmaster's training (GMTrainee_Struct, GMSkillChange_Struct, GMTrainEnd_Struct): see
+	// ZoneSession::GMTraining.
+	constexpr uint16_t GMTraining = 0x409c;    // GMTrainee_Struct (244 bytes): ours asks, the zone's answers
+	constexpr uint16_t GMEndTraining = 0x409d; // ours: {u16 guildmaster, u16 us}
+	constexpr uint16_t GMTrainSkill = 0x4140;  // ours: {u16 guildmaster, u16, u32 bank (1 a language), u32 skill}
 	constexpr uint16_t MoveCoin = 0x412d;          // MoveCoin_Struct {i32 from, to, from coin, to coin, amount}: ours
 	constexpr uint16_t TradeSkillCombine = 0x4105; // Combine_Struct (32 bytes) ours; the zone's empty, done
 	constexpr uint16_t ItemLinkResponse = 0x4264; // ours: ItemViewRequest_Struct {u16 id, char name[64]}, a link clicked; the zone's: its Item_Struct
@@ -300,6 +318,14 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::CombatAbility, "OP_CombatAbility"},
 	{ZoneOp::SetServerFilter, "OP_SetServerFilter"},
 	{ZoneOp::Taunt, "OP_Taunt"},
+	{ZoneOp::BindWound, "OP_Bind_Wound"},
+	{ZoneOp::FeignDeath, "OP_FeignDeath"},
+	{ZoneOp::PickPocket, "OP_PickPocket"},
+	{ZoneOp::Begging, "OP_Begging"},
+	{ZoneOp::Track, "OP_Track"},
+	{ZoneOp::Sneak, "OP_Sneak"},
+	{ZoneOp::Hide, "OP_Hide"},
+	{ZoneOp::Fishing, "OP_Fishing"},
 	{ZoneOp::Disarm, "OP_Disarm"},
 	{ZoneOp::Forage, "OP_Forage"},
 	{ZoneOp::Mend, "OP_Mend"},
@@ -346,6 +372,9 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::EndLootRequest, "OP_EndLootRequest"},
 	{ZoneOp::LootComplete, "OP_LootComplete"},
 	{ZoneOp::ShopRequest, "OP_ShopRequest"},
+	{ZoneOp::GMTraining, "OP_GMTraining"},
+	{ZoneOp::GMEndTraining, "OP_GMEndTraining"},
+	{ZoneOp::GMTrainSkill, "OP_GMTrainSkill"},
 	{ZoneOp::ShopInventoryPacket, "OP_ShopInventoryPacket"},
 	{ZoneOp::MerchantItemPacket, "OP_MerchantItemPacket"},
 	{ZoneOp::ShopPlayerBuy, "OP_ShopPlayerBuy"},

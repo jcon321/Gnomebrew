@@ -291,6 +291,7 @@ void SidlDefinitions::ReadElement(const XmlNode &node)
 		t.overlap_top = node.ChildInt("OverlapTop", 0);
 		t.overlap_right = node.ChildInt("OverlapRight", 0);
 		t.overlap_bottom = node.ChildInt("OverlapBottom", 0);
+		t.middle = node.ChildText("Middle");
 		m_frame_templates[item] = std::move(t);
 		return;
 	}
@@ -363,7 +364,7 @@ void SidlDefinitions::ReadElement(const XmlNode &node)
 		p.decal.h = size->ChildInt("CY", 0);
 	}
 	for (const XmlNode *column : node.Children("Columns"))
-		p.columns.push_back({column->ChildText("Heading"), column->ChildInt("Width", 0)});
+		p.columns.push_back({column->ChildText("Heading"), column->ChildInt("Width", 0), column->ChildText("Header")});
 	if (p.type == "Combobox") {
 		for (const XmlNode *choice : node.Children("Choices"))
 			p.choices.push_back(choice->text);
@@ -1414,7 +1415,7 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 		DrawGauge(control, canvas, text, textures, now_ms);
 	}
 	else if (def.type == "Listbox") {
-		DrawListbox(control, canvas, text);
+		DrawListbox(control, canvas, text, textures, now_ms);
 	}
 	else if (def.type == "Combobox") {
 		DrawCombo(control, canvas, text, textures, now_ms);
@@ -1608,6 +1609,17 @@ std::string SidlWindow::Press(const InputEvent &event)
 				continue;
 			Rect content = ContentRect(control);
 			int top = content.y + ListHeaderHeight(control);
+			if (control.column_clicks && event.type == InputEvent::Type::MouseDown && event.y >= content.y && event.y < top) {
+				int x = content.x;
+				for (size_t c = 0; c < control.columns.size(); ++c) {
+					if (event.x >= x && event.x < x + control.columns[c].width) {
+						control.header_clicked = static_cast<int>(c);
+						return control.def->screen_id;
+					}
+					x += control.columns[c].width;
+				}
+				return "";
+			}
 			if (event.x < content.x || event.x >= content.Right() || event.y < top || event.y >= content.Bottom())
 				return "";
 			int row = std::max(control.scroll_pos, 0) + (event.y - top) / ListRowHeight(control);
@@ -1902,7 +1914,8 @@ void SidlWindow::DrawStml(const Control &control, Canvas &canvas, TextRenderer &
 	}
 }
 
-void SidlWindow::DrawListbox(const Control &control, Canvas &canvas, TextRenderer &text) const
+void SidlWindow::DrawListbox(const Control &control, Canvas &canvas, TextRenderer &text, SidlTextures &textures,
+	uint64_t now_ms) const
 {
 	// CListWnd::DrawHeader and DrawLine: the headings across the top, then the rows from the scroll
 	// position down, each column's text 2 pixels in from its edges.
@@ -1923,9 +1936,21 @@ void SidlWindow::DrawListbox(const Control &control, Canvas &canvas, TextRendere
 	int header = ListHeaderHeight(control);
 	int x = content.x;
 	for (size_t i = 0; i < control.columns.size() && !control.header_hidden; ++i) {
-		draw(control.columns[i].heading, static_cast<int>(i), x, control.columns[i].width, content.y, header,
-			control.header_color);
-		x += control.columns[i].width;
+		const SidlPiece::Column &column = control.columns[i];
+		// A header animation with no heading is centered between 2 in from the column's edges, 2 down.
+		// The header is a FrameTemplate; its Middle is the picture (GetColumnHeaderTexture).
+		const SidlFrameTemplate *frame = column.header.empty() ? nullptr : m_defs->FrameTemplate(column.header);
+		std::string picture = frame ? frame->middle : "";
+		if (!picture.empty() && column.heading.empty()) {
+			Rect size = AnimationSize(picture);
+			int left = x + 2, right = x + column.width - 2;
+			canvas.SetClip(Intersect({x, content.y, column.width, header}, clip));
+			DrawAnimation(canvas, textures, picture, {left + (right - size.w - left) / 2, content.y + 2, size.w, size.h},
+				now_ms);
+			canvas.SetClip(clip);
+		}
+		draw(column.heading, static_cast<int>(i), x, column.width, content.y, header, control.header_color);
+		x += column.width;
 	}
 	int row_height = ListRowHeight(control);
 	int y = content.y + header;

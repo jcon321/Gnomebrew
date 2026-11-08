@@ -124,10 +124,12 @@ add_library(eqfrontend STATIC
     frontend/containers.cpp
     frontend/bank_window.cpp
     frontend/merchant_window.cpp
+    frontend/train_window.cpp
     frontend/loot_window.cpp
     frontend/trade_window.cpp
     frontend/group.cpp
     frontend/ranged_attack.cpp
+    frontend/melee_attack.cpp
     frontend/ground_items.cpp
     frontend/spell_book.cpp
     frontend/spell_cast.cpp

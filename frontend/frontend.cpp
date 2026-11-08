@@ -805,13 +805,10 @@ void FrontEnd::Update(uint64_t now_ms)
 		m_zone_view->UpdateSpawns(m_zone.Spawns(), m_zone.MySpawnId(), now_ms);
 		// What we put on or took off (UpdatePlayerAppearance), and the light we carry.
 		const ZoneSpawn &me = m_zone.Self();
-		// The Range button readied (DoPassageOfTime); a swing of auto attack puts the weapons back
-		// in our hands (DoAttack 13's UpdateItemSlot; ours on the attack being on, the zone swinging).
+		// ProcessControls' swings of auto attack (one puts the weapons back in our hands), then
+		// DoPassageOfTime readying the hands and the Range button.
+		MeleeControls();
 		RangedPassageOfTime(now_ms);
-		if (m_attack && m_last_attack == 11) {
-			m_last_attack = 13;
-			m_ranged_look = true;
-		}
 		if (me.look_serial != m_my_look_serial || m_ranged_look) {
 			m_my_look_serial = me.look_serial;
 			m_ranged_look = false;
@@ -821,9 +818,11 @@ void FrontEnd::Update(uint64_t now_ms)
 		m_zone_view->SetMyLevel(m_zone.Profile().level);
 		m_zone_view->SetDebugDraw(m_debug.Drawing());
 		MoveControls controls = ZoneControls();
-		// Sitting nothing moves us, a jump included (ProcessControls takes the keys only standing or
-		// crouching). Forward stands us up (ZoneEvent), and we go at once.
-		if (m_zone.Self().stance == 110 || m_dead) {
+		// Sitting (kneeling, lying...) nothing moves us, a jump included (ProcessControls takes the
+		// keys only standing or crouching). Forward stands us up from sitting (ZoneEvent), and we go
+		// at once.
+		uint8_t stance = m_zone.Self().stance;
+		if ((stance != 100 && stance != 111) || m_dead) {
 			controls.forward = controls.back = controls.left = controls.right = false;
 			controls.strafe = controls.jump = false;
 		}
@@ -844,11 +843,13 @@ void FrontEnd::Update(uint64_t now_ms)
 	if (m_screen == Screen::Zone) {
 		Rect area = ScreenArea();
 		m_windows.Update(now_ms, m_mouse_x - area.x, m_mouse_y - area.y);
-		m_window_state.busy = m_containers.Combining() || m_merchant.Busy() || m_loot.Busy() || m_ground.Busy();
+		m_window_state.busy = m_containers.Combining() || m_merchant.Busy() || m_loot.Busy() || m_ground.Busy() ||
+		                      m_abilities.Busy();
 		m_window_state.fv_rules = m_game_values.fv_rules;
 		HandleWindowClicks();
 		m_bank.Frame(now_ms);
 		m_merchant.Frame(now_ms);
+		m_train.Frame(now_ms);
 		m_loot.Frame(now_ms);
 		m_trade.Frame(now_ms);
 		m_ground.Frame(now_ms);
@@ -862,8 +863,18 @@ void FrontEnd::Update(uint64_t now_ms)
 		m_spell_cast.Frame(now_ms);
 		m_abilities.Frame(now_ms);
 		m_buffs.Frame(now_ms);
-		if (m_zone_view)
+		if (m_zone_view) {
 			m_zone_view->SetSpeedModifier(m_buffs.SpeedModifier(m_zone.Self().run_speed));
+			// EQPlayer::InitSneakMod: half the walk speed sneaking, a rogue's 0.1 more a level past 50.
+			float sneak = 0;
+			if (m_zone.Self().sneaking != 0) {
+				const ZoneProfile &me = m_zone.Profile();
+				sneak = 0.5f;
+				if (me.class_id == 9 && me.level > 50)
+					sneak += std::min(static_cast<float>(me.level - 50), 10.0f) * 0.1f;
+			}
+			m_zone_view->SetSneakModifier(sneak);
+		}
 		// DoPassageOfTime: auto attack goes off once we're not standing (ExecuteCmd 8), and the zone's
 		// told whenever it's changed.
 		if (m_attack && m_zone.Self().stance != 100)
@@ -1981,7 +1992,7 @@ namespace
 		{ColorPicker::Screen, false},
 		{"ConfirmationDialogBox", false}, {"CastingWindow", false}, {"BankWnd", false},
 		{"MerchantWnd", false}, {"LootWnd", false}, {"TradeWnd", false}, {"GiveWnd", false},
-		{"SkillsSelectWindow", false}, {"NoteWindow", false}, {"BookWindow", false},
+		{"SkillsSelectWindow", false}, {"NoteWindow", false}, {"BookWindow", false}, {"TrainWindow", false},
 	};
 
 	// The selector's buttons (EQUI_SelectorWnd.xml) and the windows they open and close.
@@ -2049,13 +2060,40 @@ void FrontEnd::BuildZoneWindows()
 	abilities_host.attacking = [this] { return m_attack; };
 	abilities_host.casting = [this] { return m_spell_cast.Casting() && m_zone.Profile().class_id != 8; };
 	abilities_host.hp = [this] { return m_game_values.CurHp(); };
-	abilities_host.haste = [this] { return m_buffs.Total(11); };
+	abilities_host.haste = [this] { return m_buffs.AttackSpeed(); };
 	abilities_host.can_hit = [this](uint16_t id) { return CanIHitTarget(id); };
 	abilities_host.melee_range = [this](uint16_t id) { return MeleeRange(id); };
 	abilities_host.distance = [this](uint16_t id) { return GroundDistance(id); };
 	abilities_host.heading = [this] { return m_zone.Profile().heading; };
 	abilities_host.sense_heading = [this] { m_compass.SenseHeading(); };
 	abilities_host.remove_affect = [this](int spa) { m_buffs.RemoveAffect(spa); };
+	abilities_host.total = [this](int spa) { return m_buffs.Total(spa); };
+	abilities_host.change_stance = [this](uint8_t stance) { ChangeStance(stance); };
+	abilities_host.swimming = [this] { return m_zone_view && m_zone_view->Swimming(); };
+	abilities_host.velocity = [this](float &x, float &y, float &z) {
+		ZoneMovement m = m_zone_view ? m_zone_view->Movement() : ZoneMovement{};
+		x = m.dx;
+		y = m.dy;
+		z = m.dz;
+	};
+	abilities_host.speed = [this] { return m_zone_view ? m_zone_view->Movement().speed : 0.0f; };
+	abilities_host.animate = [this](int id, float speed) {
+		if (m_zone_view)
+			m_zone_view->PlayAnimation(id, speed);
+	};
+	abilities_host.hook_point = [this](float distance, float &x, float &y, float &z) {
+		render::Vec3 at;
+		if (!m_zone_view || !m_zone_view->FishingHook(distance, at))
+			return false;
+		x = at.x;
+		y = at.y;
+		z = at.z;
+		return true;
+	};
+	abilities_host.sound_at = [this](float x, float y, float z, int slot) {
+		if (m_zone_view)
+			m_zone_view->PlaySoundAt(slot, {x, y, z});
+	};
 	m_abilities.Attach(m_windows, m_window_state, m_zone, m_ui.eqstr, std::move(abilities_host));
 	m_abilities.Reset();
 	if (!m_hot_buttons_path.empty()) {
@@ -2115,6 +2153,14 @@ void FrontEnd::BuildZoneWindows()
 	merchant_host.close_bag = [this](int16_t slot) { m_containers.Close(slot); };
 	merchant_host.clear_target = [this] { m_game_values.target = 0; }; // pinstTarget, not the zone's
 	m_merchant.Attach(m_windows, m_zone, m_window_state, m_game_values, std::move(merchant_host));
+	TrainWindow::Host train_host;
+	train_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
+	train_host.music = [this](bool on) {
+		if (m_sound)
+			m_sound->SetMusicSelection(7, on); // the trainer's
+	};
+	train_host.clear_target = [this] { m_game_values.target = 0; }; // pinstTarget
+	m_train.Attach(m_windows, m_zone, m_ui.eqstr, std::move(train_host));
 	LootWindow::Host loot_host;
 	loot_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
 	loot_host.sound = bag_sound;
@@ -2373,7 +2419,7 @@ void FrontEnd::HandleWindowClicks()
 			continue;
 		// A bag window's Done and Combine, the bank's Done, the merchant's Buy, Sell and Done.
 		if (m_containers.Click(click.window, click.control) || m_bank.Click(click.window, click.control) ||
-		    m_merchant.Click(click.window, click.control, click.shift, click.ctrl))
+		    m_merchant.Click(click.window, click.control, click.shift, click.ctrl) || m_train.Click(click.window, click.control))
 			continue;
 		// While a merchant's up, a slot anywhere is picked to buy or sell (CInvSlot::HandleLButtonUp).
 		if (m_merchant.SlotClick(click.window, click.control))
@@ -2955,7 +3001,7 @@ void FrontEnd::ChangeStance(uint8_t stance)
 		return;
 	m_zone.SetStance(stance);
 	if (m_zone_view)
-		m_zone_view->SetSitting(stance == 110);
+		m_zone_view->SetStance(stance);
 	if (was == 110)
 		m_spell_book.StoodUp();
 }
@@ -2997,10 +3043,11 @@ void FrontEnd::WorldClick(int x, int y)
 bool FrontEnd::IsOkToTransact() const
 {
 	// Not camping, no combine, buy or sell waiting (DAT_007d0254), no merchant asked
-	// (DAT_007d0258), no world container (pWorldItems), spellbook, bank, merchant, corpse or trade
-	// (the trainer and bazaar windows when we have them).
+	// (DAT_007d0258, a guildmaster's too), no world container (pWorldItems), spellbook, bank,
+	// merchant, trainer, corpse or trade (the bazaar window when we have it).
 	return m_zone.CampRemainingMs() == 0 && !m_containers.Combining() && !m_spell_book.Activated() && !m_bank.Active() &&
-	       !m_merchant.Active() && !m_merchant.Waiting() && !m_merchant.Busy() && !m_loot.Active() &&
+	       !m_merchant.Active() && !m_merchant.Waiting() && !m_merchant.Busy() && !m_train.Active() &&
+	       !m_train.Waiting() && !m_loot.Active() &&
 	       !m_loot.Waiting() && !m_loot.Busy() && !m_trade.Active() && !m_ground.Busy() && !m_ground.Waiting() &&
 	       !m_containers.WorldOpen();
 }
@@ -3027,6 +3074,22 @@ void FrontEnd::RightClickedOnPlayer(uint16_t spawn)
 		if (m_bank.Active()) // CBankWnd::Activate, after the banker's welcome
 			AutoAttackOff(1466);
 		return;
+	}
+	// A guildmaster (17..31): our class's (ours + 16) is asked to train us, with none training us
+	// already; another's turns us away. Either way, /consider follows.
+	if (who.npc < 2 && who.class_id >= 17 && who.class_id <= 31 && m_zone.SpawnDistance(spawn) <= 20) {
+		const ZoneProfile &me = m_zone.Profile();
+		if (me.class_id + 16 == who.class_id) {
+			if (m_train.Guildmaster() == 0) {
+				m_abilities.MakeMeVisible();
+				AutoAttackOff(1466); // "Auto attack off."
+				m_train.Request(spawn);
+			}
+		}
+		else
+			ChatOut(FormatEqString(m_ui.eqstr, 1467, "You are not a member of the %1 class guild.  Begone.",
+			            {GameValues::ClassDesc(m_ui.eqstr, who.class_id - 16)}),
+				10);
 	}
 	// Anything else: _consider with nothing typed, which considers our target (not who was clicked).
 	InterpretCommand("/consider");
@@ -3057,8 +3120,8 @@ void FrontEnd::ToggleAutoAttack()
 		ChatOut(EqString(9027, "You can't attack with your spell book open."), ChatType::Red);
 		return;
 	}
-	if (m_merchant.Active() || m_bank.Active())
-		return; // pinstActiveMerchant, pinstActiveBanker (and the guildmaster's, when there's one)
+	if (m_merchant.Active() || m_bank.Active() || m_train.Guildmaster() != 0)
+		return; // pinstActiveMerchant, pinstActiveBanker, pinstActiveGMaster
 	uint8_t stance = m_zone.Self().stance;
 	if (stance == 100 || m_attack) {
 		SetAutoAttack(!m_attack);
@@ -3088,6 +3151,7 @@ void FrontEnd::ApplyCombat(const Combat::Report &report)
 		m_zone.ModifyHp(-report.my_damage); // EQ_Character::ModifyCurHP
 	if (report.hit_me) {
 		// EQPlayer::IWasHit: no more invisible (or hidden, or sneaking), and pushed.
+		m_abilities.Hit();
 		for (int spa : {12, 28, 29})
 			m_buffs.RemoveAffect(spa);
 		if (m_zone_view && report.force != 0)
@@ -3374,6 +3438,9 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 		case Type::MerchantItemGone:
 			m_merchant.ZoneEvent(event);
 			break;
+		case Type::TrainerAnswered:
+			m_train.ZoneEvent(event);
+			break;
 		case Type::LootOpened:
 		case Type::LootTaken:
 		case Type::LootEnded:
@@ -3475,6 +3542,8 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 				m_merchant.Deactivate();
 			if (victim == m_bank.Banker())
 				m_bank.Deactivate(false);
+			if (victim != 0 && victim == m_train.Guildmaster()) // CEverQuest_LeaveGuildMaster
+				m_train.Deactivate();
 			if (victim == m_game_values.target) {
 				SetTarget(0);
 				SetAutoAttack(false);
@@ -3522,6 +3591,11 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 		case Type::BuffChanged:
 			m_buffs.ZoneEvent(event);
 			break;
+		case Type::BindWoundAnswered:
+		case Type::Begged:
+		case Type::Stolen:
+			m_abilities.ZoneEvent(event);
+			break;
 		case Type::SkillUp: // msg_skillimprove
 			ChatOut(FormatEqString(m_ui.eqstr, 12091, "You have become better at %1! (%2)",
 				{SkillName(m_ui.eqstr, event.id), std::to_string(event.value)}), ChatType::Skills);
@@ -3548,11 +3622,14 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 				SetAutoAttack(false);
 				m_game_values.target = 0;
 			}
-			// HandleWorldMessage's despawn: the merchant, banker or corpse we're dealing with goes.
+			// HandleWorldMessage's despawn: the merchant, banker, guildmaster or corpse we're dealing
+			// with goes.
 			if (event.id == m_merchant.Merchant())
 				m_merchant.Deactivate();
 			if (event.id == m_bank.Banker())
 				m_bank.Deactivate(false);
+			if (event.id != 0 && event.id == m_train.Guildmaster())
+				m_train.Deactivate();
 			m_loot.ZoneEvent(event);
 			m_trade.ZoneEvent(event);
 			break;
@@ -4179,7 +4256,7 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 		ChatOut(EqString(12375, "You no longer have a target."), ChatType::Default);
 		for (const char *screen :
 			{"ItemDisplayWindow", "QuantityWnd", "BankWnd", "MerchantWnd", "LootWnd", "TradeWnd", "BookWindow",
-			 "NoteWindow", "HelpWindow", "SkillsWindow", "", "OptionsWindow", "SpellBookWnd", "SocialEditWnd",
+			 "NoteWindow", "HelpWindow", "SkillsWindow", "", "OptionsWindow", "SpellBookWnd", "TrainWindow", "SocialEditWnd",
 			 "InventoryWindow"}) {
 			if (!*screen) {
 				if (m_containers.CloseAll())
@@ -4189,6 +4266,13 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			if (std::string(screen) == "BankWnd") {
 				if (m_bank.Active()) {
 					m_bank.Deactivate(true);
+					break;
+				}
+				continue;
+			}
+			if (std::string(screen) == "TrainWindow") {
+				if (m_train.Active()) {
+					m_train.Deactivate();
 					break;
 				}
 				continue;

@@ -25,6 +25,7 @@ namespace
 	// SpawnAppearance types for what the name over a head shows (AppearanceType in eq_constants.h)
 	constexpr uint16_t AppearanceInvis = 3, AppearancePvp = 4, AppearanceLinkdead = 18, AppearanceGm = 20,
 	                   AppearanceAnonymous = 21, AppearanceGuild = 22, AppearanceAfk = 24;
+	constexpr uint16_t AppearanceSneak = 15;     // msg_stat_change's IsSneaking
 	constexpr size_t SpawnSize = 224;            // Mac::structs::Spawn_Struct
 	constexpr size_t ProfileSize = 8460;         // Mac::structs::PlayerProfile_Struct
 	constexpr size_t ZoneEntrySize = 356;        // ServerZoneEntry_Struct
@@ -600,14 +601,13 @@ bool ZoneSession::Emote(const std::string &text, uint16_t first)
 	return Send(ZoneOp::Emote, body.data(), body.size(), "OP_Emote" + text);
 }
 
-bool ZoneSession::SendAnimation(int animation)
+bool ZoneSession::SendAnimation(int animation, float speed)
 {
 	if (m_state != State::InZone)
 		return false;
 	uint8_t body[12] = {};
 	uint16_t id = m_my_id;
 	int32_t anim = animation;
-	float speed = 1.0f;
 	memcpy(body, &id, 2);
 	memcpy(body + 4, &anim, 4);
 	memcpy(body + 8, &speed, 4);
@@ -1157,6 +1157,38 @@ bool ZoneSession::ShopRequest(uint16_t npc)
 	return sent;
 }
 
+bool ZoneSession::GMTraining(uint16_t npc)
+{
+	if (m_state != State::InZone)
+		return false;
+	uint8_t body[244] = {};
+	std::memcpy(body, &npc, 2);
+	std::memcpy(body + 2, &m_my_id, 2);
+	return Send(ZoneOp::GMTraining, body, sizeof(body), "OP_GMTraining " + std::to_string(npc));
+}
+
+bool ZoneSession::GMTrainSkill(uint16_t npc, uint32_t bank, uint32_t skill)
+{
+	if (m_state != State::InZone)
+		return false;
+	uint8_t body[12] = {};
+	std::memcpy(body, &npc, 2);
+	std::memcpy(body + 4, &bank, 4);
+	std::memcpy(body + 8, &skill, 4);
+	return Send(ZoneOp::GMTrainSkill, body, sizeof(body),
+		"OP_GMTrainSkill " + std::to_string(npc) + " bank " + std::to_string(bank) + " skill " + std::to_string(skill));
+}
+
+bool ZoneSession::GMEndTraining(uint16_t npc)
+{
+	if (m_state != State::InZone)
+		return false;
+	uint8_t body[4] = {};
+	std::memcpy(body, &npc, 2);
+	std::memcpy(body + 2, &m_my_id, 2);
+	return Send(ZoneOp::GMEndTraining, body, sizeof(body), "OP_GMEndTraining " + std::to_string(npc));
+}
+
 bool ZoneSession::ShopBuy(uint16_t npc, int16_t slot, int32_t quantity)
 {
 	if (m_state != State::InZone)
@@ -1374,6 +1406,22 @@ void ZoneSession::SetStance(uint8_t stance)
 	m_self.stance = stance;
 }
 
+void ZoneSession::SendAppearance(uint16_t type, uint32_t value)
+{
+	if (m_state != State::InZone)
+		return;
+	uint8_t body[8] = {};
+	memcpy(body, &m_my_id, 2);
+	memcpy(body + 2, &type, 2);
+	memcpy(body + 4, &value, 4);
+	Send(ZoneOp::SpawnAppearance, body, sizeof(body),
+		"OP_SpawnAppearance " + std::to_string(type) + " " + std::to_string(value));
+	if (type == AppearanceInvis)
+		m_self.invis = static_cast<uint8_t>(value);
+	else if (type == AppearanceSneak)
+		m_self.sneaking = static_cast<uint8_t>(value);
+}
+
 void ZoneSession::SetAfk(bool afk)
 {
 	if (m_state != State::InZone)
@@ -1570,6 +1618,8 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		p.class_id = Read<uint16_t>(data, 144);
 		p.level = data[148];
 		p.exp = Read<uint32_t>(data, 152);
+		p.practice_points = Read<int16_t>(data, 156);
+		p.expansions = Read<uint32_t>(data, 3392);
 		p.mana = Read<int16_t>(data, 158);
 		p.cur_hp = Read<int16_t>(data, 160);
 		p.str = Read<int16_t>(data, 164);
@@ -1779,10 +1829,55 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 	case ZoneOp::LevelUpdate:
 		// LevelUpdate_Struct: {u32 level, u32 old level, u32 exp}.
 		if (data.size() >= 12) {
+			// CEverQuest_HandleWorldMessage_LevelUpdate: up from the level before, 5 practices.
+			int32_t level = Read<int32_t>(data, 0), old_level = Read<int32_t>(data, 4);
+			if (m_profile.level < level && old_level < level)
+				m_profile.practice_points = static_cast<int16_t>(m_profile.practice_points + 5);
 			m_profile.level = static_cast<uint8_t>(Read<uint32_t>(data, 0));
 			m_profile.exp = Read<uint32_t>(data, 8);
 		}
 		break;
+	case ZoneOp::BindWound:
+		// The 0x4093 case of HandleWorldMessage: BindWound_Struct's type.
+		if (data.size() >= 3) {
+			Event e{Event::Type::BindWoundAnswered};
+			e.id = Read<uint16_t>(data, 0);
+			e.value = data[2];
+			events.push_back(e);
+		}
+		break;
+	case ZoneOp::Begging:
+	case ZoneOp::PickPocket: {
+		// msg_beg and msg_steal: the result at 6 and the coins at 8, put in our purse; a stolen
+		// item after the first 12 bytes. Someone picking our pockets (0xff) isn't ours.
+		if (data.size() < 12)
+			break;
+		int8_t result = static_cast<int8_t>(data[6]);
+		if (result < 0)
+			break;
+		Event e{opcode == ZoneOp::Begging ? Event::Type::Begged : Event::Type::Stolen};
+		e.id = static_cast<uint16_t>(result);
+		e.value = Read<int32_t>(data, 8);
+		switch (result) {
+		case 1: m_profile.platinum += e.value; break;
+		case 2: m_profile.gold += e.value; break;
+		case 3: m_profile.silver += e.value; break;
+		case 4: m_profile.copper += e.value; break;
+		case 5:
+			if (opcode == ZoneOp::PickPocket && data.size() >= 12 + ItemSize) {
+				ZoneItem item = ParseItem(data, 12);
+				e.text = item.name;
+				e.value = item.slot;
+				if (item.slot >= 0)
+					m_items[item.slot] = item;
+			}
+			break;
+		default:
+			break;
+		}
+		events.push_back(e);
+		break;
+	}
 	case ZoneOp::SkillUpdate: {
 		// msg_skillimprove: skills 0..99, with its message.
 		int32_t skill = Read<int32_t>(data, 0);
@@ -2210,6 +2305,22 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		events.push_back(e);
 		break;
 	}
+	case ZoneOp::GMTraining: {
+		// msg_req_guildmaster: GMTrainee_Struct {u16 npc, u16 us, u16 skills[100], float greed,
+		// u8 success, u8 languages[32]}.
+		if (data.size() < 241)
+			break;
+		Event e{Event::Type::TrainerAnswered};
+		e.trainer.npc = Read<uint16_t>(data, 0);
+		for (int i = 0; i < 100; ++i)
+			e.trainer.skills[i] = Read<uint16_t>(data, 4 + i * 2);
+		e.trainer.greed = Read<float>(data, 204);
+		e.trainer.success = data[208];
+		for (int i = 0; i < 32; ++i)
+			e.trainer.languages[i] = data[209 + i];
+		events.push_back(e);
+		break;
+	}
 	case ZoneOp::ShopInventoryPacket: {
 		// A count, a byte, then deflated {u16 item class, Item_Struct} records, each in its slot.
 		std::vector<uint8_t> list;
@@ -2426,6 +2537,13 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 				default: spawn->afk = static_cast<uint8_t>(value); break;
 				}
 			}
+		}
+		else if (type == AppearanceSneak) {
+			uint16_t id = Read<uint16_t>(data, 0);
+			auto it = m_spawns.find(id);
+			ZoneSpawn *spawn = it != m_spawns.end() ? &it->second : id != 0 && id == m_my_id ? &m_self : nullptr;
+			if (spawn)
+				spawn->sneaking = static_cast<uint8_t>(Read<uint32_t>(data, 4));
 		}
 		else if (type == AppearanceLight && Read<uint16_t>(data, 0) == m_my_id && m_my_id != 0) {
 			m_self.light = static_cast<uint8_t>(Read<uint32_t>(data, 4)); // we're not among the spawns

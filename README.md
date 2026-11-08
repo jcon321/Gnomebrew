@@ -582,7 +582,7 @@ build/eqclient -u USER -p PASS [options]
 ## Preview tool (Linux)
 
 ```
-build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|ground|commands|group]]
+build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|train|ground|commands|group|skills]]
 build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS]
 ```
 
@@ -590,7 +590,10 @@ This drives the real front-end code with scripted input and writes PNG snapshots
 drawn as outline boxes, since there's no GDI. With a login server it logs in, snapshots server
 select and character select, and presses Enter World (add `charselect` after the password to stop
 at character select instead, or `shop` to stand by the nearest merchant, open its shop with the
-right button, sell the first thing worth anything and buy it back, then camp; or `ground` to list
+right button, sell the first thing worth anything and buy it back, then camp; or `train`, as
+Replaytest, to stand by our class's nearest guildmaster, open its training window with the right
+button, print the rows, sort by value both ways and by name, pick the first skill we have, Train
+and Done; or `ground` to list
 what's on the ground, drop an item and pick it back up, and open a forge and close it; or
 `commands` to type /random, /lootnodrop, /fastdrop and socials (alone and at the nearest spawn),
 print the chat, and snapshot the compass as it turns; or `group`, with Claudebot in the zone through
@@ -598,7 +601,11 @@ print the chat, and snapshot the compass as it turns; or `group`, with Claudebot
 --group-accept`, to stand by them, follow their invitation in the group window, click their gauge,
 type the /who lines, /follow them from 70 away (printing the gap each second) until Move back ends
 it, /disband, then click them, /invite them, select them with Target party member 1 and /disband them,
-printing the group and the window's buttons at each step). `create` instead makes an Erudite wizard from the first empty slot,
+printing the group and the window's buttons at each step); or `skills`, as the account's
+Replayrogue, to target the nearest NPC and turn auto attack on for 4.5 s (our swings' messages and
+fatigue), then use bind wound, feign death, hide, sneak, pick pockets, tracking, fishing, begging,
+hide and sneak again from the abilities page (`UseSkill`), printing the chat and our stance,
+visibility, sneaking and hiding after each, then hide and step forward. `create` instead makes an Erudite wizard from the first empty slot,
 snapshots every creation screen and the face picker, submits it, and deletes it again (Yes in the
 confirmation dialog). `createluclin` does the same with every Luclin model on, as a dwarf warrior
 whose face picker steps through each feature, printing the rows shown and what the model takes,
@@ -1073,9 +1080,13 @@ the rejection).
   `OP_SpawnAppearance`), then jumps straight up (`L04`); backing up calls it off. A press must
   never be read on a frame where no time passed. The Windows loop timed frames with
   `GetTickCount64`, whose 16 ms steps did that at vsync rates, so it uses `steady_clock`.
-  Sitting, `ProcessControls` takes no movement keys or Space and the right button doesn't turn us.
-  Forward stands us up, closing the spellbook, and we move off at once while getting up (`P02`
-  backwards) plays out. In first person the view follows the head bone down and up.
+  Sitting, `ProcessControls` takes no movement keys or Space and the right button doesn't turn us
+  (nor in any stance but standing, 100, and crouching, 111).
+  Forward stands us up from sitting, closing the spellbook, and we move off at once while getting
+  up (`P02` backwards) plays out. In first person the view follows the head bone down and up.
+  `EQPlayer::ChangeStance` (@0050be3c) plays animation 36 (`P05`) kneeling (105), 16 (`D05`, held)
+  lying (115, feign death), 33 (`P02`) sitting; to 100 it plays 36 backwards from kneeling, 24
+  (`L08`) backwards from crouching, nothing from 102, else 33 backwards.
 - **Collision** (`frontend/player_movement.cpp`, `render/zone_scene.cpp`), as `CDisplay::MovePlayer`
   (@00504765) does it: the body (`ModelHeightOffset`, `MHO`, 5/8 of the height, over the feet) is
   lifted by a step height (`MHO * 0.75`, 5.4375 at most; barbarians, trolls and ogres `MHO * 0.5`;
@@ -1430,12 +1441,13 @@ details and the nearest spawns at the top left and the radar at the top right.
   12371, and sends `OP_AutoAttack2` (0x4161) then `OP_AutoAttack` (0x4151), `{u32 on}` each, as it
   changes. It goes off silently entering a zone, when our target dies (ReportDeath) or despawns
   (HandleWorldMessage), and when we die (`ReportDeath_ClearOutRentables`); with eqstr 1466 "Auto
-  attack off." asking a merchant for its shop or opening a bank (`RightClickedOnPlayer`,
+  attack off." asking a merchant for its shop or a guildmaster to train, or opening a bank (`RightClickedOnPlayer`,
   `CBankWnd::Activate`). The assist's answer turns it on with AttackOnAssist (the TAKP exe reads
   Zeal's `_Zeal_attack_on_assist` there). While it's on, a trade asked of us is busy
   (`msg_req_trade`), and the player window draws a red one-pixel lasso round its client area every
   other frame (`CPlayerWnd::UpdatePlayerWindowState`, `DrawSelectionLasso`).
-- **Melee is the zone's:** the client only says auto attack's on. EQMacEmu swings on its own
+- **Melee is the zone's:** the client says auto attack's on, and swings for itself only to check
+  and tell (below). EQMacEmu swings on its own
   attack timers (`Client::Process`: in `CombatRange`, in line of sight and facing the target),
   sends the attacker's swing as `OP_Animation` to everyone near, the attacker too (`Mob::DoAnim`),
   and each hit or miss as `OP_Damage` (`Damage_Struct`: target, source, type, spell, damage,
@@ -1443,6 +1455,26 @@ details and the nearest spawns at the top left and the radar at the top right.
   hand, 7 archery, 8 backstab, 10 bash, 21 dragon punch, 23 eagle strike and tiger claw, 30 the
   kicks and intimidation, 36 piercing, 51 throwing; 231 a spell. Our own swing animation comes
   back to us and plays on our model with its sound (`CDisplay_PlayAnimationSound`).
+- **Our own swings** (`frontend/melee_attack.cpp`, `CEverQuest::ProcessControls` @0053f337,
+  `EQPlayer::DoAttack` @0050a0f8): with auto attack on and control (standing or crouching, not
+  stunned, not stance 102), ProcessControls takes `__RangeAttackReady` for `DoAttack(13)` and
+  `DAT_007cd845` for `DoAttack(14)`. DoPassageOfTime readies the secondary hand when its weapon's
+  delay (hand to hand's reuse with the hand empty; the primary's delay with anything there but a
+  weapon) has passed since ActorInfo +0xd0; a ready swing that wasn't taken (no control) restarts
+  both hands' timers. Every DoAttack first takes off the invisibility buffs (SPA 12, 28, 29, 94) and
+  ends hiding (`DAT_00798780`; eqstr 12682 in 0x111). For 13 and 14: from shooting, the weapons go
+  back in hand; the hand's item must be a weapon (else nothing: a shield doesn't swing; empty is
+  the hand to hand dummy, type 22 skill 28); its delay (Delay * 100, or the skill's reuse for type
+  22: a monk past 26 takes 100 ms off per 4 levels over 24, an Iksar per 6, 1 s at most, over 60
+  2400, 2200, 2000 (an Iksar's 100 more), 1600 over 50 with item 10652 on the hands; a beastlord
+  100 per 5 levels over 24) hastened must have passed since the hand's timer, which restarts;
+  then standing (12368 at 102, else 12369, in red), `CanIHitTarget` (its messages, so a target out
+  of reach says 124 each hand's swing), and the fatigue: hand to hand or a weapon under 2.6 lb one
+  point a third of the time, under 5.1 half the time, under 10.1 always, heavier 2
+  (`EQ_PC::SetFatigue`, 0..100; shooting too). What follows (`DoMissileHit`'s to-hit and damage,
+  `CheckArcherySuccess` and `CheckThrowingSkill`, which are the double attack and dual wield rolls
+  despite their names) sends nothing for 13 and 14. EQMacEmu says 124 itself too, for its primary
+  swing out of range.
 - **Hits** (`frontend/combat.*`, `msg_successful_hit` @004e0907 ->
   `CEverQuest_ReportSuccessfulHit` @005297d2): someone else's hit on someone else is told within 75
   units of the victim. A hit is "%1 %2 %3 %4" (12162): the attacker ("You", 12185, when it's us),
@@ -1548,9 +1580,15 @@ details and the nearest spawns at the top left and the radar at the top right.
   has gone by since its last use (`DAT_007cd650`); mend at its own time (`DAT_007cd6d0`). The combat
   skills share one timer (ActorInfo +0x164: the last one's reuse from its use), `__AltTimerReady`.
   `EQPlayer::ModifyAttackSpeed` (@0050a039) hastens a delay: `delay / (haste * 0.01)` with haste
-  `TotalSpellAffects(11)`: the best spell haste, the best worn item's (110 at most under level
-  26), the worst slow, overhaste and bard haste, capped by level (ours: only the buffs' SPA 11
-  summed); EQMacEmu restarts its own combat ability timer at `reuse * 100 / GetHaste() - 1` whole
+  `TotalSpellAffects(11, 1)` (@004c6b6d, `Buffs::AttackSpeed`): over the buffs, the worst slow (a
+  value 1..99), the best haste (100 and up), the best overhaste (SPA 98) and bard haste (SPA 119);
+  over the worn slots 1..21, items not stackable (Stackable over 1) with a worn effect (EffectType1
+  2) of a spell with a duration, at EffectLevel1: the worst slow and the best haste (110 at most
+  under level 26). A slow wins (the worse of the two); else the spell and item haste are added,
+  less 100 when both are 100 and up, plus overhaste's part over 100 (110 at most, over level 49),
+  plus the bard haste (its part over 100 if over; 10 at most under level 51, else 25), and capped
+  at level + 125 + the bard haste (185 + it over level 50, 200 + it over 59); bard haste alone is
+  100 + it. EQMacEmu restarts its own combat ability timer at `reuse * 100 / GetHaste() - 1` whole
   seconds (kick and bash 8, backstab 10, round and flying kick 8, eagle strike and dragon punch 6,
   tiger claw 7), so a tiger claw at eqgame's 5.5 s comes too early for it and is dropped; a bow's also drops `delay * weight reduction * 0.0025 + 1` with a
   quiver in a pack slot, when that leaves over 1000.
@@ -1569,7 +1607,57 @@ details and the nearest spawns at the top left and the radar at the top right.
   true for 5 s, "You think you are heading %1." with North..NorthWest by 64ths of our heading, and
   `OP_SenseHeading`), intimidation (`OP_InstillDoubt`; 12398, 12691, 12400), taunt (an NPC within
   melee range, not races 141, 72, 73: 12397 and `OP_Taunt {target}`; 12395, 386, 12396) and disarm
-  (within 15, `CanIHitTarget`, `OP_Disarm {us, target, skill, 0xff}`; 12416..12419).
+  (within 15, `CanIHitTarget`, VisibilityState to 0 with the invisibility buffs off,
+  `OP_Disarm {us, target, skill, 0xff}`; 12416..12419). On a horse (ActorInfo's Mount, or the
+  SPA 113 buff) only tracking, bash, disarm, 30, mend, sense heading, fishing, intimidation, taunt
+  and the AA abilities 105 and 107 go (else 12393). Sneak and hide skip the timer to stop; begging
+  and pick pockets start each other's timer; hide's runs to `DAT_007cd6c4` (its reuse; an AA
+  takes 1..3 s off) and isn't ready while hidden; sneak isn't ready while sneaking. The messages
+  are color 0x10e unless said:
+  - **Sneak** (42): sneaking, `IsSneaking` 0 and `OP_SpawnAppearance {us, 15, 0}`, 12338; else not
+    attacking (12420) nor in water (12421), `OP_Sneak` and 12422. The zone rolls and answers with
+    SpawnAppearance 15 (`msg_stat_change` sets IsSneaking); EQMacEmu tells a rogue SNEAK_SUCCESS or
+    _FAIL. Sneaking, forward is `EQPlayer::InitSneakMod`'s modifier (0.5, a rogue's 0.1 more per
+    level over 50, 10 at most) times the walk speed, back and beside half the walk speed.
+  - **Hide** (29): hiding (`DAT_007989e2` 29) stops it (12415); attacking 12423; else we must stand
+    still, each of MovementSpeedY, X and Z within 0.001 (a two-thousandth per skill point over 50,
+    0.5 at most; `AltAdvManager_CheckHidingSkillBonus` lets it go anyway): hidden, our position
+    kept as whole numbers, `OP_Hide`, 12425, `UpdateMyVisibleStatus`; else 12424. DoPassageOfTime
+    unhides us (12682) when the whole numbers change, unless we're a rogue sneaking.
+  - **`UpdateMyVisibleStatus`** (@004c0b2b): VisibilityState 1 hidden or with SPA 12, else 3 with
+    SPA 28, 2 with 29, else 0; when it changes the buffs that don't match go and
+    `OP_SpawnAppearance {us, 3, state}` is sent. `MakeMeVisible` (@004c0a0f) sets 0, takes all
+    three off, tells the zone and calls `CEverQuest_CancelSneakHide` (12337 unhidden, 12338 with
+    IsSneaking cleared, neither told). `EQPlayer::IWasHit` clears VisibilityState and IsSneaking
+    without telling anyone.
+  - **Feign death** (25): `ChangeStance(115)` and `OP_FeignDeath {us, DAT_007985ee, 0}` (6 bytes);
+    the zone decides whether it took and tells those near a failure.
+  - **Bind wound** (9): a player (us too) as the target (144), bandages (item type 18, found by
+    `FindItemBySkillId` in slots 0..29 and their bags; 146), within 15 (420 with the name);
+    `DAT_007d0258` and `DAT_007d0254` up, `OP_Bind_Wound {target, 0}`, `ChangeStance(105)`, 12436
+    or 12437. Its answers (the 0x4093 case) by type: not 0 or 3 stands us up; 0 and 1 1432, 3 the
+    counts down, 4..7 1433..1436, all in color 0xf.
+  - **Begging** (67): an NPC target (12401), not attacking (12402), within 15 (12403), visible
+    (12404); `DAT_007d0254` up and `OP_Begging` {target, us, skill, 0xff, .., u32 0} (18 bytes).
+    `msg_beg` (@004dff87): the count down, then by byte 6: 0 12892, 1..4 12893..12896 with the u32
+    at 8, added to our platinum .. copper.
+  - **Pick pockets** (48): a target (12405), not a GM (nothing), not a corpse (12406), not stunned
+    (12407), not attacking (12408), not us (12409); a player needs both of us PvP (12410, 12411;
+    under PvP type 4 the deities and a 5 level range, 12412, 12413); within 15 (12414);
+    `DAT_007d0254` up, `OP_PickPocket` as begging's, `MakeMeVisible`. `msg_steal` (@004e019a): the
+    count down; 0 12898, 1..4 12899..12902 and the coins, 5 an item after the first 12 bytes
+    (12903 with its name; 12904 when its slot is under 0) put in its slot; 0xff is someone picking
+    ours (12897 in red, and the answer).
+  - **Fishing** (55): not already (156), not in water (157), nothing on the cursor (158), not
+    attacking (159), a pole (type 36; 160) in the primary or secondary hand (161), bait (type 37;
+    162); 163, our position kept, standing animation 5 at half speed on us and `OP_Animation`
+    `{us, 5, 0.5}`, then 2 s on the cast, `OP_Fishing`. `EQ_Character::DoFishingEvent` (@004bf8a7):
+    moving (MovementSpeed over 0.01) calls it off (165); after the 2 s the hook lands 16..32 ahead,
+    and if the floor there plus 3 is in water (GetEnvironment not 0, 3 or 7) and the surface
+    (FindZoneTopZ) within 30 of our height, splash particles and sound 99 there and 9 s more;
+    then it's over. EQMacEmu does the catch.
+  - **Tracking** (53): `CTrackingWnd::Activate` (the old UI's list instead) and `OP_Track`; EQMacEmu
+    kicks a class without it.
 - **CanIHitTarget** (`EQPlayer::CanIHitTarget` @00509e09): not with divine aura (SPA 40: 12695), at
   ourselves (12696) or nobody (12697), `AllowedToAttack` (@0050996a: never at or as races 72, 141,
   73, nor as 114; an NPC or an NPC's pet yes; a player or a player's pet only both PvP, within 4
@@ -1665,6 +1753,56 @@ details and the nearest spawns at the top left and the radar at the top right.
   Escape and walking more than 20 away across the ground (every 500 ms) send `OP_ShopEnd`
   (0x4037: merchant, us) and clear our target. The slots scroll in `MW_MerchantSlotsWnd`, a
   `Style_VScroll` screen; our step is 10 pixels.
+- **Guildmasters** (`frontend/train_window.*`, `CTrainWnd`, TrainWindow): the right button on a
+  guildmaster (class 17..31) within 20 trains with our own class's (our class + 16), when none is
+  training us already: `EQ_Character::MakeMeVisible`, auto attack off (1466), and `OP_GMTraining`
+  (0x409c, 244 bytes `GMTrainee_Struct`: guildmaster, us, the rest 0), waiting (`DAT_007d0258`).
+  Another class's says eqstr 1467 ("You are not a member of the %1 class guild.  Begone.", the
+  class by `CEverQuest_GetClassDesc(class - 16)`) in color 10. Neither returns, so `_consider`
+  follows as for anyone. The zone answers with the same struct (`msg_req_guildmaster` @004de70a):
+  the most it teaches each skill (u16 @4), its rate (float @204), success (@208) and a byte per
+  language (@209). Without success (the server's faction check, which has the guildmaster say why)
+  it just stops waiting; with it, `SetGMData` (@0043ad3d) lists each skill with a cap of 1..252
+  that our class can have (ours isn't 255) except 72, offense (33) and defense (15), then each
+  language it teaches that `EQ_PC_checkLang` (@004ef555: `DAT_0060b0ac`'s level per race and
+  language, the Iksar's at index 13, the Vah Shir's at 14, with class exceptions) lets us learn,
+  capped at 100. `Activate` puts music track 7 on and shows it. Each row (`UpdateSkill`) is the
+  name, the rank (`CSkillsWnd`'s; "LEVEL: %1" with our class's level for 254, "LEVEL: 0" for
+  255), the value (blank for 254 and up), and `CostToTrain` (@004ef6c7): `(value - 10)^3 * greed *
+  0.01` copper truncated, the value 0 for a skill `HasSkill` says we lack, written a digit each
+  into the copper, silver and gold columns from the right and the rest as platinum, or "--" in all
+  four for nothing. The list (rows 24 high, headings 0xff8aa3ff) has coin pictures as headings
+  (a column's `<Header>` names a FrameTemplate, `Header_PlatCoin`, whose `Middle` is the picture;
+  `CListWnd::DrawHeader` centers it 2 in from the column's edges, 2 down).
+  `UpdateRight` shows the practices (profile +156, `PracticePoints`) and the coins we carry, and
+  enables Train with a row picked, a practice, the money, and our level at the skill's. Clicking a
+  row has the guildmaster say 12056 (12055 for a language) in color 15; clicking the name heading
+  sorts by name and the rank or value heading by value, each the other way from last time
+  (`SortNames` by strcmp and `SortSkillsByValue`, selection sorts; the first click is A to Z or
+  highest first). `Train` (@0043ae1d) asks `EQ_PC::BitchCanTrain` (@004efc95, cdecl: pc, the
+  guildmaster's cap, bank, skill): eqstr 117 in red for the trade skills (`EQ_PC_AtSkillLimit?`'s
+  57, 59..61, 63..65, 68, 69) past 20; 12925 without practices; 12928 for 255; 12929 under our
+  class's level; 12930 at `setskill`'s level limit or `GetSkillLimit2`'s cap; 12931 at the
+  guildmaster's cap; for a language 12924, 12926 at 100 and 12927. Then 12065 if we can't pay;
+  else `HandleMoney`, `OP_GMTrainSkill` (0x4140, 12 bytes: guildmaster, a u16 eqgame leaves unset,
+  u32 bank 0 or 1 for a language, u32 skill), a practice spent and the point added ourselves: a new
+  skill starts at our class's level for it (12066), a language says 12066 for its first point and
+  12067 after, a skill 12068, all as "tells you" in 0x111. Done, the close box, Escape (after the
+  spellbook, before the social editor), walking over 20 away (every 500 ms), its despawning and
+  its death close it (`Deactivate`, `CEverQuest_LeaveGuildMaster`): music off, `OP_GMEndTraining`
+  (0x409d: guildmaster, us) and our target cleared. `OP_LevelUpdate` going up adds 5 practices
+  (`CEverQuest_HandleWorldMessage_LevelUpdate`).
+- **Skill limits** (`frontend/skills.*`): `__SkillDict` +0x98 holds a second cap per class, used
+  with any of the profile's expansion bits (+3392 in the packet, `+0xd3c`, `& 0x1f`):
+  `GetSkillLimit2` picks it. `setskill` (@004d0808) is whether a skill is at the most our level
+  allows: the trade skills (+0xb clear: 57, 60, 61, 63..65, 68, 69; tinkering never) stop at 250, or
+  200 with more of the others over 200 than Trade Skill Mastery (`GetAbility(0x8d)`) allows; the
+  rest by a formula per skill and class ((level + 1) * 5 mostly; offense, defense, dodge, hand to
+  hand, the weapon skills, the specializations held to 50 by another over 50, swimming's +20 for an
+  Iksar, 58 and 59 from their class level), then the class cap, or with an expansion
+  `EQ_PC_GetKunarkThreshold`: past level 50 the classic cap rises `ceil((expansion - classic) /
+  10)` (2 at least) a level, up to the expansion cap. Both tables were taken by compiling
+  `InitializeSkillData`'s decompile and checked against the first cap table.
 - **`OP_MerchantItemPacket`** (0x4031) isn't a merchant's: the zone's `ItemPacketTrade` (what
   `PutItemInInventory` sends: something bought, traded for or handed back by an NPC) goes out
   under it, and eqgame's `HandleWorldMessage` gives it to `msg_snd_ieq` as it does
@@ -1693,7 +1831,7 @@ details and the nearest spawns at the top left and the radar at the top right.
 - **Archery and throwing** (`frontend/ranged_attack.cpp`). DoPassageOfTime readies the Range button
   (`__RangeAttackReady`) when the primary's delay (Delay * 100, hand to hand's reuse without one;
   a weapon is item type under 6, 13 or 22) has passed since ActorInfo's AttackTimer, or the range
-  item's after a shot (LastAttack 11); auto attack on takes it back and restarts the timer.
+  item's after a shot (LastAttack 11); auto attack's swings take it (see Our own swings).
   `ModifyAttackSpeed(delay, bow)` (@0050a039) hastens by SPA 11 (delay / (haste * 0.01)) and for a
   bow the first quiver (bag type 2) in the general slots with a weight reduction takes
   `(int)(WR * 0.0025 * delay) + 1` off, unless that leaves 1000 or less. The button

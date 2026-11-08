@@ -73,6 +73,8 @@ struct ZoneProfile
 	// By skill id (50 is swimming): 255 the class never has it, 254 it does at a later level,
 	// 0 it has it untrained.
 	int16_t skills[100] = {};
+	int16_t practice_points = 0; // PracticePoints (+0x98): training sessions to spend at a guildmaster
+	uint32_t expansions = 0;     // +0xd3c: the expansions the account has (bits; 0x1f the skill caps')
 	// groupMembers (EQ_PC+0x1390 in eqgame): the group's names as the zone has them, ours among them.
 	std::string group_members[6];
 	// The spells scribed in the book's 256 slots (eight to a page) and memorized in the eight gems,
@@ -130,7 +132,8 @@ struct ZoneSpawn
 	uint8_t linkdead = 0;
 	uint8_t lfg = 0;         // OP_LFGCommand only; the spawn packets don't carry it
 	uint8_t pvp = 0;
-	uint8_t invis = 0;
+	uint8_t invis = 0;       // VisibilityState (SpawnAppearance 3): 1 invisible or hidden, 2 to the undead, 3 to animals
+	uint8_t sneaking = 0;    // IsSneaking (SpawnAppearance 15)
 	int16_t guild_id = -1;   // -1: none
 	int16_t deity = 0;       // Spawn_Struct's; not in our own (the profile has ours)
 	uint8_t aa_title = 0;    // the AA title rank, 1..3 (CEverQuest_GetTitleDesc)
@@ -208,6 +211,17 @@ struct ZoneMerchant
 	float rate = 1;      // ShopRequest: the merchant's greed (CalcPriceMod), what its prices are times
 	int16_t slot = 0;    // ShopPlayerBuy: its slot (0..79; -1 none); ShopPlayerSell: ours
 	int32_t quantity = 0, price = 0;
+};
+
+// A guildmaster's answer to OP_GMTraining (GMTrainee_Struct): whether it trains us, the most it
+// teaches each skill (0 none, 253 and up none either) and whether each language, and its rate.
+struct ZoneTrainer
+{
+	uint16_t npc = 0;
+	uint8_t success = 0;
+	float greed = 1;
+	uint16_t skills[100] = {};
+	uint8_t languages[32] = {};
 };
 
 // Something on the ground: OP_GroundSpawn's Object_Struct (224 bytes), an EQItemList entry. A
@@ -437,6 +451,13 @@ public:
 			// the attack skill, spell and damage the killing blow's; text: the spawn's name before it
 			// became its corpse. A SpawnChanged follows for the corpse.
 			Died,
+			// The zone's answers to UseSkill's: OP_Bind_Wound (value its type), OP_Begging and
+			// OP_PickPocket (id the result: 0 failed, 1..4 platinum .. copper, 5 an item; value the
+			// coins, already in Profile(); text a stolen item's name, in Items() at its slot, or
+			// dropped when the slot's under 0).
+			BindWoundAnswered,
+			Begged,
+			Stolen,
 			OwnAnimation,   // value: OP_Animation for us (our own swings, as the zone has them), played once
 			MissileLaunched, // missile: OP_Projectile
 			BuffChanged,    // OP_Buff: buff, id its slot, value how (ZoneOp::Buff)
@@ -450,6 +471,7 @@ public:
 			MerchantBought,
 			MerchantSold,
 			MerchantItemGone,
+			TrainerAnswered, // trainer: OP_GMTraining's answer (msg_req_guildmaster)
 			// A corpse (loot): OP_MoneyOnCorpse's answer to OP_LootRequest, a slot looted (OP_LootItem's
 			// answer), and the looting over (OP_EndLootRequest or OP_LootComplete from the zone). Its
 			// items are in Items() at 5000 + the order they came in (OP_LootItemPacket).
@@ -508,6 +530,7 @@ public:
 		ZoneBuff buff;
 		ZoneConsider consider;
 		ZoneMerchant merchant;
+		ZoneTrainer trainer;
 		ZoneLoot loot;
 		ZoneWorldContainer world;
 		ZoneGroup group;
@@ -569,9 +592,12 @@ public:
 	// /consider: OP_Consider about a spawn (OP_ConsiderCorpse a corpse). The zone answers a
 	// spawn's with Considered.
 	bool Consider(uint16_t id, bool corpse);
-	// OP_Animation for us (Animation_Struct {u16 spawn, pad, i32 animation, float 1}): a social's,
+	// OP_Animation for us (Animation_Struct {u16 spawn, pad, i32 animation, float speed}): a social's,
 	// played for everyone near.
-	bool SendAnimation(int animation);
+	bool SendAnimation(int animation, float speed = 1.0f);
+	// OP_SpawnAppearance of ours of any other type (3 VisibilityState, 15 IsSneaking...), kept in
+	// Self() for those two.
+	void SendAppearance(uint16_t type, uint32_t value);
 	// DoPassageOfTime: our auto attack went on or off (EverQuestinfo's __Attack): OP_AutoAttack2 and
 	// OP_AutoAttack, {u32 on} each.
 	bool SendAutoAttack(bool on);
@@ -627,6 +653,13 @@ public:
 	// shop, OP_ShopPlayerBuy for `quantity` of what's in its slot (0..79), OP_ShopPlayerSell for
 	// that many of what's in our slot, OP_ShopEnd when we're done (its items go from Items()).
 	bool ShopRequest(uint16_t npc);
+	// A guildmaster (CEverQuest::RightClickedOnPlayer, CTrainWnd): OP_GMTraining {u16 it, u16 us,
+	// the rest 0} asks to train, and the zone answers with the same struct (TrainerAnswered);
+	// OP_GMTrainSkill {u16 it, u16 (eqgame leaves it unset), u32 bank, u32 skill} trains a skill
+	// (bank 0) or language (1); OP_GMEndTraining {u16 it, u16 us} when we're done.
+	bool GMTraining(uint16_t npc);
+	bool GMTrainSkill(uint16_t npc, uint32_t bank, uint32_t skill);
+	bool GMEndTraining(uint16_t npc);
 	bool ShopBuy(uint16_t npc, int16_t slot, int32_t quantity);
 	bool ShopSell(uint16_t npc, int16_t slot, int32_t quantity);
 	bool ShopEnd(uint16_t npc);
@@ -695,6 +728,7 @@ public:
 	// Our own spawn from OP_ZoneEntry (ServerZoneEntry_Struct): appearance, size, position.
 	// Set before the ZoneInfo event.
 	const ZoneSpawn &Self() const { return m_self; }
+	ZoneSpawn &EditSelf() { return m_self; } // what the client sets of itself without telling the zone
 	uint16_t MySpawnId() const { return m_my_id; }
 	// CDisplay::PlayerDistance(spawn, us, 1): how far a spawn is from where we last moved, up and
 	// down too; a big negative number for a spawn that isn't there (as eqgame's -1e27).

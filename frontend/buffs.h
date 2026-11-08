@@ -74,6 +74,13 @@ public:
 	// IsValidAffect: a buff there of a spell we know.
 	const SpellInfo *SlotSpell(int slot) const;
 	int Total(int spa) const; // TotalSpellAffects
+	// TotalSpellAffects' own branch for attack speed (SPA 11, with the worn items): the worst slow
+	// (a value under 100, the buffs' or the items') if there's one; else the best spell haste and
+	// the best worn haste (110 at most under level 26) together, less the 100 counted twice, plus
+	// overhaste (SPA 98, over level 49: 110 at most) and bard haste (SPA 119: its value over 100,
+	// 10 at most under level 51, 25 from it), up to level + 125 (+ the bard haste; 185 over level
+	// 50, 200 over 59). 0 none; else a percentage of the normal speed.
+	int AttackSpeed() const;
 	// eqspa_movement_rate as ProcessControls adds it to our speed (per tick); below -1000 rooted.
 	float SpeedModifier(float run_speed) const;
 	uint32_t Serial() const { return m_serial; } // counts the changes

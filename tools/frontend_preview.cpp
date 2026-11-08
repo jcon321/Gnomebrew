@@ -2,7 +2,7 @@
 // snapshots, to check layout and flow without a Windows box. Text is drawn as
 // outline boxes of an estimated Arial size, since GDI isn't available.
 //
-//   frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|shop|ground|commands|group]]
+//   frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|shop|train|ground|commands|group|skills]]
 //   frontend_preview EQDIR OUTDIR --replay FILE [SECONDS]
 //
 // Without a login server it snapshots the start screen, a dialog and the login
@@ -347,6 +347,76 @@ namespace
 	// eqclient --group-invite Replaycaster --group-accept):
 	// their invitation followed through the group window, the member's gauge clicked, /disband to
 	// leave; then our /invite of them, Target party member 1 and /disband to remove them.
+	// Live: our own melee swings and the skills (UseSkill) of whatever class we are, printing
+	// what the chat says and what the zone answers.
+	int SkillsTest(FrontEnd &frontend, Harness &h)
+	{
+		const ZoneSession &zone = frontend.Zone();
+		h.Key(InputEvent::Key::F11);
+		size_t chat_seen = frontend.Chat().Lines().size();
+		auto chat = [&] {
+			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
+				printf("[preview] chat: %s\n", frontend.Chat().Lines()[chat_seen].text.c_str());
+		};
+		auto type = [&](const std::string &line, int wait_ms = 700) {
+			printf("[preview] > %s\n", line.c_str());
+			h.Key(InputEvent::Key::Enter);
+			h.Type(line);
+			h.Key(InputEvent::Key::Enter);
+			h.RunUntil([] { return false; }, wait_ms);
+			chat();
+		};
+		const ZoneProfile &me = zone.Profile();
+		printf("[preview] class %d level %d fatigue %d\n", me.class_id, me.level, me.fatigue);
+		chat();
+		// The nearest NPC, out of reach: auto attack's own swings say so.
+		const ZoneSpawn *near = nullptr;
+		float best = 0;
+		for (const auto &[id, spawn] : zone.Spawns()) {
+			float d = std::hypot(spawn.x - me.x, spawn.y - me.y);
+			if (spawn.npc == 1 && (!near || d < best)) {
+				near = &spawn;
+				best = d;
+			}
+		}
+		if (near) {
+			printf("[preview] nearest NPC: %s at %.0f\n", near->name.c_str(), best);
+			type("/target " + near->name.substr(0, near->name.find('_')));
+			type("/attack", 4500);
+			printf("[preview] fatigue after swinging: %d\n", me.fatigue);
+			type("/attack");
+		}
+		// Each skill used from the abilities page, in turn.
+		for (int skill : {9, 25, 29, 42, 48, 53, 55, 67, 29, 42}) {
+			printf("[preview] use skill %d (have %d)\n", skill, me.skills[skill]);
+			frontend.Skills().Use(skill, NowMs());
+			h.RunUntil([] { return false; }, 1500);
+			chat();
+			printf("[preview]   stance %d invis %d sneaking %d hidden %d busy %d\n", zone.Self().stance, zone.Self().invis,
+				zone.Self().sneaking, frontend.Skills().Hidden() ? 1 : 0, frontend.Skills().Busy() ? 1 : 0);
+		}
+		// Hidden, a step forward shows us.
+		frontend.Skills().Use(29, NowMs());
+		h.RunUntil([] { return false; }, 500);
+		chat();
+		InputEvent forward;
+		forward.type = InputEvent::Type::Key;
+		forward.key = InputEvent::Key::W;
+		forward.scan = 0x11;
+		frontend.OnEvent(forward);
+		h.RunUntil([] { return false; }, 600);
+		forward.type = InputEvent::Type::KeyUp;
+		frontend.OnEvent(forward);
+		h.RunUntil([] { return false; }, 1000);
+		chat();
+		printf("[preview] after moving: invis %d hidden %d\n", zone.Self().invis, frontend.Skills().Hidden() ? 1 : 0);
+		type("/stand");
+		type("/camp", 100);
+		h.RunUntil([&] { return zone.GetState() == ZoneSession::State::LoggedOut; }, 40000);
+		chat();
+		return 0;
+	}
+
 	int GroupTest(FrontEnd &frontend, Harness &h)
 	{
 		WindowManager &windows = frontend.Windows();
@@ -691,6 +761,151 @@ namespace
 
 	// Live: the nearest merchant's shop opened with the right button, the first thing in a general
 	// slot sold to it and bought back (the zone answering both), then Done and a camp.
+	// Our class's guildmaster: walk up, right-click it, and work the training window.
+	int TrainTest(FrontEnd &frontend, Harness &h)
+	{
+		WindowManager &windows = frontend.Windows();
+		const ZoneSession &zone = frontend.Zone();
+		size_t chat_seen = frontend.Chat().Lines().size();
+		auto chat = [&] {
+			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
+				printf("[preview] chat: %s\n", frontend.Chat().Lines()[chat_seen].text.c_str());
+		};
+		auto press = [&](int x, int y) {
+			Rect area = frontend.ScreenArea();
+			InputEvent e{InputEvent::Type::MouseMove, area.x + x, area.y + y};
+			frontend.OnEvent(e);
+			e.type = InputEvent::Type::MouseDown;
+			frontend.OnEvent(e);
+			e.type = InputEvent::Type::MouseUp;
+			frontend.OnEvent(e);
+			frontend.Update(NowMs());
+		};
+		auto click = [&](const std::string &id) {
+			const SidlWindow *wnd = windows.Find("TrainWindow");
+			const SidlWindow::Control *c = wnd ? wnd->Find(id) : nullptr;
+			if (c)
+				press(c->rect.x + c->rect.w / 2, c->rect.y + c->rect.h / 2);
+			else
+				printf("[preview] no %s\n", id.c_str());
+		};
+		auto show = [&](const char *when) {
+			const SidlWindow *wnd = windows.Find("TrainWindow");
+			const SidlWindow::Control *list = wnd ? wnd->Find("SkillList") : nullptr;
+			if (!list)
+				return;
+			const ZoneProfile &me = zone.Profile();
+			printf("[preview] %s: %zu rows, selected %d, practices %d, purse %dp %dg %ds %dc, Train %s\n", when,
+				list->rows.size(), list->selected_row, me.practice_points, me.platinum, me.gold, me.silver, me.copper,
+				wnd->Find("TrainButton") && wnd->Find("TrainButton")->enabled ? "enabled" : "disabled");
+			for (const auto &row : list->rows) {
+				std::string line;
+				for (const auto &cell : row)
+					line += "[" + cell + "]";
+				printf("[preview]   %s\n", line.c_str());
+			}
+			for (const char *id : {"PracticeCount", "CoinCount0", "CoinCount1", "CoinCount2", "CoinCount3"})
+				if (const SidlWindow::Control *c = wnd->Find(id))
+					printf("[preview]   %s = %s\n", id, c->text.c_str());
+		};
+		const ZoneProfile &me = zone.Profile();
+		std::vector<std::pair<float, uint16_t>> gms; // ours, nearest first
+		for (const auto &[id, spawn] : zone.Spawns())
+			if (spawn.npc == 1 && spawn.class_id == me.class_id + 16)
+				gms.push_back({std::hypot(spawn.x - me.x, spawn.y - me.y), id});
+		std::sort(gms.begin(), gms.end());
+		if (gms.empty()) {
+			printf("[preview] no guildmaster of class %d in the zone\n", me.class_id + 16);
+			return 1;
+		}
+		h.Key(InputEvent::Key::F11);
+		for (const char *screen : {"InventoryWindow", "ChatWindow"})
+			windows.Show(screen, false);
+		int x = 0, y = 0;
+		bool found = false;
+		for (const auto &[d, gm_id] : gms) {
+			const ZoneSpawn &gm = zone.Spawns().at(gm_id);
+			printf("[preview] guildmaster %s (%d, class %d), %.0f away; practices %d\n", gm.name.c_str(), gm_id, gm.class_id,
+				d, me.practice_points);
+			frontend.ZoneScene()->SetPlayerPosition(gm.x, gm.y - 10, gm.z, 0);
+			h.RunUntil([] { return false; }, 2000);
+			if (FindOnScreen(frontend, h, gm_id, x, y)) {
+				found = true;
+				break;
+			}
+			printf("[preview] not on the screen\n");
+		}
+		if (!found) {
+		// Camp out, so the character isn't left in the zone.
+		h.Key(InputEvent::Key::Enter);
+		h.Type("/camp");
+		h.Key(InputEvent::Key::Enter);
+		h.RunUntil([&] { return zone.GetState() != ZoneSession::State::InZone && zone.GetState() != ZoneSession::State::Camping; },
+			40000);
+		printf("[preview] camped\n");
+			return 1;
+		}
+		frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+		frontend.OnEvent({InputEvent::Type::RightDown, x, y});
+		frontend.OnEvent({InputEvent::Type::RightUp, x, y});
+		if (!h.RunUntil([&] { return windows.Shown("TrainWindow"); }, 5000)) {
+			chat();
+			printf("[preview] no training window\n");
+		// Camp out, so the character isn't left in the zone.
+		h.Key(InputEvent::Key::Enter);
+		h.Type("/camp");
+		h.Key(InputEvent::Key::Enter);
+		h.RunUntil([&] { return zone.GetState() != ZoneSession::State::InZone && zone.GetState() != ZoneSession::State::Camping; },
+			40000);
+		printf("[preview] camped\n");
+			return 1;
+		}
+		h.RunUntil([] { return false; }, 1000);
+		chat();
+		show("opened");
+		h.Snapshot("t1-train");
+		const SidlWindow *wnd = windows.Find("TrainWindow");
+		const SidlWindow::Control *list = wnd->Find("SkillList");
+		Rect content = wnd->ContentRect(*list);
+		int heading_y = (content.y + wnd->ListRowRect(*list, 0).y) / 2; // between the top and the first row
+		// The Value heading twice (down, then up), then the name's (A to Z).
+		int value_x = content.x + list->columns[0].width + list->columns[1].width + 10;
+		press(value_x, heading_y);
+		show("by value, down");
+		press(value_x, heading_y);
+		show("by value, up");
+		press(content.x + 10, heading_y);
+		show("by name");
+		// The first row with a value shown (a skill we have): picked, then trained.
+		int pick = 0;
+		for (size_t r = 0; r < list->rows.size(); ++r)
+			if (!list->rows[r][2].empty()) {
+				pick = static_cast<int>(r);
+				break;
+			}
+		Rect row = wnd->ListRowRect(*list, pick);
+		press(row.x + 10, row.y + row.h / 2);
+		chat();
+		show("picked");
+		click("TrainButton");
+		h.RunUntil([] { return false; }, 1500);
+		chat();
+		show("trained");
+		h.Snapshot("t2-trained");
+		click("DoneButton");
+		h.RunUntil([] { return false; }, 1500);
+		chat();
+		printf("[preview] window %s\n", windows.Shown("TrainWindow") ? "up" : "down");
+		// Camp out, so the character isn't left in the zone.
+		h.Key(InputEvent::Key::Enter);
+		h.Type("/camp");
+		h.Key(InputEvent::Key::Enter);
+		h.RunUntil([&] { return zone.GetState() != ZoneSession::State::InZone && zone.GetState() != ZoneSession::State::Camping; },
+			40000);
+		printf("[preview] camped\n");
+		return 0;
+	}
+
 	int ShopTest(FrontEnd &frontend, Harness &h)
 	{
 		WindowManager &windows = frontend.Windows();
@@ -1073,6 +1288,8 @@ int main(int argc, char **argv)
 	bool ground = argc == 7 && std::string(argv[6]) == "ground";
 	bool commands = argc == 7 && std::string(argv[6]) == "commands";
 	bool group_test = argc == 7 && std::string(argv[6]) == "group";
+	bool skills_test = argc == 7 && std::string(argv[6]) == "skills";
+	bool train_test = argc == 7 && std::string(argv[6]) == "train";
 	if (argc >= 6 && !replay) {
 		std::string login = argv[3];
 		size_t colon = login.rfind(':');
@@ -2994,6 +3211,15 @@ int main(int argc, char **argv)
 			h.Key(InputEvent::Key::Escape); // Quit back to the start screen
 			return 0;
 		}
+		// skills: the account's rogue (Replayrogue), picked with Down; train: its warrior (Replaytest).
+		for (int i = 0; (skills_test || train_test) && i < 10; ++i) {
+			int sel = frontend.SelectedCharacter();
+			if (sel >= 0 && sel < static_cast<int>(frontend.Characters().size()) &&
+				frontend.Characters()[sel].name == (train_test ? "Replaytest" : "Replayrogue"))
+				break;
+			h.Key(InputEvent::Key::Down);
+			h.RunUntil([] { return false; }, 300);
+		}
 		if (frontend.SelectedCharacter() >= 0) {
 			h.Key(InputEvent::Key::Enter); // Enter World
 			h.RunUntil([&] {
@@ -3016,12 +3242,16 @@ int main(int argc, char **argv)
 			}
 			if (shop)
 				return ShopTest(frontend, h);
+			if (train_test)
+				return TrainTest(frontend, h);
 			if (ground)
 				return GroundTest(frontend, h);
 			if (commands)
 				return CommandsTest(frontend, h);
 			if (group_test)
 				return GroupTest(frontend, h);
+			if (skills_test)
+				return SkillsTest(frontend, h);
 			h.Key(InputEvent::Key::F9);
 			h.Snapshot("8-zone-first-person");
 			h.Key(InputEvent::Key::F9);

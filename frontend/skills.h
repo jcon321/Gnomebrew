@@ -34,4 +34,21 @@ namespace Skills
 	// EQ_Character::HasSkill (@004b9f08): our value of a skill we have (1 for one at 0), the race's
 	// own level for one we haven't (254 and 255 are "can't"), or 0.
 	int HasSkill(const ZoneProfile &me, int skill);
+
+	// The cap each class (1..15) reaches with an expansion on (__SkillDict +0x98..): where
+	// InitializeSkillData sets none, the same as Info::cap.
+	int ExpansionCap(int skill, int cls);
+	// GetSkillLimit2 (@004ef9e6): our class's cap, the expansion one with any of the profile's
+	// expansion bits (0x1f) set.
+	int SkillLimit(const ZoneProfile &me, int skill);
+	// setskill (@004d0808): our value of a skill is at the most our level lets it be. The trade
+	// skills (+0xb clear) stop at 250, or 200 with more of the others over 200 than Trade Skill
+	// Mastery allows; the rest by a level formula each, capped as EQ_PC_GetKunarkThreshold does
+	// past level 50 with an expansion, else by our class's cap.
+	bool AtLevelCap(const ZoneProfile &me, int skill);
+	// EQ_PC_AtSkillLimit? (@004ef2aa): the trade skills a guildmaster teaches no further than 20.
+	bool FieldTradeSkill(int skill);
+	// EQ_PC_checkLang (@004ef555): our race may learn a language (0..24) at our level, with the
+	// class exceptions (shadow knights and necromancers the dark languages, and the rest).
+	bool CanLearnLanguage(const ZoneProfile &me, int language);
 }

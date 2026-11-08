@@ -388,16 +388,58 @@ void ZoneView::Push(float force, float heading, float pitch)
 	m_movement.Push({std::cos(a) * force, std::sin(a) * force, std::sin(p) * force});
 }
 
-void ZoneView::SetSitting(bool sitting)
+void ZoneView::SetStance(uint8_t stance)
 {
-	if (sitting == m_sitting)
+	std::string pose = stance == 110 ? "P02" : stance == 105 ? "P05" : stance == 115 ? "D05" : "";
+	if (pose == m_pose)
 		return;
-	m_sitting = sitting;
-	// A model without P02 is up at once.
-	m_standing_up = !sitting && m_model && m_model->HasAnimation("P02");
+	std::string was = m_pose;
+	m_pose = pose;
+	m_standing_up = false;
+	if (pose.empty() && !was.empty()) {
+		// Up: kneeling's backwards, sitting's or lying's by sitting's backwards (a model without it is
+		// up at once).
+		m_stand_animation = was == "P05" ? "P05" : "P02";
+		m_standing_up = m_model && m_model->HasAnimation(m_stand_animation);
+	}
+	else if (!pose.empty()) {
+		m_animation.clear(); // going down starts the pose over
+		m_action.clear();
+	}
 }
 
-void ZoneView::PlayAnimation(int id)
+bool ZoneView::FishingHook(float distance, render::Vec3 &surface) const
+{
+	if (!m_placed)
+		return false;
+	// Ahead along our heading (WLD x is the server's y), the floor below, 3 up.
+	float a = render::HeadingToRadians(m_heading);
+	render::Vec3 at = {m_server_position.y + std::cos(a) * distance, m_server_position.x + std::sin(a) * distance,
+		m_server_position.z};
+	float floor = 0;
+	if (!m_zone.FloorBelow(at, 1000.0f, floor))
+		return false;
+	at.z = floor + 3.0f;
+	render::Environment env = m_zone.Regions().EnvironmentAt(at);
+	if (!render::Swimming(env) || env == render::Environment::Lava)
+		return false;
+	// The water's top: up from there while it's still water.
+	render::Vec3 top = at;
+	for (int i = 0; i < 400 && render::Swimming(m_zone.Regions().EnvironmentAt(top)); ++i)
+		top.z += 0.5f;
+	if (std::fabs(m_server_position.z - top.z) > 30.0f)
+		return false;
+	surface = top;
+	return true;
+}
+
+void ZoneView::PlaySoundAt(int slot, const render::Vec3 &position)
+{
+	if (m_sound)
+		m_sound->PlaySoundAt(slot, {position.x, position.y, position.z});
+}
+
+void ZoneView::PlayAnimation(int id, float speed)
 {
 	if (!m_model || !m_appearance)
 		return;
@@ -407,6 +449,7 @@ void ZoneView::PlayAnimation(int id)
 	if (code.empty() || !m_model->HasAnimation(code))
 		return;
 	m_action = code;
+	m_action_rate = speed > 0 ? speed : 1;
 	m_animation = code;
 	m_animation_ms = 0;
 	// CDisplay_PlayAnimationSound, as PlayAnimationTrack2 starts it (a swing's whoosh, a kick).
@@ -416,7 +459,7 @@ void ZoneView::PlayAnimation(int id)
 
 void ZoneView::ChooseAnimation(float ms)
 {
-	if (m_dead && m_model && m_model->HasAnimation("D05")) {
+	if ((m_dead || m_pose == "D05") && m_model && m_model->HasAnimation("D05")) {
 		// Dead: the fall, held on its last frame.
 		m_action.clear();
 		if (m_animation != "D05") {
@@ -430,11 +473,11 @@ void ZoneView::ChooseAnimation(float ms)
 		return;
 	}
 	if (!m_action.empty()) {
-		bool cut = !m_movement.OnGround() || m_movement.Swimming() || m_movement.Crouching() || m_sitting || m_standing_up;
-		if (!cut && m_model && m_animation == m_action && m_animation_ms + ms < m_model->AnimationMs(m_action)) {
+		bool cut = !m_movement.OnGround() || m_movement.Swimming() || m_movement.Crouching() || !m_pose.empty() || m_standing_up;
+		if (!cut && m_model && m_animation == m_action && m_animation_ms + ms * m_action_rate < m_model->AnimationMs(m_action)) {
 			m_animation_reversed = false;
-			m_animation_rate = 1;
-			m_animation_ms += ms;
+			m_animation_rate = m_action_rate;
+			m_animation_ms += ms * m_action_rate;
 			m_eye_drop = 0;
 			return;
 		}
@@ -472,10 +515,10 @@ void ZoneView::ChooseAnimation(float ms)
 	}
 	// Sitting: getting down, held; standing up: the same backwards, played out even as we move off
 	// (a jump, a fall or the water cut it short).
-	if (animation.empty() && m_sitting)
-		animation = "P02";
+	if (animation.empty() && !m_pose.empty() && m_model && m_model->HasAnimation(m_pose))
+		animation = m_pose;
 	else if (animation.empty() && m_standing_up) {
-		animation = "P02";
+		animation = m_stand_animation;
 		reversed = true;
 	}
 	else
@@ -510,7 +553,7 @@ void ZoneView::ChooseAnimation(float ms)
 			m_animation_ms = std::min(m_animation_ms, length);
 	}
 	m_eye_drop = 0;
-	if (m_model && animation == "P02") {
+	if (m_model && (animation == "P02" || animation == "P05")) {
 		double length = m_model->AnimationMs(animation);
 		if (length > 0) {
 			if (reversed && m_animation_ms >= length - 1)

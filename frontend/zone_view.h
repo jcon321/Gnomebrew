@@ -63,6 +63,7 @@ public:
 	void SetSafeFallSkill(int skill) { m_safe_fall = skill; }        // for the landing sounds
 	// What our buffs add to our speed (eqspa_movement_rate's MovementSpeedModifier).
 	void SetSpeedModifier(float modifier) { m_movement.SetSpeedModifier(modifier); }
+	void SetSneakModifier(float modifier) { m_movement.SetSneakModifier(modifier); }
 	// The sound the doors, we and the spawns make (none when unset).
 	void SetSound(audio::EqSound *sound) { m_sound = sound; }
 	// The zone line (a "DRNTP..." region type) our feet stepped into since the last call, once.
@@ -72,11 +73,13 @@ public:
 	bool Move(const MoveControls &controls, uint64_t now_ms, bool looking);
 	bool Placed() const { return m_placed; }
 	bool Crouching() const { return m_movement.Crouching(); } // a standing jump winding up
-	// Our stance 110 (EQPlayer::ChangeStance): we sit down (P02, held), and stand back up (P02
-	// backwards, all of it, even as we move off) when it ends. In first person the view goes down
-	// and up with our head.
-	void SetSitting(bool sitting);
-	bool StandingUp() const { return m_standing_up; } // getting up: P02 backwards hasn't finished
+	bool Swimming() const { return m_movement.Swimming(); }    // ActorInfo SwimmingWaterType over 4
+	// EQPlayer::ChangeStance's animations for us: 110 sitting (P02), 105 kneeling (P05) and 115
+	// lying (D05, held as a death is) go down and stay there; 100 from them gets up (kneeling's
+	// P05 backwards, the others' P02), all of it, even as we move off. In first person the view
+	// goes down and up with our head.
+	void SetStance(uint8_t stance);
+	bool StandingUp() const { return m_standing_up; } // getting up: the pose backwards hasn't finished
 	// EQPlayer::IWasHit: a hit's push on us, `force` along `heading` (512ths) and up at `pitch`.
 	void Push(float force, float heading, float pitch);
 	// EQPlayer::IDied for us: we fall (D05) and lie there, nothing else played.
@@ -84,7 +87,12 @@ public:
 	// One of the client's own one-shot animations on us (a spell's casting or its hit, a swing the
 	// zone sends; PlayAnimationTrack's id), played once while we stand or move on the ground, with
 	// its sound; a jump, a fall, the water, crouching or sitting cut it short.
-	void PlayAnimation(int id);
+	void PlayAnimation(int id, float speed = 1);
+	// DoFishingEvent's hook `distance` ahead of us: the floor there (GetFloorHeight) 3 up in water
+	// (GetEnvironment not dry or lava) and its surface (FindZoneTopZ) within 30 of our height; the
+	// surface's point (WLD space) for the splash.
+	bool FishingHook(float distance, render::Vec3 &surface) const;
+	void PlaySoundAt(int slot, const render::Vec3 &position); // CDisplay_PlaySoundAtLocation
 	float EyeDrop() const { return m_eye_drop; }
 	ZoneMovement Movement() const; // for OP_ClientUpdate
 
@@ -399,7 +407,10 @@ private:
 	DebugDraw m_debug_draw;
 	bool m_animation_reversed = false;
 	std::string m_action; // PlayAnimation's, while it plays
-	bool m_sitting = false, m_standing_up = false;
+	float m_action_rate = 1; // its speed (PlayAnimationTrack's)
+	std::string m_pose;            // the stance's held animation: P02, P05, D05; empty standing
+	std::string m_stand_animation; // what getting up plays backwards
+	bool m_standing_up = false;
 	float m_eye_drop = 0; // how far below standing our head is now (sitting down, getting up)
 	bool m_dead = false;
 

@@ -77,12 +77,18 @@ bool PlayerMovement::Step(const MoveControls &controls, float ms, const render::
 	bool swimming = Swimming();
 	// What our buffs add (MovementSpeedModifier): a snare slows us to a crawl at most; rooted, nothing.
 	bool rooted = m_speed_modifier < -1000;
+	// Sneaking (IsSneaking) forward goes at the sneak modifier of the walk speed, back and beside at
+	// half of it, water or not.
+	bool sneaking = m_sneak_modifier > 0;
 	if (controls.forward && !controls.back) {
-		m_speed = (controls.run ? m_run_speed : m_walk_speed) + (swimming ? m_swim_skill * 0.01f : 0) + m_speed_modifier;
+		if (sneaking)
+			m_speed = m_sneak_modifier * m_walk_speed + m_speed_modifier;
+		else
+			m_speed = (controls.run ? m_run_speed : m_walk_speed) + (swimming ? m_swim_skill * 0.01f : 0) + m_speed_modifier;
 		m_speed = rooted ? 0 : m_speed < 0 ? 0.01f : m_speed;
 	}
 	else if (controls.back && !controls.forward) {
-		m_speed = (swimming ? 0 : -m_walk_speed) - m_speed_modifier;
+		m_speed = (sneaking ? -m_walk_speed * 0.5f : swimming ? 0 : -m_walk_speed) - m_speed_modifier;
 		m_speed = rooted ? 0 : m_speed > 0 ? -0.01f : m_speed;
 	}
 	else
@@ -94,9 +100,11 @@ bool PlayerMovement::Step(const MoveControls &controls, float ms, const render::
 	if (controls.strafe && direction != 0) {
 		// process_physics: half the run (or walk) speed beside the forward push, or the strafe
 		// speed (2, unencumbered) times that when standing still.
-		m_strafe = direction * (controls.run ? m_run_speed : m_walk_speed) * 0.5f;
+		m_strafe = direction * (controls.run && !sneaking ? m_run_speed : m_walk_speed) * 0.5f;
 		if (m_speed == 0)
 			m_strafe *= 2;
+		if (sneaking)
+			m_strafe *= 0.5f;
 		if (rooted)
 			m_strafe = 0;
 		direction = 0;
