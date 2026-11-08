@@ -254,9 +254,10 @@ WeatherSounds=1
 - The rest of `[Debug]` is the debug menu's (F11): whether it's open, the stat card's folded
   sections, its RENDER toggles and vision, and its SOUND switches. They're saved as you change
   them in the menu.
-- `[TextColors]` is optional and isn't written for you: the chat's text colors, keyed as eqgame's
-  (`User_<n>_Red`, `User_<n>_Green`, `User_<n>_Blue`, n 1..72; all three, 0..255, or the built-in
-  color). For example `User_1_Red=255` with Green and Blue makes says red.
+- `[TextColors]` is optional: the chat's text colors, keyed as eqgame's (`User_<n>_Red`,
+  `User_<n>_Green`, `User_<n>_Blue`, n 1..72; all three, 0..255, or the built-in color). For
+  example `User_1_Red=255` with Green and Blue makes says red. The Options window's Colors page
+  writes them as you pick colors, and its Reset Default Colors writes every built-in one.
 - `[KeyMaps]` isn't written for you either: the keys you bind on the Options window's Keyboard page
   go there as you bind them, in eqclient.ini's format (`KEYMAP_FORWARD=w`,
   `KEYMAP_FORWARD_2=SHIFT+CONTROL+UP`, `NOKEY` for none; see Keymap below), and Reload defaults
@@ -1350,6 +1351,17 @@ details and the nearest spawns at the top left and the radar at the top right.
   the key's lowercase character or its name (`NUMPAD8`, `LCONTROL`, `SPACE`, `PGUP`), `NOKEY` for
   none. Reading takes the prefixes in any order, a single character only from the 47 the table
   @00611420 has, and anything it doesn't know as no key; a missing key keeps the default.
+- **The Colors page** (`COptionsWnd`, `frontend/options_window.*`): UserColor0..71 (the page's
+  `OCP_UserColor<n>`) each draw their label in the text color they stand for, black as white
+  (`COptionsWnd_GetUserDefinedColor` @0042a953 into the button's text color, +0x68), set when the
+  window's made and each time the tab is picked (`ProcessUserDefinedColorTab`), not when a color
+  changes: a button keeps its old color until the tab's picked again. A click opens the color
+  picker with the button's color (`ColorPageWndNotification` @0042c85b), and its Accept
+  (notification 0x1e) is `SaveColors` (@0042c92b): `CDisplay_SetUserDefinedColor` and `[TextColors]`
+  `User_<n+1>_Red`, `_Green`, `_Blue` (eqclient.ini in eqgame, my-client.ini here). Lines already in
+  the chat keep their color. Reset Default Colors asks eqstr 6602 for 20 s (`CConfirmationDialog`
+  0x21), then `RestoreDefaultColors` (@0042ca2a) saves each `GetDefaultUserDefinedColor`. The page
+  scrolls (Style_VScroll): a scrolling Page moves its pieces as a scrolling Screen does.
 - **Combo boxes** (`CComboWnd`): the choice in white (grey disabled) down the middle of the client
   area left of the button, which is as wide as its `Button` template's Normal and drawn Pressed
   while the list is down. The list hangs from the box's bottom, as wide as the box left of the

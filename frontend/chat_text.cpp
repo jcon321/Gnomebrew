@@ -66,6 +66,17 @@ bool ChatColors::Load(const std::string &settings_ini)
 	return true;
 }
 
+void ChatColors::Set(int index, uint32_t rgb)
+{
+	if (index >= 0 && index < UserColors)
+		m_user[index] = rgb & 0xffffff;
+}
+
+uint32_t ChatColors::Default(int index)
+{
+	return index >= 0 && index < UserColors ? DefaultUserColors[index] : 0;
+}
+
 uint32_t ChatColors::Get(int type) const
 {
 	if (type > 0xff) {

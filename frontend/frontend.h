@@ -229,7 +229,8 @@ private:
 	void ExecuteCmd(int cmd, bool down, int typed);
 	uint32_t KeyWithModifiers(const InputEvent &event) const; // the scan code and Shift, Ctrl, Alt bits
 	void SaveKeyBinding(int id, bool alternate, uint32_t key); // _writeKeyMapToIni
-	void ResetKeyBindings();                                   // DeleteKeyBindingFromConfig for all
+	void ResetKeyBindings();
+	void SaveUserColor(int index, uint32_t rgb); // COptionsWnd::SaveColors                                   // DeleteKeyBindingFromConfig for all
 	MoveControls ZoneControls();
 	bool ZoneCanMove() const; // in the zone, with no dialog up
 

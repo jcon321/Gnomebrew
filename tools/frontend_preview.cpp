@@ -1102,6 +1102,77 @@ namespace
 				shown += options->Item(piece).visible;
 			printf("[preview] page %s: %d pieces shown\n", options->Item(page).def->screen_id.c_str(), shown);
 		}
+		// The Colors page: the buttons in their colors; the first's color picked, accepted and saved;
+		// then Reset Default Colors and yes.
+		int color_tab = -1;
+		for (size_t i = 0; i < tabs->children.size(); ++i)
+			if (options->Item(tabs->children[i]).def->screen_id == "OptionsColorPage")
+				color_tab = static_cast<int>(i);
+		auto colors = [&](const char *what) {
+			printf("[preview] %s:", what);
+			for (int i : {0, 1, 2, 3, 13, 71})
+				if (const SidlWindow::Control *b = options->Find("UserColor" + std::to_string(i)))
+					printf(" %s=%06x", b->text.c_str(), b->text_color);
+			printf("\n");
+		};
+		auto ini_color = [&](int n) {
+			IniFile ini;
+			ini.Load(settings_ini);
+			std::string key = "User_" + std::to_string(n) + "_";
+			printf("[preview] ini User_%d: %s %s %s\n", n, ini.Get("TextColors", key + "Red", "-").c_str(),
+				ini.Get("TextColors", key + "Green", "-").c_str(), ini.Get("TextColors", key + "Blue", "-").c_str());
+		};
+		if (color_tab >= 0) {
+			options->SelectTab(*tabs, color_tab);
+			frontend.Update(NowMs());
+			colors("color page");
+			h.Snapshot("o0-colors");
+			if (SidlWindow::Control *page = options->Find("OptionsColorPage")) {
+				InputEvent wheel;
+				wheel.type = InputEvent::Type::Wheel;
+				wheel.x = page->rect.x + page->rect.w / 2;
+				wheel.y = page->rect.y + page->rect.h / 2;
+				wheel.wheel = -10;
+				frontend.OnEvent(wheel);
+				frontend.Update(NowMs());
+				printf("[preview] color page scrolled %d of %d\n", page->scroll_pos, page->scroll_max);
+				h.Snapshot("o0-colors-scrolled");
+				wheel.wheel = 10;
+				frontend.OnEvent(wheel);
+				frontend.Update(NowMs());
+			}
+			const SidlWindow::Control *say = options->Find("UserColor0");
+			click(say->rect.x + say->rect.w / 2, say->rect.y + say->rect.h / 2);
+			printf("[preview] picker after UserColor0: %s\n", windows.Shown("ColorPickerWnd") ? "shown" : "hidden");
+			if (const SidlWindow *picker = windows.Find("ColorPickerWnd")) {
+				if (const SidlWindow::Control *swatch = picker->Find("CPW_TC3Button")) {
+					printf("[preview] swatch 3 %06x\n", swatch->text_color);
+					click(swatch->rect.x + swatch->rect.w / 2, swatch->rect.y + swatch->rect.h / 2);
+				}
+				if (const SidlWindow::Control *accept = picker->Find("CPW_Accept_Button"))
+					click(accept->rect.x + accept->rect.w / 2, accept->rect.y + accept->rect.h / 2);
+			}
+			frontend.Update(NowMs());
+			colors("after Accept (as before until the tab's picked)");
+			ini_color(1);
+			options->SelectTab(*tabs, 0);
+			frontend.Update(NowMs());
+			options->SelectTab(*tabs, color_tab);
+			frontend.Update(NowMs());
+			colors("tab picked again");
+			const SidlWindow::Control *reset = options->Find("UserColorDefault");
+			click(reset->rect.x + reset->rect.w / 2, reset->rect.y + reset->rect.h / 2);
+			printf("[preview] dialog after Reset Default Colors: %s\n", windows.Shown("ConfirmationDialogBox") ? "shown" : "hidden");
+			if (const SidlWindow *dialog = windows.Find("ConfirmationDialogBox"))
+				if (const SidlWindow::Control *yes = dialog->Find("Yes_Button"))
+					click(yes->rect.x + yes->rect.w / 2, yes->rect.y + yes->rect.h / 2);
+			ini_color(1);
+			options->SelectTab(*tabs, 0);
+			frontend.Update(NowMs());
+			options->SelectTab(*tabs, color_tab);
+			frontend.Update(NowMs());
+			colors("after the defaults");
+		}
 		options->SelectTab(*tabs, 3);
 		SidlWindow::Control *list = options->Find("OKP_KeyboardAssignmentList");
 		SidlWindow::Control *combo = options->Find("OKP_KeyboardFilterCombobox");

@@ -52,6 +52,11 @@ public:
 	// my-client.ini's [TextColors], over the built-in ones; false if the file can't be read.
 	bool Load(const std::string &settings_ini);
 	uint32_t Get(int type) const; // 0xRRGGBB
+	// The player's color n (0..71) as it stands, and CDisplay_SetUserDefinedColor.
+	uint32_t User(int index) const { return index >= 0 && index < UserColors ? m_user[index] : 0; }
+	void Set(int index, uint32_t rgb);
+	// GetDefaultUserDefinedColor (@004aa2ee): the built-in color n.
+	static uint32_t Default(int index);
 
 private:
 	uint32_t m_user[UserColors];

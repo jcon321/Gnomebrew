@@ -2188,6 +2188,11 @@ void FrontEnd::BuildZoneWindows()
 	options_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
 	options_host.saved = [this](int id, bool alternate, uint32_t key) { SaveKeyBinding(id, alternate, key); };
 	options_host.reset = [this] { ResetKeyBindings(); };
+	options_host.user_color = [this](int index) { return m_chat_colors.User(index); };
+	options_host.save_color = [this](int index, uint32_t rgb) { SaveUserColor(index, rgb); };
+	options_host.pick_color = [this](uint32_t color, std::function<void(uint32_t)> done) {
+		m_color_picker.Activate(color, std::move(done));
+	};
 	m_options.Attach(m_windows, m_key_bindings, std::move(options_host));
 	m_windows.TakeChanged();
 }
@@ -4005,6 +4010,24 @@ void FrontEnd::SaveKeyBinding(int id, bool alternate, uint32_t key)
 	KeyBindings::Store(ini, id, alternate, key);
 	if (!ini.Save(m_config.settings_ini))
 		Log("keymap: couldn't write " + m_config.settings_ini);
+}
+
+void FrontEnd::SaveUserColor(int index, uint32_t rgb)
+{
+	// COptionsWnd::SaveColors: CDisplay_SetUserDefinedColor, and [TextColors] User_<n+1>_Red,
+	// _Green and _Blue (my-client.ini for eqclient.ini).
+	m_chat_colors.Set(index, rgb);
+	m_chat.SetLinkColor(m_chat_colors.Get(ItemTags::ColorType));
+	if (m_config.settings_ini.empty())
+		return;
+	IniFile ini;
+	ini.Load(m_config.settings_ini); // keep the rest
+	std::string key = "User_" + std::to_string(index + 1) + "_";
+	ini.Set("TextColors", key + "Red", std::to_string(rgb >> 16 & 0xff));
+	ini.Set("TextColors", key + "Green", std::to_string(rgb >> 8 & 0xff));
+	ini.Set("TextColors", key + "Blue", std::to_string(rgb & 0xff));
+	if (!ini.Save(m_config.settings_ini))
+		Log("colors: couldn't write " + m_config.settings_ini);
 }
 
 void FrontEnd::ResetKeyBindings()

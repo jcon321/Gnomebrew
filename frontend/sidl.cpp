@@ -643,10 +643,12 @@ void SidlWindow::Place(int index, const Rect &rect)
 			Place(child, inside);
 		return;
 	}
-	// A screen inside the window that scrolls (Style_VScroll: the merchant's slots) moves its
-	// pieces up by its scroll position, in ScreenScrollUnit pixels, as far as they reach below it.
+	// A screen inside the window that scrolls (Style_VScroll: the merchant's slots), or a tab's page
+	// that does (the options' Colors), moves its pieces up by its scroll position, in
+	// ScreenScrollUnit pixels, as far as they reach below it.
 	int scrolled = 0;
-	if (index != 0 && control.def->type == "Screen" && control.def->vscroll && !control.children.empty()) {
+	if (index != 0 && (control.def->type == "Screen" || control.def->type == "Page") && control.def->vscroll &&
+	    !control.children.empty()) {
 		int bottom = 0;
 		for (int child : control.children)
 			bottom = std::max(bottom, m_controls[child].def->rect.Bottom());
@@ -1782,7 +1784,7 @@ void SidlWindow::ScrollBy(Control &control, int rows)
 void SidlWindow::Scrolled(Control &control)
 {
 	// A scrolling screen's pieces move with it.
-	if (control.def->type == "Screen" && control.parent >= 0 && !control.children.empty())
+	if ((control.def->type == "Screen" || control.def->type == "Page") && control.parent >= 0 && !control.children.empty())
 		Place(static_cast<int>(&control - m_controls.data()), control.rect);
 }
 
