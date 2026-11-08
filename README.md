@@ -206,7 +206,8 @@ WeatherSounds=1
   drawn at their native size in the middle of the window, black around them, not scaled.
 - `Sound=0` turns all sound off (the real client's `Sound=FALSE`). `MusicVolume` and `SoundVolume` are
   the options' music and sound levels, 0 to 20 (10 by default, half volume, as the client starts),
-  set by the General page's sliders. `SoundRealism` is that page's third slider, kept but not heard yet.
+  set by the General page's sliders. `SoundRealism` is that page's third slider, the reverb's share
+  of the positional sounds (see Reverb under Sound).
 - `[Defaults]` `FastItemDestroy`, `GuildInvites` and `PlayerTrade` are the General page's Fast Item
   Destroy (1: Destroy doesn't ask), Receive Guild Invites and Allow trading with (2 everyone, 1 party
   members only, 0 no one), kept as they change (eqgame keeps them in eqOptions1.opt).
@@ -357,8 +358,8 @@ eqgame's `OP_MoveItem`.
   So far: /say (or no slash, or `'`), /tell (/msg, /send), /reply, /gsay, /guildsay, /shout,
   /auction, /ooc, /emote (`:`, /me), /hail, /target, /assist, /consider, /location, /time,
   /played, /motd, /afk, /anonymous, /shownames, /sit, /stand, /book, /cast, /camp, /clearchat,
-  /random, /lootnodrop, /fastdrop, /attack, /combatmusic, /doability, /filter, /serverfilter and
-  the socials (/smile, /wave and the other 86).
+  /random, /lootnodrop, /fastdrop, /autosplit, /roleplay, /attack, /combatmusic, /doability,
+  /filter, /serverfilter and the socials (/smile, /wave and the other 86).
   The rest say they aren't supported yet; a GM's commands act as if they weren't there for
   anyone else.
 - `/consider` sends `OP_Consider` (`OP_ConsiderCorpse` on a corpse) and prints the answer as
@@ -1380,7 +1381,13 @@ details and the nearest spawns at the top left and the radar at the top right.
     adds or takes 1 (Anonymous) or 2 (Roleplaying), says 12034/12035 or 13233/13234 in 0x111, sends
     `OP_SpawnAppearance` 21 with the state, and `SavePC`; Roleplaying also retints our name
     (`CDisplay_SetNameSpriteTint`). Unlike /anonymous, the page doesn't stop Anonymous while
-    roleplaying.
+    roleplaying. `/roleplay` (@004fc433) on the same state: "off" (3 letters) sets 0 from 2 and 1
+    from anything else (0 included: /roleplay off makes you anonymous), "on" (2) sets 2 from 0 and
+    3 from anything else (2 included), anything else steps 0 -> 2, 1 -> 3, 2 -> 0, 3 -> 1; it says
+    13233 or 13234 (by the state under 2) and sends it as the page does.
+  - `/autosplit` (@004fb3cd): "off" (3), "on" (2) or toggled, says 13197 or 13198, and
+    `CEverQuest_ToggleAutoSplit`. Coins from a corpse say 12071 "You receive %1 as your split." with
+    it on, 12072 off (`EQ_Main::DoLoot`).
   - Allow trading with: `DAT_00798ad8`, 2 everyone (by default), 1 party members only, 0 no one, on
     the combo box's choices the other way round. `msg_req_trade` (@004e7231) turns a request down
     with `OP_TradeRefused` reason 'b' at 0 and 'c' at 1 unless the trader's in our group, then says
@@ -2171,6 +2178,28 @@ objects, `MusicManager`, the emitters), on our own mix (`audio/mixer.cpp`) inste
   started there), panned by where it is relative to the way the camera faces. The listener is our
   character (`SetListenerLocation` in `RealRender_World`). Volume changes are straight-line fades, as
   `updateSampleVolume` steps them, and a voice faded to 0 ends.
+- **Reverb** (`audio/reverb.*`, Sound Realism): the Fast 2D provider (msssoft.m3d) isn't silent about
+  room types and effects levels, though it has no EAX. `M3D_set_3D_room_type` is mss32's
+  `AIL_set_digital_master_room_type` (@21115210), a preset from the table at 0x2114d070 in the EAX
+  environments' order: the master wet level, and the reverb time, damping and predelay
+  (`AIL_set_digital_master_reverb`). `M3D_set_3D_sample_effects_level` is the sample's wet level
+  (`FUN_22401a50`: `AIL_set_sample_reverb_levels(1 - obstruction, (1 - exclusion) * effects)`; the
+  client sets neither). `FUN_21116190` sends master wet * the sample's wet * its volume (from its left
+  and right levels, `FUN_211146a0`) to a mono ring, at most 1; after the mix `FUN_21114d60` runs it,
+  the predelay behind: a Butterworth low pass at damping * 22050 / 8 Hz (Miles' rate with
+  `Sound44k=0`), four combs (29.7, 37.1, 41.1, 43.7 ms, fed back by 0.001^(length / reverb time)), and
+  two allpasses (5 and 1.7 ms, gain about 0.7), the right side through the second with 0.15 in place
+  of 0.25. The client's room types (`EqSoundManager` +0xfdc..+0xfe4, `SetListenerEnvironmentHigh`,
+  `Low`, `Outside` from `SetGenericEnvironment`): 2 (room: wet 0.417, 0.4 s) under a high ceiling, 12
+  (hallway: 0.361, 1.49 s) under a low one, 19 (plain: 0.12, 0.8 s) outside; `SetSpecialEnvironment`
+  22 (underwater: 1.0, 1.5 s) with the head in water (`headEnvironmentChange`) and 23 (drugged)
+  stunned (`StunMe`) or at 40 drunkenness and over (`DoPassageOfTime`), until `SetGenericEnvironment`.
+  The effects level: `WavePlay`'s control's +0x24 (1 as `SoundControl` starts it) times
+  `EqSoundManager::SetEffectsLevel`'s (Sound Realism / 20), so doors and actors' sounds; `WavePlay`
+  without a control (our own sounds where we are, the weather's) has 0; an emitter's is the
+  `EmitterManager`'s level times its own (`SoundEmitter::GiveTime`; the `.emt` column after the
+  sequence, `parseEmitterDataFromCSV`'s +0x2c: 1.00 or 0 in TAKP's files). A sound keeps the level it
+  started with.
 
 - **Game sounds** are `EqSoundManager`'s 4000 numbered waves (`WaveLoad`, `WavePlay`): `LoadGlobalWaves`'
   lists (the jumps and the rest of each sex and size's, from 32; the footsteps, water, spells, weapons and so

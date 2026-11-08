@@ -17,7 +17,7 @@ namespace
 	{
 		None, Say, Tell, Group, Shout, Auction, Ooc, Guild, Reply, Emote, Hail, Location, Target, Camp,
 		ClearChat, ShowNames, Sit, Stand, Book, Cast, Consider, Played, Motd, Time, Afk, Anonymous, Assist,
-		Random, LootNoDrop, FastDrop, Social, Attack, CombatMusic, DoAbility, Filter, ServerFilter, Invite, Disband, Who, WhoTarget, Follow, MakeLeader, Lfg,
+		Random, LootNoDrop, FastDrop, AutoSplit, Roleplay, Social, Attack, CombatMusic, DoAbility, Filter, ServerFilter, Invite, Disband, Who, WhoTarget, Follow, MakeLeader, Lfg,
 		UserColor,
 	};
 
@@ -34,7 +34,7 @@ namespace
 		{"/consent", 0, Command::None}, {"/played", 0, Command::Played}, {"/ignore", 0, Command::None},
 		{"/anonymous", 0, Command::Anonymous}, {"/afk", 0, Command::Afk}, {"/filter", 0, Command::Filter},
 		{"/assist", 0, Command::Assist}, {"/duel", 0, Command::None}, {"/decline", 0, Command::None},
-		{"/split", 0, Command::None}, {"/autosplit", 0, Command::None}, {"/quit", 0, Command::None},
+		{"/split", 0, Command::None}, {"/autosplit", 0, Command::AutoSplit}, {"/quit", 0, Command::None},
 		{"/stopsong", 0, Command::None}, {"/friends", 0, Command::None}, {"/shield", 0, Command::None},
 		{"/shownames", 0, Command::ShowNames}, {"/shownpcnames", 10, Command::None}, {"/emote", 0, Command::Emote},
 		{":", 0, Command::Emote}, {"/say", 0, Command::Say}, {"'", 0, Command::Say}, {"/tell", 0, Command::Tell},
@@ -86,7 +86,7 @@ namespace
 		{"/broadcast", 4, Command::None}, {"/lastname", 4, Command::None}, {"/zone", 3, Command::None},
 		{"/kick", 4, Command::None}, {"/kill", 3, Command::None}, {"/delcorpse", 8, Command::None},
 		{"/hideme", 3, Command::None}, {"/servers", 3, Command::None}, {"/height", 4, Command::None},
-		{"/exit", 0, Command::None}, {"/loot", 0, Command::None}, {"/roleplay", 0, Command::None},
+		{"/exit", 0, Command::None}, {"/loot", 0, Command::None}, {"/roleplay", 0, Command::Roleplay},
 		{"/follow", 0, Command::Follow}, {"/report", 0, Command::None}, {"/surname", 0, Command::None},
 		{"/log", 0, Command::None}, {"/toggletell", 3, Command::None}, {"/inquire", 3, Command::None},
 		{"/praise", 3, Command::None}, {"/warn", 3, Command::None}, {"/edit", 3, Command::None},
@@ -1232,6 +1232,39 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 		else
 			anon = static_cast<uint8_t>(1 - anon);
 		ChatOut(anon == 0 ? format(13237, "You are no longer anonymous.", {}) : format(13236, "You are now anonymous.", {}),
+			ChatType::Default);
+		m_zone.SetAnonymous(anon);
+		break;
+	}
+	case Command::AutoSplit: {
+		// /autosplit (@004fb3cd): "off" (3 letters), "on" (2), or toggled; said (13197, 13198) and
+		// CEverQuest_ToggleAutoSplit.
+		bool on = m_zone.Profile().autosplit;
+		if (MatchesPrefix(args, format(12946, "off", {}), 3))
+			on = false;
+		else if (MatchesPrefix(args, format(12947, "on", {}), 2))
+			on = true;
+		else
+			on = !on;
+		ChatOut(on ? format(13197, "You will now automatically split money with your group.", {})
+		           : format(13198, "You will no longer split money with your group.", {}),
+			ChatType::Default);
+		m_zone.SetAutoSplit(on);
+		break;
+	}
+	case Command::Roleplay: {
+		// /roleplay (@004fc433), on the anonymous state (1 anonymous, 2 roleplaying, 3 both): "off"
+		// (3 letters) sets 0 from 2 and 1 from anything else (so from 0 too, as eqgame does); "on"
+		// (2) sets 2 from 0, else 3; anything else steps 0 -> 2, 1 -> 3, 2 -> 0, 3 -> 1. Said
+		// (13233, 13234), then SpawnAppearance 21 and our name's tint (it follows Self()).
+		uint8_t anon = m_zone.Self().anon;
+		if (MatchesPrefix(args, format(12946, "off", {}), 3))
+			anon = anon != 2 ? 1 : 0;
+		else if (MatchesPrefix(args, format(12947, "on", {}), 2))
+			anon = anon != 0 ? 3 : 2;
+		else
+			anon = anon == 0 ? 2 : anon == 1 ? 3 : anon == 3 ? 1 : 0;
+		ChatOut(anon < 2 ? format(13234, "You are no longer roleplaying.", {}) : format(13233, "You are now roleplaying.", {}),
 			ChatType::Default);
 		m_zone.SetAnonymous(anon);
 		break;

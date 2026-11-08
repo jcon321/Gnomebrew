@@ -110,9 +110,11 @@ void LootWindow::ZoneEvent(const ZoneSession::Event &event)
 				if (m_host.sound)
 					m_host.sound(0x8a);
 				std::string coins = Inventory::MoneyText(loot.platinum, loot.gold, loot.silver, loot.copper);
-				// 12071 "as your split" with /autosplit on (not yet ours).
+				// 12071 "as your split" with autosplit on (IsAutoSplitEnabled), else 12072.
 				if (m_host.chat)
-					m_host.chat(Text(12072, {coins}, "You receive " + coins + " from the corpse."), CoinsColor);
+					m_host.chat(me.autosplit ? Text(12071, {coins}, "You receive " + coins + " as your split.")
+					                         : Text(12072, {coins}, "You receive " + coins + " from the corpse."),
+						CoinsColor);
 			}
 			if (m_host.change_stance) {
 				m_host.change_stance(Kneeling);

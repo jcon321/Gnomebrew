@@ -9,8 +9,14 @@
 // asks every frame) leaves it alone. Positional voices are "Miles Fast 2D Positional Audio", the
 // provider the client picks (SoundManager::InitializeSoundSystem): full volume within the minimum
 // distance, falling off as min / distance beyond it, silent past the maximum, and panned by where
-// they are relative to the listener's facing.
+// they are relative to the listener's facing. A positional voice's effects level sends a share of
+// it to Miles' software reverb (reverb.h): AIL_set_sample_reverb_levels with msssoft's wet level, the
+// effects level (FUN_22401a50), times the room's wet level and the sample's volume as mss32 has it
+// from its left and right levels (FUN_211146a0: r = right / left, p = r^3.333 / (1 + r^3.333),
+// p^-0.3 * right; left alone when p is under 0.0001, right when left is), at most 1 (FUN_21116190's
+// 2048).
 
+#include "reverb.h"
 #include "synth.h"
 #include "wav.h"
 #include "xmi.h"
@@ -34,6 +40,7 @@ namespace audio
 		bool positional = false;
 		Vec3 position;
 		float min_distance = 1, max_distance = 100;
+		float effects = 0; // AIL_set_3D_sample_effects_level: its share sent to the reverb, 0..1
 	};
 
 	class Mixer
@@ -61,6 +68,9 @@ namespace audio
 		// Where we hear from, and the way we face (level).
 		void SetListener(const Vec3 &position, const Vec3 &forward);
 		void SetSynth(std::shared_ptr<MidiSynth> synth);
+		// AIL_set_3D_room_type (msssoft's M3D_set_3D_room_type: AIL_set_digital_master_room_type).
+		void SetRoomType(int type);
+		int RoomType() const;
 		bool SynthRenders() const;
 
 		// The device thread: `frames` stereo frames, interleaved, written over `out`.
@@ -83,5 +93,7 @@ namespace audio
 		Vec3 m_listener, m_forward{1, 0, 0};
 		std::shared_ptr<MidiSynth> m_synth;
 		std::vector<float> m_scratch;
+		Reverb m_reverb{Rate};
+		std::vector<float> m_wet; // the voices' sends to the reverb, a block's
 	};
 }

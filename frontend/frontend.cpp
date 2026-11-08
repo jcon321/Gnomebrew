@@ -126,6 +126,10 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 			m_sound_realism = number("Sound", "SoundRealism", 0, 0, 20);
 			m_music_volume = number("Sound", "MusicVolume", 10, 0, 20);
 			m_sound_volume = number("Sound", "SoundVolume", 10, 0, 20);
+			// SetEffectsLevel with Sound Realism's hundredths.
+			m_ui.sound.effects_level = (m_sound_realism * 100 / 20) * 0.01f;
+			if (m_sound)
+				m_sound->SetVolumes(m_ui.sound);
 		}
 	}
 	m_zone.SetServerFilters(m_filters.Packet());
@@ -3401,8 +3405,12 @@ void FrontEnd::SetGeneralOption(OptionsWindow::Host::General setting, int value)
 		InterpretCommand("/fastdrop " + (value == 0 ? EqString(12946, "off") : value == 1 ? EqString(12947, "on") : EqString(12989, "never")));
 		break;
 	case General::SoundRealism:
-		// EqSoundManager::SetEffectsLevel: kept, not yet heard (TODO).
+		// EqSoundManager::SetEffectsLevel with the value * 100 / 20 hundredths: the reverb's share
+		// of the positional sounds started from now on.
 		m_sound_realism = value;
+		m_ui.sound.effects_level = (value * 100 / 20) * 0.01f;
+		if (m_sound)
+			m_sound->SetVolumes(m_ui.sound);
 		SaveSetting("Sound", "SoundRealism", value);
 		break;
 	case General::MusicVolume:

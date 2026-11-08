@@ -264,8 +264,13 @@ void ActorSound::HeadChanged(audio::EqSound &sound, render::Environment from, re
 	auto loop = [](render::Environment environment) {
 		return environment == render::Environment::Lava ? TorchLoop : render::Swimming(environment) ? UnderwaterLoop : 0;
 	};
+	// Out of water (5): SetGenericEnvironment; into it, SetSpecialEnvironment(22), underwater.
 	if (int slot = loop(from))
 		sound.StopWave(slot);
+	if (from == render::Environment::Water)
+		sound.SetGenericEnvironment();
+	if (to == render::Environment::Water)
+		sound.SetSpecialEnvironment(22);
 	if (int slot = loop(to))
 		sound.PlayWave(slot);
 }

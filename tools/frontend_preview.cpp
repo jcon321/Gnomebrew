@@ -1249,6 +1249,29 @@ namespace
 			chat();
 			page("restored");
 			ini_general();
+			// /autosplit and /roleplay, shown as the page is picked again; then back.
+			auto typed = [&](const char *line) {
+				h.Key(InputEvent::Key::Enter);
+				h.Type(line);
+				h.Key(InputEvent::Key::Enter);
+				frontend.Update(NowMs());
+			};
+			for (const char *line : {"/autosplit", "/roleplay", "/roleplay on"})
+				typed(line);
+			chat();
+			options->SelectTab(*tabs, general_tab == 0 ? 1 : 0);
+			frontend.Update(NowMs());
+			options->SelectTab(*tabs, general_tab);
+			frontend.Update(NowMs());
+			page("after /autosplit and /roleplay");
+			for (const char *line : {"/autosplit off", "/roleplay", "/roleplay off", "/roleplay"})
+				typed(line);
+			chat();
+			options->SelectTab(*tabs, general_tab == 0 ? 1 : 0);
+			frontend.Update(NowMs());
+			options->SelectTab(*tabs, general_tab);
+			frontend.Update(NowMs());
+			page("after /autosplit off, /roleplay, /roleplay off, /roleplay");
 		}
 		// The Filters page: the switches as the page is picked; Guild Chat and Damage Shields
 		// clicked, Bard Songs set to Group; then the ini, and a /filter shown on the next pick.

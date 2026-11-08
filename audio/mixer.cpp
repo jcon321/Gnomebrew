@@ -232,6 +232,18 @@ namespace audio
 		m_synth = std::move(synth);
 	}
 
+	void Mixer::SetRoomType(int type)
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		m_reverb.SetRoomType(type);
+	}
+
+	int Mixer::RoomType() const
+	{
+		std::lock_guard<std::mutex> lock(m_mutex);
+		return m_reverb.RoomType();
+	}
+
 	bool Mixer::SynthRenders() const
 	{
 		std::lock_guard<std::mutex> lock(m_mutex);
@@ -272,6 +284,19 @@ namespace audio
 		right = gain * std::min(1.0f, std::sin(angle) * 1.41421356f);
 	}
 
+	namespace
+	{
+		// mss32's sample volume from its left and right levels (FUN_211146a0).
+		float SampleVolume(float left, float right)
+		{
+			if (left <= 0.0001f)
+				return right;
+			float p = std::pow(right / left, 3.3333333f);
+			p = p / (1 + p);
+			return p < 0.0001f ? left : std::pow(p, -0.3f) * right;
+		}
+	}
+
 	void Mixer::RenderVoice(VoiceState &voice, float *out, int frames)
 	{
 		float left = 1, right = 1;
@@ -280,6 +305,14 @@ namespace audio
 		float start_left = voice.left < 0 ? left : voice.left, start_right = voice.right < 0 ? right : voice.right;
 		voice.left = left;
 		voice.right = right;
+		// The reverb's share (FUN_21116190: master wet * the sample's wet * its volume), its volume
+		// from the gains the block starts and ends on.
+		float send = voice.placement.positional && m_reverb.On() ? voice.placement.effects * m_reverb.Wet() : 0;
+		float send_start = 0, send_end = 0;
+		if (send > 0) {
+			send_start = send * SampleVolume(start_left, start_right);
+			send_end = send * SampleVolume(left, right);
+		}
 
 		for (int i = 0; i < frames && !voice.finished; ++i) {
 			float a = 0, b = 0;
@@ -329,6 +362,8 @@ namespace audio
 			float gr = (start_right + (right - start_right) * f) * voice.volume;
 			out[i * 2] += a * gl;
 			out[i * 2 + 1] += b * gr;
+			if (send > 0)
+				m_wet[i] += a * std::min(1.0f, (send_start + (send_end - send_start) * f) * voice.volume);
 		}
 	}
 
@@ -353,11 +388,15 @@ namespace audio
 	{
 		std::fill(out, out + static_cast<size_t>(frames) * 2, 0.0f);
 		std::lock_guard<std::mutex> lock(m_mutex);
+		m_wet.assign(static_cast<size_t>(frames), 0.0f);
 		for (auto &entry : m_voices) {
 			VoiceState &voice = *entry.second;
 			if (!voice.finished && voice.kind != VoiceState::Kind::Sequence)
 				RenderVoice(voice, out, frames);
 		}
+		// The reverb on what the voices sent it (FUN_21115f60's FUN_21114cb0, after the mix).
+		if (m_reverb.On())
+			m_reverb.Process(m_wet.data(), out, frames);
 		// The music, a step at a time so its notes land close to where they should.
 		if (m_synth && m_synth->Renders()) {
 			m_scratch.assign(static_cast<size_t>(frames) * 2, 0.0f);

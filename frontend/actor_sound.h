@@ -18,6 +18,8 @@
 //     or going into water at 1 a tick up or down or faster (WaterIn), or into lava (WaterOut).
 //   EQPlayer::headEnvironmentChange (@0050bcac), ours only: the head going under water plays the
 //     underwater sound where we are (WatUndLp; Torch_Lp in lava, once each), and coming up stops it.
+//     Into water (5, not the other kinds) the reverb's room is underwater (SetSpecialEnvironment
+//     0x16); out of it, back to the generic one.
 // Sounds play from the actor's position (its model's center).
 
 #include "eq_sound.h"

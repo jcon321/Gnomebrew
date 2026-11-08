@@ -78,6 +78,9 @@ namespace audio
 			// The options' levels, 0..20 in eqclient.ini, as fractions; 10 by default.
 			float music_volume = 0.5f;
 			float sound_volume = 0.5f;
+			// Sound Realism: EqSoundManager::SetEffectsLevel (and the emitters' EmitterManager's),
+			// the options' 0..20 as a fraction; 0 by default.
+			float effects_level = 0;
 		};
 
 		EqSound(Mixer &mixer, const std::string &eq_dir, const Settings &settings);
@@ -92,7 +95,13 @@ namespace audio
 		void SetListener(const Vec3 &position, const Vec3 &forward);
 		// SetSoundEnvironmentMode: night is an hour (1..24, 1 midnight) under 5 or over 18.
 		void SetNight(bool night);
+		// SetListenerEnvironmentHigh, Low and Outside: the emitters' environment, and the room type
+		// for the reverb (EqSoundManager's 2 room, 12 hallway, 19 plain) unless a special one is on.
 		void SetEnvironment(Environment environment);
+		// CDisplay::SetSpecialEnvironment: a room type of its own (22 underwater, 23 drugged) until
+		// SetGenericEnvironment puts the environment's back.
+		void SetSpecialEnvironment(int room);
+		void SetGenericEnvironment();
 		// EmitterSetRaining and EmitterSetWind: the weather's loops on or off. SetCovered is
 		// setSoundEmitterUnderwater (as it's named): the floor under us covered, which silences them.
 		void SetRaining(bool on);
@@ -102,7 +111,7 @@ namespace audio
 		// EqSoundManager::GiveTime, once a frame: the emitters, the music, and the voices that finished.
 		void GiveTime(uint64_t now_ms);
 
-		void SetVolumes(const Settings &settings);
+		void SetVolumes(const Settings &settings); // the levels, and the effects level
 
 		// What plays (the debug menu's switches; all on). Music off is MusicManager's own switch
 		// (/music): what's playing fades out as if another track took over. Ambience is the zone's
@@ -190,6 +199,10 @@ namespace audio
 			float min_distance = 0, max_distance = 0;
 			int channel = 0;
 			bool weather = false; // on the weather's switch rather than the game sounds'
+			// SoundControl's +0x24: its share of the effects level (1, as SoundControl starts it;
+			// WavePlay's own control without one, 0). WavePlay and the emitters multiply it by
+			// the effects level.
+			float effects = 1;
 		};
 		struct Instance
 		{
@@ -220,6 +233,7 @@ namespace audio
 			float full_volume_radius = 0, max_distance = 0, randomize = 0, activation_range = 0;
 			int min_delay = 0, max_delay = 0;
 			int environment = 0, when = 0;
+			float effects = 1; // its own effects level (the .emt's column after the sequence)
 			int channel = 2; // the zone's; an actor's is 0
 			bool weather = false; // the rain's or the wind's
 			bool enabled = true;
@@ -273,6 +287,9 @@ namespace audio
 		std::vector<MusicTrack> m_tracks; // newest first, as MusicManager::Set links them
 		int m_current_track = 0;          // its id; 0 none
 		float m_music_volume = 0.5f, m_sound_volume = 0.5f;
+		float m_effects_level = 0;
+		bool m_special_room = false; // CDisplay+0x798's: a special environment's room type is on
+		void ApplyRoom();
 
 		std::string m_zone;
 		std::shared_ptr<Asset> m_zone_xmi;

@@ -89,7 +89,7 @@ no rules of its own.
      locked until the zone answers; Done, the close box, Escape and walking away end it
      (OP_EndLootRequest), and the zone's answer, or the corpse gone, closes it. Not checked
      against a server yet (the test character hasn't killed anything of its own to loot). /lootnodrop sets whether a
-     NO DROP item asks first (`LootNoDrop`). Still to do: /autosplit's "as your split" (12071), the
+     NO DROP item asks first (`LootNoDrop`). Still to do: the
      items in a corpse's bags (shown only to GMs and on player corpses past the eighth), the
      PvP item (Loot_Request_Type 5) and the mounted check (ActorInfo's AttachedEntity; no mounts
      yet). Dead (DeathTimer) and deity 20000 don't ask; asking makes us visible (MakeMeVisible).
@@ -270,13 +270,13 @@ no rules of its own.
    the General page (SyncGeneralPage, GeneralPageWndNotification: Fast Item Destroy, Autosplit,
    Anonymous, Roleplaying, Allow trading with, Fast Drop, the music and sound volumes; kept in
    my-client.ini). Still to do on the General page: Load UI Skin (CLoadskinWnd, the skin picker),
-   Sound Realism's effect (kept, but EmitterManager_SetEffectsLevel's level isn't heard yet:
-   WavePlay scales a sound's +0x24 by it), Receive Guild Invites' effect (msg_invite_guild
-   turns down another guild's invite with it off; guild invites aren't ours yet), and the
-   /autosplit and /roleplay commands (Command::None; the page does what they do). Still to do:
+   Receive Guild Invites' effect (msg_invite_guild
+   turns down another guild's invite with it off; guild invites aren't ours yet). Still to do:
    the Display and Mouse pages, which show empty (SyncDisplayPage, InitKeyboardAssignments'
    mouse settings); the combo boxes' list colors
-   (CComboWnd::SetColors 0xff808080, on the Keyboard and Filters pages); the Keyboard page's
+   (CComboWnd::SetColors 0xff808080, on the Keyboard and Filters pages); the reverb's drugged room (23) while stunned (StunMe;
+   OP_Stun isn't ours) or drunk at 40 and over (DoPassageOfTime's drunkenness wearing off isn't
+   ours); the Keyboard page's
    temporary red rows (commands not yet done) go once every command is done.
    A combo box's list that's down takes any press (CXWndManager's 0x34): off it, the list goes
    and the press goes no further. Still to do: its scrollbar when ListHeight cuts it short

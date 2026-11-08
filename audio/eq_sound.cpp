@@ -84,7 +84,8 @@ namespace audio
 	}
 
 	EqSound::EqSound(Mixer &mixer, const std::string &eq_dir, const Settings &settings)
-		: m_mixer(mixer), m_eq_dir(eq_dir), m_music_volume(settings.music_volume), m_sound_volume(settings.sound_volume)
+		: m_mixer(mixer), m_eq_dir(eq_dir), m_music_volume(settings.music_volume), m_sound_volume(settings.sound_volume),
+		  m_effects_level(settings.effects_level)
 	{
 		g_seed = static_cast<uint32_t>(time(nullptr)); // LoadGlobalMusic's srand(time(0))
 		for (int i = 0; i < PoolCount; ++i)
@@ -121,6 +122,7 @@ namespace audio
 
 	void EqSound::SetVolumes(const Settings &settings)
 	{
+		m_effects_level = settings.effects_level; // SetEffectsLevel: sounds started from now on
 		m_sound_volume = settings.sound_volume;
 		if (settings.music_volume == m_music_volume)
 			return;
@@ -223,6 +225,7 @@ namespace audio
 			placement.position = control.position;
 			placement.min_distance = control.min_distance;
 			placement.max_distance = control.max_distance;
+			placement.effects = std::clamp(control.effects, 0.0f, 1.0f);
 			voice = m_mixer.PlayClip(asset->clip, control.loops, control.volume, control.fade_ms, placement);
 			break;
 		}
@@ -512,6 +515,7 @@ namespace audio
 			emitter.min_delay = fields.Int();
 			emitter.max_delay = fields.Int();
 			int sequence = fields.Int();
+			emitter.effects = fields.Float();
 
 			// EqSoundManager::EmitterAdd.
 			auto asset = GetAsset(file);
@@ -582,6 +586,7 @@ namespace audio
 		control.min_distance = emitter.full_volume_radius;
 		control.max_distance = emitter.max_distance;
 		control.volume = m_sound_volume * emitter.volume;
+		control.effects = m_effects_level * emitter.effects; // SoundEmitter::GiveTime
 		control.fade_ms = emitter.fade_in;
 		control.loops = emitter.loop_type;
 		if (emitter.randomize > 0) {
@@ -670,7 +675,33 @@ namespace audio
 		if (value == m_environment)
 			return;
 		m_environment = value;
+		ApplyRoom();
 		UpdateEnables();
+	}
+
+	void EqSound::ApplyRoom()
+	{
+		// EqSoundManager's 0xfdc, 0xfe0 and 0xfe4.
+		if (m_special_room)
+			return;
+		switch (static_cast<Environment>(m_environment)) {
+		case Environment::HighCeiling: m_mixer.SetRoomType(2); break;
+		case Environment::LowCeiling: m_mixer.SetRoomType(12); break;
+		case Environment::Outside: m_mixer.SetRoomType(19); break;
+		case Environment::Unset: break;
+		}
+	}
+
+	void EqSound::SetSpecialEnvironment(int room)
+	{
+		m_special_room = true;
+		m_mixer.SetRoomType(room);
+	}
+
+	void EqSound::SetGenericEnvironment()
+	{
+		m_special_room = false;
+		ApplyRoom();
 	}
 
 	void EqSound::SetListener(const Vec3 &position, const Vec3 &forward)
@@ -798,6 +829,7 @@ namespace audio
 			return;
 		}
 		control.volume *= m_sound_volume;
+		control.effects *= m_effects_level;
 		Instance *instance = Play(asset, control);
 		if (m_wave_log)
 			m_wave_log("wave " + std::to_string(slot) + " " + asset->name + (instance ? "" : " (no voice, or out of earshot)"));
@@ -821,7 +853,9 @@ namespace audio
 
 	void EqSound::PlayWave(int slot)
 	{
+		// WavePlay without a control: its own, where we are, with no effects.
 		Control control;
+		control.effects = 0;
 		control.positional = true;
 		control.position = m_listener;
 		control.min_distance = 1000;
@@ -832,6 +866,7 @@ namespace audio
 	void EqSound::PlayWeatherWave(int slot)
 	{
 		Control control;
+		control.effects = 0;
 		control.positional = true;
 		control.position = m_listener;
 		control.min_distance = 1000;

@@ -41,7 +41,8 @@ namespace
 			"General page's sliders set them, kept as they move."},
 		{"Sound", "SoundVolume", "10", ""},
 		{"Sound", "SoundRealism", "0",
-			"The General page's Sound Realism, 0 to 20. Kept, but it doesn't change the sound yet."},
+			"The General page's Sound Realism, 0 to 20: how much of the sounds around you goes to Miles'\n"
+			"reverb for the room you're in (0: none, as the real client starts)."},
 		{"Sound", "Music", "midi",
 			"Where the XMI music (the zones before Luclin) plays. midi: Windows' MIDI synth, like the\n"
 			"real client (the SoundFont without a MIDI out). sf2: our own mix through SoundFont.\n"

@@ -61,6 +61,7 @@ add_library(eqaudio STATIC
     audio/xmi.cpp
     audio/synth.cpp
     audio/mixer.cpp
+    audio/reverb.cpp
     audio/eq_sound.cpp
     audio/actor_sound_table.cpp
 )

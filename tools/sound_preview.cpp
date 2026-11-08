@@ -108,6 +108,7 @@ int main(int argc, char **argv)
 		                "       [--music opening|charselect|combat|death|ID]... [--night] [--environment 1|2|3]\n"
 		                "       [--soundfont FILE] [--music-volume V] [--sound-volume V]\n"
 		                "       [--rain N | --snow N] [--weather-off S] [--covered]\n"
+		                "       [--realism N] [--room N] [--sound-at SLOT SECONDS DX DY]\n"
 		                "       %s EQDIR --emitters ZONE\n       %s EQDIR --xmi FILE INDEX OUT.mid\n",
 			argv[0], argv[0], argv[0]);
 		return 2;
@@ -120,6 +121,9 @@ int main(int argc, char **argv)
 	int weather_type = -1, weather_intensity = 0; // --rain / --snow
 	float weather_off = -1;
 	bool covered = false;
+	int room = -1;                                  // --room: a special environment's room type
+	int sound_slot = -1;                            // --sound-at: a wave played near us
+	float sound_time = 0, sound_dx = 0, sound_dy = 0;
 	std::vector<int> music;
 	audio::EqSound::Settings settings;
 	for (int i = 3; i < argc; ++i) {
@@ -167,6 +171,16 @@ int main(int argc, char **argv)
 			weather_off = static_cast<float>(atof(argv[++i]));
 		else if (arg == "--covered")
 			covered = true;
+		else if (arg == "--realism" && i + 1 < argc)
+			settings.effects_level = (atoi(argv[++i]) * 100 / 20) * 0.01f; // Sound Realism, 0..20
+		else if (arg == "--room" && i + 1 < argc)
+			room = atoi(argv[++i]);
+		else if (arg == "--sound-at" && i + 4 < argc) {
+			sound_slot = atoi(argv[++i]);
+			sound_time = static_cast<float>(atof(argv[++i]));
+			sound_dx = static_cast<float>(atof(argv[++i]));
+			sound_dy = static_cast<float>(atof(argv[++i]));
+		}
 		else {
 			fprintf(stderr, "unknown option %s\n", arg.c_str());
 			return 2;
@@ -209,6 +223,13 @@ int main(int argc, char **argv)
 		sound.SetListener({sy, sx, sz}, {std::cos(yaw), std::sin(yaw), 0});
 		sound.SetNight(night);
 		sound.SetEnvironment(static_cast<audio::EqSound::Environment>(environment));
+		if (room >= 0 && tick == 0)
+			sound.SetSpecialEnvironment(room);
+		if (sound_slot >= 0 && tick == static_cast<int>(sound_time * fps)) {
+			sound.PlaySoundAt(sound_slot, {sy + sound_dy, sx + sound_dx, sz});
+			printf("%5.1fs: wave %d (%s) at %.0f %.0f from us\n", tick / static_cast<float>(fps), sound_slot,
+				sound.WaveFile(sound_slot).c_str(), sound_dx, sound_dy);
+		}
 		if (weather_off >= 0 && tick == static_cast<int>(weather_off * fps))
 			weather.Receive(static_cast<uint32_t>(weather_type < 0 ? 0 : weather_type), 0);
 		Weather::Place place;
@@ -237,6 +258,7 @@ int main(int argc, char **argv)
 	for (const auto &name : sound.GetStats().missing)
 		printf("missing: %s\n", name.c_str());
 
+	printf("room type %d\n", mixer.RoomType());
 	printf("loudness each second (RMS dBFS, peak):");
 	size_t second = audio::Mixer::Rate * 2;
 	for (size_t start = 0; start < mix.size(); start += second) {
