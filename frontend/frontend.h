@@ -233,7 +233,7 @@ private:
 	void SaveUserColor(int index, uint32_t rgb); // COptionsWnd::SaveColors
 	void WriteUserColor(int index, uint32_t rgb); // only [TextColors] User_<index+1>_Red, _Green, _Blue
 	MoveControls ZoneControls();
-	void CameraControls(uint64_t now_ms); // ProcessControls' zoom keys
+	void CameraControls(uint64_t now_ms); // ProcessControls' zoom and look keys
 	bool ZoneCanMove() const; // in the zone, with no dialog up
 
 	void SubmitLogin();
@@ -530,6 +530,8 @@ private:
 	{
 		bool forward = false, back = false, left = false, right = false;
 		bool zoom_in = false, zoom_out = false; // ExecuteCmd 0x12, 0x13: DAT_007ce094, DAT_007ce098
+		bool pitch_up = false, pitch_down = false; // ExecuteCmd 0xf, 0x10: DAT_007ce088, DAT_007ce08c
+		int pitch_up_speed = 0, pitch_down_speed = 0; // DAT_0079974c, DAT_0079974e: 1..12, up a frame
 	};
 	HeldKeys m_keys;
 	uint64_t m_controls_ms = 0; // the last CameraControls, for its frame units

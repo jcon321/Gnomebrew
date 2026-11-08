@@ -3768,9 +3768,8 @@ void FrontEnd::ZoneKey(const InputEvent &event)
 	if (m_chat.Typing() && typed)
 		return;
 	for (int cmd : m_key_bindings.Down(key)) {
-		// Windows repeats a held key; DirectInput doesn't. Only Look up and down go on with it
-		// (ours: they tilt 5 degrees a press, not eqgame's speeding up while held).
-		if (event.repeat && cmd != KeyMap::PitchUp && cmd != KeyMap::PitchDown)
+		// Windows repeats a held key; DirectInput doesn't.
+		if (event.repeat)
 			continue;
 		ExecuteCmd(cmd, true, typed);
 	}
@@ -3824,6 +3823,21 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 	case KeyMap::ZoomIn:
 		m_keys.zoom_in = down;
 		break;
+	case KeyMap::PitchUp:
+		// Down: Look down let go, and its speed back to nothing; up: this one's speed.
+		m_keys.pitch_up = down;
+		if (down)
+			m_keys.pitch_down = false, m_keys.pitch_down_speed = 0;
+		else
+			m_keys.pitch_up_speed = 0;
+		break;
+	case KeyMap::PitchDown:
+		m_keys.pitch_down = down;
+		if (down)
+			m_keys.pitch_up = false, m_keys.pitch_up_speed = 0;
+		else
+			m_keys.pitch_down_speed = 0;
+		break;
 	case KeyMap::ZoomOut:
 		m_keys.zoom_out = down;
 		break;
@@ -3840,11 +3854,6 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 	if (!down || !in_zone)
 		return;
 	switch (cmd) {
-	case KeyMap::PitchUp:
-	case KeyMap::PitchDown:
-		if (m_zone_view)
-			m_zone_view->Pitch(cmd == KeyMap::PitchUp ? 5.0f : -5.0f);
-		break;
 	case KeyMap::AutoAttack:
 		ToggleAutoAttack();
 		break;
@@ -4081,6 +4090,17 @@ void FrontEnd::CameraControls(uint64_t now_ms)
 		m_zone_view->ZoomBy(-2 * units);
 	if (m_keys.zoom_out)
 		m_zone_view->ZoomBy(2 * units);
+	// Look up and down held: a speed that goes up by one a frame to 12, times the frame units, in
+	// EQ's 512ths of a turn (to 128 either way; our view's own limits are narrower).
+	constexpr float Degrees = 360.0f / 512;
+	if (m_keys.pitch_up) {
+		m_keys.pitch_up_speed = std::min(m_keys.pitch_up_speed + 1, 12);
+		m_zone_view->Pitch(m_keys.pitch_up_speed * units * Degrees);
+	}
+	if (m_keys.pitch_down) {
+		m_keys.pitch_down_speed = std::min(m_keys.pitch_down_speed + 1, 12);
+		m_zone_view->Pitch(-m_keys.pitch_down_speed * units * Degrees);
+	}
 }
 
 MoveControls FrontEnd::ZoneControls()

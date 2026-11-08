@@ -284,7 +284,8 @@ no rules of its own.
    chat line with `/tell `, `/tell <name> ` (`;tell` for a name with a dot), `/rtarget <name> `
    (Cycle reply's name; eqstr 12364 and 12365 with no tells), `'` and `:`, without the key's
    own character after it. Zoom in and out held move the chase camera 2 units a frame unit
-   (ProcessControls; no nearer than our ModelHeightOffset, DoCamAi's 2..200). Still to do:
+   (ProcessControls; no nearer than our ModelHeightOffset, DoCamAi's 2..200), and Look up and down
+   held pitch faster each frame, to 12 EQ units a frame unit. Still to do:
    - ExecuteCmd's commands not done yet (the page's "No"): Toggle mouse look, Duck, Use
      centerscreen, Center view, Toggle UI Display (ScreenMode 3), Toggle netstat, the clip plane,
      voice input, screenshots, the chat line's cursor and page up and down (CChatWindow::ScrollChatWindowUp),
@@ -297,8 +298,9 @@ no rules of its own.
      NPC with a rider (a mount) isn't passed over, a horse (race 216) doesn't give its rider. They
      don't know whether we see invisible (EQ_Character::CanISeeInvis: SPA 13 and the races'), so
      an invisible spawn is never picked, nor a GM's VisibilityState.
-   - Look up and down tilt 5 degrees a press with Windows' key repeat; ProcessControls speeds the
-     pitch up while the key's held (DAT_0079974c up to 12 a frame unit, to 128).
+   - Look up and down held (ProcessControls, DAT_0079974c and DAT_0079974e) pitch to EQ's 128
+     either way, but our view stops at -80 and 60 degrees (ZoneView::Pitch); and the pitch going
+     back to level by 10 a frame in first person with neither held (DAT_00798b14's option).
    - CDisplay_KeyMapUpdated: the buttons' key tooltips (CXWnd::SetKeyTooltip,
      CActionsWnd::KeyMapUpdated_UpdateActionWindowKeyTooltips, CSelectorWnd::KeyMapUpdated).
    - Character select's explore mode takes only the movement, Jump and Toggle camera view
