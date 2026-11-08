@@ -345,8 +345,10 @@ namespace
 		SidlWindow::Control *list = wnd.Find("SkillList");
 		if (!list)
 			return;
-		// CSkillsWnd::CSkillsWnd's look.
+		// CSkillsWnd::CSkillsWnd's look: SetColors(white, yellow, gray).
 		list->row_color = 0xffffff;
+		list->hover_color = 0xffff00;
+		list->select_color = 0x808080;
 		list->header_color = 0x8aa3ff;
 		list->row_height = 16;
 		list->justification = {0, 1, 1};

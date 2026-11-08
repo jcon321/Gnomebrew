@@ -1916,6 +1916,24 @@ void SidlWindow::DrawStml(const Control &control, Canvas &canvas, TextRenderer &
 	}
 }
 
+void SidlWindow::UpdateListHover(int mouse_x, int mouse_y)
+{
+	for (Control &control : m_controls) {
+		if (control.def->type != "Listbox")
+			continue;
+		control.hover_row = -1;
+		if (m_minimized || !Shown(control))
+			continue;
+		Rect content = ContentRect(control);
+		int top = content.y + ListHeaderHeight(control);
+		if (mouse_x < content.x || mouse_x >= content.Right() || mouse_y < top || mouse_y >= content.Bottom())
+			continue;
+		int row = std::max(control.scroll_pos, 0) + (mouse_y - top) / ListRowHeight(control);
+		if (row < static_cast<int>(control.rows.size()))
+			control.hover_row = row;
+	}
+}
+
 void SidlWindow::DrawListbox(const Control &control, Canvas &canvas, TextRenderer &text, SidlTextures &textures,
 	uint64_t now_ms) const
 {
@@ -1959,9 +1977,9 @@ void SidlWindow::DrawListbox(const Control &control, Canvas &canvas, TextRendere
 	for (size_t r = static_cast<size_t>(std::max(control.scroll_pos, 0)); r < control.rows.size() && y < content.Bottom(); ++r) {
 		const std::vector<std::string> &row = control.rows[r];
 		if (static_cast<int>(r) == control.selected_row) {
-			// Ours: a dark blue bar behind the selected row.
+			// DrawLine: the row 2 pixels wider each side, within the list's client area.
 			canvas.SetClip(clip);
-			canvas.Fill(Intersect({content.x, y, content.w, row_height}, content), 0x203c6c);
+			canvas.Fill(Intersect({content.x - 2, y, content.w + 4, row_height}, content), control.select_color);
 		}
 		x = content.x;
 		uint32_t color = r < control.row_colors.size() && control.row_colors[r] ? control.row_colors[r] : control.row_color;

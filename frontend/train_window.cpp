@@ -32,7 +32,9 @@ void TrainWindow::Attach(WindowManager &windows, ZoneSession &zone, const EqStr 
 	// CTrainWnd::CTrainWnd: the list's look, Train disabled, sorted by name first.
 	if (SidlWindow *wnd = m_windows->Find("TrainWindow")) {
 		if (SidlWindow::Control *list = wnd->Find("SkillList")) {
-			list->row_color = 0xffffff;
+			list->row_color = 0xffffff; // SetColors(white, yellow, gray)
+			list->hover_color = 0xffff00;
+			list->select_color = 0x808080;
 			list->header_color = 0x8aa3ff;
 			list->row_height = 24;
 			list->justification = {0, 1, 1, 1, 1, 1, 1};

@@ -118,8 +118,7 @@ no rules of its own.
      Train through BitchCanTrain (`frontend/skills.*`: setskill, GetSkillLimit2,
      EQ_PC_GetKunarkThreshold, EQ_PC_checkLang) and OP_GMTrainSkill, OP_GMEndTraining on leaving,
      the coin pictures as list headings, and OP_LevelUpdate's 5 practices. Still to do:
-     setskill's Trade Skill Mastery (GetAbility 0x8d, taken as 0: no AAs yet), and the selected
-     row's colors (CListWnd::SetColors' yellow 0xffff00 highlight; ours is the list's blue bar).
+     setskill's Trade Skill Mastery (GetAbility 0x8d, taken as 0: no AAs yet).
    - Bag windows: done (`frontend/containers.*`, eqgame's CContainerMgr and CContainerWnd): the right
      button on a bag opens or closes its window, laid out for its slots with Combine and Done
      under them, kept in the layout as BagInv1..8 (BagBank, BagTrade), picking up or swapping out
@@ -265,7 +264,11 @@ no rules of its own.
    to do: the General, Display, Mouse and Filters pages, which show empty (SyncGeneralPage,
    SyncDisplayPage, InitKeyboardAssignments' mouse settings, SyncChatPage); the Keyboard page's
    temporary Implemented column and the wider window it needs come out once every command is done. A combo box's list doesn't go when the click is outside its
-   window, and has no scrollbar when ListHeight cuts it short (CListWnd's style 1).
+   window, and has no scrollbar when ListHeight cuts it short (CListWnd's style 1). Lists draw the
+   row under the cursor yellow and the selected one on their selection color (CListWnd::DrawItem,
+   DrawLine; red, or SetColors' gray in the train, skills and skills select windows); still to do:
+   IsLineEnabled for lists other than the context menus', a multiselect list's own selected rows,
+   and the mouse-over notification (0x14) DrawItem sends the list's parent.
 6. ~~**A configurable keymap**~~: done (`frontend/key_map.*`, eqgame's two maps,
    `default_key_bindings` with W A S D, `ProcessMovementKeys`, `ProcessKeyUp`, ExecuteCmd's
    typed-character rule, `[KeyMaps]` in my-client.ini as `_writeKeyMapToIni` writes eqclient.ini's;

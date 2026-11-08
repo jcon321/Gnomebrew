@@ -230,7 +230,9 @@ void Abilities::OpenSelect(bool combat, int index)
 	m_select_skills.clear();
 	list->rows.clear();
 	list->selected_row = -1;
-	list->row_color = 0xffffff;
+	list->row_color = 0xffffff; // CSkillsSelectWnd::CSkillsSelectWnd's SetColors(white, yellow, gray)
+	list->hover_color = 0xffff00;
+	list->select_color = 0x808080;
 	for (int skill = 0; skill < SkillCount; ++skill) {
 		const Skills::Info &info = Skills::Get(skill);
 		if (!info.activated || Skills::HasSkill(me, skill) == 0)

@@ -623,6 +623,10 @@ void WindowManager::Update(uint64_t now_ms, int mouse_x, int mouse_y)
 		m_mouse_y = mouse_y;
 		m_moved_ms = now_ms;
 	}
+	// CListWnd::DrawItem tests the cursor against each row as it draws, whatever window is over it.
+	for (auto &w : m_windows)
+		if (w->shown)
+			w->wnd.UpdateListHover(mouse_x, mouse_y);
 	// The left button held: the button under the mouse now (if it's still on one) is held, and
 	// the one pressed comes back up without a click.
 	if (m_press >= 0 && m_box_down == SidlWindow::TitleBox::None && !m_held && now_ms - m_press_ms > HoldMs) {

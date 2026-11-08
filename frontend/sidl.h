@@ -336,10 +336,13 @@ public:
 		uint32_t row_color = 0xffffff, header_color = 0xffffff;
 		std::vector<uint32_t> row_colors; // a row's own, over row_color (0: row_color)
 		bool header_hidden = false;       // no header row at all (a context menu's)
-		// CListWnd style 0x10000: the row under the mouse in 0x150's color, if enabled (DrawItem).
+		// CListWnd style 0x10000 (every SIDL Listbox's): the row under the mouse in 0x150's color,
+		// if enabled (DrawItem), and the selected row on 0x154's (DrawLine). CListWnd::CListWnd's
+		// are yellow and red; SetColors changes them.
 		int hover_row = -1;
 		uint32_t hover_color = 0xffff00;
-		// The row clicked last, drawn highlighted, and the column the click was in
+		uint32_t select_color = 0xff0000;
+		// The row clicked last, drawn on select_color, and the column the click was in
 		// (CListWnd::GetCurCol); -1 none. A click on a row reports the list's ScreenID as a button's
 		// would.
 		int selected_row = -1;
@@ -379,6 +382,8 @@ public:
 	bool Build(const SidlDefinitions &defs, const std::string &screen_item, std::string &error);
 	void SetValues(SidlValues *values) { m_values = values; }
 	void Draw(Canvas &canvas, TextRenderer &text, SidlTextures &textures, uint64_t now_ms) const;
+	// CListWnd::DrawItem's test of the cursor against each row: every list's hover_row.
+	void UpdateListHover(int mouse_x, int mouse_y);
 	// Returns the ScreenID of a button clicked by this event, or "". A click on an edit box focuses it.
 	std::string OnMouse(const InputEvent &event);
 	// Typing into the focused edit box; false if there's none (or it's hidden).
