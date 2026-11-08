@@ -143,7 +143,11 @@ no rules of its own.
      the right button on a slot: done for food, drink and alcohol (`CInvSlot_DoDrinkEatPoison`:
      the messages, hunger and thirst to 6000, OP_Consume and OP_DeleteCharge with the stack taken
      down here; checked live) and items' click effects (`SpellCast::CastItem`, OP_CastSpell gem 10
-     with the slot; not checked live, the test characters have none). Still to do: poisons
+     with the slot; not checked live, the test characters have none). Eating and drinking for us
+     when low (`ProcessHungerandThirst`, `AutoEat`: every 46 s, a monk's 92 s, OP_Consume with -1,
+     and the hunger, thirst and out-of-food messages): done, checked live. Still to do there: Innate
+     Metabolism's longer wait (AAs), the "You and your mount" messages, and no eating while a
+     bazaar trader. Still to do: poisons
      (CEverQues_ApplyPoison), Alcohol Tolerance's skill-up (EQ_PC_CheckSkillImprove 66), what
      drunkenness does. Notes and books are read (EQ_Note::SendTextRequestMsg's OP_ReadBook;
      CNoteWnd's SetNote, checked live; CBookWnd's pages, buttons and keys in

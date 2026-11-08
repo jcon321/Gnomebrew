@@ -775,11 +775,11 @@ bool ZoneSession::ReadBook(uint8_t type, const std::string &file)
 	return Send(ZoneOp::ReadBook, body.data(), body.size(), "OP_ReadBook " + file);
 }
 
-bool ZoneSession::Consume(int16_t slot, int type)
+bool ZoneSession::Consume(int16_t slot, int type, bool by_hand)
 {
 	if (m_state != State::InZone)
 		return false;
-	int32_t body[4] = {slot, 999, -1, type};
+	int32_t body[4] = {slot, by_hand ? 999 : -1, -1, type};
 	bool sent = Send(ZoneOp::Consume, body, sizeof(body), "OP_Consume " + std::to_string(slot));
 	if (sent)
 		TakeOne(slot);

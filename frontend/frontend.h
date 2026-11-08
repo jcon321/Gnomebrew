@@ -370,6 +370,9 @@ private:
 	int Rand(); // RandNbr
 	// CInvSlot_DoDrinkEatPoison (@004223ca): the right button on a common item (frontend.cpp).
 	void DoDrinkEatPoison(const ZoneItem &item, int16_t slot);
+	// EQ_Character::ProcessHungerandThirst and AutoEat: eating and drinking for us when low.
+	void HungerAndThirst(uint64_t now_ms);
+	bool AutoEat(bool food);
 	// EQ_Note::SendTextRequestMsg (@004ce45d): the right button on a book or note closes its window,
 	// and asks for its text unless it was this one's (CNoteWnd::CheckNote, CBookWnd::CheckBook); the
 	// answer (OP_ReadBook) fills it (CNoteWnd::SetNote, CBookWnd::SetBook, Activate).
@@ -535,6 +538,7 @@ private:
 	};
 	HeldKeys m_keys;
 	uint64_t m_controls_ms = 0; // the last CameraControls, for its frame units
+	uint64_t m_hunger_ms = 0;   // the last HungerAndThirst check (ActorInfo's UnknownTimer4)
 	// Autorun (ExecuteCmd 1's DAT_00798600): on and off with its key, off with Move forward or
 	// back, any change of our stance (EQPlayer::ChangeStance) and a new zone (EnterZone).
 	bool m_autorun = false;

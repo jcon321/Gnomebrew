@@ -809,6 +809,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		// DoPassageOfTime readying the hands and the Range button.
 		MeleeControls();
 		RangedPassageOfTime(now_ms);
+		HungerAndThirst(now_ms);
 		if (me.look_serial != m_my_look_serial || m_ranged_look) {
 			m_my_look_serial = me.look_serial;
 			m_ranged_look = false;
@@ -1957,6 +1958,7 @@ void FrontEnd::EnterZoneScreen(bool zoning)
 	m_mouse_turn = m_mouse_pan = m_mouse_grabbed = false;
 	m_keys = HeldKeys{};
 	m_ui_hidden = false; // ProcessGameLoop: __ScreenMode 2 in the world
+	m_hunger_ms = 0;     // a new ActorInfo: its UnknownTimer4 at 0
 	m_autorun = false;
 	m_jump_requested = m_crouch_sent = false;
 	m_main_loop_started = false;
@@ -2828,6 +2830,111 @@ void FrontEnd::DoDrinkEatPoison(const ZoneItem &item, int16_t slot)
 		return;
 	if (m_spell_cast.CastItem(item, slot, m_now_ms) && item.item_type == 21 && m_sound)
 		m_sound->PlayWave(0x95); // a potion
+}
+
+bool FrontEnd::AutoEat(bool food)
+{
+	// EQ_Character::AutoEat (@004c3988): the first drink (15) or food (14) in the general slots,
+	// the slot itself and then its bag's, goes to the zone (OP_Consume {slot, -1, -1, 1 food or 2
+	// drink}) and one comes off it here.
+	const auto &items = m_zone.Items();
+	int type = food ? 14 : 15;
+	auto is = [&](int16_t slot) {
+		auto it = items.find(slot);
+		return it != items.end() && it->second.item_class == 0 && it->second.item_type == type;
+	};
+	for (int16_t s = Inventory::FirstGeneral; s <= Inventory::LastGeneral; ++s) {
+		auto it = items.find(s);
+		if (it == items.end())
+			continue;
+		int16_t slot = -1;
+		if (is(s))
+			slot = s;
+		else if (it->second.item_class == 1)
+			for (int n = 0; n < it->second.bag_slots && slot < 0; ++n)
+				if (is(Inventory::BagSlot(s, n)))
+					slot = Inventory::BagSlot(s, n);
+		if (slot >= 0) {
+			m_zone.Consume(slot, food ? 1 : 2, false);
+			return true;
+		}
+	}
+	return false;
+}
+
+void FrontEnd::HungerAndThirst(uint64_t now_ms)
+{
+	// EQ_Character::ProcessHungerandThirst (@004c0f62), from DoPassageOfTime. The zone digests
+	// (OP_Stamina); this eats and drinks for us when we get low and says how we're doing.
+	ZoneProfile &me = const_cast<ZoneProfile &>(m_zone.Profile());
+	// DoPassageOfTime runs once we are in the world: not before the zone has us.
+	if (m_dead || m_zone.GetState() != ZoneSession::State::InZone)
+		return;
+	if (m_zone.Self().gm || me.deity == 20000) {
+		me.hunger = me.thirst = 32000;
+		return;
+	}
+	bool sustained = m_buffs.Total(115) != 0; // SPA 115, Song of Sustenance's
+	if (sustained) {
+		me.hunger = std::max(me.hunger, 3500);
+		me.thirst = std::max(me.thirst, 3500);
+	}
+	// 46 s (a monk's 92 s) since the last time; it starts at zero, so the first is as we come in.
+	// Innate Metabolism (GetAbility 0xf) would stretch it: we don't have AAs yet.
+	uint64_t every = me.class_id == 7 ? 92000 : 46000;
+	if (now_ms - m_hunger_ms <= every)
+		return;
+	auto text = [this](uint32_t id, const char *fallback) { return FormatEqString(m_ui.eqstr, id, fallback, {}); };
+	// Not while the zone's answer to something is waiting (DAT_007d0254, DAT_007d0258). The
+	// mount's versions of these (12484, 12486) wait for mounts.
+	bool waiting = m_window_state.busy || m_spell_cast.Waiting() || m_merchant.Waiting() || m_train.Waiting() ||
+	               m_loot.Waiting() || m_ground.Waiting();
+	if (me.thirst < 3000 && !waiting && !AutoEat(false))
+		ChatOut(text(12485, "You are thirsty."), ChatType::Default);
+	if (me.hunger < 3000 && !waiting && !AutoEat(true))
+		ChatOut(text(12487, "You are hungry."), ChatType::Default);
+	m_hunger_ms = now_ms;
+	if (sustained)
+		return;
+	// CalculateHungerThirstStatus (@004c3bfa): the charges of food and drink in the general slots
+	// and their bags; none 1 (4 for drink), one 2 (8).
+	int food = 0, drink = 0;
+	const auto &items = m_zone.Items();
+	auto count = [&](int16_t slot) {
+		auto it = items.find(slot);
+		if (it == items.end() || it->second.item_class != 0)
+			return;
+		if (it->second.item_type == 14)
+			food += static_cast<uint8_t>(it->second.charges);
+		if (it->second.item_type == 15)
+			drink += static_cast<uint8_t>(it->second.charges);
+	};
+	for (int16_t s = Inventory::FirstGeneral; s <= Inventory::LastGeneral; ++s) {
+		auto it = items.find(s);
+		if (it == items.end())
+			continue;
+		count(s);
+		if (it->second.item_class == 1)
+			for (int n = 0; n < it->second.bag_slots; ++n)
+				count(Inventory::BagSlot(s, n));
+	}
+	int status = food == 0 ? 1 : food < 2 ? 2 : 0;
+	status += drink == 0 ? 4 : drink < 2 ? 8 : 0;
+	static const std::pair<uint32_t, const char *> Says[] = {
+		{0, nullptr},
+		{12488, "You are out of food."},
+		{12489, "You are low on food."},
+		{0, nullptr},
+		{12490, "You are out of drink."},
+		{12491, "You are out of food and drink."},
+		{12492, "You are out of drink and low on food."},
+		{0, nullptr},
+		{12493, "You are low on drink."},
+		{12494, "You are out of food and low on drink."},
+		{12495, "You are low on food and drink."},
+	};
+	if (Says[status].first)
+		ChatOut(text(Says[status].first, Says[status].second), ChatType::Default);
 }
 
 void FrontEnd::ReadNote(const ZoneItem &item, int16_t slot)

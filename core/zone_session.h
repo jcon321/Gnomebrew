@@ -640,7 +640,8 @@ public:
 	bool CastSpell(int gem, int spell, uint16_t target, uint16_t inventory_slot = 0xffff);
 	// CInvSlot_DoDrinkEatPoison: OP_Consume {slot, 999 (by hand), -1, 1 food or 2 drink}, or for
 	// alcohol OP_DeleteCharge {slot, -1, -1}; one comes off the stack here, as eqgame takes it.
-	bool Consume(int16_t slot, int type);
+	// EQ_Character::AutoEat sends -1 in place of the 999 (by_hand false).
+	bool Consume(int16_t slot, int type, bool by_hand = true);
 	// EQ_Note::SendTextRequestMsg: OP_ReadBook {type, the item's file}.
 	bool ReadBook(uint8_t type, const std::string &file);
 	bool DeleteCharge(int16_t slot);
