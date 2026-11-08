@@ -212,6 +212,18 @@ void ZoneView::Zoom(int notches)
 	m_distance = std::min(distance, MaxDistance);
 }
 
+void ZoneView::ZoomBy(float delta)
+{
+	if (m_distance <= 0 || m_view != CameraView::Chase || delta == 0)
+		return;
+	float distance = m_distance + delta;
+	if (delta < 0)
+		distance = std::max(distance, CenterHeight(m_my_id));
+	else
+		distance = std::min(distance, 400.0f);
+	m_distance = std::clamp(distance, 2.0f, 200.0f);
+}
+
 void ZoneView::PlacePlayer()
 {
 	if (m_model_dirty) {

@@ -194,6 +194,9 @@ public:
 	void FaceCamera();
 	void Pitch(float degrees);
 	void Zoom(int notches);
+	// ProcessControls' Zoom in and out keys: the chase camera (a zoomable one) delta nearer or
+	// farther, no nearer than our ModelHeightOffset and no farther than 400, then DoCamAi's 2..200.
+	void ZoomBy(float delta);
 
 	// Norrath's time (ZoneSession::GameTime): the ambient light, the sky and the fog follow it.
 	void SetGameTime(int hour, float minute);

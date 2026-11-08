@@ -283,11 +283,11 @@ no rules of its own.
    Command mode say and emote (ExecuteCmd 13, 59, 100, 87, 88; `FrontEnd::OpenChatLine`) open the
    chat line with `/tell `, `/tell <name> ` (`;tell` for a name with a dot), `/rtarget <name> `
    (Cycle reply's name; eqstr 12364 and 12365 with no tells), `'` and `:`, without the key's
-   own character after it. Still to do:
-   - ExecuteCmd's commands not done yet (the page's "No"): Toggle mouse look, Duck, Use centerscreen, Center view, Zoom in and out held
-     (ProcessControls' camera distance at 2 units a frame unit), Toggle UI Display (ScreenMode 3),
-     Toggle netstat, the clip plane, voice input,
-     screenshots, the chat line's cursor and page up and down (CChatWindow::ScrollChatWindowUp),
+   own character after it. Zoom in and out held move the chase camera 2 units a frame unit
+   (ProcessControls; no nearer than our ModelHeightOffset, DoCamAi's 2..200). Still to do:
+   - ExecuteCmd's commands not done yet (the page's "No"): Toggle mouse look, Duck, Use
+     centerscreen, Center view, Toggle UI Display (ScreenMode 3), Toggle netstat, the clip plane,
+     voice input, screenshots, the chat line's cursor and page up and down (CChatWindow::ScrollChatWindowUp),
      the AA, bazaar, bazaar search, raid and music player
      windows, and the six camera moves (ExecuteCmd 0x6f..0x74, ProcessControls).
    - Send tell for a GM helping a petitioner (`/tell <petitioner> `, CPetitionQWnd), and

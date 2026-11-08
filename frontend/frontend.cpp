@@ -817,6 +817,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		m_zone_view->SetMyLight(me.light);
 		m_zone_view->SetMyLevel(m_zone.Profile().level);
 		m_zone_view->SetDebugDraw(m_debug.Drawing());
+		CameraControls(now_ms);
 		MoveControls controls = ZoneControls();
 		// Sitting (kneeling, lying...) nothing moves us, a jump included (ProcessControls takes the
 		// keys only standing or crouching). Forward stands us up from sitting (ZoneEvent), and we go
@@ -3820,6 +3821,12 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 		if (down)
 			m_jump_requested = true;
 		break;
+	case KeyMap::ZoomIn:
+		m_keys.zoom_in = down;
+		break;
+	case KeyMap::ZoomOut:
+		m_keys.zoom_out = down;
+		break;
 	case KeyMap::ToggleCam:
 		// CDisplay_ToggleView: first person and the chase camera.
 		if (down && in_zone && m_zone_view)
@@ -4062,6 +4069,18 @@ void FrontEnd::ResetKeyBindings()
 bool FrontEnd::ZoneCanMove() const
 {
 	return !m_dialog.open && m_zone.GetState() == ZoneSession::State::InZone;
+}
+
+void FrontEnd::CameraControls(uint64_t now_ms)
+{
+	// process_physics' frame units for us: 50 ms ticks since the last frame, at most 12.
+	float units = m_controls_ms ? std::min((now_ms - m_controls_ms) * 0.02f, 12.0f) : 0;
+	m_controls_ms = now_ms;
+	// ProcessControls: Zoom in and out held move a zoomable camera in or out 2 units a frame unit.
+	if (m_keys.zoom_in)
+		m_zone_view->ZoomBy(-2 * units);
+	if (m_keys.zoom_out)
+		m_zone_view->ZoomBy(2 * units);
 }
 
 MoveControls FrontEnd::ZoneControls()

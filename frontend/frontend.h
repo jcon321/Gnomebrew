@@ -233,6 +233,7 @@ private:
 	void SaveUserColor(int index, uint32_t rgb); // COptionsWnd::SaveColors
 	void WriteUserColor(int index, uint32_t rgb); // only [TextColors] User_<index+1>_Red, _Green, _Blue
 	MoveControls ZoneControls();
+	void CameraControls(uint64_t now_ms); // ProcessControls' zoom keys
 	bool ZoneCanMove() const; // in the zone, with no dialog up
 
 	void SubmitLogin();
@@ -528,8 +529,10 @@ private:
 	struct HeldKeys
 	{
 		bool forward = false, back = false, left = false, right = false;
+		bool zoom_in = false, zoom_out = false; // ExecuteCmd 0x12, 0x13: DAT_007ce094, DAT_007ce098
 	};
 	HeldKeys m_keys;
+	uint64_t m_controls_ms = 0; // the last CameraControls, for its frame units
 	// Autorun (ExecuteCmd 1's DAT_00798600): on and off with its key, off with Move forward or
 	// back, any change of our stance (EQPlayer::ChangeStance) and a new zone (EnterZone).
 	bool m_autorun = false;
