@@ -1,26 +1,16 @@
-# my-client
+# Gnomebrew
 
-A from-scratch EQMac (TAKP-era) client. Two programs share one core:
+A from-scratch client for EverQuest's Mac-era servers (TAKP, The Al'Kabor Project). It reads the
+art, models, UI files and sounds from your own EverQuest install, never runs `eqgame.exe`, and
+aims to look and behave like the original client.
 
-- **`eqclient_gui`** (Windows): the original front end, meaning the start screen, the login screen and
-  server select, drawn from your EverQuest install's own art. After PLAY it authenticates to
-  world and shows character select, built from the install's SIDL UI files
-  (`uifiles/default/EQUI_CharacterSelect.xml`), over the 3D character select scene: the
-  `load2` zone with the selected character standing in their class's room while the camera
-  circles them. Empty slots open character creation. Enter World connects to the zone and
-  draws it in 3D: you run, walk, turn and jump through it (arrows or WASD, Space, Ctrl+R), with
-  everyone else around you and the time of day lighting it, under a chase camera (F9: first
-  person). Over the view are eqgame's own windows (player, target, chat and the rest, below) and
-  the debug menu (F11): a stat card in sections that fold (your details, frame rate, movement and
-  the floor under you, where the zone last heard you are, camera, network, the latest packets, the
-  zone header and light, the sound, render toggles for wireframe / no fog / collision walls / a floor
-  marker, a target clicked in the world or the list, and the nearest spawns) and a 2D radar. Music plays
-  from character select on (eqtheme.mp3, then each zone's own), and the zones' ambient sounds (waterfalls,
-  torches, wildlife) around you, as the real client plays them.
-- **`eqclient`** (console, Linux and Windows): logs in, authenticates to world, lists
-  characters, can create a test character (`--create`), and with `--char` and `--zone` enters
-  the zone, lists nearby spawns, can `--say` something, then camps out. Used for testing
-  against a server.
+Two programs share one core:
+
+- **`eqclient_gui`** (Windows): the game client. It takes you from the login screen and server
+  select through character select and creation into the 3D world, with eqgame's own windows,
+  music and ambient sound.
+- **`eqclient`** (console, Linux and Windows): a headless client for testing against a server. It
+  logs in, lists or creates characters, and can enter a zone, say something and camp out.
 
 ## Layout
 
@@ -489,7 +479,7 @@ additions of ours, or ones taken from TAKP's eqgame.dll or Zeal rather than stoc
   eqgame's. Because ExecuteCmd runs nothing whose own key types a character while the chat line is
   open (see Keymap), the arrows don't move you while you type with these defaults; with the arrows
   as the keys and W A S D as the alternates, they would.
-- **Options window's not-implemented rows:** for now the Keyboard page lists a command my-client
+- **Options window's not-implemented rows:** for now the Keyboard page lists a command Gnomebrew
   doesn't do yet in red. The window keeps its EQUI size. The Mouse page shows empty.
 - **Far Clip Plane** starts at its maximum (`[Defaults] ClipPlane=20` in my-client.ini, 4.0, the view
   out to the zone's max clip) where eqgame starts at 5 (1.0, the zone's own fog).
@@ -1296,7 +1286,7 @@ details and the nearest spawns at the top left and the radar at the top right.
   as do `EQPlayer::ChangeStance` of ourselves (sitting, ducking, any stance the server gives us)
   and `EnterZone`. `ProcessControls` runs us forward while Move forward's held, autorun's on or
   both mouse buttons are down.
-  Of the 111, my-client does the movement, Autorun, Jump, Look up and down, Toggle camera view, Consider,
+  Of the 111, Gnomebrew does the movement, Autorun, Jump, Look up and down, Toggle camera view, Consider,
   Say hail, Camp, Sit/stand, Run/walk, Target myself, Target party member 1..5, Invite/follow,
   Disband, Who, Target nearest PC and NPC, Toggle last two
   targets, Cycle reply forward and back, Send tell, Reply, Send tell to target, Command mode say
@@ -2412,3 +2402,4 @@ A rejected world login gets no error packet. The server just drops the connectio
   - [TakpUnderthehood](https://github.com/adonislive/TAKP-Client-Underthehood)
   - [eqgame_dll_takp](https://github.com/EQMacEmu/eqgame_dll_takp) (the client fixes TAKP's eqgame.dll makes)
   - [eqw_takp](https://github.com/CoastalRedwood/eqw_takp) (eqgame's input globals and focus handling)
+  - [rdp](https://github.com/solar984/rdp) (rdplib, the RDP library vendored in `third_party/rdplib`)

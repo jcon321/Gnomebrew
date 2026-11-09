@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-my-client is a from-scratch EQMac (TAKP-era) EverQuest client in C++20/CMake. It is ported from
+Gnomebrew (this repo, in the `my-client` folder) is a from-scratch EQMac (TAKP-era) EverQuest client in C++20/CMake. It is ported from
 the decompiled original (`eqgame.exe`, `eqmain.dll`, `eqgfx_dx8.dll` in
 `../TAKP-Client-Underthehood/decomp`) and reads only assets from an EQ install
 (`../TAKP-Client/TAKPv2-1`). It never loads or reads `eqgame.exe`: logic and tables the real client
