@@ -593,6 +593,16 @@ public:
 	// CEverQuest_ToggleAutoSplit (@005376af): OP_SpawnAppearance 28 with the setting, kept in
 	// Profile(); the zone keeps it in the profile.
 	void SetAutoSplit(bool on);
+	// OP_SetRunMode: running (1) or walking (0).
+	void SetRunMode(bool run);
+	// OP_Save (CEverQuest::SavePC): the profile as the zone last sent it (eqgame sends its own
+	// current copy; EQMacEmu reads none of it and saves what it has).
+	void SavePC();
+	// Our own damage from the environment (EQ_Character::ApplyDamage): OP_EnvDamage, then OP_Damage,
+	// both on us from no one, of `type` (0xfc falling), no spell.
+	void ReportEnvDamage(uint8_t type, int32_t damage);
+	void SafeFallSuccess(); // OP_SafeFallSuccess
+	void TargetGroupBuff(uint32_t value); // OP_TGB
 	// /consider: OP_Consider about a spawn (OP_ConsiderCorpse a corpse). The zone answers a
 	// spawn's with Considered.
 	bool Consider(uint16_t id, bool corpse);
@@ -828,6 +838,7 @@ private:
 	State m_state = State::Idle;
 	std::string m_character;
 	ZoneProfile m_profile;
+	std::vector<uint8_t> m_profile_bytes; // as the zone sent it (decrypted), for OP_Save
 	ZoneInfo m_info;
 	std::map<uint16_t, ZoneSpawn> m_spawns;
 	ZoneSpawn m_self;

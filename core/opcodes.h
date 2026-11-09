@@ -200,6 +200,18 @@ namespace ZoneOp
 	// Damage_Struct (24 bytes): {u16 target, u16 source, u8 type @4 (231 a spell), u8, i16 spell @6,
 	// i32 damage @8, float force, heading, pitch}: msg_successful_hit's messages
 	constexpr uint16_t Damage = 0x4058;
+	// What the client sends of its own (EQ_Character::ApplyDamage @004c0150): our own damage from the
+	// environment (types 0xf4, 0xf6, 0xfa..0xfd), the 0x24-byte struct Damage_Struct starts
+	// (u8 type @0x18, i16 spell @0x1e); EQMacEmu reads OP_Damage instead and ignores this one.
+	constexpr uint16_t EnvDamage = 0x401e;
+	// SetRunMode_Struct {u8 mode, u8[3]}: EQ_Character::DoPassageOfTime as __RunWalkState changes.
+	constexpr uint16_t SetRunMode = 0x401f;
+	// CEverQuest::SavePC (@00535eca): the profile, 0x210c bytes; the zone saves the character.
+	constexpr uint16_t Save = 0x402e;
+	// No body: EQ_Character::TakeFallDamage with the safe fall skill (the zone's skill up).
+	constexpr uint16_t SafeFallSuccess = 0x41ab;
+	// u32: /targetgroupbuff 0 off, 1 on, 2 ask (the zone says which), and DoMainLoop's setting.
+	constexpr uint16_t TargetGroupBuff = 0x4220;
 	// Arrow_Struct (112 bytes): a missile, EQMissile's own first 0x70 bytes (EQMissile::EQMissile from a
 	// packet): {u32 type, u32, u32, float y @12, x, z, heading @24, pitch, speed @32, velocity y, x, z,
 	// heading rate @48, pitch rate, climb @56, u32, u16 source @64, u16 target, u16 level, u16 offense,
@@ -392,6 +404,11 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::BeginCast, "OP_BeginCast"},
 	{ZoneOp::Action, "OP_Action"},
 	{ZoneOp::Damage, "OP_Damage"},
+	{ZoneOp::EnvDamage, "OP_EnvDamage"},
+	{ZoneOp::SetRunMode, "OP_SetRunMode"},
+	{ZoneOp::Save, "OP_Save"},
+	{ZoneOp::SafeFallSuccess, "OP_SafeFallSuccess"},
+	{ZoneOp::TargetGroupBuff, "OP_TGB"},
 	{ZoneOp::Projectile, "OP_Projectile"},
 	{ZoneOp::CastSpell, "OP_CastSpell"},
 	{ZoneOp::Buff, "OP_Buff"},

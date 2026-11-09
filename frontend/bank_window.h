@@ -38,6 +38,7 @@ public:
 	struct Host
 	{
 		std::function<void(const std::string &, int)> chat; // a message, in a chat color type
+		std::function<void()> save; // CEverQuest::SavePC
 		std::function<void()> close_bags;                   // CloseAllContainers
 		std::function<void(bool)> music;                    // SetMusicSelection(3, on)
 		std::function<void()> make_visible;                 // EQ_Character::MakeMeVisible

@@ -53,6 +53,7 @@ public:
 	struct Host
 	{
 		std::function<void(const std::string &, int)> chat; // a message, in a chat color type
+		std::function<void()> save; // CEverQuest::SavePC
 		std::function<void(uint16_t)> set_target;            // pinstTarget
 		std::function<float(uint16_t)> height;               // a spawn's ModelHeightOffset
 		std::function<bool()> ok_to_transact;                // CEverQuest_IsOkToTransact

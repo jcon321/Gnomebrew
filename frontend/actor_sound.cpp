@@ -220,16 +220,21 @@ void ActorSound::Animation(audio::EqSound &sound, const Actor &actor, int id, ui
 	sound.PlayActorSound(s, At(actor.center), actor.height, actor.ours);
 }
 
-void ActorSound::Landed(audio::EqSound &sound, const Actor &actor, float speed_z, bool in_water, int safe_fall)
+void ActorSound::Landed(audio::EqSound &sound, const Actor &actor, float speed_z, bool in_water, int safe_fall,
+	int damage)
 {
 	Refresh(sound, actor);
 	if (!in_water && actor.race != 127 && speed_z * 2 <= -2.5f)
 		sound.PlayActorSound(JumpLand, At(actor.center), actor.height, actor.ours);
 	if (speed_z > -2.5f || !actor.ours)
 		return;
-	// EQPlayer::IHaveFallen: TakeFallDamage's damage for the fall past 2.5 (no encumbrance).
+	// EQPlayer::IHaveFallen: fall_hit when TakeFallDamage hurt (here without the encumbrance when
+	// it isn't given).
 	float fall = std::fabs(speed_z + 2.5f) - 1.5f;
-	int damage = 0;
+	if (damage >= 0)
+		fall = -1;
+	else
+		damage = 0;
 	if (fall >= 9)
 		damage = 20000;
 	else if (fall > 0) {

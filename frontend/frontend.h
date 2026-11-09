@@ -172,6 +172,10 @@ public:
 	const ChatWindow &Chat() const { return m_chat; }
 	Abilities &Skills() { return m_abilities; } // the ability buttons and UseSkill (for the preview tool)
 	uint16_t Target() const { return m_game_values.target; } // spawn id, 0 none
+	int CurHp() const { return m_game_values.CurHp(); }
+	// EQ_Character::TakeFallDamage (@004bfe16) for a fall of `fall` past 2.5: the damage, told to
+	// the zone and shown as ApplyDamage does (0 for none). The zone view's landing calls it.
+	int TakeFallDamage(float fall);
 	const CharacterSelectView *CharacterScene() const { return m_charselect_view.get(); }
 	const CharSelectAnimWindow *AnimationsWindow() const { return m_anim_window.get(); }
 	const audio::EqSound *Sound() const { return m_sound.get(); }
@@ -622,6 +626,15 @@ private:
 	std::unique_ptr<audio::EqSound> m_sound;
 	bool m_opening_played = false;   // CDisplay::InitDDraw's opening music, once a run of eqgame
 	bool m_main_loop_started = false; // the zone's first frame (DoMainLoop ends the opening music)
+	bool m_tgb_sent = false;          // DoMainLoop's TargetGroupBuff, once a zone
+	int m_run_walk_state = -1;        // __RunWalkState: what the zone was told (-1: not yet taken)
+	int m_save_ticks = 0;             // DAT_007cd847: 6 s ticks toward SavePC's every 181st
+	uint64_t m_save_tick_ms = 0;
+	// CEverQuest::SavePC (@00535eca): OP_Save, if we're alive in the world and the zone isn't
+	// answering something (then on the next tick).
+	void SavePC();
+	bool ZoneAnswerWaiting() const; // DAT_007d0254, DAT_007d0258: an answer from the zone waited on
+
 	uint64_t m_sound_surroundings_ms = 0;
 	Weather m_weather; // CDisplay's (its sound, so far)
 

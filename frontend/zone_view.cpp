@@ -295,16 +295,20 @@ bool ZoneView::Move(const MoveControls &controls, uint64_t now_ms, bool looking)
 		m_orbit *= std::pow(0.9f, ms * 0.02f);
 	}
 	ChooseAnimation(ms);
+	// CheckForUnderFloor: IHaveFallen at 2.5 down or faster, sound or not.
+	bool wet = false;
+	float landing = m_movement.TakeLanding(wet);
+	int fall_damage = -1;
+	if (landing <= -2.5f && m_fall_damage)
+		fall_damage = m_fall_damage(std::fabs(landing + 2.5f));
 	if (m_sound) {
 		// Hear from where we are now (the front end sets it again for the frame).
 		Hearing hearing = SoundListener(false);
 		m_sound->SetListener({hearing.position.x, hearing.position.y, hearing.position.z},
 			{hearing.forward.x, hearing.forward.y, hearing.forward.z});
 		ActorSound::Actor me = MyActor();
-		bool wet;
-		float landing = m_movement.TakeLanding(wet);
 		if (landing < 0)
-			m_my_sound.Landed(*m_sound, me, landing, wet, m_safe_fall);
+			m_my_sound.Landed(*m_sound, me, landing, wet, m_safe_fall, fall_damage);
 		render::Environment feet = m_movement.FeetEnvironment(), head = m_movement.HeadEnvironment();
 		m_my_sound.FeetChanged(*m_sound, me, m_sound_feet, feet, m_movement.Velocity().z);
 		ActorSound::HeadChanged(*m_sound, m_sound_head, head);

@@ -271,8 +271,11 @@ void TradeWindow::ZoneEvent(const ZoneSession::Event &event)
 			Changed(event.value != 0);
 		break;
 	case Type::TradeFinished:
-		if (m_active)
-			Close(false); // CompleteTrade
+		if (m_active) {
+			if (m_host.save)
+				m_host.save(); // CTradeWnd::CompleteTrade's SavePC
+			Close(false);
+		}
 		break;
 	case Type::TradeCoins:
 		// SetHisMoney: 0 copper .. 3 platinum, kept platinum first.

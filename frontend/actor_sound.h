@@ -50,8 +50,10 @@ public:
 	// PlayAnimationTrack2's call: the animation number it plays.
 	void Animation(audio::EqSound &sound, const Actor &actor, int id, uint64_t now_ms);
 	// CheckForUnderFloor: the feet met the floor going down at `speed_z` a tick (negative).
-	// `in_water`: the body's in water. `safe_fall`: our safe fall skill.
-	void Landed(audio::EqSound &sound, const Actor &actor, float speed_z, bool in_water, int safe_fall = 0);
+	// `in_water`: the body's in water. `safe_fall`: our safe fall skill. `damage`: what
+	// TakeFallDamage did to us (-1: work it out here, for the sound alone).
+	void Landed(audio::EqSound &sound, const Actor &actor, float speed_z, bool in_water, int safe_fall = 0,
+		int damage = -1);
 	// The region at the feet changed from `from` to `to` (render::Environment), going `speed_z` a tick.
 	void FeetChanged(audio::EqSound &sound, const Actor &actor, render::Environment from, render::Environment to,
 		float speed_z);

@@ -160,6 +160,8 @@ void MerchantWindow::Deactivate()
 	bool was_active = m_active;
 	m_active = false;
 	m_windows->Show("MerchantWnd", false);
+	if (was_active && m_host.save)
+		m_host.save(); // CMerchantWnd::Deactivate's SavePC, before the shop's end
 	m_zone->ShopEnd(m_merchant); // its items go
 	m_merchant = 0;
 	m_busy = 0;

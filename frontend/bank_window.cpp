@@ -83,6 +83,8 @@ void BankWindow::Deactivate(bool say)
 	if (!Active())
 		return;
 	m_windows->Show("BankWnd", false);
+	if (m_host.save)
+		m_host.save(); // CBankWnd::Deactivate's SavePC
 	if (m_host.music)
 		m_host.music(false);
 	if (say && m_host.chat)

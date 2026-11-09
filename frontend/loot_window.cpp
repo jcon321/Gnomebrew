@@ -170,6 +170,8 @@ void LootWindow::Deactivate()
 
 void LootWindow::Release()
 {
+	if (m_host.save)
+		m_host.save(); // CLootWnd::fn_releaseloot's SavePC
 	m_windows->Show("LootWnd", false);
 	m_zone->ClearLoot();
 	if (m_host.clear_target)

@@ -186,6 +186,54 @@ namespace
 	}
 
 	// Live: chat commands typed in and what they print; the compass as we turn; the XP gauge.
+	// Live "passage": what the client tells the zone on its own (TODO 25): /tgb on, off and asked,
+	// walking and running (OP_SetRunMode), /anonymous (OP_Save after it), a fall (OP_EnvDamage and
+	// OP_Damage; the HP the zone sends back).
+	int PassageTest(FrontEnd &frontend, Harness &h)
+	{
+		h.Key(InputEvent::Key::F11);
+		size_t chat_seen = frontend.Chat().Lines().size();
+		auto chat = [&] {
+			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
+				printf("[preview] chat: %s\n", frontend.Chat().Lines()[chat_seen].text.c_str());
+		};
+		auto type = [&](const std::string &line) {
+			printf("[preview] > %s\n", line.c_str());
+			h.Key(InputEvent::Key::Enter);
+			h.Type(line);
+			h.Key(InputEvent::Key::Enter);
+			h.RunUntil([] { return false; }, 700);
+			chat();
+		};
+		auto ctrl_r = [&] {
+			InputEvent event;
+			event.type = InputEvent::Type::Key;
+			event.scan = 0x13;
+			event.ctrl = true;
+			frontend.OnEvent(event);
+			event.type = InputEvent::Type::KeyUp;
+			frontend.OnEvent(event);
+			h.RunUntil([] { return false; }, 500);
+		};
+		chat();
+		for (const char *line : {"/tgb on", "/tgb", "/tgb off", "/anonymous", "/anonymous"})
+			type(line);
+		printf("[preview] walk\n");
+		ctrl_r();
+		printf("[preview] run\n");
+		ctrl_r();
+		int before = frontend.CurHp();
+		int damage = frontend.TakeFallDamage(3.0f);
+		h.RunUntil([] { return false; }, 1500);
+		chat();
+		printf("[preview] fall of 3: %d damage, HP %d -> %d\n", damage, before, frontend.CurHp());
+		h.Key(InputEvent::Key::Enter);
+		h.Type("/camp");
+		h.Key(InputEvent::Key::Enter);
+		h.RunUntil([] { return false; }, 32000);
+		return 0;
+	}
+
 	int CommandsTest(FrontEnd &frontend, Harness &h)
 	{
 		WindowManager &windows = frontend.Windows();
@@ -1617,6 +1665,7 @@ int main(int argc, char **argv)
 	bool shop = argc == 7 && std::string(argv[6]) == "shop";
 	bool ground = argc == 7 && std::string(argv[6]) == "ground";
 	bool commands = argc == 7 && std::string(argv[6]) == "commands";
+	bool passage = argc == 7 && std::string(argv[6]) == "passage";
 	bool group_test = argc == 7 && std::string(argv[6]) == "group";
 	bool skills_test = argc == 7 && std::string(argv[6]) == "skills";
 	bool train_test = argc == 7 && std::string(argv[6]) == "train";
@@ -3598,6 +3647,8 @@ int main(int argc, char **argv)
 				return GroundTest(frontend, h);
 			if (commands)
 				return CommandsTest(frontend, h);
+			if (passage)
+				return PassageTest(frontend, h);
 			if (group_test)
 				return GroupTest(frontend, h);
 			if (skills_test)

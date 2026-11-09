@@ -443,19 +443,27 @@ no rules of its own.
     - TotalSpellAffects adds the worn items' effects only for attack speed; the other SPAs
       (`Buffs::Total`) leave them out.
 
-25. **What eqgame tells the zone that we don't.** Packets the client sends on its own, found in the
-    decompile's `send_message_OpCode` calls, with no `ZoneOp` here:
-    - `OP_Save` (0x402e, 0x210c bytes: `CEverQuest::SavePC` @00535eca), sent on camping, zoning,
-      closing the bank, merchant and loot windows, /anonymous, /roleplay and the options; never
-      sent here.
-    - `OP_SetRunMode` (0x401f: `EQ_Character::DoPassageOfTime`, as `__RunWalkState` changes): the
-      zone isn't told we walk.
-    - `OP_EnvDamage` (0x401e, 0x24 bytes: `EQ_Character::ApplyDamage` @004c0150 for our own damage
-      of types 0xf4, 0xf6 and 0xfa..0xfd): falling (`TakeFallDamage`), lava and drowning are the
-      client's to report, so ours never take any. Needs ApplyDamage's local half and breath (see
-      34).
-    - `OP_SpellTextMessage` (0x41d3: `StopSpellCast`, `ReportSuccessfulHit`), `OP_TGB` (0x4220:
-      /targetgroupbuff and `DoMainLoop`), `OP_ClientError`.
+25. ~~**What eqgame tells the zone that we don't.**~~ Done (`ZoneSession::SetRunMode`, `SavePC`,
+    `ReportEnvDamage`, `SafeFallSuccess`, `TargetGroupBuff`; `FrontEnd::SavePC`, `TakeFallDamage`):
+    OP_SetRunMode as we walk or run (`DoPassageOfTime`'s `__RunWalkState`), OP_Save (`SavePC`'s
+    callers: every 181 six-second ticks, closing the bank, merchant and loot windows, a finished
+    trade, /anonymous, /roleplay and the options' Anonymous and Roleplaying; not while the zone's
+    answer to something is waited on), a fall's OP_EnvDamage and OP_Damage
+    (`TakeFallDamage` with what we carry and safe fall, whose OP_SafeFallSuccess goes too), and
+    /targetgroupbuff and DoMainLoop's OP_TGB. Still to do:
+    - OP_Save carries the profile as the zone sent it, not eqgame's current copy (EQMacEmu reads
+      none of it); and `SavePC`'s other callers: `MoveToZone_2`'s `SavePCForce` and OP_DeleteSpawn
+      as we zone, `msg_stat_change`'s anonymous state for us, the bind in `ProcessConfirmation` and
+      `HitBySpell`.
+    - ApplyDamage's own half for a fall: the HP taken here before the zone's update, divine aura,
+      the stun it can bring, and OP_Death (`SendDeathMessage`) in place of OP_Damage when it kills
+      (the zone's OP_Damage handler kills us too); TakeFallDamage's Acrobatics AA and a mount's
+      under 200.
+    - The other environment damage the client reports: lava and the rest (`ProcessEnvironment`
+      @004c0e32) and drowning (`ProcessAirSupply`, with the breath window, 34).
+    - OP_SpellTextMessage (0x41d3: a lifetap's "%1 groans and looks a little weaker." (13301) from
+      ReportSuccessfulHit's lifetap branch, which isn't ours, and StopSpellCast's from a stun), and
+      the same from others (the zone passes it on); OP_ClientError.
 26. **Guilds.** Guild names show (the guild list, `get_player_guild_name`). Still to do: /guildinvite
     (`CEverQuest::GuildInvite` @0052edc0, `OP_GuildInvite`), the invite's question
     (`msg_invite_guild` @004dbfc5, turned down by the options' Receive Guild Invites, then

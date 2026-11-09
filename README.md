@@ -358,7 +358,7 @@ eqgame's `OP_MoveItem`.
   So far: /say (or no slash, or `'`), /tell (/msg, /send), /reply, /gsay, /guildsay, /shout,
   /auction, /ooc, /emote (`:`, /me), /hail, /target, /assist, /consider, /location, /time,
   /played, /motd, /afk, /anonymous, /shownames, /sit, /stand, /book, /cast, /camp, /clearchat,
-  /random, /lootnodrop, /fastdrop, /autosplit, /roleplay, /attack, /combatmusic, /doability,
+  /random, /lootnodrop, /fastdrop, /autosplit, /roleplay, /targetgroupbuff (/tgb), /attack, /combatmusic, /doability,
   /filter, /serverfilter and the socials (/smile, /wave and the other 86).
   The rest say they aren't supported yet; a GM's commands act as if they weren't there for
   anyone else.
@@ -1593,6 +1593,31 @@ details and the nearest spawns at the top left and the radar at the top right.
   others', `0x10b` our misses, `0x10c` misses of us, `0x118` others'. The line's first letter is
   made upper case; an NPC's hit on itself isn't told. The new UI prints them through the hit modes
   (`HandleMyHitsMode` and the rest), whose 0 is the whole line.
+- **What the client tells the zone of its own** (`ZoneSession::SetRunMode`, `SavePC`,
+  `ReportEnvDamage`, `SafeFallSuccess`, `TargetGroupBuff`):
+  - `OP_SetRunMode` (0x401f, {u8 mode, 3}): `DoPassageOfTime` takes `__RunWalkState` the first time
+    without a word, then sends it each time we go from walking to running or back. EQMacEmu tires a
+    runner (fatigue) by it, and starts each of us running.
+  - `OP_Save` (0x402e): `CEverQuest::SavePC` (@00535eca) every 181 six-second ticks
+    (`DoPassageOfTime`'s `DAT_007cd847`), closing the bank, merchant (before `OP_ShopEnd`) and loot
+    windows, a finished trade, /anonymous, /roleplay and the options' Anonymous and Roleplaying,
+    not dead or under 1 HP, and not while the zone's answer to something is waited on (then the
+    next tick). eqgame sends its 0x210c-byte profile; ours is the one the zone sent. EQMacEmu reads
+    none of it and saves the character.
+  - A fall: `CDisplay::CheckForUnderFloor` calls `EQPlayer::IHaveFallen` at 2.5 down or faster with
+    the speed past 2.5; `EQ_Character::TakeFallDamage` (@004bfe16) adds a hundredth of what we carry
+    (`cur_encumbrance`) and takes 1.5 off: 10 damage a unit of that, 20000 from 9. With safe fall
+    (skill 39) it takes the skill off (plus Acrobatics' 10..30%) and sends `OP_SafeFallSuccess`
+    (0x41ab, no body; the zone's skill up). Nothing on a mount under 200 or in the Bazaar (zone
+    151). `ApplyDamage` (@004c0150) then sends `OP_EnvDamage` (0x401e: its own 0x24-byte struct, the
+    type 0xfc at +0x18 and spell -1 at +0x1e; EQMacEmu ignores it) and `OP_Damage` (0x4058, the
+    first 0x18 bytes: us from no one, type 252), which EQMacEmu takes the HP for and sends back,
+    and `ReportSuccessfulHit` says it here ("YOU were injured by falling.", with `fall_hit`).
+    `IHaveFallen`'s sound is `fall_hit` when it did damage, else `jumpland`.
+  - `OP_TGB` (0x4220, u32): /targetgroupbuff and /tgb "off" (3 letters) or "on" (2) keep
+    `[Defaults] TargetGroupBuff` (eqclient.ini in eqgame) and send 0 or 1; either way then 2, which
+    asks the zone to say which it is (`TGB_ON`/`TGB_OFF`). `DoMainLoop` sends the kept one as each
+    zone starts.
 - **The environment's damage** (types 244..253): 244 rotting (5722, 5723), 245 chilled, 246
   freezing, 247 tormented, 248 burned, 249 thorns, 250 burning (12131..12142), 251 drowning
   (12128, 12130; suffocating, 12127 and 12129, in zone 171, `DAT_007f9488` set from the profile),

@@ -1449,6 +1449,55 @@ void ZoneSession::SetAutoSplit(bool on)
 	Send(ZoneOp::SpawnAppearance, body, sizeof(body), "OP_SpawnAppearance autosplit " + std::to_string(value));
 }
 
+void ZoneSession::SetRunMode(bool run)
+{
+	if (m_state != State::InZone)
+		return;
+	uint8_t body[4] = {static_cast<uint8_t>(run ? 1 : 0), 0, 0, 0};
+	Send(ZoneOp::SetRunMode, body, sizeof(body), run ? "OP_SetRunMode run" : "OP_SetRunMode walk");
+}
+
+void ZoneSession::SavePC()
+{
+	if (m_state != State::InZone || m_profile_bytes.empty())
+		return;
+	Send(ZoneOp::Save, m_profile_bytes.data(), m_profile_bytes.size(), "OP_Save");
+}
+
+void ZoneSession::ReportEnvDamage(uint8_t type, int32_t damage)
+{
+	if (m_state != State::InZone)
+		return;
+	// ApplyDamage's own struct: {u16 target, u16 source, u16, u16, i32 damage, float force, heading,
+	// pitch, u8 type @0x18, ..., i16 spell @0x1e}; OP_Damage's is its first 0x18 bytes with the type
+	// at 4 and the spell at 6.
+	uint8_t env[0x24] = {};
+	memcpy(env, &m_my_id, 2);
+	memcpy(env + 8, &damage, 4);
+	env[0x18] = type;
+	int16_t no_spell = -1;
+	memcpy(env + 0x1e, &no_spell, 2);
+	Send(ZoneOp::EnvDamage, env, sizeof(env), "OP_EnvDamage " + std::to_string(type) + " " + std::to_string(damage));
+	uint8_t hit[0x18] = {};
+	memcpy(hit, &m_my_id, 2);
+	hit[4] = type;
+	memcpy(hit + 6, &no_spell, 2);
+	memcpy(hit + 8, &damage, 4);
+	Send(ZoneOp::Damage, hit, sizeof(hit), "OP_Damage " + std::to_string(type) + " " + std::to_string(damage));
+}
+
+void ZoneSession::SafeFallSuccess()
+{
+	if (m_state == State::InZone)
+		Send(ZoneOp::SafeFallSuccess, nullptr, 0, "OP_SafeFallSuccess");
+}
+
+void ZoneSession::TargetGroupBuff(uint32_t value)
+{
+	if (m_state == State::InZone)
+		Send(ZoneOp::TargetGroupBuff, &value, sizeof(value), "OP_TGB " + std::to_string(value));
+}
+
 void ZoneSession::SetAnonymous(uint8_t anon)
 {
 	if (m_state != State::InZone)
@@ -1624,6 +1673,7 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 			Fail(events, "couldn't decrypt the player profile");
 			return;
 		}
+		m_profile_bytes.assign(data.begin(), data.begin() + ProfileSize);
 		ZoneProfile &p = m_profile;
 		p.name = CString(data, 6, 64);
 		p.last_name = CString(data, 70, 66);

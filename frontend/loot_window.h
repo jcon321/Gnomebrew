@@ -48,6 +48,7 @@ public:
 	struct Host
 	{
 		std::function<void(const std::string &, int)> chat; // a message, in a chat color type
+		std::function<void()> save; // CEverQuest::SavePC
 		std::function<void(int)> sound;                     // EqSoundManager::WavePlay
 		std::function<void(uint8_t)> change_stance;         // EQPlayer::ChangeStance
 		std::function<void()> clear_target;

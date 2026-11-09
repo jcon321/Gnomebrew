@@ -17,7 +17,7 @@ namespace
 	{
 		None, Say, Tell, Group, Shout, Auction, Ooc, Guild, Reply, Emote, Hail, Location, Target, Camp,
 		ClearChat, ShowNames, Sit, Stand, Book, Cast, Consider, Played, Motd, Time, Afk, Anonymous, Assist,
-		Random, LootNoDrop, FastDrop, AutoSplit, Roleplay, Social, Attack, CombatMusic, DoAbility, Filter, ServerFilter, Invite, Disband, Who, WhoTarget, Follow, MakeLeader, Lfg,
+		Random, LootNoDrop, FastDrop, AutoSplit, Roleplay, TargetGroupBuff, Social, Attack, CombatMusic, DoAbility, Filter, ServerFilter, Invite, Disband, Who, WhoTarget, Follow, MakeLeader, Lfg,
 		UserColor,
 	};
 
@@ -106,7 +106,7 @@ namespace
 		{"/gems", 0, Command::None}, {"/inspect", 0, Command::None}, {"/serverfilter", 0, Command::ServerFilter},
 		{"/showspelleffects", 0, Command::None}, {"/combatmusic", 0, Command::CombatMusic}, {"/mixahead", 0, Command::None},
 		{"/guildmotd", 0, Command::None}, {"/charinfo", 0, Command::None}, {"/safelock", 0, Command::None},
-		{"/alternateadv", 0, Command::None}, {"/targetgroupbuff", 0, Command::None}, {"/tgb", 0, Command::None},
+		{"/alternateadv", 0, Command::None}, {"/targetgroupbuff", 0, Command::TargetGroupBuff}, {"/tgb", 0, Command::TargetGroupBuff},
 		{"/hotbutton", 0, Command::None}, {"/particledensity", 0, Command::None}, {"/facepick", 0, Command::None},
 		{"/dismount", 0, Command::None}, {"/rtarget", 0, Command::None}, {"/showgrass", 0, Command::None},
 		{"/alias", 0, Command::None}, {"/hitsmode", 0, Command::None}, {"/clearhits", 0, Command::None},
@@ -1234,6 +1234,28 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 		ChatOut(anon == 0 ? format(13237, "You are no longer anonymous.", {}) : format(13236, "You are now anonymous.", {}),
 			ChatType::Default);
 		m_zone.SetAnonymous(anon);
+		SavePC();
+		break;
+	}
+	case Command::TargetGroupBuff: {
+		// /targetgroupbuff (@004ff181): "off" (3 letters) or "on" (2) kept in [Defaults]
+		// TargetGroupBuff (eqclient.ini in eqgame) and told the zone; either way, then 2, which
+		// asks the zone to say which it is.
+		std::string value;
+		if (MatchesPrefix(args, format(12946, "off", {}), 3))
+			value = "0";
+		else if (MatchesPrefix(args, format(12947, "on", {}), 2))
+			value = "1";
+		if (!value.empty()) {
+			if (!m_config.settings_ini.empty()) {
+				IniFile ini;
+				ini.Load(m_config.settings_ini);
+				ini.Set("Defaults", "TargetGroupBuff", value);
+				ini.Save(m_config.settings_ini);
+			}
+			m_zone.TargetGroupBuff(value == "1" ? 1 : 0);
+		}
+		m_zone.TargetGroupBuff(2);
 		break;
 	}
 	case Command::AutoSplit: {
@@ -1267,6 +1289,7 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 		ChatOut(anon < 2 ? format(13234, "You are no longer roleplaying.", {}) : format(13233, "You are now roleplaying.", {}),
 			ChatType::Default);
 		m_zone.SetAnonymous(anon);
+		SavePC();
 		break;
 	}
 	case Command::Assist: {

@@ -928,6 +928,31 @@ void FrontEnd::Update(uint64_t now_ms)
 			ToggleAutoAttack();
 		if (m_attack != m_attack_sent && m_zone.GetState() == ZoneSession::State::InZone)
 			m_attack_sent = m_zone.SendAutoAttack(m_attack) ? m_attack : m_attack_sent;
+		if (m_zone.GetState() == ZoneSession::State::InZone) {
+			// DoPassageOfTime: walking or running told as it changes (__RunWalkState, taken the
+			// first time without telling); every 181 six-second ticks, SavePC.
+			if (m_run_walk_state < 0)
+				m_run_walk_state = m_run ? 1 : 0;
+			else if (m_run_walk_state != (m_run ? 1 : 0)) {
+				m_run_walk_state = m_run ? 1 : 0;
+				m_zone.SetRunMode(m_run);
+			}
+			if (now_ms - m_save_tick_ms > 6000) {
+				m_save_tick_ms = now_ms;
+				if (++m_save_ticks > 180)
+					SavePC();
+			}
+			// DoMainLoop: [Defaults] TargetGroupBuff, if it's set, as we come in.
+			if (!m_tgb_sent) {
+				m_tgb_sent = true;
+				if (!m_config.settings_ini.empty()) {
+					IniFile ini;
+					std::string tgb;
+					if (ini.Load(m_config.settings_ini) && !(tgb = ini.Get("Defaults", "TargetGroupBuff")).empty())
+						m_zone.TargetGroupBuff(static_cast<uint32_t>(atoi(tgb.c_str())));
+				}
+			}
+		}
 		// DoPassageOfTime: the social going's next line.
 		std::string social_line = SocialStep(m_window_state, now_ms);
 		if (!social_line.empty())
@@ -2010,6 +2035,7 @@ void FrontEnd::EnterZoneScreen(bool zoning)
 	m_autorun = false;
 	m_jump_requested = m_crouch_sent = false;
 	m_main_loop_started = false;
+	m_tgb_sent = false;
 	if (!zoning) {
 		AddZoneLog("Entering the zone...", ZoneGrey);
 		m_windows.Reset(nullptr, nullptr, m_game_width, m_game_height);
@@ -2199,6 +2225,7 @@ void FrontEnd::BuildZoneWindows()
 	m_containers.Attach(m_windows, m_zone, m_game_values, std::move(bag_host)); // the bag windows hidden
 	BankWindow::Host bank_host;
 	bank_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
+	bank_host.save = [this] { SavePC(); };
 	bank_host.close_bags = [this] { m_containers.CloseAll(); };
 	bank_host.music = [this](bool on) {
 		if (m_sound)
@@ -2208,6 +2235,7 @@ void FrontEnd::BuildZoneWindows()
 	m_bank.Attach(m_windows, m_zone, m_window_state, m_game_values, m_ui.eqstr, std::move(bank_host)); // hidden too
 	MerchantWindow::Host merchant_host;
 	merchant_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
+	merchant_host.save = [this] { SavePC(); };
 	merchant_host.sound = bag_sound;
 	merchant_host.close_bag = [this](int16_t slot) { m_containers.Close(slot); };
 	merchant_host.clear_target = [this] { m_game_values.target = 0; }; // pinstTarget, not the zone's
@@ -2226,6 +2254,7 @@ void FrontEnd::BuildZoneWindows()
 	m_train.Attach(m_windows, m_zone, m_ui.eqstr, std::move(train_host));
 	LootWindow::Host loot_host;
 	loot_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
+	loot_host.save = [this] { SavePC(); };
 	loot_host.sound = bag_sound;
 	loot_host.change_stance = [this](uint8_t stance) { ChangeStance(stance); };
 	loot_host.clear_target = [this] { m_game_values.target = 0; };
@@ -2236,6 +2265,7 @@ void FrontEnd::BuildZoneWindows()
 	m_loot.loot_no_drop = m_config.loot_no_drop;
 	TradeWindow::Host trade_host;
 	trade_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
+	trade_host.save = [this] { SavePC(); };
 	trade_host.set_target = [this](uint16_t id) { m_game_values.target = id; };
 	trade_host.height = [this](uint16_t id) { return m_zone_view ? m_zone_view->CenterHeight(id) : 0.0f; };
 	// msg_req_trade: busy too while auto attack's on.
@@ -2928,6 +2958,61 @@ bool FrontEnd::AutoEat(bool food)
 	return false;
 }
 
+bool FrontEnd::ZoneAnswerWaiting() const
+{
+	return m_window_state.busy || m_spell_cast.Waiting() || m_merchant.Waiting() || m_train.Waiting() ||
+	       m_loot.Waiting() || m_ground.Waiting();
+}
+
+void FrontEnd::SavePC()
+{
+	// CEverQuest::SavePC: not dead nor out of the world; while the zone's answer to something is
+	// waited on, the next six-second tick tries again (DAT_007cd847 = 0xb5).
+	if (m_dead || m_zone.GetState() != ZoneSession::State::InZone || m_game_values.CurHp() < 1)
+		return;
+	if (ZoneAnswerWaiting()) {
+		m_save_ticks = 181;
+		return;
+	}
+	m_zone.SavePC();
+	m_save_ticks = 0;
+}
+
+int FrontEnd::TakeFallDamage(float fall)
+{
+	// EQ_Character::TakeFallDamage (@004bfe16): the fall, plus a hundredth of what we carry
+	// (cur_encumbrance), less 1.5; 10 damage a unit of it, 20000 past 9. Safe fall takes its skill
+	// off (Acrobatics would add 10..30% of it: no AAs yet) and tells the zone either way. None on a
+	// mount under 200 (no mounts yet), nor in the Bazaar (zone 151).
+	const ZoneProfile &me = m_zone.Profile();
+	float over = static_cast<int16_t>(m_game_values.Weight()) * 0.01f + fall - 1.5f;
+	int damage = 0;
+	if (over >= 9)
+		damage = 20000;
+	else if (over > 0) {
+		damage = static_cast<int16_t>(over * 10);
+		if (damage > 0 && Skills::HasSkill(me, 39) != 0) {
+			damage -= std::max<int16_t>(me.skills[39], 0);
+			m_zone.SafeFallSuccess();
+		}
+		damage = std::max(damage, 0);
+	}
+	if (me.zone_id == 151)
+		damage = 0;
+	if (damage <= 0 || m_dead)
+		return 0;
+	// ApplyDamage (@004c0150): OP_EnvDamage and OP_Damage (type 0xfc), and ReportSuccessfulHit's
+	// line and sound here, as an incoming hit's. The HP drop is the zone's to send back.
+	m_zone.ReportEnvDamage(0xfc, damage);
+	ZoneCast hit;
+	hit.target = m_zone.MySpawnId();
+	hit.type = 0xfc;
+	hit.spell = -1;
+	hit.damage = damage;
+	ApplyCombat(m_combat.Damaged(hit, m_zone, m_game_values.target, m_game_values.CurHp()));
+	return damage;
+}
+
 void FrontEnd::HungerAndThirst(uint64_t now_ms)
 {
 	// EQ_Character::ProcessHungerandThirst (@004c0f62), from DoPassageOfTime. The zone digests
@@ -2953,8 +3038,7 @@ void FrontEnd::HungerAndThirst(uint64_t now_ms)
 	auto text = [this](uint32_t id, const char *fallback) { return FormatEqString(m_ui.eqstr, id, fallback, {}); };
 	// Not while the zone's answer to something is waiting (DAT_007d0254, DAT_007d0258). The
 	// mount's versions of these (12484, 12486) wait for mounts.
-	bool waiting = m_window_state.busy || m_spell_cast.Waiting() || m_merchant.Waiting() || m_train.Waiting() ||
-	               m_loot.Waiting() || m_ground.Waiting();
+	bool waiting = ZoneAnswerWaiting();
 	if (me.thirst < 3000 && !waiting && !AutoEat(false))
 		ChatOut(text(12485, "You are thirsty."), ChatType::Default);
 	if (me.hunger < 3000 && !waiting && !AutoEat(true))
@@ -3424,6 +3508,7 @@ void FrontEnd::SetGeneralOption(OptionsWindow::Host::General setting, int value)
 		                                   : EqString(13234, "You are no longer roleplaying."));
 		ChatOut(text, ChatType::Default);
 		m_zone.SetAnonymous(static_cast<uint8_t>(std::clamp(value, 0, 3)));
+		SavePC();
 		break;
 	}
 	case General::PlayerTrade:
@@ -3750,6 +3835,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			m_zone_view->SetVeliousTextures(m_config.velious_textures);
 			m_zone_view->SetLuclinModels(m_config.luclin_models);
 			m_zone_view->SetSpellFile(m_ui.spells);
+			m_zone_view->SetFallDamage([this](float fall) { return TakeFallDamage(fall); });
 			ApplyDisplayOptions();
 			m_zone_view->StartLoading(m_zone.Info());
 			m_zone_view->SetSound(m_sound.get());

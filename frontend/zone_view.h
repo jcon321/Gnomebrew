@@ -61,6 +61,8 @@ public:
 	void SetPlayerPosition(float x, float y, float z, float heading);
 	void SetSwimSkill(int skill) { m_movement.SetSwimSkill(skill); } // the profile's swimming skill
 	void SetSafeFallSkill(int skill) { m_safe_fall = skill; }        // for the landing sounds
+	// EQPlayer::IHaveFallen for us: TakeFallDamage of the fall past 2.5, the damage it did.
+	void SetFallDamage(std::function<int(float fall)> take) { m_fall_damage = std::move(take); }
 	// What our buffs add to our speed (eqspa_movement_rate's MovementSpeedModifier).
 	void SetSpeedModifier(float modifier) { m_movement.SetSpeedModifier(modifier); }
 	void SetSneakModifier(float modifier) { m_movement.SetSneakModifier(modifier); }
@@ -510,6 +512,7 @@ private:
 	ActorSound m_my_sound;
 	render::Environment m_sound_feet = render::Environment::Dry, m_sound_head = render::Environment::Dry;
 	int m_safe_fall = 0;
+	std::function<int(float)> m_fall_damage;
 
 	CameraView m_view = CameraView::Chase;
 	float m_orbit = 0;      // chase camera heading relative to the character's
