@@ -500,7 +500,8 @@ no rules of its own.
 31. **Death's dialogs and corpses.** Resurrection's question (`msg_resurrect` @004e1f5f on
     `OP_RezzRequest`, answered with `OP_RezzAnswer`; `msg_resurrect_complete` @004e212b on
     `OP_RezzComplete`); /consent (@004fb39e, `OP_Consent`; `msg_consent_verify` @004e3314 on
-    `OP_ConsentResponse`); /corpse dragging (`OP_CorpseDrag`) and /hidecorpses; a corpse's notes
+    `OP_ConsentResponse`: done, `ZoneSession::Consent`, the Consented event; an ignored owner's
+    answer isn't left out yet); /corpse dragging (`OP_CorpseDrag`) and /hidecorpses; a corpse's notes
     (`msg_send_corpse_notes` @004df1f5); the sacrifice and translocate questions (`msg_sacrifice`
     @004e1afe, `msg_translocate` @004e1c3e: the confirmation dialog, `OP_Sacrifice`,
     `OP_Translocate` back from `ProcessConfirmation`).
@@ -525,9 +526,9 @@ no rules of its own.
       `OP_Report`).
     - The text entry window (`CTextEntryWnd` @004377db), which /surname's question uses
       (`OP_Surname` from `ProcessYes`), and the gems game (`CGemsGameWnd` @0041cd06, /gems).
-35. **The other slash commands** that still say they aren't supported, not under another item:
-    /split (`CEverQuest_DoSplit` @00537476, `OP_Split`), /yell (@004f82ea, `OP_YellForHelp`;
-    `msg_yell` @004e17cc), /shield (@004fd688, `OP_Shielding`), /discipline (@004f4fb5,
+35. **The other slash commands** that still say they aren't supported, not under another item
+    (/split, `CEverQuest_DoSplit`, and /yell with `msg_yell`'s directions are done; /split doesn't
+    close the windows DoSplit puts away, `DAT_007914a4` and `DAT_007952f4`): /shield (@004fd688, `OP_Shielding`), /discipline (@004f4fb5,
     `OP_Discipline`; `OP_DisciplineChange` back), /surname, /stopsong, /language,
     /dismount, /facepick, /hotbutton, /alias, /log, /note, /keys, /quit and /exit, the chat
     channels (/channel, /join, /leave, /leaveall, /list, /announce, /autojoin, /1../10, /chat,
@@ -539,8 +540,8 @@ no rules of its own.
     `OP_GM*` packets; the petition queue (`CPetitionQWnd` @0042d1ca, `msg_pq_update` @004dce71,
     /viewpetition, /deletepetition); soulmarks (`CSoulmarkWnd` @00433258, /inquire, /praise,
     /warn, `OP_SoulMarkAdd`, `OP_SoulMarkList`, `OP_SoulMarkUpdate`).
-37. **What the zone sends that isn't handled yet:** `OP_ManaUpdate`, `OP_Charm`, `OP_Reward`,
-    `OP_MultiLineMsg`, `OP_PlaySound`, `OP_DespawnDoor`, `OP_ResetSkill`, `OP_SetTitle`,
+37. **What the zone sends that isn't handled yet** (`OP_ManaUpdate`, `OP_PlaySound` and
+    `OP_DespawnDoor` are done): `OP_Charm`, `OP_Reward`, `OP_MultiLineMsg`, `OP_ResetSkill`, `OP_SetTitle`,
     `OP_FreezeClientControl`, `OP_UnfreezeClientControl` and `OP_ReturnClientControl`,
     `OP_RequestClientZoneChange` (a zone change the server asks for), and boats: boarding and
     leaving (`OP_BoardBoat` and 0x41bc from `DoPassageOfTime` on a boat's spawn), `OP_ControlBoat`,

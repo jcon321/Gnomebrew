@@ -216,7 +216,8 @@ namespace
 			h.RunUntil([] { return false; }, 500);
 		};
 		chat();
-		for (const char *line : {"/tgb on", "/tgb", "/tgb off", "/anonymous", "/anonymous"})
+		for (const char *line : {"/tgb on", "/tgb", "/tgb off", "/anonymous", "/anonymous", "/split 0 0 0 1", "/yell",
+			     "/consent Replaycaster", "/consent"})
 			type(line);
 		printf("[preview] walk\n");
 		ctrl_r();

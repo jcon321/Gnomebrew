@@ -887,6 +887,17 @@ namespace audio
 		MusicGiveTime(); // music fades now; the rest as their emitters next look
 	}
 
+	void EqSound::PlayWaveAt(int slot, const Vec3 &position, float min_distance, float max_distance)
+	{
+		Control control;
+		control.positional = true;
+		control.position = position;
+		control.min_distance = min_distance;
+		control.max_distance = max_distance;
+		control.channel = 0;
+		WavePlay(slot, control);
+	}
+
 	void EqSound::PlaySoundAt(int slot, const Vec3 &position)
 	{
 		Control control;

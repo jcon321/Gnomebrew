@@ -430,7 +430,10 @@ public:
 			TimeOfDay,    // text: "hour:minute"
 			Weather,      // OP_Weather: id the type (0 rain, 1 snow), value the intensity (0 stops it)
 			SkillUp,      // OP_SkillUpdate: id the skill, value its new value (Profile() has it already)
-			DoorsSpawned, // Doors() is set
+			DoorsSpawned, // Doors() is set (none after OP_DespawnDoor)
+			Yelled,       // id: who yelled for help near us (OP_YellForHelp)
+			Consented,    // OP_ConsentResponse: text the grantee, text2 the owner, value the permission
+			SoundPlayed,  // OP_PlaySound: id the spawn, value the sound
 			DoorMoved,    // id: the door, value: its new state (OP_MoveDoor)
 			ItemLink,     // LinkedItem() is the item of a link we clicked (OP_ItemLinkResponse)
 			// The zone's answers to the spell requests (msg_launchspell_info, OP_SwapSpell and
@@ -525,6 +528,7 @@ public:
 		uint16_t id = 0;
 		int32_t value = 0;
 		std::string text;
+		std::string text2; // a second one (Consented's owner)
 		ZoneChat chat;
 		ZoneCast cast;
 		ZoneMissile missile;
@@ -603,6 +607,10 @@ public:
 	void ReportEnvDamage(uint8_t type, int32_t damage);
 	void SafeFallSuccess(); // OP_SafeFallSuccess
 	void TargetGroupBuff(uint32_t value); // OP_TGB
+	// CEverQuest_DoSplit: OP_Split, the coins off ours.
+	void Split(int32_t platinum, int32_t gold, int32_t silver, int32_t copper);
+	void YellForHelp();                     // OP_YellForHelp
+	void Consent(const std::string &name);  // OP_Consent
 	// /consider: OP_Consider about a spawn (OP_ConsiderCorpse a corpse). The zone answers a
 	// spawn's with Considered.
 	bool Consider(uint16_t id, bool corpse);

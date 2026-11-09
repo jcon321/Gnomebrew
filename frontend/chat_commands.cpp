@@ -17,7 +17,7 @@ namespace
 	{
 		None, Say, Tell, Group, Shout, Auction, Ooc, Guild, Reply, Emote, Hail, Location, Target, Camp,
 		ClearChat, ShowNames, Sit, Stand, Book, Cast, Consider, Played, Motd, Time, Afk, Anonymous, Assist,
-		Random, LootNoDrop, FastDrop, AutoSplit, Roleplay, TargetGroupBuff, Social, Attack, CombatMusic, DoAbility, Filter, ServerFilter, Invite, Disband, Who, WhoTarget, Follow, MakeLeader, Lfg,
+		Random, LootNoDrop, FastDrop, AutoSplit, Roleplay, TargetGroupBuff, Split, Yell, Consent, Social, Attack, CombatMusic, DoAbility, Filter, ServerFilter, Invite, Disband, Who, WhoTarget, Follow, MakeLeader, Lfg,
 		UserColor,
 	};
 
@@ -31,10 +31,10 @@ namespace
 	// eqgame's table at 0x609afc, all 277 in order (abbreviations depend on it).
 	constexpr CommandEntry Commands[] = {
 		{"/who", 0, Command::Who}, {"/consider", 0, Command::Consider}, {"/feedback", 0, Command::None},
-		{"/consent", 0, Command::None}, {"/played", 0, Command::Played}, {"/ignore", 0, Command::None},
+		{"/consent", 0, Command::Consent}, {"/played", 0, Command::Played}, {"/ignore", 0, Command::None},
 		{"/anonymous", 0, Command::Anonymous}, {"/afk", 0, Command::Afk}, {"/filter", 0, Command::Filter},
 		{"/assist", 0, Command::Assist}, {"/duel", 0, Command::None}, {"/decline", 0, Command::None},
-		{"/split", 0, Command::None}, {"/autosplit", 0, Command::AutoSplit}, {"/quit", 0, Command::None},
+		{"/split", 0, Command::Split}, {"/autosplit", 0, Command::AutoSplit}, {"/quit", 0, Command::None},
 		{"/stopsong", 0, Command::None}, {"/friends", 0, Command::None}, {"/shield", 0, Command::None},
 		{"/shownames", 0, Command::ShowNames}, {"/shownpcnames", 10, Command::None}, {"/emote", 0, Command::Emote},
 		{":", 0, Command::Emote}, {"/say", 0, Command::Say}, {"'", 0, Command::Say}, {"/tell", 0, Command::Tell},
@@ -45,7 +45,7 @@ namespace
 		{"/guildstatus", 0, Command::None}, {"/guildleader", 0, Command::None}, {"/guildwar", 0, Command::None},
 		{"/guildpeace", 0, Command::None}, {"/pet", 0, Command::None}, {"/petition", 0, Command::None},
 		{"/private", 1, Command::None}, {"/find", 1, Command::None}, {"/goto", 1, Command::None},
-		{"/becomenpc", 1, Command::None}, {"/searchcorpse", 1, Command::None}, {"/yell", 0, Command::None},
+		{"/becomenpc", 1, Command::None}, {"/searchcorpse", 1, Command::None}, {"/yell", 0, Command::Yell},
 		{"/motd", 0, Command::Motd}, {"/corpse", 0, Command::None}, {"/me", 0, Command::Emote},
 		{"/location", 0, Command::Location}, {"/adriver", 0, Command::None}, {"/sdriver", 0, Command::None},
 		{"/chat", 0, Command::None}, {"/join", 0, Command::None}, {"/leave", 0, Command::None},
@@ -1237,6 +1237,60 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 		SavePC();
 		break;
 	}
+	case Command::Split: {
+		// CEverQuest_DoSplit (@00537476): in a group, not while the zone's answer to something is
+		// waited on; platinum, gold, silver and copper (atol, nothing under 1), each no more than
+		// we have; then OP_Split and the coins off ours.
+		if (!m_group.InGroup()) {
+			ChatOut(format(12328, "You are not in a group!  Keep it all.", {}), ChatType::Default);
+			break;
+		}
+		if (ZoneAnswerWaiting())
+			break;
+		std::string rest;
+		long coins[4];
+		std::string text = args;
+		for (int i = 0; i < 3; ++i) {
+			coins[i] = atol(FirstWord(text, rest).c_str());
+			text = rest;
+		}
+		coins[3] = atol(text.c_str());
+		if (coins[0] + coins[1] + coins[2] + coins[3] <= 0) {
+			ChatOut(format(12329, "Please input a valid number of coins to split.", {}), ChatType::Default);
+			ChatOut(format(12330, "Format: /split <platinum> <gold> <silver> <copper>.", {}), ChatType::Default);
+			ChatOut(format(12331, "e.g. /split 0 1 5 24  would split 0 plat, 1 gold, 5 silver, 24 copper.", {}),
+				ChatType::Default);
+			break;
+		}
+		const ZoneProfile &me = m_zone.Profile();
+		const int32_t have[4] = {me.platinum, me.gold, me.silver, me.copper};
+		static const std::pair<uint32_t, const char *> short_of[4] = {{12332, "You don't have that much platinum!"},
+			{12333, "You don't have that much gold!"}, {12334, "You don't have that much silver!"},
+			{12335, "You don't have that much copper!"}};
+		bool enough = true;
+		for (int i = 0; i < 4 && enough; ++i) {
+			if (coins[i] < 1)
+				coins[i] = 0;
+			else if (have[i] < coins[i]) {
+				ChatOut(format(short_of[i].first, short_of[i].second, {}), ChatType::Default);
+				enough = false;
+			}
+		}
+		if (enough)
+			m_zone.Split(static_cast<int32_t>(coins[0]), static_cast<int32_t>(coins[1]), static_cast<int32_t>(coins[2]),
+				static_cast<int32_t>(coins[3]));
+		break;
+	}
+	case Command::Yell:
+		// /yell (@004f82ea): said in red, then OP_YellForHelp; the zone tells those near.
+		ChatOut(format(13087, "You yell for help.", {}), ChatType::Red);
+		m_zone.YellForHelp();
+		break;
+	case Command::Consent:
+		// /consent (@004fb39e): the rest of the line as the name, if there is any.
+		if (!args.empty())
+			m_zone.Consent(args);
+		break;
 	case Command::TargetGroupBuff: {
 		// /targetgroupbuff (@004ff181): "off" (3 letters) or "on" (2) kept in [Defaults]
 		// TargetGroupBuff (eqclient.ini in eqgame) and told the zone; either way, then 2, which

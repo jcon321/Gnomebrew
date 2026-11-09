@@ -358,7 +358,8 @@ eqgame's `OP_MoveItem`.
   So far: /say (or no slash, or `'`), /tell (/msg, /send), /reply, /gsay, /guildsay, /shout,
   /auction, /ooc, /emote (`:`, /me), /hail, /target, /assist, /consider, /location, /time,
   /played, /motd, /afk, /anonymous, /shownames, /sit, /stand, /book, /cast, /camp, /clearchat,
-  /random, /lootnodrop, /fastdrop, /autosplit, /roleplay, /targetgroupbuff (/tgb), /attack, /combatmusic, /doability,
+  /random, /lootnodrop, /fastdrop, /autosplit, /roleplay, /targetgroupbuff (/tgb), /split, /yell,
+  /consent, /attack, /combatmusic, /doability,
   /filter, /serverfilter and the socials (/smile, /wave and the other 86).
   The rest say they aren't supported yet; a GM's commands act as if they weren't there for
   anyone else.
@@ -1593,6 +1594,22 @@ details and the nearest spawns at the top left and the radar at the top right.
   others', `0x10b` our misses, `0x10c` misses of us, `0x118` others'. The line's first letter is
   made upper case; an NPC's hit on itself isn't told. The new UI prints them through the hit modes
   (`HandleMyHitsMode` and the rest), whose 0 is the whole line.
+- **/split** (`CEverQuest_DoSplit` @00537476): only in a group (else 12328) and not while the
+  zone's answer to something is waited on; four numbers (`GrabFirstWord` three times, `atol` the
+  rest), all under 1 the usage (12329..12331), each no more than we have (12332..12335); then
+  `OP_Split` (0x4131, {i32 platinum, gold, silver, copper}) with them taken off ours.
+- **/yell** (@004f82ea): "You yell for help." (13087) in red, then `OP_YellForHelp` (0x41da, no
+  body). The zone sends {u32 the yeller} to everyone within 100 but them, and `msg_yell`
+  (@004e17cc) says where from by `get_bearing` to them against our heading (`CDisplay_HeadingDiff`,
+  0..256): 0..32 straight ahead (12907), past 224 behind (12908), else ahead (to 96), off (to 160)
+  or behind (to 224) to the right (12909..12911) or the left (12912..12914), in color 0x11a.
+- **/consent** (@004fb39e): the rest of the line and its NUL as `OP_Consent` (0x40b7).
+  `OP_ConsentResponse` (0x40d5, {grantee[64], owner[64], u8 permission, zone[32]}):
+  `msg_consent_verify` (@004e3314) says to the owner 1427 or 1428 with the grantee, to anyone else
+  2080 or 2103 with the owner (not when the owner's ignored).
+- **OP_ManaUpdate** (0x4219, {u16 spawn, u16 mana}) sets our mana, whoever it names. **OP_DespawnDoor**
+  (0x409b, no body) deletes every door and switch. **OP_PlaySound** (0x4048, {u16 spawn, u16 sound})
+  plays the wave where the spawn is, full to 100 and silent past it.
 - **What the client tells the zone of its own** (`ZoneSession::SetRunMode`, `SavePC`,
   `ReportEnvDamage`, `SafeFallSuccess`, `TargetGroupBuff`):
   - `OP_SetRunMode` (0x401f, {u8 mode, 3}): `DoPassageOfTime` takes `__RunWalkState` the first time

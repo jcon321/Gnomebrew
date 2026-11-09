@@ -634,6 +634,8 @@ private:
 	// answering something (then on the next tick).
 	void SavePC();
 	bool ZoneAnswerWaiting() const; // DAT_007d0254, DAT_007d0258: an answer from the zone waited on
+	// msg_yell (@004e17cc): someone near yelled for help, and which way they are from where we face.
+	void YelledForHelp(uint16_t id);
 
 	uint64_t m_sound_surroundings_ms = 0;
 	Weather m_weather; // CDisplay's (its sound, so far)

@@ -1352,6 +1352,21 @@ bool ZoneView::PlayActorSound(uint16_t on, int slot)
 	return true;
 }
 
+void ZoneView::PlaySpawnWave(uint16_t on, int slot)
+{
+	render::Vec3 at;
+	if (on == m_my_id)
+		at = MyActor().center;
+	else {
+		auto it = m_actors.find(on);
+		if (it == m_actors.end())
+			return;
+		at = it->second.Feet();
+	}
+	if (m_sound)
+		m_sound->PlayWaveAt(slot, {at.x, at.y, at.z}, 100, 100);
+}
+
 void ZoneView::PlaySpellSound(const SpellEffects::Request &request, uint16_t on, int slot)
 {
 	if (!PlayActorSound(on, slot))

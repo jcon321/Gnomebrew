@@ -212,6 +212,21 @@ namespace ZoneOp
 	constexpr uint16_t SafeFallSuccess = 0x41ab;
 	// u32: /targetgroupbuff 0 off, 1 on, 2 ask (the zone says which), and DoMainLoop's setting.
 	constexpr uint16_t TargetGroupBuff = 0x4220;
+	// {i32 platinum, gold, silver, copper}: CEverQuest_DoSplit, our coins for the group.
+	constexpr uint16_t Split = 0x4131;
+	// No body to the zone (/yell); from it, {u32 spawn id}: someone near yelled (msg_yell).
+	constexpr uint16_t YellForHelp = 0x41da;
+	// A name and its NUL (/consent).
+	constexpr uint16_t Consent = 0x40b7;
+	// ConsentResponse_Struct {char grantee[64], char owner[64] @64, u8 permission @128, char zone[32]}:
+	// msg_consent_verify.
+	constexpr uint16_t ConsentResponse = 0x40d5;
+	// ManaUpdate_Struct {u16 spawn id, u16 mana}: our mana (HandleWorldMessage's 0x4219).
+	constexpr uint16_t ManaUpdate = 0x4219;
+	// No body: every door and switch goes (HandleWorldMessage's 0x409b deletes the EQSwitches).
+	constexpr uint16_t DespawnDoor = 0x409b;
+	// Sound_Struct {u16 spawn id, u16 sound}: the wave played at the spawn, 100 out (WavePlay).
+	constexpr uint16_t PlaySound = 0x4048;
 	// Arrow_Struct (112 bytes): a missile, EQMissile's own first 0x70 bytes (EQMissile::EQMissile from a
 	// packet): {u32 type, u32, u32, float y @12, x, z, heading @24, pitch, speed @32, velocity y, x, z,
 	// heading rate @48, pitch rate, climb @56, u32, u16 source @64, u16 target, u16 level, u16 offense,
@@ -409,6 +424,13 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::Save, "OP_Save"},
 	{ZoneOp::SafeFallSuccess, "OP_SafeFallSuccess"},
 	{ZoneOp::TargetGroupBuff, "OP_TGB"},
+	{ZoneOp::Split, "OP_Split"},
+	{ZoneOp::YellForHelp, "OP_YellForHelp"},
+	{ZoneOp::Consent, "OP_Consent"},
+	{ZoneOp::ConsentResponse, "OP_ConsentResponse"},
+	{ZoneOp::ManaUpdate, "OP_ManaUpdate"},
+	{ZoneOp::DespawnDoor, "OP_DespawnDoor"},
+	{ZoneOp::PlaySound, "OP_PlaySound"},
 	{ZoneOp::Projectile, "OP_Projectile"},
 	{ZoneOp::CastSpell, "OP_CastSpell"},
 	{ZoneOp::Buff, "OP_Buff"},

@@ -120,6 +120,8 @@ public:
 	// EQPlayer::PlaySoundA: wave `slot` from a spawn's center, or ours (our own id); false when it's
 	// not drawn.
 	bool PlayActorSound(uint16_t on, int slot);
+	// OP_PlaySound (HandleWorldMessage's 0x4048): the wave where the spawn is, 100 out.
+	void PlaySpawnWave(uint16_t on, int slot);
 	const SpellEffects &Effects() const { return m_spell_effects; }
 	// OP_Projectile: a missile (Missiles) on its way from the next Render, drawn with its model and
 	// light, a spell's effect riding on it. The spells are for a bolt's (kind 9).

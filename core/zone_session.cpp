@@ -1498,6 +1498,32 @@ void ZoneSession::TargetGroupBuff(uint32_t value)
 		Send(ZoneOp::TargetGroupBuff, &value, sizeof(value), "OP_TGB " + std::to_string(value));
 }
 
+void ZoneSession::Split(int32_t platinum, int32_t gold, int32_t silver, int32_t copper)
+{
+	if (m_state != State::InZone)
+		return;
+	m_profile.platinum -= platinum;
+	m_profile.gold -= gold;
+	m_profile.silver -= silver;
+	m_profile.copper -= copper;
+	int32_t body[4] = {platinum, gold, silver, copper};
+	Send(ZoneOp::Split, body, sizeof(body),
+		"OP_Split " + std::to_string(platinum) + " " + std::to_string(gold) + " " + std::to_string(silver) + " " +
+			std::to_string(copper));
+}
+
+void ZoneSession::YellForHelp()
+{
+	if (m_state == State::InZone)
+		Send(ZoneOp::YellForHelp, nullptr, 0, "OP_YellForHelp");
+}
+
+void ZoneSession::Consent(const std::string &name)
+{
+	if (m_state == State::InZone)
+		Send(ZoneOp::Consent, name.c_str(), name.size() + 1, "OP_Consent " + name);
+}
+
 void ZoneSession::SetAnonymous(uint8_t anon)
 {
 	if (m_state != State::InZone)
@@ -1862,6 +1888,41 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 			it->second.hp = static_cast<int16_t>(max > 0 && max != 100 ? cur * 100 / max : cur);
 		break;
 	}
+	case ZoneOp::ManaUpdate:
+		// HandleWorldMessage's 0x4219: our mana, whatever spawn it names.
+		if (data.size() >= 4)
+			m_profile.mana = static_cast<int16_t>(Read<uint16_t>(data, 2));
+		break;
+	case ZoneOp::DespawnDoor: {
+		// HandleWorldMessage's 0x409b: every EQSwitch deleted.
+		m_doors.clear();
+		events.push_back(Event{Event::Type::DoorsSpawned});
+		break;
+	}
+	case ZoneOp::YellForHelp:
+		if (data.size() >= 2) {
+			Event e(Event::Type::Yelled);
+			e.id = Read<uint16_t>(data, 0);
+			events.push_back(e);
+		}
+		break;
+	case ZoneOp::ConsentResponse:
+		if (data.size() >= 129) {
+			Event e(Event::Type::Consented);
+			e.text = CString(data, 0, 64);
+			e.text2 = CString(data, 64, 64);
+			e.value = data[128];
+			events.push_back(e);
+		}
+		break;
+	case ZoneOp::PlaySound:
+		if (data.size() >= 4) {
+			Event e(Event::Type::SoundPlayed);
+			e.id = Read<uint16_t>(data, 0);
+			e.value = Read<int16_t>(data, 2);
+			events.push_back(e);
+		}
+		break;
 	case ZoneOp::ManaChange: {
 		// ManaChange_Struct: {u16 new mana, u16 the spell that used it}. The spell is there in the
 		// zone's (SendSpellBarEnable's) 4 bytes; eqgame stops the cast it has without it.

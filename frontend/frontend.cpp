@@ -2958,6 +2958,47 @@ bool FrontEnd::AutoEat(bool food)
 	return false;
 }
 
+void FrontEnd::YelledForHelp(uint16_t id)
+{
+	auto it = m_zone.Spawns().find(id);
+	if (it == m_zone.Spawns().end())
+		return;
+	const ZoneSpawn &them = it->second;
+	const ZoneProfile &me = m_zone.Profile();
+	// get_bearing to them (as auto follow's), and CDisplay_HeadingDiff against our heading: d the
+	// way round that's shorter (0..256), `diff` its sign before the wrap.
+	float degrees = std::atan2(them.x - me.x, them.y - me.y) * 180.0f / 3.14159265f;
+	if (degrees < 0)
+		degrees += 360;
+	float bearing = degrees * 511.5f / 360.0f;
+	float heading = me.heading;
+	float low = std::min(heading, bearing), high = std::max(heading, bearing);
+	float d = high - low, diff = d;
+	if (d > 256) {
+		diff = d - 512;
+		d = 512 - d;
+	}
+	bool right = (heading < bearing && diff < 0) || (bearing < heading && diff > 0);
+	uint32_t text;
+	if (d >= 0 && d <= 32)
+		text = 12907; // straight ahead
+	else if (d > 224 && d <= 256)
+		text = 12908; // behind
+	else if (d <= 96)
+		text = right ? 12909 : 12912;
+	else if (d <= 160)
+		text = right ? 12910 : 12913;
+	else if (d <= 224)
+		text = right ? 12911 : 12914;
+	else
+		return;
+	static const char *const fallbacks[] = {"%1 yells for help from straight ahead of you", "%1 yells for help from behind you",
+		"%1 yells for help from ahead and to the right of you", "%1 yells for help from off to the right of you",
+		"%1 yells for help from behind you and to the right", "%1 yells for help from ahead and to the left of you",
+		"%1 yells for help from off to the left of you", "%1 yells for help from behind you and to the left"};
+	ChatOut(FormatEqString(m_ui.eqstr, text, fallbacks[text - 12907], {them.DisplayName()}), 0x11a);
+}
+
 bool FrontEnd::ZoneAnswerWaiting() const
 {
 	return m_window_state.busy || m_spell_cast.Waiting() || m_merchant.Waiting() || m_train.Waiting() ||
@@ -3855,6 +3896,25 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			if (m_zone_view)
 				m_zone_view->SetDoors(m_zone.Doors(), m_now_ms);
 			break;
+		case Type::SoundPlayed:
+			if (m_zone_view)
+				m_zone_view->PlaySpawnWave(event.id, event.value);
+			break;
+		case Type::Yelled:
+			YelledForHelp(event.id);
+			break;
+		case Type::Consented: {
+			// msg_consent_verify (@004e3314): to us, given or denied the grantee; else, to them, the
+			// owner's corpse (an ignored owner's isn't said: no ignore list yet).
+			bool ours = Lower(event.text2) == Lower(m_zone.Profile().name);
+			uint32_t id = ours ? (event.value ? 1427 : 1428) : (event.value ? 2080 : 2103);
+			const char *fallback = ours ? (event.value ? "You have given %1 permission to drag your corpse."
+			                                           : "You have denied %1 permission to drag your corpse.")
+			                            : (event.value ? "You have been given permission to drag %1's corpse."
+			                                           : "You have been denied permission to drag %1's corpse.");
+			ChatOut(FormatEqString(m_ui.eqstr, id, fallback, {ours ? event.text : event.text2}), ChatType::Default);
+			break;
+		}
 		case Type::DoorMoved:
 			if (m_zone_view)
 				m_zone_view->MoveDoor(static_cast<uint8_t>(event.id), static_cast<uint8_t>(event.value), m_now_ms);

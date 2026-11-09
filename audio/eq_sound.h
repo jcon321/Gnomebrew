@@ -136,6 +136,9 @@ namespace audio
 		static int DoorSound(int type, int state);
 		// CDisplay_PlaySoundAtLocation.
 		void PlaySoundAt(int slot, const Vec3 &position);
+		// WavePlay with a control at `position`, full volume to `min_distance`, silent past
+		// `max_distance` (OP_PlaySound's: 100 and 100).
+		void PlayWaveAt(int slot, const Vec3 &position, float min_distance, float max_distance);
 		// EQPlayer::PlaySoundA: `position` is the actor's (its model's center), `height` its size.
 		void PlayActorSound(int slot, const Vec3 &position, float height, bool ours);
 		// SoundManager::IsSoundPlaying.
