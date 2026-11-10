@@ -166,6 +166,16 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 	group_host.other_team = [this](const ZoneSpawn &spawn) { return m_world.ServerType() == 4 && NotOnSameDeity(spawn); };
 	group_host.lfg_off = [this] { Lfg(true, "off"); };
 	m_group.Attach(m_zone, m_game_values, std::move(group_host));
+	Guild::Host guild_host;
+	guild_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
+	guild_host.target = [this] { return m_game_values.Target(); };
+	guild_host.other_team = [this](const ZoneSpawn &spawn) { return m_world.ServerType() == 4 && NotOnSameDeity(spawn); };
+	guild_host.receive_invites = [this] { return m_guild_invites; };
+	guild_host.asking = [this] { return m_windows.Shown("ConfirmationDialogBox"); };
+	guild_host.ask = [this](int, uint32_t timeout_ms, const std::string &text, std::function<void(bool)> answer) {
+		return AskInGame(text, timeout_ms, std::move(answer));
+	};
+	m_guild.Attach(m_zone, m_ui.eqstr, std::move(guild_host));
 	EnterStart();
 }
 
@@ -905,6 +915,9 @@ void FrontEnd::Update(uint64_t now_ms)
 			m_destroy_until_ms = 0;
 			m_windows.Show("ConfirmationDialogBox", false);
 		}
+		// Another question's time running out is its No (CConfirmationDialog::Draw's ProcessNo).
+		if (m_question.open && (now_ms >= m_question.until_ms || !m_windows.Shown("ConfirmationDialogBox")))
+			AnswerInGame(false);
 		m_options.Frame(now_ms);
 		m_spell_book.Frame(now_ms);
 		m_spell_cast.Frame(now_ms);
@@ -1217,6 +1230,8 @@ void FrontEnd::HandleWorldEvents(const std::vector<WorldSession::Event> &events)
 			break;
 		case Type::ZoneServer:
 			m_entering_world = false;
+			if (!m_zoning)
+				m_guild.EnteringGame(); // SetDefaultGameValues
 			m_zone.SetGuilds(m_world.Guilds());
 			if (!m_zone.Begin(m_world.ZoneAddress(), m_world.ZonePort(), m_world.EnteringCharacter())) {
 				ShowMessage(m_strings.Get("SISATEXT_CONNECT_FAILED"), [this](bool) { EnterStart(); });
@@ -2394,6 +2409,42 @@ void FrontEnd::DestroyHeld()
 	m_destroy_until_ms = m_now_ms + 10000;
 }
 
+bool FrontEnd::AskInGame(const std::string &text, uint32_t timeout_ms, std::function<void(bool)> answer)
+{
+	SidlWindow *dialog = m_windows.Find("ConfirmationDialogBox");
+	if (!dialog || m_windows.Shown("ConfirmationDialogBox"))
+		return false;
+	for (const char *id : {"Yes_Button", "No_Button"})
+		if (SidlWindow::Control *button = dialog->Find(id))
+			button->visible = true;
+	if (SidlWindow::Control *ok = dialog->Find("OK_Button"))
+		ok->visible = false;
+	if (SidlWindow::Control *output = dialog->Find("TextOutput")) {
+		output->text = text;
+		output->scroll_pos = 0;
+	}
+	const Rect &r = dialog->Bounds();
+	m_windows.MoveTo("ConfirmationDialogBox", (m_windows.ScreenWidth() - r.w) / 2, (m_windows.ScreenHeight() - r.h) / 2);
+	m_windows.Show("ConfirmationDialogBox", true);
+	m_windows.Raise("ConfirmationDialogBox");
+	m_question.open = true;
+	m_question.until_ms = m_now_ms + timeout_ms;
+	m_question.answer = std::move(answer);
+	return true;
+}
+
+void FrontEnd::AnswerInGame(bool yes)
+{
+	if (!m_question.open)
+		return;
+	m_question.open = false;
+	m_windows.Show("ConfirmationDialogBox", false);
+	auto answer = std::move(m_question.answer);
+	m_question.answer = nullptr;
+	if (answer)
+		answer(yes);
+}
+
 void FrontEnd::DestroyHeldItemOrMoney()
 {
 	// EQ_PC::DestroyHeldItemOrMoney (@004d0d88): the item on the cursor goes (OP_MoveItem from the
@@ -2521,6 +2572,11 @@ void FrontEnd::HandleWindowClicks()
 		// The inventory's Destroy, and the confirmation dialog asking about it.
 		if (click.window == "InventoryWindow" && click.control == "IW_Destroy") {
 			DestroyHeld();
+			continue;
+		}
+		if (click.window == "ConfirmationDialogBox" && m_question.open) {
+			if (click.control == "Yes_Button" || click.control == "No_Button" || click.control == "OK_Button")
+				AnswerInGame(click.control == "Yes_Button");
 			continue;
 		}
 		if (click.window == "ConfirmationDialogBox" && m_destroy_until_ms) {
@@ -3921,6 +3977,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			break;
 		case Type::InZone:
 			m_zoning = false;
+			m_guild.InZone();
 			// HandleWorldMessage's OP_SendExpZonein: still looking for a group, say so here too.
 			if (m_lfg)
 				Lfg(false, "on");
@@ -4031,6 +4088,17 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			break;
 		case Type::WhoAnswered:
 			WhoAnswer(event.who);
+			break;
+		case Type::GuildInvited:
+		case Type::GuildMemberRank:
+		case Type::GuildDisbanded:
+		case Type::GuildWarAsked:
+		case Type::GuildPeaceAsked:
+		case Type::GuildWarRefused:
+		case Type::GuildPeaceRefused:
+		case Type::GuildChanged:
+		case Type::GuildRankChanged:
+			m_guild.ZoneEvent(event);
 			break;
 		case Type::GroupInvited:
 		case Type::GroupInviteCancelled:

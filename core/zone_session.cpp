@@ -25,12 +25,20 @@ namespace
 	// SpawnAppearance types for what the name over a head shows (AppearanceType in eq_constants.h)
 	constexpr uint16_t AppearanceInvis = 3, AppearancePvp = 4, AppearanceLinkdead = 18, AppearanceGm = 20,
 	                   AppearanceAnonymous = 21, AppearanceGuild = 22, AppearanceAfk = 24;
+	constexpr uint16_t AppearanceGuildRank = 23; // msg_stat_change's GuildStatus
 	constexpr uint16_t AppearanceAutoSplit = 28; // CEverQuest_ToggleAutoSplit's 0x1c
 	constexpr uint16_t AppearanceSneak = 15;     // msg_stat_change's IsSneaking
 	constexpr size_t SpawnSize = 224;            // Mac::structs::Spawn_Struct
 	constexpr size_t ProfileSize = 8460;         // Mac::structs::PlayerProfile_Struct
 	constexpr size_t ZoneEntrySize = 356;        // ServerZoneEntry_Struct
 	constexpr size_t ItemSize = 360;             // Mac::structs::Item_Struct
+	constexpr int MaxGuilds = 0x200;             // __Guilds' slots
+
+	// strcpy into a fixed field: up to its size less the NUL.
+	void PutString(uint8_t *at, size_t size, const std::string &text)
+	{
+		memcpy(at, text.data(), std::min(text.size(), size - 1));
+	}
 
 	uint64_t NowMs()
 	{
@@ -126,6 +134,7 @@ namespace
 		s.light = d[o + 94];
 		s.aa_title = d[o + 27];
 		s.guild_id = Read<int16_t>(d, o + 82);
+		s.guild_rank = Read<uint16_t>(d, o + 122);
 		s.deity = Read<int16_t>(d, o + 124);
 		s.temporary_pet = d[o + 126] == 1 ? 1 : 0;
 		s.invis = d[o + 90];
@@ -268,6 +277,7 @@ namespace
 		s.walk_speed = Read<float>(d, 260);
 		s.run_speed = Read<float>(d, 264);
 		s.guild_id = Read<int16_t>(d, 164);
+		s.guild_rank = Read<uint16_t>(d, 336);
 		s.invis = d[178];
 		s.pvp = d[180];
 		s.linkdead = d[268];
@@ -1524,6 +1534,136 @@ void ZoneSession::Consent(const std::string &name)
 		Send(ZoneOp::Consent, name.c_str(), name.size() + 1, "OP_Consent " + name);
 }
 
+void ZoneSession::GuildInvite(const std::string &other, int32_t officer)
+{
+	if (m_state != State::InZone)
+		return;
+	uint8_t body[0x88] = {};
+	PutString(body, 64, other);
+	PutString(body + 64, 64, m_profile.name);
+	memcpy(body + 128, &m_profile.guild_id, 2);
+	memcpy(body + 132, &officer, 4);
+	Send(ZoneOp::GuildInvite, body, sizeof(body), "OP_GuildInvite " + other + " " + std::to_string(officer));
+}
+
+void ZoneSession::GuildInviteAnswer(const std::string &inviter, uint32_t response, int16_t guild)
+{
+	if (m_state != State::InZone)
+		return;
+	uint8_t body[0x88] = {};
+	PutString(body, 64, inviter);
+	PutString(body + 64, 64, m_profile.name);
+	memcpy(body + 128, &response, 4);
+	memcpy(body + 132, &guild, 2);
+	Send(ZoneOp::GuildInviteAccept, body, sizeof(body),
+		"OP_GuildInviteAccept " + inviter + " " + std::to_string(response) + " " + std::to_string(guild));
+}
+
+void ZoneSession::GuildRemove(const std::string &other)
+{
+	if (m_state != State::InZone)
+		return;
+	uint8_t body[0x88] = {};
+	PutString(body, 64, other);
+	PutString(body + 64, 64, m_profile.name);
+	memcpy(body + 128, &m_profile.guild_id, 2);
+	uint32_t rank = m_profile.guild_rank;
+	memcpy(body + 132, &rank, 4);
+	Send(ZoneOp::GuildRemove, body, sizeof(body), "OP_GuildRemove " + other);
+}
+
+void ZoneSession::GuildDelete()
+{
+	if (m_state == State::InZone)
+		Send(ZoneOp::GuildDelete, &m_profile.guild_id, 2, "OP_GuildDelete " + std::to_string(m_profile.guild_id));
+}
+
+void ZoneSession::GuildLeader(const std::string &name)
+{
+	if (m_state != State::InZone)
+		return;
+	uint8_t body[64] = {};
+	PutString(body, sizeof(body), name);
+	Send(ZoneOp::GuildLeader, body, sizeof(body), "OP_GuildLeader " + name);
+}
+
+void ZoneSession::GuildWar(const std::string &other, int32_t days)
+{
+	if (m_state != State::InZone)
+		return;
+	uint8_t body[0x8c] = {};
+	PutString(body, 64, other);
+	PutString(body + 64, 64, m_profile.name);
+	int32_t fields[3] = {m_profile.guild_id, days, 1};
+	memcpy(body + 128, fields, sizeof(fields));
+	Send(ZoneOp::GuildWar, body, sizeof(body), "OP_GuildWar " + other + " " + std::to_string(days));
+}
+
+void ZoneSession::GuildPeace(const std::string &other)
+{
+	if (m_state != State::InZone)
+		return;
+	uint8_t body[0x8c] = {};
+	PutString(body, 64, other);
+	PutString(body + 64, 64, m_profile.name);
+	int32_t fields[3] = {m_profile.guild_id, 0, 1};
+	memcpy(body + 128, fields, sizeof(fields));
+	Send(ZoneOp::GuildPeace, body, sizeof(body), "OP_GuildPeace " + other);
+}
+
+void ZoneSession::GuildWarAnswer(bool peace, const std::string &asker, const std::string &us, int32_t guild, int32_t days,
+	int32_t answer)
+{
+	if (m_state != State::InZone)
+		return;
+	uint8_t body[0x8c] = {};
+	PutString(body, 64, asker);
+	PutString(body + 64, 64, us);
+	int32_t fields[3] = {guild, days, answer};
+	memcpy(body + 128, fields, sizeof(fields));
+	Send(peace ? ZoneOp::GuildPeaceAnswer : ZoneOp::GuildWarAnswer, body, sizeof(body),
+		std::string(peace ? "OP_GuildPeaceAnswer " : "OP_GuildWarAnswer ") + asker + " " + std::to_string(answer));
+}
+
+void ZoneSession::SetGuildMOTD(const std::string &motd)
+{
+	if (m_state != State::InZone)
+		return;
+	uint8_t body[0x244] = {};
+	PutString(body, 64, m_self.name);
+	int32_t guild = m_self.guild_id;
+	memcpy(body + 64, &guild, 4);
+	PutString(body + 68, 512, motd);
+	Send(ZoneOp::SetGuildMOTD, body, sizeof(body), "OP_SetGuildMOTD " + motd);
+}
+
+void ZoneSession::RequestGuild(int16_t guild)
+{
+	if (m_state == State::Idle || m_state == State::LoggedOut || m_state == State::Failed)
+		return;
+	int32_t id = guild;
+	Send(ZoneOp::GetGuildsList, &id, sizeof(id), "OP_GetGuildsList " + std::to_string(guild));
+	Log("[zone]    Requesting guild record for guild number " + std::to_string(guild) + ".");
+}
+
+bool ZoneSession::MissingGuild(const ZoneSpawn &spawn) const
+{
+	// A player with a guild FindGuildIndex doesn't find (any under 0 but -1 among them).
+	return spawn.npc == 0 && spawn.guild_id != -1 && (spawn.guild_id < 0 || !m_guilds.count(spawn.guild_id));
+}
+
+std::string ZoneSession::GuildName(int16_t guild) const
+{
+	auto it = m_guilds.find(guild);
+	return it != m_guilds.end() && !it->second.empty() ? it->second : std::string("Unknown Guild");
+}
+
+std::string ZoneSession::GuildSlotName(int16_t guild) const
+{
+	auto it = m_guilds.find(guild);
+	return it != m_guilds.end() ? it->second : std::string();
+}
+
 void ZoneSession::SetAnonymous(uint8_t anon)
 {
 	if (m_state != State::InZone)
@@ -1742,6 +1882,8 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		p.autosplit = Read<uint8_t>(data, 3348) != 0;
 		p.bind_zone = Read<uint32_t>(data, 3784); // bind_point_zone[0]
 		p.deity = Read<uint16_t>(data, 4944);
+		p.guild_id = Read<int16_t>(data, 4946);
+		p.guild_rank = data[4967];
 		p.hunger = Read<int32_t>(data, 3416);
 		p.thirst = Read<int32_t>(data, 3420);
 		p.birthday = Read<uint32_t>(data, 4948);
@@ -1769,6 +1911,9 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		// ServerZoneEntry_Struct: our own spawn record.
 		if (data.size() >= ZoneEntrySize) {
 			m_self = ParseZoneEntry(data);
+			// msg_eq_netplayer: a player's guild we don't know is asked for.
+			if (MissingGuild(m_self))
+				RequestGuild(m_self.guild_id);
 			char line[160];
 			snprintf(line, sizeof(line), "[zone]    our spawn: race %u gender %u face %u size %.2f at (%.1f, %.1f, %.1f) heading %.0f",
 				m_self.race, m_self.gender, m_self.face, m_self.size, m_self.x, m_self.y, m_self.z, m_self.heading);
@@ -1815,6 +1960,22 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 			Log(line);
 		}
 		events.push_back({Event::Type::ZoneInfo});
+		{
+			// DoMainLoop's msg_eq_netplayer_missingGuilds: the players' guilds not in the list, once
+			// each, before OP_ReqClientSpawn.
+			bool asked[MaxGuilds] = {};
+			auto check = [&](const ZoneSpawn &spawn) {
+				if (spawn.npc == 0 && spawn.guild_id >= 0 && spawn.guild_id < MaxGuilds && MissingGuild(spawn))
+					asked[spawn.guild_id] = true;
+			};
+			if (m_have_zone_entry)
+				check(m_self);
+			for (const auto &[id, spawn] : m_spawns)
+				check(spawn);
+			for (int guild = 0; guild < MaxGuilds; ++guild)
+				if (asked[guild])
+					RequestGuild(static_cast<int16_t>(guild));
+		}
 		Send(ZoneOp::ReqClientSpawn, nullptr, 0, "OP_ReqClientSpawn");
 		break;
 	}
@@ -1828,6 +1989,8 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		for (size_t i = 0; i < count; ++i) {
 			ZoneSpawn spawn = ParseSpawn(data, i * SpawnSize);
 			spawn.updated_ms = NowMs();
+			if (MissingGuild(spawn)) // msg_eq_netplayer
+				RequestGuild(spawn.guild_id);
 			m_spawns[spawn.id] = spawn;
 			Event e;
 			e.type = Event::Type::SpawnAdded;
@@ -2608,8 +2771,81 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		break;
 	}
 	case ZoneOp::GuildsList:
-		m_guilds = ParseGuildList(data);
+		// HandleWorldMessage's 0x4192: the whole list, when there's an entry in it.
+		if (data.size() >= 4 + 96)
+			m_guilds = ParseGuildList(data);
 		break;
+	case ZoneOp::GuildAdded: {
+		// CEverQuest_HandleWorldMessage_save_guilds2: the entry goes into its slot (a guild's id is
+		// its slot in the list the zone and world send).
+		int32_t slot = Read<int32_t>(data, 0);
+		if (slot < 0 || slot >= MaxGuilds || data.size() < 4 + 96)
+			break;
+		m_guilds.erase(static_cast<int16_t>(slot));
+		if (Read<uint16_t>(data, 4 + 72) != 0)
+			m_guilds[static_cast<int16_t>(Read<uint32_t>(data, 4))] = CString(data, 8, 64);
+		break;
+	}
+	case ZoneOp::GuildMOTD: {
+		// HandleWorldMessage's 0x4204: the text, in yellow (print_chat_dsp_chat 15); none prints nothing.
+		Event e(Event::Type::Message);
+		e.text = CString(data, 68, 512);
+		e.value = 15;
+		if (!e.text.empty())
+			events.push_back(e);
+		break;
+	}
+	case ZoneOp::GuildInvite: {
+		if (data.size() < 136)
+			break;
+		Event e(Event::Type::GuildInvited);
+		e.guild.us = CString(data, 0, 64);
+		e.guild.name = CString(data, 64, 64);
+		e.guild.guild = Read<int16_t>(data, 128);
+		e.guild.rank = Read<int32_t>(data, 132);
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::GuildMemberRank: {
+		if (data.size() < 132)
+			break;
+		Event e(Event::Type::GuildMemberRank);
+		e.guild.us = CString(data, 0, 64);
+		e.guild.name = CString(data, 64, 64);
+		e.guild.rank = Read<int32_t>(data, 128);
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::GuildDisband: {
+		// CEverQuest_HandleWorldMessage_GuildDisband: ours, when the second is 0, and we're in none.
+		if (data.size() < 8 || !m_have_profile)
+			break;
+		if (m_profile.guild_id == Read<int32_t>(data, 0) && Read<int32_t>(data, 4) == 0) {
+			m_profile.guild_id = -1;
+			m_profile.guild_rank = 0;
+			events.push_back({Event::Type::GuildDisbanded});
+		}
+		break;
+	}
+	case ZoneOp::GuildWar:
+	case ZoneOp::GuildPeace:
+	case ZoneOp::GuildWarAnswer:
+	case ZoneOp::GuildPeaceAnswer: {
+		if (data.size() < 140)
+			break;
+		Event e(opcode == ZoneOp::GuildWar     ? Event::Type::GuildWarAsked
+		        : opcode == ZoneOp::GuildPeace ? Event::Type::GuildPeaceAsked
+		        : opcode == ZoneOp::GuildWarAnswer ? Event::Type::GuildWarRefused
+		                                       : Event::Type::GuildPeaceRefused);
+		e.guild.us = CString(data, 0, 64);
+		e.guild.name = CString(data, 64, 64);
+		e.guild.guild = Read<int32_t>(data, 128);
+		e.guild.days = Read<int32_t>(data, 132);
+		e.guild.flag = Read<int32_t>(data, 136);
+		e.guild.rank = e.guild.flag;
+		events.push_back(e);
+		break;
+	}
 	case ZoneOp::Consider: {
 		if (data.size() < 24)
 			break;
@@ -2646,7 +2882,7 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 				Send(ZoneOp::SetServerFilter, m_server_filters.data(), m_server_filters.size(), "OP_SetServerFilter");
 		}
 		else if (type == AppearanceInvis || type == AppearancePvp || type == AppearanceLinkdead || type == AppearanceGm ||
-		         type == AppearanceAnonymous || type == AppearanceGuild || type == AppearanceAfk) {
+		         type == AppearanceAnonymous || type == AppearanceAfk) {
 			// What the name over their head shows; drawn from the spawn each frame.
 			uint16_t id = Read<uint16_t>(data, 0);
 			auto it = m_spawns.find(id);
@@ -2659,9 +2895,38 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 				case AppearanceLinkdead: spawn->linkdead = static_cast<uint8_t>(value); break;
 				case AppearanceGm: spawn->gm = static_cast<uint8_t>(value); break;
 				case AppearanceAnonymous: spawn->anon = static_cast<uint8_t>(value); break;
-				case AppearanceGuild: spawn->guild_id = value == 0 ? -1 : static_cast<int16_t>(value); break;
 				default: spawn->afk = static_cast<uint8_t>(value); break;
 				}
+			}
+		}
+		else if (type == AppearanceGuild || type == AppearanceGuildRank) {
+			// msg_stat_change's 0x16 and 0x17: a spawn's guild or rank; ours (the profile's) too when
+			// it's us and it changed (a rank only 0..2). The messages are the front end's.
+			uint16_t id = Read<uint16_t>(data, 0);
+			auto it = m_spawns.find(id);
+			ZoneSpawn *spawn = it != m_spawns.end() ? &it->second : id != 0 && id == m_my_id ? &m_self : nullptr;
+			int32_t value = Read<int32_t>(data, 4);
+			if (spawn) {
+				Event e(type == AppearanceGuild ? Event::Type::GuildChanged : Event::Type::GuildRankChanged);
+				e.id = id;
+				e.value = value;
+				e.guild.name = spawn->name;
+				e.guild.self = spawn == &m_self;
+				e.guild.old_guild = spawn->guild_id;
+				e.guild.old_rank = static_cast<int16_t>(spawn->guild_rank);
+				e.guild.our_guild = m_have_profile ? m_profile.guild_id : -1;
+				e.guild.our_rank = m_profile.guild_rank;
+				if (type == AppearanceGuild) {
+					if (e.guild.self && m_have_profile)
+						m_profile.guild_id = static_cast<int16_t>(value);
+					spawn->guild_id = static_cast<int16_t>(value);
+				}
+				else {
+					if (e.guild.self && m_have_profile && m_profile.guild_rank != value && value >= 0 && value < 3)
+						m_profile.guild_rank = static_cast<uint8_t>(value);
+					spawn->guild_rank = static_cast<uint8_t>(value);
+				}
+				events.push_back(e);
 			}
 		}
 		else if (type == AppearanceSneak) {

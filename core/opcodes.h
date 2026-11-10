@@ -227,6 +227,38 @@ namespace ZoneOp
 	constexpr uint16_t DespawnDoor = 0x409b;
 	// Sound_Struct {u16 spawn id, u16 sound}: the wave played at the spawn, 100 out (WavePlay).
 	constexpr uint16_t PlaySound = 0x4048;
+	// Guilds. GuildCommand_Struct (136 bytes) {char other[64], char me[64] @64, i16 guild @128, u16,
+	// u32 rank @132}: ours to invite or promote (CEverQuest::GuildInvite) and remove
+	// (CEverQuest_GuildRemove); the zone's invite to us (msg_invite_guild: us, then the inviter).
+	constexpr uint16_t GuildInvite = 0x4117;
+	constexpr uint16_t GuildRemove = 0x4119;
+	// GuildInviteAccept_Struct (136 bytes) {char inviter[64], char us[64] @64, u32 response @128,
+	// i16 guild @132, u16}: the answer, the rank taken, or 3 (in another guild), 4 (busy), 5 (no),
+	// rank + 10 (the rank we have).
+	constexpr uint16_t GuildInviteAccept = 0x4118;
+	constexpr uint16_t GuildDelete = 0x411a;       // {i16 guild}: CConfirmationDialog::ProcessYes's 0x17
+	constexpr uint16_t GuildLeader = 0x4195;       // {char name[64]}: /guildleader
+	constexpr uint16_t GetGuildsList = 0x4128;     // {i32 guild}: a guild a spawn has that we don't know
+	// GuildUpdate_Struct {u32 slot, a GuildsList_Struct entry (96 bytes)}: one guild of the list
+	// (CEverQuest_HandleWorldMessage_save_guilds2).
+	constexpr uint16_t GuildAdded = 0x417b;
+	// GuildMOTD_Struct (580 bytes) {char name[64], u32 guild @64, char motd[512] @68}: ours sets it
+	// (/guildmotd) or asks for it (an empty one); the zone's is printed (HandleWorldMessage's 0x4204).
+	constexpr uint16_t SetGuildMOTD = 0x4203;
+	constexpr uint16_t GuildMOTD = 0x4204;
+	// {char other[64], char me[64] @64, i32 guild @128, i32 days @132, i32 flag @136} (140 bytes):
+	// ours petitions another guild (CEverQuest_GuildWar, _GuildPeace; flag 1); the zone's asks our
+	// leader (msg_guild_war, msg_guild_peace: the asker @64); the answer back (0 yes, -2 no), and
+	// from the zone a refusal (-2) or a failure (-5) (handleRequestDenial, HandleWorldMessage's 0x4194).
+	constexpr uint16_t GuildWar = 0x416f;
+	constexpr uint16_t GuildPeace = 0x4191;
+	constexpr uint16_t GuildWarAnswer = 0x4193;
+	constexpr uint16_t GuildPeaceAnswer = 0x4194;
+	// {char us[64], char name[64] @64, i32 rank @128}: someone's rank in our guild (msg_guild_list).
+	constexpr uint16_t GuildMemberRank = 0x411e;
+	// {i32 guild, i32}: a guild gone (CEverQuest_HandleWorldMessage_GuildDisband: ours when the
+	// second is 0).
+	constexpr uint16_t GuildDisband = 0x4127;
 	// Arrow_Struct (112 bytes): a missile, EQMissile's own first 0x70 bytes (EQMissile::EQMissile from a
 	// packet): {u32 type, u32, u32, float y @12, x, z, heading @24, pitch, speed @32, velocity y, x, z,
 	// heading rate @48, pitch rate, climb @56, u32, u16 source @64, u16 target, u16 level, u16 offense,
@@ -431,6 +463,21 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::ManaUpdate, "OP_ManaUpdate"},
 	{ZoneOp::DespawnDoor, "OP_DespawnDoor"},
 	{ZoneOp::PlaySound, "OP_PlaySound"},
+	{ZoneOp::GuildInvite, "OP_GuildInvite"},
+	{ZoneOp::GuildRemove, "OP_GuildRemove"},
+	{ZoneOp::GuildInviteAccept, "OP_GuildInviteAccept"},
+	{ZoneOp::GuildDelete, "OP_GuildDelete"},
+	{ZoneOp::GuildLeader, "OP_GuildLeader"},
+	{ZoneOp::GetGuildsList, "OP_GetGuildsList"},
+	{ZoneOp::GuildAdded, "OP_GuildAdded"},
+	{ZoneOp::SetGuildMOTD, "OP_SetGuildMOTD"},
+	{ZoneOp::GuildMOTD, "OP_GuildMOTD"},
+	{ZoneOp::GuildWar, "OP_GuildWar"},
+	{ZoneOp::GuildPeace, "OP_GuildPeace"},
+	{ZoneOp::GuildWarAnswer, "OP_GuildWarAnswer"},
+	{ZoneOp::GuildPeaceAnswer, "OP_GuildPeaceAnswer"},
+	{ZoneOp::GuildMemberRank, "OP_GuildMemberRank"},
+	{ZoneOp::GuildDisband, "OP_GuildDisband"},
 	{ZoneOp::Projectile, "OP_Projectile"},
 	{ZoneOp::CastSpell, "OP_CastSpell"},
 	{ZoneOp::Buff, "OP_Buff"},

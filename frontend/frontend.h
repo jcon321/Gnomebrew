@@ -39,6 +39,7 @@
 #include "train_window.h"
 #include "options_window.h"
 #include "group.h"
+#include "guild.h"
 #include "trade_window.h"
 #include "spell_book.h"
 #include "spell_cast.h"
@@ -277,6 +278,17 @@ private:
 	void DestroyHeld();            // the inventory's Destroy (CInventoryWnd_DestroyHeld)
 	void DestroyHeldItemOrMoney(); // EQ_PC::DestroyHeldItemOrMoney
 	uint64_t m_destroy_until_ms = 0; // the confirmation dialog asking about Destroy, until then (0: it isn't)
+	// CConfirmationDialog::Activate in the game for a question whose answer goes to `answer`
+	// (ProcessYes and ProcessNo): false, and nothing asked, when the dialog's up already.
+	bool AskInGame(const std::string &text, uint32_t timeout_ms, std::function<void(bool)> answer);
+	void AnswerInGame(bool yes);
+	struct InGameQuestion
+	{
+		bool open = false;
+		uint64_t until_ms = 0;
+		std::function<void(bool)> answer;
+	};
+	InGameQuestion m_question;
 	// The options' General page settings eqgame keeps in eqOptions1.opt, in my-client.ini here.
 	bool m_fast_item_destroy = false; // DAT_00798b1c, Fast Item Destroy ([Defaults] FastItemDestroy)
 	bool m_guild_invites = true;      // DAT_00798adc, Receive Guild Invites ([Defaults] GuildInvites)
@@ -605,6 +617,7 @@ private:
 	LootWindow m_loot;
 	TradeWindow m_trade;            // and the give window
 	Group m_group;
+	Guild m_guild;
 	GroundItems m_ground;           // dropping and picking up
 	uint64_t m_right_world_ms = 0;  // when the right button went down on the world (0: it didn't)
 	bool m_jump_requested = false;

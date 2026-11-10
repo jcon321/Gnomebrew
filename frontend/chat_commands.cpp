@@ -18,7 +18,7 @@ namespace
 		None, Say, Tell, Group, Shout, Auction, Ooc, Guild, Reply, Emote, Hail, Location, Target, Camp,
 		ClearChat, ShowNames, Sit, Stand, Book, Cast, Consider, Played, Motd, Time, Afk, Anonymous, Assist,
 		Random, LootNoDrop, FastDrop, AutoSplit, Roleplay, TargetGroupBuff, Split, Yell, Consent, Social, Attack, CombatMusic, DoAbility, Filter, ServerFilter, Invite, Disband, Who, WhoTarget, Follow, MakeLeader, Lfg,
-		UserColor,
+		UserColor, GuildInvite, GuildRemove, GuildDelete, GuildStatus, GuildLeader, GuildWar, GuildPeace, GuildMotd,
 	};
 
 	struct CommandEntry
@@ -41,9 +41,10 @@ namespace
 		{"/msg", 0, Command::Tell}, {"/send", 0, Command::Tell}, {"/ttell", 0, Command::None}, {"/gsay", 0, Command::Group},
 		{"/shout", 0, Command::Shout}, {"/auction", 0, Command::Auction}, {"/ooc", 0, Command::Ooc},
 		{"/reply", 0, Command::Reply}, {"/channel", 0, Command::None}, {"/guildsay", 0, Command::Guild},
-		{"/guildinvite", 0, Command::None}, {"/guildremove", 0, Command::None}, {"/guilddelete", 0, Command::None},
-		{"/guildstatus", 0, Command::None}, {"/guildleader", 0, Command::None}, {"/guildwar", 0, Command::None},
-		{"/guildpeace", 0, Command::None}, {"/pet", 0, Command::None}, {"/petition", 0, Command::None},
+		{"/guildinvite", 0, Command::GuildInvite}, {"/guildremove", 0, Command::GuildRemove},
+		{"/guilddelete", 0, Command::GuildDelete}, {"/guildstatus", 0, Command::GuildStatus},
+		{"/guildleader", 0, Command::GuildLeader}, {"/guildwar", 0, Command::GuildWar},
+		{"/guildpeace", 0, Command::GuildPeace}, {"/pet", 0, Command::None}, {"/petition", 0, Command::None},
 		{"/private", 1, Command::None}, {"/find", 1, Command::None}, {"/goto", 1, Command::None},
 		{"/becomenpc", 1, Command::None}, {"/searchcorpse", 1, Command::None}, {"/yell", 0, Command::Yell},
 		{"/motd", 0, Command::Motd}, {"/corpse", 0, Command::None}, {"/me", 0, Command::Emote},
@@ -105,7 +106,7 @@ namespace
 		{"/tracksort", 0, Command::None}, {"/trackfilter", 0, Command::None}, {"/mousespeed", 0, Command::None},
 		{"/gems", 0, Command::None}, {"/inspect", 0, Command::None}, {"/serverfilter", 0, Command::ServerFilter},
 		{"/showspelleffects", 0, Command::None}, {"/combatmusic", 0, Command::CombatMusic}, {"/mixahead", 0, Command::None},
-		{"/guildmotd", 0, Command::None}, {"/charinfo", 0, Command::None}, {"/safelock", 0, Command::None},
+		{"/guildmotd", 0, Command::GuildMotd}, {"/charinfo", 0, Command::None}, {"/safelock", 0, Command::None},
 		{"/alternateadv", 0, Command::None}, {"/targetgroupbuff", 0, Command::TargetGroupBuff}, {"/tgb", 0, Command::TargetGroupBuff},
 		{"/hotbutton", 0, Command::None}, {"/particledensity", 0, Command::None}, {"/facepick", 0, Command::None},
 		{"/dismount", 0, Command::None}, {"/rtarget", 0, Command::None}, {"/showgrass", 0, Command::None},
@@ -465,7 +466,7 @@ void FrontEnd::Who(const std::string &given)
 	auto text = [this](uint32_t id, const char *fallback, const std::vector<std::string> &args = {}) {
 		return FormatEqString(m_ui.eqstr, id, fallback, args);
 	};
-	const GuildNames &guilds = m_world.Guilds();
+	const GuildNames &guilds = m_zone.Guilds();
 	auto guild_name = [&](int16_t id) {
 		auto it = guilds.find(id);
 		return it != guilds.end() && !it->second.empty() ? it->second : std::string("Unknown Guild");
@@ -1606,6 +1607,38 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 		break;
 	case Command::MakeLeader:
 		m_group.MakeLeader(args);
+		break;
+	case Command::GuildInvite: {
+		// /guildinvite (@004f4b68): GrabFirstWord's word and what's left.
+		std::string rest = args;
+		std::string word = GrabFirstWord(rest);
+		m_guild.Invite(word, rest);
+		break;
+	}
+	case Command::GuildRemove:
+		m_guild.Remove(args);
+		break;
+	case Command::GuildDelete:
+		m_guild.Delete();
+		break;
+	case Command::GuildStatus:
+		m_guild.Status(args);
+		break;
+	case Command::GuildLeader:
+		m_guild.Leader(args);
+		break;
+	case Command::GuildWar: {
+		// /guildwar (@004f4add): a name, then the days.
+		std::string rest = args;
+		std::string word = GrabFirstWord(rest);
+		m_guild.War(word, rest);
+		break;
+	}
+	case Command::GuildPeace:
+		m_guild.Peace(args);
+		break;
+	case Command::GuildMotd:
+		m_guild.Motd(args);
 		break;
 	case Command::Lfg:
 		Lfg(true, args);

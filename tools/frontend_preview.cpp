@@ -467,6 +467,68 @@ namespace
 		return 0;
 	}
 
+	// Against a live server, as a guild's leader: the guild commands and their messages, the MOTD,
+	// and last /guilddelete's question answered yes (the guild goes, and our spawn leaves it).
+	int GuildTest(FrontEnd &frontend, Harness &h)
+	{
+		WindowManager &windows = frontend.Windows();
+		const ZoneSession &zone = frontend.Zone();
+		h.Key(InputEvent::Key::F11);
+		size_t chat_seen = frontend.Chat().Lines().size();
+		auto chat = [&] {
+			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
+				printf("[preview] chat: %s\n", frontend.Chat().Lines()[chat_seen].text.c_str());
+		};
+		auto type = [&](const std::string &line) {
+			printf("[preview] > %s\n", line.c_str());
+			h.Key(InputEvent::Key::Enter);
+			h.Type(line);
+			h.Key(InputEvent::Key::Enter);
+			h.RunUntil([] { return false; }, 900);
+			chat();
+		};
+		auto state = [&](const char *when) {
+			const ZoneProfile &me = zone.Profile();
+			printf("[preview] %s: profile guild %d rank %d, spawn guild %d rank %d, '%s'\n", when, me.guild_id, me.guild_rank,
+				zone.Self().guild_id, zone.Self().guild_rank, zone.GuildName(zone.Self().guild_id).c_str());
+		};
+		h.RunUntil([] { return false; }, 1500); // the MOTD asked for on entering
+		chat();
+		state("entered");
+		for (const char *line : {"/guildstatus", "/guildinvite", "/guildinvite Nobodyhere", "/guildinvite Replaytest",
+			"/guildremove", "/guildremove Replaytest", "/guildleader", "/guildwar Nobodyhere 30", "/guildpeace Nobodyhere",
+			"/guildmotd Gnomebrew guild test", "/guildmotd"})
+			type(line);
+		h.Key(InputEvent::Key::F1); // ourselves
+		type("/guildstatus");
+		type("/guildinvite");
+		type("/guilddelete");
+		const SidlWindow *dialog = windows.Find("ConfirmationDialogBox");
+		const SidlWindow::Control *output = dialog ? dialog->Find("TextOutput") : nullptr;
+		printf("[preview] dialog %s: '%s'\n", windows.Shown("ConfirmationDialogBox") ? "up" : "down",
+			output ? output->text.c_str() : "");
+		if (const SidlWindow::Control *yes = dialog ? dialog->Find("Yes_Button") : nullptr) {
+			Rect area = frontend.ScreenArea();
+			int x = area.x + yes->rect.x + yes->rect.w / 2, y = area.y + yes->rect.y + yes->rect.h / 2;
+			printf("[preview] click Yes\n");
+			frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+			frontend.OnEvent({InputEvent::Type::MouseDown, x, y});
+			frontend.OnEvent({InputEvent::Type::MouseUp, x, y});
+		}
+		h.RunUntil([] { return false; }, 2500);
+		chat();
+		printf("[preview] dialog %s\n", windows.Shown("ConfirmationDialogBox") ? "up" : "down");
+		state("after delete");
+		type("/guildstatus");
+		type("/guildmotd");
+		type("/camp");
+		h.RunUntil([&] { return zone.GetState() != ZoneSession::State::InZone && zone.GetState() != ZoneSession::State::Camping; },
+			40000);
+		chat();
+		printf("[preview] camped\n");
+		return 0;
+	}
+
 	int GroupTest(FrontEnd &frontend, Harness &h)
 	{
 		WindowManager &windows = frontend.Windows();
@@ -1668,6 +1730,7 @@ int main(int argc, char **argv)
 	bool commands = argc == 7 && std::string(argv[6]) == "commands";
 	bool passage = argc == 7 && std::string(argv[6]) == "passage";
 	bool group_test = argc == 7 && std::string(argv[6]) == "group";
+	bool guild_test = argc == 7 && std::string(argv[6]) == "guild";
 	bool skills_test = argc == 7 && std::string(argv[6]) == "skills";
 	bool train_test = argc == 7 && std::string(argv[6]) == "train";
 	if (argc >= 6 && !replay) {
@@ -3611,11 +3674,12 @@ int main(int argc, char **argv)
 			h.Key(InputEvent::Key::Escape); // Quit back to the start screen
 			return 0;
 		}
-		// skills: the account's rogue (Replayrogue), picked with Down; train: its warrior (Replaytest).
-		for (int i = 0; (skills_test || train_test) && i < 10; ++i) {
+		// skills: the account's rogue (Replayrogue), picked with Down; train and guild: its warrior
+		// (Replaytest).
+		for (int i = 0; (skills_test || train_test || guild_test) && i < 10; ++i) {
 			int sel = frontend.SelectedCharacter();
 			if (sel >= 0 && sel < static_cast<int>(frontend.Characters().size()) &&
-				frontend.Characters()[sel].name == (train_test ? "Replaytest" : "Replayrogue"))
+				frontend.Characters()[sel].name == (train_test || guild_test ? "Replaytest" : "Replayrogue"))
 				break;
 			h.Key(InputEvent::Key::Down);
 			h.RunUntil([] { return false; }, 300);
@@ -3652,6 +3716,8 @@ int main(int argc, char **argv)
 				return PassageTest(frontend, h);
 			if (group_test)
 				return GroupTest(frontend, h);
+			if (guild_test)
+				return GuildTest(frontend, h);
 			if (skills_test)
 				return SkillsTest(frontend, h);
 			h.Key(InputEvent::Key::F9);

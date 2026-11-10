@@ -268,10 +268,9 @@ no rules of its own.
    `[TextColors]`; /usercolor (@004fe3a2) sets, resets and lists them from the chat line), the
    Filters page (SyncChatPage, ChatPageWndNotification: the /filter switches, sent and kept), and
    the General page (SyncGeneralPage, GeneralPageWndNotification: Fast Item Destroy, Autosplit,
-   Anonymous, Roleplaying, Allow trading with, Fast Drop, the music and sound volumes; kept in
-   my-client.ini). Still to do on the General page: Load UI Skin (CLoadskinWnd, the skin picker),
-   Receive Guild Invites' effect (msg_invite_guild
-   turns down another guild's invite with it off; guild invites aren't ours yet). The Display page
+   Anonymous, Roleplaying, Allow trading with, Receive Guild Invites (msg_invite_guild reads it),
+   Fast Drop, the music and sound volumes; kept in my-client.ini). Still to do on the General
+   page: Load UI Skin (CLoadskinWnd, the skin picker). The Display page
    (SyncDisplayPage, DisplayPageWndNotification, DisplayPageOnProcessFrame: names, sky, particles,
    clip plane, the windows' global fades) is done; still to do there: Video Modes (CVideoModesWnd)
    and Level of Detail's effect (s3dSetDynamicLOD: models are always drawn whole); Gamma does
@@ -464,16 +463,22 @@ no rules of its own.
     - OP_SpellTextMessage (0x41d3: a lifetap's "%1 groans and looks a little weaker." (13301) from
       ReportSuccessfulHit's lifetap branch, which isn't ours, and StopSpellCast's from a stun), and
       the same from others (the zone passes it on); OP_ClientError.
-26. **Guilds.** Guild names show (the guild list, `get_player_guild_name`). Still to do: /guildinvite
-    (`CEverQuest::GuildInvite` @0052edc0, `OP_GuildInvite`), the invite's question
-    (`msg_invite_guild` @004dbfc5, turned down by the options' Receive Guild Invites, then
-    `OP_GuildInviteAccept`), /guildremove, /guilddelete, /guildstatus, /guildleader
-    (`CEverQuest_GuildRemove` @0052f075, `_GuildDelete` @0052f29f, `::GuildStatus` @0052f36b,
-    `_GuildLeader` @0052f49e), /guildwar and /guildpeace (`CEverQuest_GuildWar` @00530a45,
-    `_GuildPeace` @00530b05; `msg_guild_war` @004e493c, `msg_guild_peace` @004e4b09), /guildmotd
-    (@004f4972, `OP_GuildMOTD`, `OP_SetGuildMOTD`), a guild added or disbanded
-    (`HandleWorldMessage_GuildDisband` @004e473f, `OP_GuildAdded`), and the guilds file eqgame keeps
-    (`load_guilds`, `save_guilds`, `GuildFileChecksum`).
+26. ~~**Guilds.**~~ Done (`frontend/guild.*`, `ZoneSession`'s guild packets): ours (EQ_Character's
+    GuildId and GuildStatus, the profile's @4946 and @4967) and each spawn's guild and rank;
+    /guildinvite, /guildremove, /guilddelete (the confirmation dialog, 0x17), /guildstatus,
+    /guildleader, /guildwar, /guildpeace and /guildmotd as eqgame checks and says them; an invite
+    or promotion asked (msg_invite_guild, category 0, Receive Guild Invites, the 3/4/5 and rank + 10
+    answers), war and peace asked of our leader (msg_guild_war, msg_guild_peace, 8 and 9) and
+    refused (handleRequestDenial), a member's rank (msg_guild_list), our guild disbanded, a guild
+    added (save_guilds2), the MOTD (asked for on entering the game, printed), the players' unknown
+    guilds asked for (OP_GetGuildsList), and SpawnAppearance 22 and 23's messages. Checked live: the
+    commands, the MOTD and /guilddelete. Still to do:
+    - The guilds file eqgame keeps (`guilds2.dat`: `load_guilds`, `save_guilds`,
+      `GuildFileChecksum`, the CRC sent with OP_GuildsList). EQMacEmu's world sends the list
+      whatever the checksum, so ours sends 0 and keeps none.
+    - Not checked live: an invite from another player (needs a second character in the guild),
+      war and peace (EQMacEmu ignores OP_GuildWar and OP_GuildPeace), 0x411e and 0x4127 (it never
+      sends them).
 27. **Raids.** `CRaid` (@0049cf43: `HandleS2CRaidMessage` @0049cfcf, `HandleC2SRaidMessage`,
     `AddRaidMember`, `ChangeLeadership`, `ResetFromDeath`) on `OP_RaidInvite` and `OP_RaidUpdate`;
     the raid window (`CRaidWnd` @0042fc89: the members by group, ranks, `UpdateRaidTargetHighlight`)

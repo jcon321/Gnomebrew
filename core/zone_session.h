@@ -50,6 +50,10 @@ struct ZoneProfile
 	uint16_t class_id = 0;
 	uint8_t gender = 0;
 	uint16_t deity = 0;
+	// EQ_Character's GuildId and GuildStatus (the profile @4946 and @4967): ours, kept apart from our
+	// spawn's, as msg_stat_change, the guild's disbanding and the invites read and change them.
+	int16_t guild_id = -1;
+	uint8_t guild_rank = 0; // 0 member, 1 officer, 2 leader
 	int16_t cur_hp = 0;
 	int16_t mana = 0;
 	uint32_t exp = 0;    // the profile's total, then OP_ExpUpdate's 0..330 of the way through the level
@@ -136,6 +140,7 @@ struct ZoneSpawn
 	uint8_t invis = 0;       // VisibilityState (SpawnAppearance 3): 1 invisible or hidden, 2 to the undead, 3 to animals
 	uint8_t sneaking = 0;    // IsSneaking (SpawnAppearance 15)
 	int16_t guild_id = -1;   // -1: none
+	uint16_t guild_rank = 0; // GuildStatus (Spawn_Struct @122): 0 member, 1 officer, 2 leader
 	int16_t deity = 0;       // Spawn_Struct's; not in our own (the profile has ours)
 	uint8_t aa_title = 0;    // the AA title rank, 1..3 (CEverQuest_GetTitleDesc)
 	float size = 0;          // model height; 0 = the race's default
@@ -406,6 +411,25 @@ struct ZoneChat
 	std::string text;
 };
 
+// A guild packet from the zone (Event::Type::Guild*): who and which guild, as each one's handler
+// reads them.
+struct ZoneGuild
+{
+	std::string name;       // the asker (an invite's inviter, war's and peace's leader), the member
+	std::string us;         // the name the packet's for (an invite's first)
+	int32_t guild = -1;
+	int32_t rank = 0;       // an invite's rank, a member's rank, a refusal's -2 or -5
+	int32_t days = 0;       // war's days
+	int32_t flag = 0;       // war's and peace's @136 (0: nothing to ask)
+	// SpawnAppearance 22 and 23 (msg_stat_change): the spawn's old guild and rank, and ours (the
+	// profile's) before it; the new value is the event's value.
+	int16_t old_guild = -1;
+	int32_t old_rank = 0;
+	int16_t our_guild = -1;
+	int32_t our_rank = 0;
+	bool self = false;      // the spawn is us
+};
+
 class ZoneSession
 {
 public:
@@ -510,6 +534,22 @@ public:
 			// accepted, or its word on entering the zone that there's no invitation (OP_GroupFollow), and
 			// the group changing (OP_GroupUpdate).
 			WhoAnswered,  // who: OP_WhoAllResponse
+			// Guilds (guild): an invitation, or a promotion, to us (OP_GuildInvite: msg_invite_guild),
+			// a member's rank told us (0x411e: msg_guild_list), our guild gone (0x4127, already in
+			// Profile(): CEverQuest_HandleWorldMessage_GuildDisband), another guild's leader asking
+			// ours for war or peace (OP_GuildWar, OP_GuildPeace: msg_guild_war, msg_guild_peace), our
+			// petition refused (OP_GuildWarAnswer, OP_GuildPeaceAnswer), and a spawn's guild (value
+			// the new id) or rank (value the rank) changed (SpawnAppearance 22, 23: msg_stat_change;
+			// id the spawn, its new values and ours in place already).
+			GuildInvited,
+			GuildMemberRank,
+			GuildDisbanded,
+			GuildWarAsked,
+			GuildPeaceAsked,
+			GuildWarRefused,
+			GuildPeaceRefused,
+			GuildChanged,
+			GuildRankChanged,
 			BookText,     // OP_ReadBook's answer: value the type (0 a note, 1 a book), text the text
 			GroupInvited,
 			GroupInviteCancelled,
@@ -540,6 +580,7 @@ public:
 		ZoneWorldContainer world;
 		ZoneGroup group;
 		ZoneWho who;
+		ZoneGuild guild;
 	};
 
 	ZoneSession();
@@ -611,6 +652,23 @@ public:
 	void Split(int32_t platinum, int32_t gold, int32_t silver, int32_t copper);
 	void YellForHelp();                     // OP_YellForHelp
 	void Consent(const std::string &name);  // OP_Consent
+	// Guilds (GuildCommand_Struct, GuildInviteAccept_Struct and the war and peace struct: see
+	// opcodes.h). Our name and guild in them are the profile's.
+	void GuildInvite(const std::string &other, int32_t officer);       // OP_GuildInvite
+	void GuildInviteAnswer(const std::string &inviter, uint32_t response, int16_t guild); // OP_GuildInviteAccept
+	void GuildRemove(const std::string &other);                        // OP_GuildRemove, with our rank
+	void GuildDelete();                                                // OP_GuildDelete: our guild
+	void GuildLeader(const std::string &name);                         // OP_GuildLeader
+	void GuildWar(const std::string &other, int32_t days);             // OP_GuildWar (peace: OP_GuildPeace,
+	void GuildPeace(const std::string &other);                         //   0 days)
+	// OP_GuildWarAnswer and OP_GuildPeaceAnswer: `us` the name to send as ours, `answer` 0 or -2.
+	void GuildWarAnswer(bool peace, const std::string &asker, const std::string &us, int32_t guild, int32_t days,
+		int32_t answer);
+	// OP_SetGuildMOTD: as our spawn (name, guild); an empty `motd` asks for the guild's.
+	void SetGuildMOTD(const std::string &motd);
+	// OP_GetGuildsList (msg_eq_netplayer, msg_eq_netplayer_missingGuilds): a player's guild that
+	// isn't in the list.
+	void RequestGuild(int16_t guild);
 	// /consider: OP_Consider about a spawn (OP_ConsiderCorpse a corpse). The zone answers a
 	// spawn's with Considered.
 	bool Consider(uint16_t id, bool corpse);
@@ -780,6 +838,10 @@ public:
 	// The guild names, from the world (SetGuilds, before Begin) and then the zone.
 	void SetGuilds(const GuildNames &guilds) { m_guilds = guilds; }
 	const GuildNames &Guilds() const { return m_guilds; }
+	// get_player_guild_name: the guild's name, "Unknown Guild" when it isn't in the list or has none.
+	std::string GuildName(int16_t guild) const;
+	// __Guilds by id: the name, empty for a guild not in the list (msg_stat_change, msg_guild_war).
+	std::string GuildSlotName(int16_t guild) const;
 	uint64_t CampRemainingMs() const;
 	// Norrath's time: OP_TimeOfDay's hour (1..24) and minute, carried on at 20 game seconds a
 	// second as EQWorldData::AdvanceTime does. False until the zone has sent it.
@@ -819,6 +881,7 @@ private:
 	void Log(const std::string &line);
 	void Fail(std::vector<Event> &events, const std::string &text);
 	bool Send(uint16_t opcode, const void *body, size_t size, const std::string &what, bool reliable = true);
+	bool MissingGuild(const ZoneSpawn &spawn) const; // a player's guild the list doesn't have
 	void SendPosition();
 	bool NextReplayed(uint16_t &opcode, std::vector<uint8_t> &data); // the next recorded packet that's due
 	void SendMovement(uint64_t now_ms);

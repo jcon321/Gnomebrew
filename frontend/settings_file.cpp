@@ -124,7 +124,7 @@ namespace
 		{"Defaults", "FastItemDestroy", "0",
 			"The General page's Fast Item Destroy: 1 destroys what's on the cursor without asking."},
 		{"Defaults", "GuildInvites", "1",
-			"The General page's Receive Guild Invites (kept; guild invites aren't handled yet)."},
+			"The General page's Receive Guild Invites: off turns down invites to other guilds (msg_invite_guild)."},
 		{"Defaults", "TargetGroupBuff", "",
 			"/targetgroupbuff on|off: 1 or 0, sent to each zone as it starts; empty: never set."},
 		{"Defaults", "PlayerTrade", "2",

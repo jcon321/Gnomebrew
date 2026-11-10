@@ -349,7 +349,7 @@ eqgame's `OP_MoveItem`.
   /auction, /ooc, /emote (`:`, /me), /hail, /target, /assist, /consider, /location, /time,
   /played, /motd, /afk, /anonymous, /shownames, /sit, /stand, /book, /cast, /camp, /clearchat,
   /random, /lootnodrop, /fastdrop, /autosplit, /roleplay, /targetgroupbuff (/tgb), /split, /yell,
-  /consent, /attack, /combatmusic, /doability,
+  /consent, /attack, /combatmusic, /doability, the guild commands (see Guilds under In the zone),
   /filter, /serverfilter and the socials (/smile, /wave and the other 86).
   The rest say they aren't supported yet; a GM's commands act as if they weren't there for
   anyone else.
@@ -412,7 +412,7 @@ eqgame's `OP_MoveItem`.
   `<char>_<server>.ini`, eqgame's format.
 - Names over heads are eqgame's name sprites (`CDisplay::SetNameSpriteState`): a player's first
   name and surname, LFG, AFK and LD, and `<guild>` on a second line (the world's guild list, asked
-  for as you enter the world); an NPC's or corpse's name alone. Their colors are eqgame's: blue
+  for as you enter the world, and the zone's changes to it); an NPC's or corpse's name alone. Their colors are eqgame's: blue
   players, teal NPCs and corpses, green GMs, red PvP, purple roleplayers. They're a world unit tall
   (smaller further off, the size they'd be at 20 units when closer; a 20 pixel bold Arial stretched, as
   eqgfx draws them), shown as far out as the zone is drawn (eqgame's own cutoff is 70 units; see
@@ -582,7 +582,7 @@ build/eqclient -u USER -p PASS [options]
 ## Preview tool (Linux)
 
 ```
-build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|train|ground|commands|group|skills]]
+build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|train|ground|commands|group|guild|skills]]
 build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS]
 ```
 
@@ -601,7 +601,10 @@ print the chat, and snapshot the compass as it turns; or `group`, with Claudebot
 --group-accept`, to stand by them, follow their invitation in the group window, click their gauge,
 type the /who lines, /follow them from 70 away (printing the gap each second) until Move back ends
 it, /disband, then click them, /invite them, select them with Target party member 1 and /disband them,
-printing the group and the window's buttons at each step); or `skills`, as the account's
+printing the group and the window's buttons at each step); or `guild`, as Replaytest leading a
+guild (one made in the database: rows in `guilds` and `guild_members`, rank 2, an id under the
+server's `Guild:MaxGuilds`, then a server restart), to type each guild command, set and ask for
+the MOTD, answer /guilddelete's question yes (which deletes the guild) and camp; or `skills`, as the account's
 Replayrogue, to target the nearest NPC and turn auto attack on for 4.5 s (our swings' messages and
 fatigue), then use bind wound, feign death, hide, sneak, pick pockets, tracking, fishing, begging,
 hide and sneak again from the abilities page (`UseSkill`), printing the chat and our stance,
@@ -2053,6 +2056,75 @@ details and the nearest spawns at the top left and the radar at the top right.
   0x41f0 {our name[64], u32}. Joining or forming a group calls it with "off"; `OP_SendExpZonein`
   sends "on" again into each zone while it's on. The group window's gauges: EQType 11..15 the
   member's name and HP, -2 (no bar) while they're out of the zone; 17..21 their pet's.
+- **Guilds** (`frontend/guild.*`, `ZoneSession`'s guild packets). eqgame keeps ours apart from our
+  spawn's: EQ_Character's `GuildId` and `GuildStatus` (the profile's i16 @4946 and u8 @4967; -1
+  none, 0 member, 1 officer, 2 leader) and the spawn's (`Spawn_Struct` i16 @82 and u16 @122;
+  `ServerZoneEntry_Struct` @164 and @336). The list (`__Guilds`, 512 slots of 96 bytes: u32 id,
+  name[64] @4, u16 exists @72) comes whole as `OP_GuildsList` (0x4192, from the world and the zone)
+  and one slot at a time as `OP_GuildAdded` (0x417b, {u32 slot, entry}); `FindGuildIndex` skips
+  slots not marked existing, `get_player_guild_name` says "Unknown Guild" for those, while
+  `msg_stat_change` and the war and peace questions read `__Guilds` by id (EQMacEmu puts each
+  guild in the slot of its id). A player spawn (ours too) with a guild not in it asks
+  `OP_GetGuildsList` (0x4128, {i32 guild}: `msg_eq_netplayer`, and
+  `msg_eq_netplayer_missingGuilds` before `OP_ReqClientSpawn`); EQMacEmu answers with our own
+  guild's entry whatever is asked. Every message is color 0x111 (`print_chat_dsp_chat_2` is it
+  too) unless said.
+  - `/guildinvite` (@004f4b68, `CEverQuest::GuildInvite` @0052edc0): no guild 12242, a member
+    12243. GrabFirstWord's word empty, "o" or starting with 'l' takes the target (a player, not us:
+    12248; ruleset 4 our deity team: 12244); else a name (ours does nothing), a spawn in the zone
+    that's a player or a GM (`EQPlayer_get_player`, any case; else 12249). An officer's invite ("o"
+    as the word, or as all that follows a name) is the leader's only (12247). 12245 or 12246, then
+    `OP_GuildInvite` (0x4117, `GuildCommand_Struct` 136 bytes {other[64], us[64], i16 guild @128,
+    u32 officer @132}). EQMacEmu uses it for promotions and demotions too.
+  - `/guildremove` (`CEverQuest_GuildRemove` @0052f075): ourselves (our name exactly, or no name
+    with us targeted): the leader 12251, else `OP_GuildRemove` (0x4119, the same struct with our
+    rank) and 12252; another, named or targeted (a player, 12255), an officer's or leader's (12253)
+    with 12254.
+  - `/guilddelete` (`CEverQuest_GuildDelete` @0052f29f): under leader 10013; else the confirmation
+    dialog (0x17, 20 s, 10014) and Yes sends `OP_GuildDelete` (0x411a, {i16 guild}) with 10015.
+  - `/guildstatus` (`CEverQuest::GuildStatus` @0052f36b): the named spawn or the target, a player
+    and not a GM (12260): "%s is not in a guild." (eqgame's own text, trimName), or 12256..12258 by
+    rank (12259 above 2) with the guild's name.
+  - `/guildleader` (`CEverQuest_GuildLeader` @0052f49e): the leader (12242, 12261) hands it to the
+    name or the target, 12262 and `OP_GuildLeader` (0x4195, {name[64]}).
+  - `/guildwar` (@004f4add, `CEverQuest_GuildWar` @00530a45): a name (or the target) and days,
+    under 1 or over 14 made 14; `OP_GuildWar` (0x416f, 140 bytes {other[64], us[64], i32 guild
+    @128, i32 days, i32 1}) from anyone, 12276 from the leader. `/guildpeace` (@004f4b3d,
+    `CEverQuest_GuildPeace` @00530b05): the whole line or the target; the leader's says 12277 and
+    sends `OP_GuildPeace` (0x4191, 0 days), anyone else's 12278. EQMacEmu ignores both.
+  - `/guildmotd` (@004f4972), from our spawn: not in a guild (or over 0x1ff) 12966; an officer or
+    leader with text sets "Name - text" (when name + 5 + text is under 512), anything else sends it
+    empty, which asks for it: `OP_SetGuildMOTD` (0x4203, `GuildMOTD_Struct` 580 bytes {name[64],
+    u32 guild @64, motd[512] @68}). `DoMainLoop` sends the empty one once after entering the game
+    (`DAT_00799b8a`, set by `SetDefaultGameValues`) when our spawn has a guild. `OP_GuildMOTD`
+    (0x4204, the same struct) prints the text in color 15; an empty one prints nothing.
+  - An invite (`msg_invite_guild` @004dbfc5, `OP_GuildInvite` with us first and the inviter @64):
+    another guild's with Receive Guild Invites off answers 5 and says 543..545 and 546; otherwise
+    the question is 534..536 by rank. In another guild: 3 and the question said; the dialog up: 4
+    and said; in none (rank 0..2): asked (category 0, 10 s). In ours: the rank we have answers rank
+    + 10, a lower one answers it (547 too for member: "%1 has demoted you..."), a higher one asks
+    548 or 549. Yes answers the rank, No and the time running out 5: `OP_GuildInviteAccept` (0x4118,
+    {inviter[64], us[64], u32 response @128, i16 guild @132}).
+  - War and peace asked of our leader (`msg_guild_war` @004e493c, `msg_guild_peace` @004e4b09,
+    0x416f and 0x4191 with the asker @64 and a non-zero @136): 10002 or 10003 (the asker, their
+    guild, the days) in the dialog (8 or 9, 10 s); Yes sends 0, No -2 back as `OP_GuildWarAnswer`
+    (0x4193) or `OP_GuildPeaceAnswer` (0x4194); with the dialog up, -2 at once. From the zone
+    those two say our petition failed (-5: "Could not declare war on that target's guild.  Try
+    again." / "Could not sue for peace ...") or was turned down (-2: "%s has denied your request for
+    war." / "... peace."); `handleRequestDenial` @004e48df and HandleWorldMessage's 0x4194.
+  - 0x411e (`msg_guild_list` @004e483f: {us[64], name[64], i32 rank}) says 1429..1431; 0x4127
+    (@004e473f, {i32 guild, i32 0}) takes us out of our guild (the profile's, not the spawn's)
+    with 1377 in color 15. EQMacEmu sends neither.
+  - `OP_SpawnAppearance` 22 (guild) and 23 (rank), `msg_stat_change`: someone else joining or
+    leaving ours says 12881 or 12882, their rank in ours (0..2) 12886..12888; ours, 12878 (the
+    new guild's name), 12880 (the old one's) or 12879, and 12883..12885 (and the profile's
+    `GuildStatus`, only for 0..2). The spawn always takes the value. EQMacEmu sends 22 with -1
+    when a guild's deleted.
+  - eqgame keeps the list in `guilds2.dat` (`load_guilds`, `save_guilds`) and sends its CRC
+    (`GuildFileChecksum`) with `OP_GuildsList`; EQMacEmu's world sends the list whatever it is, so
+    ours keeps no file and sends 0.
+  Checked live as Replaytest leading a guild: each command's messages, the MOTD set and asked
+  for, and /guilddelete's Yes ending in 12880.
 - **Trading** (`frontend/trade_window.*`, `CTradeWnd`, `CGiveWnd`): a left click on a player or NPC
   with an item or coins on the cursor (`LeftClickedOnPlayer`, `DropItemOrMoneyOnPlayer`) asks to
   trade when `IsOkToTransact` and they're within their `ModelHeightOffset` + 20 (3D; further:
