@@ -316,7 +316,7 @@ no rules of its own.
    zone is entered; the mouse look check is our right button held (no Toggle mouse look yet). Still to do:
    - ExecuteCmd's commands not done yet (the page's "No"): Toggle mouse look, Duck, Use
      centerscreen, Center view, Toggle netstat, the clip plane, voice input, screenshots, the chat line's cursor and page up and down (CChatWindow::ScrollChatWindowUp),
-     the AA, bazaar, bazaar search, raid and music player
+     the AA, bazaar, bazaar search and music player
      windows, and the six camera moves (ExecuteCmd 0x6f..0x74, ProcessControls).
    - Send tell for a GM helping a petitioner (`/tell <petitioner> `, CPetitionQWnd), and
      ExecuteCmd 0x81 and 0x82 (`;` and `/` command modes; not on the keyboard page).
@@ -480,35 +480,21 @@ no rules of its own.
     - Not checked live: an invite from another player (needs a second character in the guild),
       war and peace (EQMacEmu ignores OP_GuildWar and OP_GuildPeace), 0x411e and 0x4127 (it never
       sends them).
-27. **Raids.** Done (`frontend/raid.*`, `ZoneSession::RaidCommand` and the zone's `OP_RaidInvite`
-    and `OP_RaidUpdate`): `CRaid`'s state (@0049cf43), `HandleC2SRaidMessage` (an invitation kept or
-    turned down with why, why ours failed), `HandleS2CRaidMessage`'s actions (members joining,
-    leaving, renamed, moved, group and raid leaders, the whole raid from action 6 with
-    `ProcessRaidMembershipChanges`, disbanded, the loot type and looters) with their messages, and
-    /raidinvite, /raidaccept, /raiddecline, /raiddisband, /makeraidleader, /setloottype,
-    /addraidlooter, /removeraidlooter and /rsay as eqgame checks them (Planes of Power or a test
-    server). Checked live with a second player (`eqclient --raid-invite`, `--raid-accept`;
-    `frontend_preview ... raid`). Still to do:
-    - The raid window (`CRaidWnd` @0042fc89: the members by group with rank, class title and level
-      from the state (`AddPlayertoList`, `ChangePosition`, `SetRaidMemberRank`,
-      `ChangeRaidGroupLeader`, `UpdateRaidWindowDisplay`, `SetRaidCount`, the level average), class
-      colors (`LoadClassColors`, `SetPlayerClassColor`), its buttons (`UpdateRaidWindowUI`,
-      `WndNotification`: invite, accept, decline, disband, make leader, add and remove looter, the
-      options window) and a click on a member (`CRaid::SetTargetRaidPlayer` @0049d2c2: the
-      selection, `UpdateRaidTargetHighlight`, /target of them). Until then the leader's
-      /raiddisband of a member, /makeraidleader with nothing typed and no target, and the looter
-      commands have no selection to act on.
-    - The raid options window (`CRaidOptionsWnd` @0042f6db: the loot type radio buttons, the looter
-      list from `CRaid::UpdateOptionsWindow` @0049ea1c, `InitializeClassColor` and the class
-      color picker through `CRaid::UpdateClassColor`).
-    - /raidwindow and the keymap's Toggle Raid Window (@004f3b0a, `CDisplay_ActivateMainUI`'s raid
-      window), both gated like the commands.
+27. ~~**Raids.**~~ Done (`frontend/raid.*`, `frontend/raid_window.*`, `ZoneSession::RaidCommand` and
+    the zone's `OP_RaidInvite` and `OP_RaidUpdate`): `CRaid`'s state (@0049cf43),
+    `HandleC2SRaidMessage` and `HandleS2CRaidMessage` with their messages, the raid commands as
+    eqgame checks them (Planes of Power or a test server), the raid window (`CRaidWnd`: the grouped
+    and ungrouped lists, ranks, class colors, the selection and its highlight, the buttons,
+    /raidwindow and Toggle Raid Window) and the raid options window (`CRaidOptionsWnd`: the loot type
+    combo, the looter list, the class color buttons through the color picker). Checked live with a
+    second player (`eqclient --raid-invite`, `--raid-accept`; `frontend_preview ... raid`). Still to
+    do:
     - The chat window's raid default channel (`CEverquest_InterpretCmd`'s channel 15 sending
       through `CRaid_SendRaidChat`).
     - On camping out, eqgame's `SetTargetRaidPlayer(0)` and `RemoveRaidMember` (ProcessGameLoop's
       0xca, after our session's closed; we only reset the raid).
-    - Not checked live: renames (2), group moves (3), 7, 12, 13, the looter actions (EQMacEmu
-      sends 0x17, 0x18 and 12 only for leader selected looters, which needs the selection).
+    - Not checked live: renames (2), group moves (3), 7, 12, 13 and the separator rows' look (the
+      window shows six rows; EQMacEmu puts each member in their own group).
 28. **Alternate advancement.** The AA window (`CAAWnd` @00401000: `Init`, `Update`, `UpdateSelected`,
     `UpdateTimer`, `ShowAbility`, `CAAWnd_WndNotification_AAAction` @004020d2), the AA table from
     `OP_RespondAA`, buying and activating with `OP_AAAction`, /alternateadv, the keymap's command and

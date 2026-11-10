@@ -169,7 +169,9 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 	Raid::Host raid_host;
 	raid_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
 	raid_host.other_team = [this](const ZoneSpawn &spawn) { return m_world.ServerType() == 4 && NotOnSameDeity(spawn); };
+	raid_host.target = [this](const std::string &name) { InterpretCommand("/target " + name); };
 	m_raid.Attach(m_zone, m_game_values, m_group, std::move(raid_host));
+	m_raid.SetWindow(&m_raid_window);
 	m_group.SetRaid(&m_raid);
 	Guild::Host guild_host;
 	guild_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
@@ -912,6 +914,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		m_bank.Frame(now_ms);
 		m_merchant.Frame(now_ms);
 		m_train.Frame(now_ms);
+		m_raid_window.Frame(now_ms);
 		m_loot.Frame(now_ms);
 		m_trade.Frame(now_ms);
 		m_ground.Frame(now_ms);
@@ -2093,6 +2096,7 @@ namespace
 		{"ConfirmationDialogBox", false}, {"CastingWindow", false}, {"BankWnd", false},
 		{"MerchantWnd", false}, {"LootWnd", false}, {"TradeWnd", false}, {"GiveWnd", false},
 		{"SkillsSelectWindow", false}, {"NoteWindow", false}, {"BookWindow", false}, {"TrainWindow", false},
+		{RaidWindow::Screen, false}, {RaidWindow::OptionsScreen, false},
 	};
 
 	// The selector's buttons (EQUI_SelectorWnd.xml) and the windows they open and close.
@@ -2208,6 +2212,34 @@ void FrontEnd::BuildZoneWindows()
 	// closes it.
 	m_compass.Activate(m_zone.Profile().skills[40]);
 	m_color_picker.Attach(m_windows);
+	// CRaidWnd and CRaidOptionsWnd made; CDisplay_ActivateMainUI activates the raid window if it was
+	// up, for the raid's own (the options window only ever opens from it).
+	RaidWindow::Host raid_window_host;
+	raid_window_host.pick_color = [this](uint32_t color, std::function<void(uint32_t)> done) {
+		m_color_picker.Activate(color, std::move(done));
+	};
+	// The class colors in the UI ini's [RaidWindow] (LoadStringFromUIIniFile, SaveToUIIniFile).
+	raid_window_host.load = [this](const std::string &key) {
+		IniFile ini;
+		if (!m_ui_layout_path.empty())
+			ini.Load(m_ui_layout_path);
+		return ini.Get("RaidWindow", key);
+	};
+	raid_window_host.save = [this](const std::string &key, const std::string &value) {
+		if (m_ui_layout_path.empty())
+			return;
+		IniFile ini;
+		ini.Load(m_ui_layout_path);
+		ini.Set("RaidWindow", key, value);
+		if (!ini.Save(m_ui_layout_path))
+			Log("UI: couldn't write " + m_ui_layout_path);
+	};
+	m_raid_window.Attach(m_windows, m_raid, m_game_values, std::move(raid_window_host));
+	m_windows.Show(RaidWindow::OptionsScreen, false);
+	if (m_windows.Shown(RaidWindow::Screen) && RaidAllowed())
+		m_raid_window.Activate();
+	else
+		m_windows.Show(RaidWindow::Screen, false);
 	m_windows.TakeChanged();
 	SpellBook::Host host;
 	host.change_stance = [this](uint8_t stance) { ChangeStance(stance); };
@@ -2598,7 +2630,8 @@ void FrontEnd::HandleWindowClicks()
 			continue;
 		// A bag window's Done and Combine, the bank's Done, the merchant's Buy, Sell and Done.
 		if (m_containers.Click(click.window, click.control) || m_bank.Click(click.window, click.control) ||
-		    m_merchant.Click(click.window, click.control, click.shift, click.ctrl) || m_train.Click(click.window, click.control))
+		    m_merchant.Click(click.window, click.control, click.shift, click.ctrl) || m_train.Click(click.window, click.control) ||
+		    m_raid_window.Click(click.window, click.control))
 			continue;
 		// While a merchant's up, a slot anywhere is picked to buy or sell (CInvSlot::HandleLButtonUp).
 		if (m_merchant.SlotClick(click.window, click.control))
@@ -4630,6 +4663,11 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 	case KeyMap::ToggleOptionsWin: toggle("OptionsWindow"); break;
 	case KeyMap::ToggleSelectorWin: toggle("SelectorWindow"); break;
 	case KeyMap::ToggleCompassWin: toggle("CompassWindow"); break;
+	case KeyMap::ToggleRaidWin:
+		// ExecuteCmd 0x6d: pressed, with the raid's expansion; CRaidWnd::Activate or down.
+		if (down && in_zone && RaidAllowed())
+			m_raid_window.Toggle();
+		break;
 	default:
 		if (cmd >= KeyMap::Hot1 && cmd <= KeyMap::Hot10) {
 			// CHotButtonWnd::DoHotButton: the button of the page showing.
@@ -4689,6 +4727,11 @@ void FrontEnd::ResetKeyBindings()
 		KeyBindings::Remove(ini, command.id);
 	if (!ini.Save(m_config.settings_ini))
 		Log("keymap: couldn't write " + m_config.settings_ini);
+}
+
+bool FrontEnd::RaidAllowed() const
+{
+	return (m_zone.Profile().expansions & 8) != 0 || m_world.TestServer();
 }
 
 bool FrontEnd::ZoneCanMove() const

@@ -3,6 +3,7 @@
 #include "eqstr.h"
 #include "game_values.h"
 #include "group.h"
+#include "raid_window.h"
 
 #include <cctype>
 #include <cstdlib>
@@ -88,6 +89,97 @@ int Raid::Selected() const
 	return m_selected;
 }
 
+std::string Raid::ClassTitle(const Member &m) const
+{
+	return GameValues::ClassTitle(m_values ? m_values->eqstr : nullptr, m.class_id, m.level);
+}
+
+void Raid::LevelAverageChanged() const
+{
+	if (m_window)
+		m_window->SetLevelAverage(LevelAverage());
+}
+
+void Raid::SetLeaderName(const std::string &name)
+{
+	int was = Find(m_leader), is = Find(name);
+	m_leader = name;
+	if (m_window && was != -1)
+		m_window->SetRank(m_members[was].name, m_members[was].group_leader ? "Group Leader" : "", m_members[was].group);
+	if (m_window && is != -1)
+		m_window->SetRank(m_members[is].name, "Raid Leader", m_members[is].group);
+	UpdateOptionsWindow();
+}
+
+void Raid::UpdateOptionsWindow()
+{
+	if (!m_window)
+		return;
+	m_window->ClearLooterList();
+	if (!m_leader.empty())
+		m_window->AddLooterToList(m_leader);
+	if (m_loot_type == 2) {
+		for (int i = 0; i < MaxMembers; ++i)
+			if (m_members[i].group_leader && m_used[i] && !Same(m_leader, m_members[i].name))
+				m_window->AddLooterToList(m_members[i].name);
+	}
+	else if (m_loot_type == 3) {
+		for (const auto &looter : m_looters)
+			if (!looter.empty())
+				m_window->AddLooterToList(looter);
+	}
+}
+
+void Raid::UpdateRaidPlayerList()
+{
+	if (!m_window)
+		return;
+	for (int i = 0; i < MaxMembers; ++i) {
+		if (!m_used[i])
+			continue;
+		const Member &m = m_members[i];
+		std::string rank = m.group_leader ? "Group Leader" : "";
+		if (Same(m.name, m_leader))
+			rank = "Raid Leader";
+		m_window->AddPlayer(rank, m.name, ClassTitle(m), std::to_string(m.level), m.group, m.class_id, m.group_leader);
+	}
+	m_window->SetRaidCount(m_count);
+}
+
+void Raid::UpdateClassColor(int index, uint32_t color)
+{
+	// The color's class, in the buttons' order.
+	static const int classes[] = {8, 15, 2, 6, 14, 13, 7, 11, 3, 4, 9, 5, 10, 1, 12};
+	if (index < 0 || index >= 15 || !m_window)
+		return;
+	m_window->SetClassColor(index, color);
+	for (int i = 0; i < MaxMembers; ++i)
+		if (m_used[i] && m_members[i].class_id == classes[index])
+			m_window->SetPlayerClassColor(m_members[i].name, m_members[i].class_id, m_members[i].group);
+}
+
+void Raid::Select(const std::string &name)
+{
+	if (name.empty()) {
+		if (m_selected != -1 && m_window)
+			m_window->Highlight("", 0xffffffff, m_members[m_selected].name, m_members[m_selected].group);
+		m_selected = -1;
+		return;
+	}
+	int i = Find(name);
+	if (i == -1 || m_members[i].name.empty())
+		return;
+	if (m_window) {
+		if (m_selected == -1)
+			m_window->Highlight(name, m_members[i].group, "", 0xffffffff);
+		else
+			m_window->Highlight(name, m_members[i].group, m_members[m_selected].name, m_members[m_selected].group);
+	}
+	m_selected = i;
+	if (m_host.target)
+		m_host.target(m_members[i].name);
+}
+
 bool Raid::IsRaidGroupLeader() const
 {
 	if (!m_zone)
@@ -112,6 +204,8 @@ void Raid::ResetRaid()
 	m_state = 1;
 	m_loot_type = 1;
 	m_level_sum = 0;
+	UpdateOptionsWindow();
+	LevelAverageChanged();
 }
 
 void Raid::ResetFromDeath()
@@ -126,7 +220,7 @@ void Raid::ResetFromDeath()
 void Raid::Died()
 {
 	if (InRaid()) {
-		m_selected = -1; // SetTargetRaidPlayer(0)
+		Select("");
 		ResetFromDeath();
 	}
 }
@@ -163,12 +257,18 @@ void Raid::ZoneEvent(const ZoneSession::Event &event)
 		Print(Text(5068, {r.name, r.renamed}, "%1's name changed to %2"));
 		if (Same(m_leader, r.name))
 			m_leader = r.renamed;
+		if (m_window)
+			m_window->Rename(r.renamed, r.name, m_members[i].group);
 		break;
 	}
 	case 3: { // HandleS2CRaidMessage2??: into another group (CRaidWnd::ChangePosition)
 		int i = Find(r.name);
-		if (i != -1)
-			m_members[i].group = static_cast<uint32_t>(r.param);
+		if (i == -1)
+			break;
+		if (m_window)
+			m_window->ChangePosition(m_members[i].name, m_members[i].group, static_cast<uint32_t>(r.param),
+				m_members[i].class_id, m_members[i].group_leader);
+		m_members[i].group = static_cast<uint32_t>(r.param);
 		break;
 	}
 	case 4:
@@ -178,6 +278,8 @@ void Raid::ZoneEvent(const ZoneSession::Event &event)
 	case 5:
 		Print(Text(5071, {}, "Your raid was disbanded."));
 		ResetRaid();
+		if (m_window)
+			m_window->ClearPlayerList();
 		break;
 	case 6:
 		Initialize(r);
@@ -186,7 +288,7 @@ void Raid::ZoneEvent(const ZoneSession::Event &event)
 		Print(Text(5072, {r.name}, "%1 was not assigned leadership."));
 		break;
 	case 8: // SetRaidLeader: we formed it
-		m_leader = MyName(); // CRaid::RaidGroupLeaderChange @0049e644, the raid leader's name
+		SetLeaderName(MyName());
 		m_state = 4;
 		m_raid_id = r.raid_id;
 		m_leading = true;
@@ -196,6 +298,8 @@ void Raid::ZoneEvent(const ZoneSession::Event &event)
 		if (InRaid())
 			Print(Text(5071, {}, "Your raid was disbanded."));
 		ResetRaid();
+		if (m_window)
+			m_window->ClearPlayerList();
 		break;
 	case 11: { // CRaid_SetLootTypeResponse: %T1, the type's own string
 		std::string type;
@@ -216,7 +320,7 @@ void Raid::ZoneEvent(const ZoneSession::Event &event)
 		GroupLeaderChange(r);
 		break;
 	case 0x14: // ChangeLeadership
-		m_leader = r.name;
+		SetLeaderName(r.name);
 		if (Same(r.name, MyName())) {
 			Print(Text(5069, {}, "You are now the leader of the raid."));
 			m_leading = true;
@@ -231,8 +335,11 @@ void Raid::ZoneEvent(const ZoneSession::Event &event)
 		if (r.param == 1 || r.param == 2)
 			for (auto &looter : m_looters)
 				looter.clear();
+		UpdateOptionsWindow();
 		break;
-	case 0x17: // CRaidOptionsWnd::AddLooterToList @0049dc80: into the first empty place
+	case 0x17: // CRaidOptionsWnd::AddLooterToList @0049dc80: into the list, then the first empty place
+		if (m_window)
+			m_window->AddLooterToList(r.name);
 		for (auto &looter : m_looters)
 			if (looter.empty()) {
 				looter = r.name;
@@ -243,6 +350,7 @@ void Raid::ZoneEvent(const ZoneSession::Event &event)
 		for (auto &looter : m_looters)
 			if (Same(looter, r.name))
 				looter.clear();
+		UpdateOptionsWindow();
 		break;
 	default:
 		break;
@@ -296,6 +404,8 @@ void Raid::Initialize(const ZoneRaid &r)
 	if (m_group && m_group->Invited())
 		m_group->DropInvitation();
 	MembershipChanges(r);
+	if (m_window)
+		m_window->ClearPlayerList();
 	ResetRaid();
 	m_raid_id = r.raid_id;
 	m_count = static_cast<int>(r.members.size());
@@ -310,14 +420,24 @@ void Raid::Initialize(const ZoneRaid &r)
 		m.group = in.group;
 		m_level_sum += in.level;
 		m_used[i] = true;
+		if (m_window)
+			m_window->AddPlayer(m.group_leader ? "Group Leader" : "", m.name, ClassTitle(m), std::to_string(m.level),
+				m.group, m.class_id, m.group_leader);
 	}
+	if (m_window)
+		m_window->SetRaidCount(m_count);
 	m_loot_type = r.loot_type;
 	for (size_t i = 0; i < r.looters.size() && i < MaxLooters; ++i)
 		m_looters[i] = r.looters[i];
-	m_leader = r.leader;
+	UpdateOptionsWindow();
+	LevelAverageChanged();
+	SetLeaderName(r.leader);
 	m_state = 4;
 	if (Same(m_leader, MyName()))
 		m_leading = true;
+	int leader = Find(m_leader);
+	if (leader != -1 && m_window)
+		m_window->SetRank(m_members[leader].name, "Raid Leader", m_members[leader].group);
 	if (!(was & 4))
 		Print(Text(5083, {}, "You have joined the raid."));
 }
@@ -342,6 +462,12 @@ void Raid::AddMember(const ZoneRaid &r)
 	++m_count;
 	m_used[slot] = true;
 	m_level_sum += r.level;
+	LevelAverageChanged();
+	if (m_window) {
+		m_window->AddPlayer(m.group_leader ? "Group Leader" : "", m.name, ClassTitle(m), std::to_string(m.level), m.group,
+			m.class_id, m.group_leader);
+		m_window->SetRaidCount(m_count);
+	}
 	Print(Text(5059, {m.name}, "%1 joined the raid."));
 }
 
@@ -349,6 +475,8 @@ void Raid::DeleteMember(const ZoneRaid &r)
 {
 	if (Same(r.name, MyName())) {
 		ResetRaid();
+		if (m_window)
+			m_window->ClearPlayerList();
 		Print(Text(5062, {}, "You were removed from the raid."));
 		return;
 	}
@@ -357,9 +485,15 @@ void Raid::DeleteMember(const ZoneRaid &r)
 		return;
 	m_used[i] = false;
 	--m_count;
+	if (m_window) {
+		m_window->RemovePlayer(m_members[i].name, m_members[i].group);
+		m_window->SetRaidCount(m_count);
+	}
 	m_level_sum -= m_members[i].level;
+	LevelAverageChanged();
 	m_members[i] = Member{};
 	Print(Text(5063, {r.name}, "%1 has left the raid."));
+	UpdateOptionsWindow();
 }
 
 void Raid::GroupLeaderChange(const ZoneRaid &r)
@@ -370,8 +504,16 @@ void Raid::GroupLeaderChange(const ZoneRaid &r)
 		return;
 	int was = FindGroupLeader(group);
 	m_members[i].group_leader = true;
-	if (was != -1)
+	if (m_window)
+		m_window->ChangeGroupLeader(m_members[i].name, group, was != -1 ? &m_members[was].name : nullptr);
+	int leader = Find(m_leader);
+	if (was != -1) {
 		m_members[was].group_leader = false; // eqgame's order: the same member twice ends up not leading
+		if (leader != was && m_window)
+			m_window->SetRank(m_members[was].name, "", group);
+	}
+	if (leader != i && m_window)
+		m_window->SetRank(m_members[i].name, "Group Leader", group);
 }
 
 void Raid::Invite()
@@ -466,6 +608,8 @@ void Raid::Disband()
 		return;
 	}
 	m_zone->RaidCommand(5, MyName(), m_members[i].name, 0);
+	if (m_window) // UpdateRaidTargetHighlight(the member, their group, none): theirs red as they go
+		m_window->Highlight(m_members[i].name, m_members[i].group, "", 0xffffffff);
 	m_selected = -1;
 }
 
@@ -478,6 +622,15 @@ void Raid::MakeLeader(const std::string &name)
 		return;
 	}
 	m_zone->RaidCommand(0x14, MyName(), name, 0);
+}
+
+void Raid::MakeSelectedLeader()
+{
+	if (!m_zone || !InRaid() || !m_leading)
+		return;
+	int i = Selected();
+	if (i != -1)
+		m_zone->RaidCommand(0x14, MyName(), m_members[i].name, 0);
 }
 
 void Raid::SetLootType(const std::string &arg)

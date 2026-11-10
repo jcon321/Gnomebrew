@@ -1982,12 +1982,25 @@ void SidlWindow::DrawListbox(const Control &control, Canvas &canvas, TextRendere
 			canvas.Fill(Intersect({content.x - 2, y, content.w + 4, row_height}, content), control.select_color);
 		}
 		x = content.x;
+		if (r < control.separators.size() && control.separators[r]) {
+			Rect size = AnimationSize("A_DividerMiddle");
+			int middle = y - 2 + row_height / 2;
+			canvas.SetClip(Intersect(content, clip));
+			if (size.w > 0)
+				DrawAnimation(canvas, textures, "A_DividerMiddle", {content.x + 2, middle, content.w - 5, 4}, now_ms);
+			canvas.SetClip(clip);
+			y += row_height;
+			continue;
+		}
 		uint32_t color = r < control.row_colors.size() && control.row_colors[r] ? control.row_colors[r] : control.row_color;
-		if (static_cast<int>(r) == control.hover_row)
-			color = control.hover_color;
 		for (size_t i = 0; i < row.size(); ++i) {
 			int width = i < control.columns.size() ? control.columns[i].width : content.Right() - x;
-			draw(row[i], static_cast<int>(i), x, width, y, row_height, color);
+			uint32_t cell = color;
+			if (r < control.cell_colors.size() && i < control.cell_colors[r].size() && control.cell_colors[r][i])
+				cell = control.cell_colors[r][i];
+			if (static_cast<int>(r) == control.hover_row)
+				cell = control.hover_color;
+			draw(row[i], static_cast<int>(i), x, width, y, row_height, cell);
 			x += width;
 		}
 		y += row_height;

@@ -20,7 +20,7 @@ namespace
 		Random, LootNoDrop, FastDrop, AutoSplit, Roleplay, TargetGroupBuff, Split, Yell, Consent, Social, Attack, CombatMusic, DoAbility, Filter, ServerFilter, Invite, Disband, Who, WhoTarget, Follow, MakeLeader, Lfg,
 		UserColor, GuildInvite, GuildRemove, GuildDelete, GuildStatus, GuildLeader, GuildWar, GuildPeace, GuildMotd,
 		MakeRaidLeader, RaidInvite, RaidDecline, RaidAccept, RaidDisband, SetLootType, AddRaidLooter, RemoveRaidLooter,
-		RaidSay,
+		RaidSay, RaidWindow,
 	};
 
 	struct CommandEntry
@@ -117,7 +117,7 @@ namespace
 		{"/clearchat", 0, Command::ClearChat}, {"/bazaar", 0, Command::None}, {"/trader", 0, Command::None},
 		{"/music", 0, Command::None}, {"/bugreport", 0, Command::None}, {"/loadskin", 0, Command::None},
 		{"/newui", 0, Command::None}, {"/webupdate", 0, Command::None}, {"/viewpetition", 0, Command::None},
-		{"/deletepetition", 0, Command::None}, {"/raidwindow", 0, Command::None}, {"/makeraidleader", 0, Command::MakeRaidLeader},
+		{"/deletepetition", 0, Command::None}, {"/raidwindow", 0, Command::RaidWindow}, {"/makeraidleader", 0, Command::MakeRaidLeader},
 		{"/raidinvite", 0, Command::RaidInvite}, {"/raiddecline", 0, Command::RaidDecline}, {"/raidaccept", 0, Command::RaidAccept},
 		{"/raiddisband", 0, Command::RaidDisband}, {"/setloottype", 0, Command::SetLootType}, {"/addraidlooter", 0, Command::AddRaidLooter},
 		{"/removeraidlooter", 0, Command::RemoveRaidLooter}, {"/rsay", 0, Command::RaidSay}, {"/quit", 0, Command::None},
@@ -1621,9 +1621,13 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 	case Command::AddRaidLooter:
 	case Command::RemoveRaidLooter:
 	case Command::RaidSay:
-		if ((me.expansions & 8) == 0 && !m_world.TestServer())
+	case Command::RaidWindow:
+		if (!RaidAllowed())
 			break;
 		switch (command) {
+		case Command::RaidWindow: // @004f3b0a: CRaidWnd::Activate, or down
+			m_raid_window.Toggle();
+			break;
 		case Command::MakeRaidLeader: {
 			// The target's name with nothing typed, else the name typed (EQUtil_FormatCharacterName).
 			std::string who;

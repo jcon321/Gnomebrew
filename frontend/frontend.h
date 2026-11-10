@@ -40,6 +40,7 @@
 #include "options_window.h"
 #include "group.h"
 #include "raid.h"
+#include "raid_window.h"
 #include "guild.h"
 #include "trade_window.h"
 #include "spell_book.h"
@@ -620,6 +621,8 @@ private:
 	TradeWindow m_trade;            // and the give window
 	Group m_group;
 	Raid m_raid;
+	RaidWindow m_raid_window; // CRaidWnd and CRaidOptionsWnd
+	bool RaidAllowed() const;  // the raid's: Planes of Power (Expansions & 8), or a test server
 	Guild m_guild;
 	GroundItems m_ground;           // dropping and picking up
 	uint64_t m_right_world_ms = 0;  // when the right button went down on the world (0: it didn't)

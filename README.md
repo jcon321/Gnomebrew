@@ -608,8 +608,11 @@ it, /disband, then click them, /invite them, select them with Target party membe
 printing the group and the window's buttons at each step); or `raid`, with Claudebot in the zone
 through `eqclient -u clauderobot -p testpass1 --char Claudebot --zone 200 --raid-invite Replaycaster
 --raid-accept`, to type the raid commands out of a raid, accept their invitation with /raidaccept,
-type them as a member, /raiddisband, then /target and /raidinvite them, type them as the leader,
-/makeraidleader them and /raiddisband, printing the raid at each step; or `guild`, as Replaytest leading a
+/raidwindow, take it with the window's Accept, type them as a member, leave with Disband, then
+/target them and Invite, type them as the leader, click their row, open Options and pick Leader
+Selected, Add and Remove Looter, color warriors through the color picker, Make Leader them and
+Disband, printing the raid, both lists with their colors, the labels and the buttons at each step;
+or `guild`, as Replaytest leading a
 guild (one made in the database: rows in `guilds` and `guild_members`, rank 2, an id under the
 server's `Guild:MaxGuilds`, then a server restart), to type each guild command, set and ask for
 the MOTD, answer /guilddelete's question yes (which deletes the guild) and camp; or `skills`, as the account's
@@ -2113,9 +2116,43 @@ details and the nearest spawns at the top left and the radar at the top right.
   a raid; 5109 and chat channel 15). EQMacEmu's zone answers an accepted invitation with 8 to a new
   raid's leader, then 0 for each member to all, 0x16 (loot type 1) and 6 to each; a raid that falls
   under two members is disbanded (5 to all). Checked live with Claudebot (`eqclient --raid-invite`,
-  `--raid-accept`; `frontend_preview ... raid`). Not yet: the raid window and raid options window
-  (the selection the leader's `/raiddisband`, `/makeraidleader` with nothing, and the looter
-  commands act on comes only from there).
+  `--raid-accept`; `frontend_preview ... raid`).
+- **The raid window** (`CRaidWnd` @0042fc89, `frontend/raid_window.*`): `/raidwindow` and Toggle Raid
+  Window (`ExecuteCmd` 0x6d, Alt+R) open it (`Activate`: the buttons, then the lists rebuilt from
+  `CRaid::UpdateRaidPlayerList`) or close it, both gated like the commands; `CDisplay_ActivateMainUI`
+  activates it on entering a zone if it was up. Its two lists are white, yellow under the mouse, gray
+  selected (`SetColors`), headings 0x8aa3ff. `RAID_PlayerList` is twelve groups of seven rows
+  (`ClearPlayerList`: six rows with the group's number and "empty" in gray 0x808080, then a separator,
+  83 rows in all); separator rows are item data 0x40000000, which `CListWnd::Draw` draws with
+  `DrawSeparator` (`A_DividerMiddle`, 4 high, across the row's middle from 2 in to 3 short of the
+  right). Group g's rows start at g * 7, its leader in the first: `AddPlayertoList` fills the group's
+  first "empty" row (`FindEmptyRaidListItem`), a group leader takes the first row and whoever was
+  there moves to the empty one; a member in no group (0xffffffff) is a row of
+  `RAID_NotInGroupPlayerList`. Columns: group, name (white; the selected member's red, `0xffff0000`),
+  level, the class title (`KunarkClass`) in its class's color, rank ("Group Leader", "Raid Leader",
+  literal strings, not eqstr). `RemovePlayerFromList` writes "empty" back and moves the group's rows
+  under it up one (`ResortRaidGroupList`); `ChangePosition` removes and adds; `ChangeRaidGroupLeader`
+  swaps the new leader's row with the old leader's (or the group's first): text and the class
+  color, not the name's color. Rows are found by their name's text (`FindPlayerIndexInGroup`,
+  `FindIndexNotInGroupList`). The count and level average labels are `%d`. `UpdateRaidWindowUI` (on
+  activating and every 250 ms, `ProcessRaidWindowFrame`): Accept and Decline shown while invited,
+  Invite and Disband otherwise; Disband and Options enabled in a raid; another player targeted
+  enables Invite out of a raid, or as the leader Invite (under 72) and Make Leader; Add and Remove
+  Looter enabled for the leader. A click on a row is `CRaid::SetTargetRaidPlayer` with its name: a
+  member becomes the selection (the old one's name white again, this one's red) and `/target` of
+  them; "empty" and separators find no one. Make Leader is `SendLeadershipChange(0)`, the selection.
+  The class colors are fifteen, alphabetical (bard, beastlord, cleric, druid, enchanter, magician,
+  monk, necromancer, paladin, ranger, rogue, shadow knight, shaman, warrior, wizard), as ARGB ints
+  in the UI ini (`UI_<name>_<server>.ini`) `[RaidWindow] ClassColor0..14`, -1 written for a missing
+  one (`LoadClassColors`). The window's size (335x280) shows about six rows of the 83.
+- **The raid options window** (`CRaidOptionsWnd` @0042f6db): opened by the raid window's Options
+  (`Activate`). `UpdateRaidOptionsUI` runs only then: the combo box enabled for the raid's leader,
+  and in a raid the loot type as a number and the combo at it. The looter list (`ClearLooterList`,
+  `AddLooterToList`) is `CRaid::UpdateOptionsWindow`'s: the leader, then for loot type 2 the group
+  leaders and for 3 the picked looters; 0x17 adds a row as it comes. Picking in the combo is
+  `CRaid::SetLootType` of choice + 1. The fifteen `RAIDOPTIONS_ClassColor` buttons show their text
+  in the class's color (`InitializeClassColor`) and open the color picker; its accept (`0x1e`)
+  writes the ini, the button's color and `CRaid::UpdateClassColor` (the class's members' rows).
 - **Guilds** (`frontend/guild.*`, `ZoneSession`'s guild packets). eqgame keeps ours apart from our
   spawn's: EQ_Character's `GuildId` and `GuildStatus` (the profile's i16 @4946 and u8 @4967; -1
   none, 0 member, 1 officer, 2 leader) and the spawn's (`Spawn_Struct` i16 @82 and u16 @122;

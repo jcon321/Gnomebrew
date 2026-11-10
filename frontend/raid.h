@@ -35,10 +35,13 @@
 //     chat_commands.cpp's;
 //   - ResetRaid (@0049e76b), ResetFromDeath (@0049d277: an invitation dropped, as we die or join a
 //     group), IsRaidGroupLeader (@0049d2a2), IsRaidMember (@0049e71f).
-// Not ours yet: the raid window (CRaidWnd) and raid options window (CRaidOptionsWnd) that the
-// state feeds, SetTargetRaidPlayer (@0049d2c2, a click on a member there, the selection the
-// leader's commands act on) and /raidwindow; on camping out eqgame's last RemoveRaidMember
-// (ProcessGameLoop's 0xca, after our session's closed).
+//   - what it tells the raid window and raid options window (frontend/raid_window.*) as it changes:
+//     the lists, ranks, count, level average and looters (UpdateRaidPlayerList @0049e395,
+//     UpdateOptionsWindow @0049ea1c), and SetTargetRaidPlayer (@0049d2c2): a member clicked there
+//     is the selection the leader's Disband, Make Leader and looter commands act on, red in the
+//     list, and /target of them; UpdateClassColor (@0049e46a), a class color picked.
+// Not ours: on camping out eqgame's last RemoveRaidMember (ProcessGameLoop's 0xca, after our
+// session's closed).
 
 #include "zone_session.h"
 
@@ -49,6 +52,7 @@
 
 class GameValues;
 class Group;
+class RaidWindow;
 
 class Raid
 {
@@ -69,10 +73,12 @@ public:
 	{
 		std::function<void(const std::string &, int)> chat; // a message, in a chat color type
 		std::function<bool(const ZoneSpawn &)> other_team;   // ruleset 4's EQPlayer::NotOnSameDeity
+		std::function<void(const std::string &)> target;     // _target(0, name): /target of them
 	};
 
 	void Attach(ZoneSession &zone, const GameValues &values, Group &group, Host host);
 	void Clear(); // out of the game: ResetRaid, and no invitation
+	void SetWindow(RaidWindow *window) { m_window = window; } // pinstCRaidWnd, pinstCRaidOptionsWnd
 
 	void ZoneEvent(const ZoneSession::Event &event);
 
@@ -80,6 +86,11 @@ public:
 	void Respond(bool accept);              // SendInviteResponse
 	void Disband();                         // RemoveRaidMember
 	void MakeLeader(const std::string &name); // SendLeadershipChange
+	void MakeSelectedLeader();              // SendLeadershipChange(0): the raid window's
+	void Select(const std::string &name);   // SetTargetRaidPlayer; "" none
+	void UpdateRaidPlayerList();            // every member into the raid window's lists
+	void UpdateOptionsWindow();             // the options window's looters: the leader, and by loot type
+	void UpdateClassColor(int index, uint32_t color); // a class color (0..14, alphabetical) picked
 	void SetLootType(const std::string &arg); // SetLootType
 	void AddLooter();                       // AddRaidLooter
 	void RemoveLooter();                    // RemoveRaidLooter
@@ -113,10 +124,14 @@ private:
 	void AddMember(const ZoneRaid &r);                  // AddRaidMember
 	void DeleteMember(const ZoneRaid &r);               // DeleteRaidMembe
 	void GroupLeaderChange(const ZoneRaid &r);          // RaidGroupLeaderChange @0049dae6
+	void SetLeaderName(const std::string &name);        // RaidGroupLeaderChange @0049e644: the ranks too
+	void LevelAverageChanged() const;                   // CRaidWnd::UpdateLevelAverage
+	std::string ClassTitle(const Member &m) const;      // KunarkClass (+0x90)
 
 	ZoneSession *m_zone = nullptr;
 	const GameValues *m_values = nullptr;
 	Group *m_group = nullptr;
+	RaidWindow *m_window = nullptr;
 	Host m_host;
 
 	bool m_used[MaxMembers] = {};

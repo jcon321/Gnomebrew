@@ -689,11 +689,14 @@ namespace
 	}
 
 	// Live: with Claudebot in the zone through `eqclient -u clauderobot -p testpass1 --char Claudebot
-	// --zone 200 --raid-invite <us> --raid-accept`: the raid commands out of a raid, their
-	// invitation accepted with /raidaccept, the commands as a member, /raiddisband; then ours to them
-	// with /raidinvite, the commands as the leader, /makeraidleader them, and /raiddisband.
+	// --zone 200 --raid-invite <us> --raid-accept`: the raid commands out of a raid; /raidwindow, their
+	// invitation accepted with its Accept, the commands as a member, its Disband; then /target and its
+	// Invite to them, the commands as the leader, a click on their row, the options window (the loot
+	// type combo, a class color picked), Add and Remove Looter, Make Leader, and Disband. The raid,
+	// both lists, the labels and the buttons print at each step.
 	int RaidTest(FrontEnd &frontend, Harness &h)
 	{
+		WindowManager &windows = frontend.Windows();
 		const ZoneSession &zone = frontend.Zone();
 		const Raid &raid = frontend.RaidState();
 		h.Key(InputEvent::Key::F11);
@@ -710,31 +713,89 @@ namespace
 			h.RunUntil([] { return false; }, 700);
 			chat();
 		};
-		auto state = [&](const char *when) {
-			printf("[preview] %s: in raid %d, invited %d, leading %d, leader '%s', %d members (level average %d), loot type %u,"
-			       " group leader of it %d\n", when, raid.InRaid() ? 1 : 0, raid.Invited() ? 1 : 0, raid.Leading() ? 1 : 0,
-				raid.Leader().c_str(), raid.Count(), raid.LevelAverage(), raid.LootType(), raid.IsRaidGroupLeader() ? 1 : 0);
-			for (int i = 0; i < Raid::MaxMembers; ++i)
-				if (raid.Used(i)) {
-					const Raid::Member &m = raid.MemberAt(i);
-					printf("[preview]   %d: %s, class %d, level %d, group %d%s\n", i, m.name.c_str(), m.class_id, m.level,
-						static_cast<int>(m.group), m.group_leader ? ", group leader" : "");
-				}
-			for (int i = 0; i < Raid::MaxLooters; ++i)
-				if (!raid.Looter(i).empty())
-					printf("[preview]   looter %s\n", raid.Looter(i).c_str());
+		auto press = [&](int x, int y) {
+			Rect area = frontend.ScreenArea();
+			frontend.OnEvent({InputEvent::Type::MouseMove, area.x + x, area.y + y});
+			frontend.OnEvent({InputEvent::Type::MouseDown, area.x + x, area.y + y});
+			frontend.OnEvent({InputEvent::Type::MouseUp, area.x + x, area.y + y});
+			frontend.Update(NowMs());
 		};
-		state("start");
-		printf("[preview] we are %s, expansions 0x%x\n", zone.Profile().name.c_str(), zone.Profile().expansions);
-		for (const char *line : {"/rsay hello?", "/raidaccept", "/setloottype 2", "/raidinvite"})
-			type(line);
-		printf("[preview] waiting for Claudebot\n");
+		auto click = [&](const char *window, const std::string &id) {
+			const SidlWindow *wnd = windows.Find(window);
+			const SidlWindow::Control *c = wnd ? wnd->Find(id) : nullptr;
+			if (!c || !windows.Shown(window)) {
+				printf("[preview] no %s in %s\n", id.c_str(), window);
+				return;
+			}
+			printf("[preview] click %s.%s%s\n", window, id.c_str(), c->enabled ? "" : " (disabled)");
+			press(c->rect.x + c->rect.w / 2, c->rect.y + c->rect.h / 2);
+			h.RunUntil([] { return false; }, 700);
+			chat();
+		};
+		auto rows = [&](const char *window, const char *id, bool all) {
+			SidlWindow *wnd = windows.Find(window);
+			SidlWindow::Control *list = wnd ? wnd->Find(id) : nullptr;
+			if (!list)
+				return;
+			printf("[preview]   %s: %zu rows, selected %d\n", id, list->rows.size(), list->selected_row);
+			for (size_t r = 0; r < list->rows.size(); ++r) {
+				const auto &row = list->rows[r];
+				bool separator = r < list->separators.size() && list->separators[r];
+				if (!all && (separator || row.size() < 2 || row[1] == "empty"))
+					continue;
+				std::string line;
+				for (size_t c = 0; c < row.size(); ++c) {
+					uint32_t color = r < list->cell_colors.size() && c < list->cell_colors[r].size() ? list->cell_colors[r][c] : 0;
+					line += " | " + row[c];
+					if (color)
+						line += " (" + [&] { char b[16]; snprintf(b, sizeof(b), "%06x", color); return std::string(b); }() + ")";
+				}
+				printf("[preview]     %2zu%s%s\n", r, separator ? " ----" : "", line.c_str());
+			}
+		};
+		auto ui = [&](const char *when) {
+			printf("[preview] %s: in raid %d, invited %d, leading %d, leader '%s', %d members (level average %d), loot type %u\n",
+				when, raid.InRaid() ? 1 : 0, raid.Invited() ? 1 : 0, raid.Leading() ? 1 : 0, raid.Leader().c_str(),
+				raid.Count(), raid.LevelAverage(), raid.LootType());
+			SidlWindow *wnd = windows.Find(RaidWindow::Screen);
+			if (!wnd || !windows.Shown(RaidWindow::Screen)) {
+				printf("[preview]   raid window down\n");
+				return;
+			}
+			std::string buttons;
+			for (const char *id : {"Raid_InviteButton", "Raid_DisbandButton", "Raid_AcceptButton", "Raid_DeclineButton",
+			                       "Raid_MakeLeaderButton", "Raid_OptionsButton", "Raid_AddLooterButton", "Raid_RemoveLooterButton"})
+				if (const SidlWindow::Control *c = wnd->Find(id))
+					buttons += std::string(" ") + (id + 5) + (wnd->Shown(*c) ? (c->enabled ? "" : "(off)") : "(hidden)");
+			printf("[preview]  %s\n", buttons.c_str());
+			const SidlWindow::Control *count = wnd->Find("RAID_PlayerCountLabel"), *level = wnd->Find("RAID_LevelAverageLabel");
+			printf("[preview]   count '%s', level average '%s'\n", count ? count->text.c_str() : "?", level ? level->text.c_str() : "?");
+			rows(RaidWindow::Screen, "RAID_PlayerList", false);
+			rows(RaidWindow::Screen, "RAID_NotInGroupPlayerList", true);
+			if (windows.Shown(RaidWindow::OptionsScreen)) {
+				SidlWindow *opt = windows.Find(RaidWindow::OptionsScreen);
+				const SidlWindow::Control *type_label = opt->Find("RAIDOPTIONS_CurrentLootType");
+				const SidlWindow::Control *combo = opt->Find("RAIDOPTIONS_SetLootTypeCombo");
+				printf("[preview]   options: loot type '%s', combo %d%s\n", type_label ? type_label->text.c_str() : "?",
+					combo ? combo->choice : -9, combo && !combo->enabled ? " (off)" : "");
+				rows(RaidWindow::OptionsScreen, "RAIDOPTIONS_LooterList", true);
+			}
+		};
 		auto bot = [&]() -> const ZoneSpawn * {
 			for (const auto &[id, spawn] : zone.Spawns())
 				if (spawn.name == "Claudebot")
 					return &spawn;
 			return nullptr;
 		};
+		ui("start");
+		printf("[preview] we are %s, expansions 0x%x\n", zone.Profile().name.c_str(), zone.Profile().expansions);
+		for (const char *line : {"/rsay hello?", "/raidaccept", "/setloottype 2", "/raidinvite", "/raidwindow"})
+			type(line);
+		windows.MoveTo(RaidWindow::Screen, 20, 20);
+		h.RunUntil([] { return false; }, 300);
+		ui("window up");
+		h.Snapshot("r0-window");
+		printf("[preview] waiting for Claudebot\n");
 		h.RunUntil([&] { return bot() != nullptr; }, 60000);
 		if (const ZoneSpawn *b = bot()) {
 			frontend.ZoneScene()->SetPlayerPosition(b->x, b->y - 15, b->z, 0);
@@ -742,45 +803,91 @@ namespace
 		}
 		printf("[preview] waiting for a raid invitation\n");
 		h.RunUntil([&] { return raid.Invited(); }, 60000);
-		h.RunUntil([] { return false; }, 300);
+		h.RunUntil([] { return false; }, 400);
 		chat();
-		state("invited");
-		type("/raidaccept");
+		ui("invited");
+		click(RaidWindow::Screen, "Raid_AcceptButton");
 		h.RunUntil([&] { return raid.InRaid(); }, 10000);
 		h.RunUntil([] { return false; }, 1500);
 		chat();
-		state("joined");
+		ui("joined");
+		h.Snapshot("r1-joined");
 		for (const char *line : {"/rsay hello raid", "/setloottype 2", "/makeraidleader Claudebot", "/raidinvite", "/addraidlooter"})
 			type(line);
-		type("/raiddisband");
+		click(RaidWindow::Screen, "Raid_DisbandButton");
 		h.RunUntil([&] { return !raid.InRaid(); }, 10000);
 		h.RunUntil([] { return false; }, 2000);
 		chat();
-		state("left");
+		ui("left");
 
 		// Ours to them: they're targeted, and accept it.
 		type("/target Claudebot");
-		printf("[preview] target %u\n", frontend.Target());
-		type("/raidinvite");
+		h.RunUntil([] { return false; }, 300);
+		ui("targeted");
+		click(RaidWindow::Screen, "Raid_InviteButton");
 		h.RunUntil([&] { return raid.Count() >= 2; }, 10000);
 		h.RunUntil([] { return false; }, 1500);
 		chat();
-		state("formed");
-		for (const char *line : {"/raidinvite", "/setloottype 3", "/setloottype 3", "/addraidlooter", "/removeraidlooter",
-		                         "/setloottype x", "/rsay we lead", "/makeraidleader nobody"})
-			type(line);
+		ui("formed");
+		h.Snapshot("r2-formed");
+		// Their row selects them (red, and our target).
+		type("/target");
+		if (SidlWindow *wnd = windows.Find(RaidWindow::Screen))
+			for (const char *id : {"RAID_PlayerList", "RAID_NotInGroupPlayerList"})
+				if (SidlWindow::Control *list = wnd->Find(id))
+					for (size_t r = 0; r < list->rows.size(); ++r)
+						if (list->rows[r].size() > 1 && list->rows[r][1] == "Claudebot") {
+							list->scroll_pos = static_cast<int>(r); // scrolled to it, as a player would
+							Rect row = wnd->ListRowRect(*list, static_cast<int>(r));
+							printf("[preview] click %s row %zu\n", id, r);
+							press(row.x + 40, row.y + row.h / 2);
+							h.RunUntil([] { return false; }, 700);
+							chat();
+						}
+		printf("[preview] target %u (Claudebot %u)\n", frontend.Target(), bot() ? bot()->id : 0);
+		ui("selected");
+		click(RaidWindow::Screen, "Raid_OptionsButton");
+		windows.MoveTo(RaidWindow::OptionsScreen, 450, 20);
+		h.RunUntil([] { return false; }, 300);
+		ui("options");
+		// The combo's third choice, Leader Selected.
+		if (SidlWindow *opt = windows.Find(RaidWindow::OptionsScreen))
+			if (SidlWindow::Control *combo = opt->Find("RAIDOPTIONS_SetLootTypeCombo")) {
+				press(combo->rect.x + combo->rect.w / 2, combo->rect.y + combo->rect.h / 2);
+				printf("[preview] combo open %d\n", combo->list_open);
+				int line = 15; // as the options test's combo: the list from 4 under it, a row a line
+				const Rect &r = combo->rect;
+				press(r.x + 20, r.Bottom() + 4 + line * 2 + line / 2 - 2);
+				h.RunUntil([] { return false; }, 1000);
+				chat();
+				printf("[preview] combo choice %d, open %d\n", combo->choice, combo->list_open);
+			}
+		h.Snapshot("r3-options");
+		click(RaidWindow::Screen, "Raid_AddLooterButton");
 		h.RunUntil([] { return false; }, 1000);
 		chat();
-		state("loot type 3");
-		type("/makeraidleader claudebot");
+		click(RaidWindow::OptionsScreen, "Raid_OptionsButton"); // (not there: the options again from the raid window)
+		click(RaidWindow::Screen, "Raid_OptionsButton");
+		ui("looter added");
+		click(RaidWindow::Screen, "Raid_RemoveLooterButton");
+		h.RunUntil([] { return false; }, 1000);
+		chat();
+		ui("looter removed");
+		// Warrior's color (the fourteenth button) from the picker's second swatch.
+		click(RaidWindow::OptionsScreen, "RAIDOPTIONS_ClassColor13");
+		click(ColorPicker::Screen, "CPW_TC1Button");
+		click(ColorPicker::Screen, "CPW_Accept_Button");
+		ui("warriors colored");
+		h.Snapshot("r4-color");
+		click(RaidWindow::Screen, "Raid_MakeLeaderButton");
 		h.RunUntil([] { return false; }, 1500);
 		chat();
-		state("led by them");
-		type("/raiddisband");
+		ui("led by them");
+		click(RaidWindow::Screen, "Raid_DisbandButton");
 		h.RunUntil([&] { return !raid.InRaid(); }, 10000);
 		h.RunUntil([] { return false; }, 1500);
 		chat();
-		state("removed");
+		ui("removed");
 		type("/camp");
 		h.RunUntil([&] { return zone.GetState() != ZoneSession::State::InZone && zone.GetState() != ZoneSession::State::Camping; },
 			40000);

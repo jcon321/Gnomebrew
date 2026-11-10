@@ -335,6 +335,11 @@ public:
 		int row_height = 0;
 		uint32_t row_color = 0xffffff, header_color = 0xffffff;
 		std::vector<uint32_t> row_colors; // a row's own, over row_color (0: row_color)
+		// CListWnd::SetItemColor: a cell's own, by row then column, over its row's (0: the row's).
+		std::vector<std::vector<uint32_t>> cell_colors;
+		// SetItemData 0x40000000: a separator row (DrawSeparator: A_DividerMiddle, 4 high, across
+		// the middle of the row from 2 in), drawn in place of its text.
+		std::vector<bool> separators;
 		bool header_hidden = false;       // no header row at all (a context menu's)
 		// CListWnd style 0x10000 (every SIDL Listbox's): the row under the mouse in 0x150's color,
 		// if enabled (DrawItem), and the selected row on 0x154's (DrawLine). CListWnd::CListWnd's

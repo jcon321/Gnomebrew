@@ -120,7 +120,7 @@ namespace KeyMap
 			{ToggleSelectorWin, 6603, "Toggle selector window", UI, true},
 			{ToggleBazaarSearchWin, 6608, "Toggle bazaar search window", UI, false},
 			{ToggleCompassWin, 3144, "Toggle Compass", UI, true},
-			{ToggleRaidWin, 5107, "Toggle Raid Window", UI, false},
+			{ToggleRaidWin, 5107, "Toggle Raid Window", UI, true},
 			{ToggleMusicPlayerWin, 3150, "Toggle Music Player Window", UI, false},
 			{ForwardCam, 6692, "Raise camera", Camera, false},
 			{BackCam, 6693, "Lower camera", Camera, false},
