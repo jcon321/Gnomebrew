@@ -39,6 +39,7 @@
 #include "train_window.h"
 #include "options_window.h"
 #include "group.h"
+#include "raid.h"
 #include "guild.h"
 #include "trade_window.h"
 #include "spell_book.h"
@@ -170,6 +171,7 @@ public:
 	const ZoneSession &Zone() const { return m_zone; }
 	ZoneSession &ZoneForTests() { return m_zone; } // the preview's injected packets
 	const Group &GroupState() const { return m_group; }
+	const Raid &RaidState() const { return m_raid; }
 	const ChatWindow &Chat() const { return m_chat; }
 	Abilities &Skills() { return m_abilities; } // the ability buttons and UseSkill (for the preview tool)
 	uint16_t Target() const { return m_game_values.target; } // spawn id, 0 none
@@ -617,6 +619,7 @@ private:
 	LootWindow m_loot;
 	TradeWindow m_trade;            // and the give window
 	Group m_group;
+	Raid m_raid;
 	Guild m_guild;
 	GroundItems m_ground;           // dropping and picking up
 	uint64_t m_right_world_ms = 0;  // when the right button went down on the world (0: it didn't)

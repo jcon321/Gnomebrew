@@ -411,6 +411,38 @@ struct ZoneChat
 	std::string text;
 };
 
+// A raid packet as it comes (OP_RaidInvite, OP_RaidUpdate: CRaid::HandleC2SRaidMessage and
+// HandleS2CRaidMessage): RaidGeneral_Struct {u32 action, name[64] at 4, name[64] at 0x44, i32 param
+// at 0x84}, with RaidAddMember_Struct's class, level and group leader flag at 0x88..0x8a (action 0).
+// Action 6 (InitializeRaid) is a list instead, its numbers big-endian (extractUInt32FromBytes): the
+// leader's name, the raid's id, the members (group, name, class, level, a flag, group leader), the
+// loot type, its looters and the leader's name again.
+struct ZoneRaidMember
+{
+	std::string name;
+	uint32_t group = 0xffffffff; // 0..9, or 0xffffffff in none
+	uint8_t class_id = 0, level = 0;
+	bool flag = false;           // the byte before group leader (always 0 from EQMacEmu)
+	bool group_leader = false;
+};
+
+struct ZoneRaid
+{
+	uint32_t action = 0;
+	std::string first;  // at 4 (the server's player_name)
+	std::string name;   // at 0x44: who it's about (the server's leader_name)
+	int32_t param = 0;  // at 0x84: a group, a loot type, an eqstr id
+	std::string renamed; // at 0x84 as a name (action 2's new one)
+	uint8_t class_id = 0, level = 0;
+	bool group_leader = false;
+	uint32_t raid_id = 0; // 8's at 0x44 (RaidCreate_Struct's leader_id); 6's after the leader's name
+	// Action 6.
+	std::vector<ZoneRaidMember> members;
+	uint32_t loot_type = 1;
+	std::vector<std::string> looters;
+	std::string leader; // the name after the looters
+};
+
 // A guild packet from the zone (Event::Type::Guild*): who and which guild, as each one's handler
 // reads them.
 struct ZoneGuild
@@ -555,6 +587,9 @@ public:
 			GroupInviteCancelled,
 			GroupFollowed,
 			GroupUpdated,
+			// Raids (raid): OP_RaidInvite (an invitation, or why ours was turned down) and OP_RaidUpdate.
+			RaidInvited,
+			RaidUpdated,
 			LoggedOut,    // camp finished; the zone closes the connection
 			ZoneApproved, // value: the zone we're going to; OP_DeleteSpawn is sent
 			ZoneDenied,   // value: the answer (ZoningMessage: 0 down, -1 not ready, -7 not experienced...)
@@ -579,6 +614,7 @@ public:
 		ZoneLoot loot;
 		ZoneWorldContainer world;
 		ZoneGroup group;
+		ZoneRaid raid;
 		ZoneWho who;
 		ZoneGuild guild;
 	};
@@ -777,6 +813,9 @@ public:
 	bool GroupDisband(const std::string &name);
 	// /makeleader: OP_GroupUpdate {8, us, the member} (GroupGeneric_Struct2, 136 bytes).
 	bool GroupMakeLeader(const std::string &member);
+	// CRaid_RaidInvite (@0049e9b3): OP_RaidInvite, RaidGeneral_Struct (0x88 bytes) {action, first at
+	// 4, second at 0x44, param at 0x84}.
+	bool RaidCommand(uint32_t action, const std::string &first, const std::string &second, int32_t param);
 	// /lfg: OP_LFGCommand {our name[64], u32 on}; our own flag with it.
 	bool SendLfg(bool on);
 	// The ground: what's on it, by drop id. PickUp is CEverQuest_LMouseUp's OP_ClickObject {drop id,

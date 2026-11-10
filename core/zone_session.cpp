@@ -1076,6 +1076,19 @@ bool ZoneSession::GroupMakeLeader(const std::string &member)
 	return Send(ZoneOp::GroupUpdate, body.data(), body.size(), "OP_GroupUpdate makeleader " + member);
 }
 
+bool ZoneSession::RaidCommand(uint32_t action, const std::string &first, const std::string &second, int32_t param)
+{
+	if (m_state != State::InZone)
+		return false;
+	std::vector<uint8_t> body(0x88, 0);
+	std::memcpy(body.data(), &action, 4);
+	PutName(body, 4, first);
+	PutName(body, 0x44, second);
+	std::memcpy(body.data() + 0x84, &param, 4);
+	return Send(ZoneOp::RaidInvite, body.data(), body.size(),
+		"OP_RaidInvite " + std::to_string(action) + " " + first + " " + second + " " + std::to_string(param));
+}
+
 bool ZoneSession::SendLfg(bool on)
 {
 	if (m_state != State::InZone)
@@ -2461,6 +2474,61 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 			break;
 		default:
 			break;
+		}
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::RaidInvite:
+	case ZoneOp::RaidUpdate: {
+		if (data.size() < 4)
+			break;
+		Event e{opcode == ZoneOp::RaidInvite ? Event::Type::RaidInvited : Event::Type::RaidUpdated};
+		ZoneRaid &r = e.raid;
+		r.action = Read<uint32_t>(data, 0);
+		if (opcode == ZoneOp::RaidUpdate && r.action == 6) {
+			// CRaid::InitializeRaid's walk through the list.
+			auto text = [&](size_t &at) {
+				std::string out = CString(data, at, data.size());
+				at += out.size() + 1;
+				return out;
+			};
+			auto big = [&](size_t &at) {
+				uint32_t v = 0;
+				for (int i = 0; i < 4; ++i)
+					v = (v << 8) | (at + i < data.size() ? data[at + i] : 0);
+				at += 4;
+				return v;
+			};
+			size_t at = 4;
+			r.first = text(at);
+			r.raid_id = big(at);
+			uint32_t count = big(at);
+			for (uint32_t i = 0; i < count && i < 72 && at < data.size(); ++i) {
+				ZoneRaidMember m;
+				m.group = big(at);
+				m.name = text(at);
+				m.class_id = Read<uint8_t>(data, at);
+				m.level = Read<uint8_t>(data, at + 1);
+				m.flag = Read<uint8_t>(data, at + 2) != 0;
+				m.group_leader = Read<uint8_t>(data, at + 3) != 0;
+				at += 4;
+				r.members.push_back(m);
+			}
+			r.loot_type = big(at);
+			uint32_t looters = big(at);
+			for (uint32_t i = 0; i < looters && at < data.size(); ++i)
+				r.looters.push_back(text(at));
+			r.leader = text(at);
+		}
+		else {
+			r.first = CString(data, 4, 64);
+			r.name = CString(data, 0x44, 64);
+			r.param = Read<int32_t>(data, 0x84);
+			r.renamed = CString(data, 0x84, 64);
+			r.raid_id = Read<uint32_t>(data, 0x44);
+			r.class_id = Read<uint8_t>(data, 0x88);
+			r.level = Read<uint8_t>(data, 0x89);
+			r.group_leader = Read<uint8_t>(data, 0x8a) != 0;
 		}
 		events.push_back(e);
 		break;

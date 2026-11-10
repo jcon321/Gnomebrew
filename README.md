@@ -571,6 +571,10 @@ build/eqclient -u USER -p PASS [options]
   --group-invite NAME   with --zone: 15 s in, once NAME is in the zone, invite them (OP_GroupInvite)
   --group-accept        with --zone: accept any group invitation 2 s after it comes (OP_GroupFollow);
                         every group packet prints
+  --raid-invite NAME    with --zone: 15 s in, once NAME is in the zone, invite them to a raid
+                        (OP_RaidInvite 3)
+  --raid-accept         with --zone: accept any raid invitation 2 s after it comes (OP_RaidInvite 4);
+                        every raid packet prints
   --idle SECONDS        without --char, stay at character select this long (default 0)
   --record DIR          with --zone: write each zone session's packets to DIR/<char>-<time>.eqr
   --replay FILE         play a recorded zone session back (no server): stay --zone seconds (default
@@ -582,7 +586,7 @@ build/eqclient -u USER -p PASS [options]
 ## Preview tool (Linux)
 
 ```
-build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|train|ground|commands|group|guild|skills]]
+build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|train|ground|commands|group|raid|guild|skills]]
 build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS]
 ```
 
@@ -601,7 +605,11 @@ print the chat, and snapshot the compass as it turns; or `group`, with Claudebot
 --group-accept`, to stand by them, follow their invitation in the group window, click their gauge,
 type the /who lines, /follow them from 70 away (printing the gap each second) until Move back ends
 it, /disband, then click them, /invite them, select them with Target party member 1 and /disband them,
-printing the group and the window's buttons at each step); or `guild`, as Replaytest leading a
+printing the group and the window's buttons at each step); or `raid`, with Claudebot in the zone
+through `eqclient -u clauderobot -p testpass1 --char Claudebot --zone 200 --raid-invite Replaycaster
+--raid-accept`, to type the raid commands out of a raid, accept their invitation with /raidaccept,
+type them as a member, /raiddisband, then /target and /raidinvite them, type them as the leader,
+/makeraidleader them and /raiddisband, printing the raid at each step; or `guild`, as Replaytest leading a
 guild (one made in the database: rows in `guilds` and `guild_members`, rank 2, an id under the
 server's `Guild:MaxGuilds`, then a server restart), to type each guild command, set and ask for
 the MOTD, answer /guilddelete's question yes (which deletes the guild) and camp; or `skills`, as the account's
@@ -2055,7 +2063,59 @@ details and the nearest spawns at the top left and the radar at the top right.
   group (13132) or as a trader (13133), 13134/13135 when it changes, 13136 otherwise; `OP_LFGCommand`
   0x41f0 {our name[64], u32}. Joining or forming a group calls it with "off"; `OP_SendExpZonein`
   sends "on" again into each zone while it's on. The group window's gauges: EQType 11..15 the
-  member's name and HP, -2 (no bar) while they're out of the zone; 17..21 their pet's.
+  member's name and HP, -2 (no bar) while they're out of the zone; 17..21 their pet's. The raid has
+  its say in three places: `CEverQuest_Invite` refuses one in a raid who isn't one of its group
+  leaders (5087); `CEverQuest_doInvite` answers 4 while a raid invitation's pending and 5 in a raid
+  unless the inviter's in it and we lead none of its groups; `msg_wldgroup` 7 and 9 drop a raid
+  invitation (`CRaid::ResetFromDeath`).
+- **Raids** (`frontend/raid.*`, `ZoneSession::RaidCommand`). eqgame's `CRaid` is one global
+  (`instCRaid`): a state at +0x39b4 (1 none, 2 invited, 4 in a raid; `CRaid::IsRaidLeader`
+  @0049d26c is misnamed and tests 2), 72 members of 0xd0 bytes from +0x48 (name, the level and
+  class title as text for the window, the class, a flag, group leader, group 0..9 or -1), the
+  leader's name (+0x3934), our own leadership (+0x39b9, what `CRaidWnd::IsRaidLeader` reads), the
+  inviter (+0x3974) and whether to a new raid (+0x39b8), the window's selected member (+0x39bc),
+  the loot type (+0x39c0: 1 the leader, 2 and the group leaders, 3 and the leader's picks), nine
+  looters (+0x39c4) and the levels added up (+0x3c04). `HandleWorldMessage` passes `OP_RaidInvite`
+  (0x425f) to `HandleC2SRaidMessage` and `OP_RaidUpdate` (0x4260) to `HandleS2CRaidMessage`, only
+  with the new UI (`DAT_008092d8`, set from eqclient.ini's NewUI: always ours). Both are
+  `RaidGeneral_Struct` {u32 action, name[64] at 4, name[64] at 0x44, i32 at 0x84}; the name at
+  0x44 is who it's about. `OP_RaidInvite` 0 and 3 invite us (`HandleCreateInviteRaid` @0049e54c:
+  5065, then 5067 and the inviter kept, or back as 0x15 with why: 5066 invited already, 5060 in a
+  raid, 12264 a group invitation pending); 0x15 is why ours failed (the eqstr id at 0x84 with the
+  name). `OP_RaidUpdate`'s actions: 0 a member joined (`RaidAddMember_Struct`: class, level, group
+  leader at 0x88..0x8a, the group at 0x84; 5059), 1 one left (5063; ours 5062 and the raid's reset),
+  2 a rename (the new name at 0x84; 5068), 3 a member into group 0x84, 4 the invitation and
+  leader's name dropped, 5 disbanded (5071), 6 the whole raid, 7 5072, 8 we formed it
+  (`RaidCreate_Struct`, the raid id at 0x44; 5061), 10 none (5071 first if we were in one), 11 the
+  loot type said (5100 with `%T1` 5101..5103), 12 and 0x15 an eqstr id said, 13 a group's new leader
+  (the one before loses it, found first: the same member twice ends not leading), 0x14 the raid's
+  new leader (5069, 5070), 0x16 the loot type set (1 and 2 clear the looters), 0x17 and 0x18 a looter
+  added and taken off. Action 6 (`InitializeRaid` @0049d377) is a list, its numbers big-endian
+  (`extractUInt32FromBytes`): action, leader's name, the raid id, the count, each member {u32 group
+  (0xffffffff none), name, u8 class, level, a flag, group leader}, the loot type, the looter count,
+  their names and the leader's name again. A pending group invitation goes; if we were in a raid
+  already `ProcessRaidMembershipChanges` says who joined (5059) and left (5063) since, and 5070 with
+  the old leader's name (eqgame's, not the new one's) when the leader changed; otherwise 5083.
+  What we send is `CRaid_RaidInvite` (@0049e9b3): `OP_RaidInvite`, 0x88 bytes, {action, a name at 4,
+  a name at 0x44, i32 at 0x84}. The commands work only with the Planes of Power (profile
+  `Expansions` & 8) or on a test server (`OP_LogServer`'s u32 at 20, @00799760):
+  `/raidinvite` (`CreateInviteRaid`: not while invited; only the leader (5073); a target (5074) who's
+  a player (5075), not us (5076), on ruleset 4 our team (395), not in the raid (5077), room (5048),
+  not in our group window (12272); 3 to a new raid, 0 to ours, {target, us}; 5064), `/raidaccept`
+  (`SendInviteResponse`: the inviter in the zone, else 5078 in red; 5079 and {4 (1 when the
+  invitation was 0), inviter, us}), `/raiddecline` (5080, {0x15, inviter, us, 5081}),
+  `/raiddisband` (`RemoveRaidMember`: {5, us, the leader's selected member}, else {5, us, us},
+  in a raid or not), `/makeraidleader` (`SendLeadershipChange`, as the leader: the target's name
+  with nothing typed, else the name formatted; 5082 if not a member; {0x14, us, them}),
+  `/setloottype N` (as the leader, one alphanumeric character 1..3 not the current: {0x16, us, us,
+  N}; else 5094), `/addraidlooter` and `/removeraidlooter` (the leader with loot type 3 and a
+  member selected: {0x17/0x18, the leader, them}; else 5095/5096) and `/rsay` (5108 in 0x147 out of
+  a raid; 5109 and chat channel 15). EQMacEmu's zone answers an accepted invitation with 8 to a new
+  raid's leader, then 0 for each member to all, 0x16 (loot type 1) and 6 to each; a raid that falls
+  under two members is disbanded (5 to all). Checked live with Claudebot (`eqclient --raid-invite`,
+  `--raid-accept`; `frontend_preview ... raid`). Not yet: the raid window and raid options window
+  (the selection the leader's `/raiddisband`, `/makeraidleader` with nothing, and the looter
+  commands act on comes only from there).
 - **Guilds** (`frontend/guild.*`, `ZoneSession`'s guild packets). eqgame keeps ours apart from our
   spawn's: EQ_Character's `GuildId` and `GuildStatus` (the profile's i16 @4946 and u8 @4967; -1
   none, 0 member, 1 officer, 2 leader) and the spawn's (`Spawn_Struct` i16 @82 and u16 @122;

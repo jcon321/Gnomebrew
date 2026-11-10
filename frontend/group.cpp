@@ -3,6 +3,7 @@
 #include "chat_text.h"
 #include "eqstr.h"
 #include "game_values.h"
+#include "raid.h"
 
 #include <cctype>
 
@@ -191,6 +192,10 @@ void Group::ZoneEvent(const ZoneSession::Event &event)
 			why = 1;
 		else if (!m_leader.empty())
 			why = 2;
+		else if (m_raid && m_raid->Invited())
+			why = 4;
+		else if (m_raid && m_raid->InRaid() && !(m_raid->IsRaidMember(inviter) && !m_raid->IsRaidGroupLeader()))
+			why = 5;
 		if (why != 0) {
 			m_zone->GroupCancelInvite(inviter, why);
 			break;
@@ -278,6 +283,8 @@ void Group::ZoneEvent(const ZoneSession::Event &event)
 				m_members[i] = g.names[i];
 			m_leader = g.leader;
 			Say(Text(12004, {}, "You have joined the group."));
+			if (m_raid)
+				m_raid->ResetFromDeath();
 			break;
 		case 8: // a new leader
 			m_leader = g.names[0];
@@ -292,6 +299,8 @@ void Group::ZoneEvent(const ZoneSession::Event &event)
 			if (m_host.lfg_off)
 				m_host.lfg_off();
 			DropInvitation();
+			if (m_raid)
+				m_raid->ResetFromDeath();
 			break;
 		default:
 			break;
@@ -326,6 +335,10 @@ void Group::Invite()
 	}
 	if (m_host.other_team && m_host.other_team(*target)) {
 		Say(Text(12271, {}, "You can only invite those players on your deity team."));
+		return;
+	}
+	if (m_raid && m_raid->InRaid() && !m_raid->IsRaidGroupLeader()) {
+		Say(Text(5087, {}, "You cannot create a group since you are in a raid and are not a group leader of the raid."));
 		return;
 	}
 	for (const auto &member : m_members)

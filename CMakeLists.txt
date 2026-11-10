@@ -129,6 +129,7 @@ add_library(eqfrontend STATIC
     frontend/loot_window.cpp
     frontend/trade_window.cpp
     frontend/group.cpp
+    frontend/raid.cpp
     frontend/guild.cpp
     frontend/ranged_attack.cpp
     frontend/melee_attack.cpp

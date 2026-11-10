@@ -166,6 +166,11 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 	group_host.other_team = [this](const ZoneSpawn &spawn) { return m_world.ServerType() == 4 && NotOnSameDeity(spawn); };
 	group_host.lfg_off = [this] { Lfg(true, "off"); };
 	m_group.Attach(m_zone, m_game_values, std::move(group_host));
+	Raid::Host raid_host;
+	raid_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
+	raid_host.other_team = [this](const ZoneSpawn &spawn) { return m_world.ServerType() == 4 && NotOnSameDeity(spawn); };
+	m_raid.Attach(m_zone, m_game_values, m_group, std::move(raid_host));
+	m_group.SetRaid(&m_raid);
 	Guild::Host guild_host;
 	guild_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
 	guild_host.target = [this] { return m_game_values.Target(); };
@@ -3349,6 +3354,7 @@ void FrontEnd::UpdateDeath(uint64_t now_ms)
 	if (m_death_ms == 1) {
 		// PrepareLocalPCForRepop (the options saved, EQ_PC::PrepareForRepop: what the next
 		// zone's profile gives back), then MoveToZone(ZoneBoundId, "repop_to_home_at_death", 1, 10).
+		m_raid.Died();
 		if (m_zone.RequestZoneChange(m_zone.Profile().bind_zone, 10))
 			m_death_ms = UINT64_MAX;
 		return;
@@ -4106,6 +4112,11 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 		case Type::GroupUpdated:
 			m_group.ZoneEvent(event);
 			break;
+		case Type::RaidInvited:
+		case Type::RaidUpdated:
+			// HandleWorldMessage's 0x425f and 0x4260 (the new UI's only).
+			m_raid.ZoneEvent(event);
+			break;
 		case Type::SpellMemorized:
 		case Type::SpellForgotten:
 			m_spell_cast.ZoneEvent(static_cast<int>(event.type), event.id, event.value, m_now_ms);
@@ -4259,6 +4270,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			break;
 		case Type::LoggedOut:
 			m_group.Clear(); // ProcessGameLoop's "Cleaning up groups"
+			m_raid.Clear();  // and its CRaid::ResetRaid
 			ShowMessage("You have camped.", [this](bool) { EnterStart(); });
 			break;
 		case Type::Error:

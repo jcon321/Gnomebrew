@@ -37,8 +37,11 @@
 //     OP_GroupCancelInvite 3; otherwise OP_GroupDisband with our name (we leave);
 //   - Target party member 1..5 (ExecuteCmd 0x17..0x1b) and setTargetBasedOnIndex (@00436474, a
 //     click on a gauge): the member, a second press their pet; a member not in the zone, no target.
-// Not ours: the raid's branches (CRaid), and on camping out
-// eqgame's last CEverQuest_Disband (ProcessGameLoop's 0xca, after our session's closed).
+//   - the raid's say (frontend/raid.*): CEverQuest_Invite only as one of its group leaders (5087),
+//     doInvite's 4 (asked to a raid) and 5 (in a raid, the inviter not in it or we lead a group of
+//     it), and msg_wldgroup's 7 and 9 dropping a raid invitation (CRaid::ResetFromDeath).
+// Not ours: on camping out eqgame's last CEverQuest_Disband (ProcessGameLoop's 0xca, after our
+// session's closed).
 
 #include "zone_session.h"
 
@@ -47,6 +50,7 @@
 #include <string>
 
 class GameValues;
+class Raid;
 
 class Group
 {
@@ -63,6 +67,7 @@ public:
 
 	void Attach(ZoneSession &zone, const GameValues &values, Host host);
 	void Clear(); // out of the game: no group, no invitation
+	void SetRaid(Raid *raid) { m_raid = raid; }
 
 	void ProfileArrived(); // CheckForGroupChanges
 	void ZoneEvent(const ZoneSession::Event &event);
@@ -91,15 +96,16 @@ public:
 	const ZoneSpawn *PetOf(const ZoneSpawn &owner) const; // ActorInfo's PetID
 	bool IsAGroupMember(const std::string &name) const; // EQ_PC::IsAGroupMember: the profile's list, or us
 	bool show_pets = true;                              // CGroupWnd+0x164, the window menu's pet gauges
+	void DropInvitation(); // SetInvited(0) and the inviter forgotten (CRaid::InitializeRaid's too)
 
 private:
 	std::string Text(uint32_t id, const std::vector<std::string> &args, const std::string &fallback) const;
 	void Say(const std::string &text, int type = 0x111) const;
 	void ClearMembers(); // the members, the leader
-	void DropInvitation();
 
 	ZoneSession *m_zone = nullptr;
 	const GameValues *m_values = nullptr;
+	Raid *m_raid = nullptr;
 	Host m_host;
 	std::string m_members[Members];
 	std::string m_leader;

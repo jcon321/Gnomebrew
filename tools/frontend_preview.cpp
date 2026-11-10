@@ -688,6 +688,107 @@ namespace
 		return 0;
 	}
 
+	// Live: with Claudebot in the zone through `eqclient -u clauderobot -p testpass1 --char Claudebot
+	// --zone 200 --raid-invite <us> --raid-accept`: the raid commands out of a raid, their
+	// invitation accepted with /raidaccept, the commands as a member, /raiddisband; then ours to them
+	// with /raidinvite, the commands as the leader, /makeraidleader them, and /raiddisband.
+	int RaidTest(FrontEnd &frontend, Harness &h)
+	{
+		const ZoneSession &zone = frontend.Zone();
+		const Raid &raid = frontend.RaidState();
+		h.Key(InputEvent::Key::F11);
+		size_t chat_seen = frontend.Chat().Lines().size();
+		auto chat = [&] {
+			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
+				printf("[preview] chat: %s\n", frontend.Chat().Lines()[chat_seen].text.c_str());
+		};
+		auto type = [&](const std::string &line) {
+			printf("[preview] > %s\n", line.c_str());
+			h.Key(InputEvent::Key::Enter);
+			h.Type(line);
+			h.Key(InputEvent::Key::Enter);
+			h.RunUntil([] { return false; }, 700);
+			chat();
+		};
+		auto state = [&](const char *when) {
+			printf("[preview] %s: in raid %d, invited %d, leading %d, leader '%s', %d members (level average %d), loot type %u,"
+			       " group leader of it %d\n", when, raid.InRaid() ? 1 : 0, raid.Invited() ? 1 : 0, raid.Leading() ? 1 : 0,
+				raid.Leader().c_str(), raid.Count(), raid.LevelAverage(), raid.LootType(), raid.IsRaidGroupLeader() ? 1 : 0);
+			for (int i = 0; i < Raid::MaxMembers; ++i)
+				if (raid.Used(i)) {
+					const Raid::Member &m = raid.MemberAt(i);
+					printf("[preview]   %d: %s, class %d, level %d, group %d%s\n", i, m.name.c_str(), m.class_id, m.level,
+						static_cast<int>(m.group), m.group_leader ? ", group leader" : "");
+				}
+			for (int i = 0; i < Raid::MaxLooters; ++i)
+				if (!raid.Looter(i).empty())
+					printf("[preview]   looter %s\n", raid.Looter(i).c_str());
+		};
+		state("start");
+		printf("[preview] we are %s, expansions 0x%x\n", zone.Profile().name.c_str(), zone.Profile().expansions);
+		for (const char *line : {"/rsay hello?", "/raidaccept", "/setloottype 2", "/raidinvite"})
+			type(line);
+		printf("[preview] waiting for Claudebot\n");
+		auto bot = [&]() -> const ZoneSpawn * {
+			for (const auto &[id, spawn] : zone.Spawns())
+				if (spawn.name == "Claudebot")
+					return &spawn;
+			return nullptr;
+		};
+		h.RunUntil([&] { return bot() != nullptr; }, 60000);
+		if (const ZoneSpawn *b = bot()) {
+			frontend.ZoneScene()->SetPlayerPosition(b->x, b->y - 15, b->z, 0);
+			h.RunUntil([] { return false; }, 1500);
+		}
+		printf("[preview] waiting for a raid invitation\n");
+		h.RunUntil([&] { return raid.Invited(); }, 60000);
+		h.RunUntil([] { return false; }, 300);
+		chat();
+		state("invited");
+		type("/raidaccept");
+		h.RunUntil([&] { return raid.InRaid(); }, 10000);
+		h.RunUntil([] { return false; }, 1500);
+		chat();
+		state("joined");
+		for (const char *line : {"/rsay hello raid", "/setloottype 2", "/makeraidleader Claudebot", "/raidinvite", "/addraidlooter"})
+			type(line);
+		type("/raiddisband");
+		h.RunUntil([&] { return !raid.InRaid(); }, 10000);
+		h.RunUntil([] { return false; }, 2000);
+		chat();
+		state("left");
+
+		// Ours to them: they're targeted, and accept it.
+		type("/target Claudebot");
+		printf("[preview] target %u\n", frontend.Target());
+		type("/raidinvite");
+		h.RunUntil([&] { return raid.Count() >= 2; }, 10000);
+		h.RunUntil([] { return false; }, 1500);
+		chat();
+		state("formed");
+		for (const char *line : {"/raidinvite", "/setloottype 3", "/setloottype 3", "/addraidlooter", "/removeraidlooter",
+		                         "/setloottype x", "/rsay we lead", "/makeraidleader nobody"})
+			type(line);
+		h.RunUntil([] { return false; }, 1000);
+		chat();
+		state("loot type 3");
+		type("/makeraidleader claudebot");
+		h.RunUntil([] { return false; }, 1500);
+		chat();
+		state("led by them");
+		type("/raiddisband");
+		h.RunUntil([&] { return !raid.InRaid(); }, 10000);
+		h.RunUntil([] { return false; }, 1500);
+		chat();
+		state("removed");
+		type("/camp");
+		h.RunUntil([&] { return zone.GetState() != ZoneSession::State::InZone && zone.GetState() != ZoneSession::State::Camping; },
+			40000);
+		chat();
+		printf("[preview] camped\n");
+		return 0;
+	}
+
 	// Live: what's on the ground; an item from the inventory dropped in front of us (the dialog's
 	// Yes), found on the screen and picked back up, then put away; and a camp.
 	int GroundTest(FrontEnd &frontend, Harness &h)
@@ -1730,6 +1831,7 @@ int main(int argc, char **argv)
 	bool commands = argc == 7 && std::string(argv[6]) == "commands";
 	bool passage = argc == 7 && std::string(argv[6]) == "passage";
 	bool group_test = argc == 7 && std::string(argv[6]) == "group";
+	bool raid_test = argc == 7 && std::string(argv[6]) == "raid";
 	bool guild_test = argc == 7 && std::string(argv[6]) == "guild";
 	bool skills_test = argc == 7 && std::string(argv[6]) == "skills";
 	bool train_test = argc == 7 && std::string(argv[6]) == "train";
@@ -3716,6 +3818,8 @@ int main(int argc, char **argv)
 				return PassageTest(frontend, h);
 			if (group_test)
 				return GroupTest(frontend, h);
+			if (raid_test)
+				return RaidTest(frontend, h);
 			if (guild_test)
 				return GuildTest(frontend, h);
 			if (skills_test)

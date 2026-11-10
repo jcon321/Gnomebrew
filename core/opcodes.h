@@ -158,6 +158,9 @@ namespace ZoneOp
 	constexpr uint16_t GroupCancelInvite = 0x4041; // GroupCancel_Struct {inviter[64], invitee[64], u8 why}
 	constexpr uint16_t GroupUpdate = 0x2026;       // GroupJoin_Struct, GroupUpdate_Struct or GroupGeneric_Struct2 by its action
 	constexpr uint16_t GroupDisband = 0x4044;      // GroupGeneric_Struct {name[64], name[64]}
+	// Raids: see ZoneSession::RaidCommand.
+	constexpr uint16_t RaidInvite = 0x425f; // RaidGeneral_Struct: ours, and an invitation or its answer to us
+	constexpr uint16_t RaidUpdate = 0x4260; // RaidGeneral_Struct (+ class, level, group leader), or 6's member list
 	// Looting: see ZoneSession::LootRequest.
 	constexpr uint16_t LootRequest = 0x404e;    // ours: {u16 corpse}
 	constexpr uint16_t MoneyOnCorpse = 0x4050;  // moneyOnCorpseStruct {u8 response, u8[3], u32 platinum, gold, silver, copper}
@@ -424,6 +427,8 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::GroupCancelInvite, "OP_GroupCancelInvite"},
 	{ZoneOp::GroupUpdate, "OP_GroupUpdate"},
 	{ZoneOp::GroupDisband, "OP_GroupDisband"},
+	{ZoneOp::RaidInvite, "OP_RaidInvite"},
+	{ZoneOp::RaidUpdate, "OP_RaidUpdate"},
 	{ZoneOp::LootRequest, "OP_LootRequest"},
 	{ZoneOp::MoneyOnCorpse, "OP_MoneyOnCorpse"},
 	{ZoneOp::LootItemPacket, "OP_LootItemPacket"},

@@ -51,6 +51,9 @@ namespace
 			"  --group-invite NAME   with --zone, 15 s after coming in and NAME is here, invite NAME to a group\n"
 			"  --group-accept        with --zone, accept any group invitation 2 s after it comes (OP_GroupFollow);\n"
 			"                        every group packet prints\n"
+			"  --raid-invite NAME    with --zone, 15 s after coming in and NAME is here, invite NAME to a raid\n"
+			"  --raid-accept         with --zone, accept any raid invitation 2 s after it comes; every raid\n"
+			"                        packet prints\n"
 			"  --record DIR          with --zone, write each zone session's packets to DIR/<char>-<time>.eqr\n"
 			"  --replay FILE         play a recorded zone session back (no server): stay --zone seconds\n"
 			"                        (default 10), print what's around, then camp out\n"
@@ -136,6 +139,8 @@ namespace
 	int g_skill = -1;                 // --skill: a combat skill to use on them too
 	std::string g_group_invite;       // --group-invite: whom to invite
 	bool g_group_accept = false;      // --group-accept
+	std::string g_raid_invite;        // --raid-invite: whom to invite
+	bool g_raid_accept = false;       // --raid-accept
 	uint64_t g_skill_at = 0;          // when it's next ready
 
 	// --attack: the nearest NPC whose name starts with g_attack, targeted, auto attack on.
@@ -287,6 +292,9 @@ namespace
 		uint64_t invite_at = 0;       // when --group-invite goes
 		uint64_t follow_at = 0;       // when --group-accept answers
 		std::string inviter;
+		uint64_t raid_invite_at = 0;  // when --raid-invite goes
+		uint64_t raid_accept_at = 0;  // when --raid-accept answers
+		std::string raid_inviter;
 		for (;;) {
 			std::vector<ZoneSession::Event> events;
 			zone.Pump(100, events);
@@ -311,6 +319,8 @@ namespace
 						pickup_at = NowMs() + 2000;
 					if (!g_group_invite.empty())
 						invite_at = NowMs() + 15000;
+					if (!g_raid_invite.empty())
+						raid_invite_at = NowMs() + 15000;
 					if (g_click_link >= 0) {
 						printf("[zone] clicking link %d\n", g_click_link);
 						zone.ClickItemLink(static_cast<uint16_t>(g_click_link), "link");
@@ -460,6 +470,25 @@ namespace
 						g.names[4].c_str(), g.leader.c_str(), g.param);
 					break;
 				}
+				case ZoneSession::Event::Type::RaidInvited:
+				case ZoneSession::Event::Type::RaidUpdated: {
+					const ZoneRaid &r = event.raid;
+					printf("[raid] %s %u: '%s' '%s' param %d, class %d level %d group leader %d\n",
+						event.type == ZoneSession::Event::Type::RaidInvited ? "OP_RaidInvite" : "OP_RaidUpdate", r.action,
+						r.first.c_str(), r.name.c_str(), r.param, r.class_id, r.level, r.group_leader ? 1 : 0);
+					if (event.type == ZoneSession::Event::Type::RaidUpdated && r.action == 6) {
+						printf("[raid]   leader '%s', id %u, loot type %u, %zu looters\n", r.leader.c_str(), r.raid_id,
+							r.loot_type, r.looters.size());
+						for (const auto &m : r.members)
+							printf("[raid]   %s: group %d, class %d, level %d, group leader %d\n", m.name.c_str(),
+								static_cast<int>(m.group), m.class_id, m.level, m.group_leader ? 1 : 0);
+					}
+					if (g_raid_accept && event.type == ZoneSession::Event::Type::RaidInvited && (r.action == 0 || r.action == 3)) {
+						raid_inviter = r.name;
+						raid_accept_at = NowMs() + 2000;
+					}
+					break;
+				}
 				case ZoneSession::Event::Type::LoggedOut:
 					if (zone.Replaying())
 						PrintNearby(zone);
@@ -493,6 +522,23 @@ namespace
 				invite_at = 0;
 				printf("[group] inviting %s\n", g_group_invite.c_str());
 				zone.GroupInvite(g_group_invite, false);
+			}
+			if (raid_invite_at && NowMs() >= raid_invite_at) {
+				bool here = false;
+				for (const auto &[id, spawn] : zone.Spawns())
+					here |= spawn.name == g_raid_invite;
+				if (!here)
+					raid_invite_at = NowMs() + 1000;
+			}
+			if (raid_invite_at && NowMs() >= raid_invite_at) {
+				raid_invite_at = 0;
+				printf("[raid] inviting %s\n", g_raid_invite.c_str());
+				zone.RaidCommand(3, g_raid_invite, zone.Profile().name, 0); // CreateInviteRaid, not in a raid
+			}
+			if (raid_accept_at && NowMs() >= raid_accept_at) {
+				raid_accept_at = 0;
+				printf("[raid] accepting %s's invitation\n", raid_inviter.c_str());
+				zone.RaidCommand(4, raid_inviter, zone.Profile().name, 0); // SendInviteResponse
 			}
 			if (follow_at && NowMs() >= follow_at) {
 				follow_at = 0;
@@ -585,6 +631,10 @@ int main(int argc, char **argv)
 			g_group_invite = next();
 		else if (arg == "--group-accept")
 			g_group_accept = true;
+		else if (arg == "--raid-invite")
+			g_raid_invite = next();
+		else if (arg == "--raid-accept")
+			g_raid_accept = true;
 		else if (arg == "--record")
 			g_record_dir = next();
 		else if (arg == "--replay")

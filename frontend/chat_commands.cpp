@@ -19,6 +19,8 @@ namespace
 		ClearChat, ShowNames, Sit, Stand, Book, Cast, Consider, Played, Motd, Time, Afk, Anonymous, Assist,
 		Random, LootNoDrop, FastDrop, AutoSplit, Roleplay, TargetGroupBuff, Split, Yell, Consent, Social, Attack, CombatMusic, DoAbility, Filter, ServerFilter, Invite, Disband, Who, WhoTarget, Follow, MakeLeader, Lfg,
 		UserColor, GuildInvite, GuildRemove, GuildDelete, GuildStatus, GuildLeader, GuildWar, GuildPeace, GuildMotd,
+		MakeRaidLeader, RaidInvite, RaidDecline, RaidAccept, RaidDisband, SetLootType, AddRaidLooter, RemoveRaidLooter,
+		RaidSay,
 	};
 
 	struct CommandEntry
@@ -115,10 +117,10 @@ namespace
 		{"/clearchat", 0, Command::ClearChat}, {"/bazaar", 0, Command::None}, {"/trader", 0, Command::None},
 		{"/music", 0, Command::None}, {"/bugreport", 0, Command::None}, {"/loadskin", 0, Command::None},
 		{"/newui", 0, Command::None}, {"/webupdate", 0, Command::None}, {"/viewpetition", 0, Command::None},
-		{"/deletepetition", 0, Command::None}, {"/raidwindow", 0, Command::None}, {"/makeraidleader", 0, Command::None},
-		{"/raidinvite", 0, Command::None}, {"/raiddecline", 0, Command::None}, {"/raidaccept", 0, Command::None},
-		{"/raiddisband", 0, Command::None}, {"/setloottype", 0, Command::None}, {"/addraidlooter", 0, Command::None},
-		{"/removeraidlooter", 0, Command::None}, {"/rsay", 0, Command::None}, {"/quit", 0, Command::None},
+		{"/deletepetition", 0, Command::None}, {"/raidwindow", 0, Command::None}, {"/makeraidleader", 0, Command::MakeRaidLeader},
+		{"/raidinvite", 0, Command::RaidInvite}, {"/raiddecline", 0, Command::RaidDecline}, {"/raidaccept", 0, Command::RaidAccept},
+		{"/raiddisband", 0, Command::RaidDisband}, {"/setloottype", 0, Command::SetLootType}, {"/addraidlooter", 0, Command::AddRaidLooter},
+		{"/removeraidlooter", 0, Command::RemoveRaidLooter}, {"/rsay", 0, Command::RaidSay}, {"/quit", 0, Command::None},
 	};
 
 
@@ -1607,6 +1609,62 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 		break;
 	case Command::MakeLeader:
 		m_group.MakeLeader(args);
+		break;
+	// The raid's commands (@004f3b4f..@004f3c95): only with the Planes of Power (Expansions 8) or on
+	// a test server (@00799760).
+	case Command::MakeRaidLeader:
+	case Command::RaidInvite:
+	case Command::RaidDecline:
+	case Command::RaidAccept:
+	case Command::RaidDisband:
+	case Command::SetLootType:
+	case Command::AddRaidLooter:
+	case Command::RemoveRaidLooter:
+	case Command::RaidSay:
+		if ((me.expansions & 8) == 0 && !m_world.TestServer())
+			break;
+		switch (command) {
+		case Command::MakeRaidLeader: {
+			// The target's name with nothing typed, else the name typed (EQUtil_FormatCharacterName).
+			std::string who;
+			if (args.empty() && target != spawns.end())
+				who = target->second.name;
+			else
+				for (size_t i = 0; i < args.size() && i < 63; ++i)
+					who += static_cast<char>(i == 0 ? std::toupper(static_cast<unsigned char>(args[i]))
+					                                : std::tolower(static_cast<unsigned char>(args[i])));
+			m_raid.MakeLeader(who);
+			break;
+		}
+		case Command::RaidInvite:
+			m_raid.Invite();
+			break;
+		case Command::RaidDecline:
+			m_raid.Respond(false);
+			break;
+		case Command::RaidAccept:
+			m_raid.Respond(true);
+			break;
+		case Command::RaidDisband:
+			m_raid.Disband();
+			break;
+		case Command::SetLootType:
+			m_raid.SetLootType(args);
+			break;
+		case Command::AddRaidLooter:
+			m_raid.AddLooter();
+			break;
+		case Command::RemoveRaidLooter:
+			m_raid.RemoveLooter();
+			break;
+		default: // CRaid_SendRaidChat
+			if (!m_raid.InRaid())
+				ChatOut(format(5108, "You cannot send chat with the raid chat channel unless you are in a raid.", {}),
+					ChatType::Raid);
+			else
+				send(15, "", args, 5109, "You tell your raid, '%1'", ChatType::Raid);
+			break;
+		}
 		break;
 	case Command::GuildInvite: {
 		// /guildinvite (@004f4b68): GrabFirstWord's word and what's left.

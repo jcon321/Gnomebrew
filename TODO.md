@@ -31,9 +31,9 @@ no rules of its own.
      member selected (by those or a click on them in the world). /makeleader (@004f397d,
      OP_GroupUpdate 8) and /lfg (@004f9518, OP_LFGCommand; off on joining, sent again on entering a
      zone). Checked live with a second
-     player (`eqclient --group-invite`, `--group-accept`; `frontend_preview ... group`). Still to
-     do: the raid's branches (CRaid: IsInRaid, IsRaidGroupLeader, eqstr 5087, 5086, 5088's why 4
-     and 5), the group window's menu (`CGroupWnd::CreateLocalMenu`: its pet gauges toggle, 0x32),
+     player (`eqclient --group-invite`, `--group-accept`; `frontend_preview ... group`). The raid's
+     branches (5087; doInvite's why 4 and 5; msg_wldgroup 7 and 9's CRaid::ResetFromDeath) ask
+     `frontend/raid.*`. Still to do: the group window's menu (`CGroupWnd::CreateLocalMenu`: its pet gauges toggle, 0x32),
      CEverQuest_Disband sent as a camp ends (ProcessGameLoop's 0xca; our session's already
      closed), and AcceptGroupInvite's OP_GroupFollow2 (0x4042) for an invitation that came as
      OP_GroupInvite2 (the zone never hands one on as that; we always send OP_GroupFollow).
@@ -432,8 +432,9 @@ no rules of its own.
     - ReportDeath's duel ending (eqstr 12100, 12101), a group member's HP, the tracking window; our
       death's first person view (still standing height), KnockedOut's "You have been knocked
       unconscious!" (12877) and ClearOutRentables' temporary items;
-    - going home dead: CDisplay_SwitchToDefaultCameraMode, PrepareLocalPCForRepop's group and raid
-      reset (SetInvited, CRaid::ResetFromDeath), MoveToZone_2's "Your Home Zone is unavailable"
+    - going home dead: CDisplay_SwitchToDefaultCameraMode, PrepareLocalPCForRepop's group reset
+      (SetInvited; the raid's part, SetTargetRaidPlayer(0) and CRaid::ResetFromDeath, is done),
+      MoveToZone_2's "Your Home Zone is unavailable"
       fallback when the zone refuses (0x4150), EQ_3DView_MouseUp's clicks while the DeathTimer runs,
       and HandleWorldMessage's "struck down by the gods" (1391) resetting it; the return checked
       live only through a recording's replay;
@@ -479,12 +480,35 @@ no rules of its own.
     - Not checked live: an invite from another player (needs a second character in the guild),
       war and peace (EQMacEmu ignores OP_GuildWar and OP_GuildPeace), 0x411e and 0x4127 (it never
       sends them).
-27. **Raids.** `CRaid` (@0049cf43: `HandleS2CRaidMessage` @0049cfcf, `HandleC2SRaidMessage`,
-    `AddRaidMember`, `ChangeLeadership`, `ResetFromDeath`) on `OP_RaidInvite` and `OP_RaidUpdate`;
-    the raid window (`CRaidWnd` @0042fc89: the members by group, ranks, `UpdateRaidTargetHighlight`)
-    and raid options (`CRaidOptionsWnd` @0042f6db: loot type and looters); /raidinvite, /raidaccept,
-    /raiddecline, /raiddisband, /makeraidleader, /setloottype, /addraidlooter, /removeraidlooter,
-    /rsay, /raidwindow. The places that already ask about raids are listed under 2 and 24.
+27. **Raids.** Done (`frontend/raid.*`, `ZoneSession::RaidCommand` and the zone's `OP_RaidInvite`
+    and `OP_RaidUpdate`): `CRaid`'s state (@0049cf43), `HandleC2SRaidMessage` (an invitation kept or
+    turned down with why, why ours failed), `HandleS2CRaidMessage`'s actions (members joining,
+    leaving, renamed, moved, group and raid leaders, the whole raid from action 6 with
+    `ProcessRaidMembershipChanges`, disbanded, the loot type and looters) with their messages, and
+    /raidinvite, /raidaccept, /raiddecline, /raiddisband, /makeraidleader, /setloottype,
+    /addraidlooter, /removeraidlooter and /rsay as eqgame checks them (Planes of Power or a test
+    server). Checked live with a second player (`eqclient --raid-invite`, `--raid-accept`;
+    `frontend_preview ... raid`). Still to do:
+    - The raid window (`CRaidWnd` @0042fc89: the members by group with rank, class title and level
+      from the state (`AddPlayertoList`, `ChangePosition`, `SetRaidMemberRank`,
+      `ChangeRaidGroupLeader`, `UpdateRaidWindowDisplay`, `SetRaidCount`, the level average), class
+      colors (`LoadClassColors`, `SetPlayerClassColor`), its buttons (`UpdateRaidWindowUI`,
+      `WndNotification`: invite, accept, decline, disband, make leader, add and remove looter, the
+      options window) and a click on a member (`CRaid::SetTargetRaidPlayer` @0049d2c2: the
+      selection, `UpdateRaidTargetHighlight`, /target of them). Until then the leader's
+      /raiddisband of a member, /makeraidleader with nothing typed and no target, and the looter
+      commands have no selection to act on.
+    - The raid options window (`CRaidOptionsWnd` @0042f6db: the loot type radio buttons, the looter
+      list from `CRaid::UpdateOptionsWindow` @0049ea1c, `InitializeClassColor` and the class
+      color picker through `CRaid::UpdateClassColor`).
+    - /raidwindow and the keymap's Toggle Raid Window (@004f3b0a, `CDisplay_ActivateMainUI`'s raid
+      window), both gated like the commands.
+    - The chat window's raid default channel (`CEverquest_InterpretCmd`'s channel 15 sending
+      through `CRaid_SendRaidChat`).
+    - On camping out, eqgame's `SetTargetRaidPlayer(0)` and `RemoveRaidMember` (ProcessGameLoop's
+      0xca, after our session's closed; we only reset the raid).
+    - Not checked live: renames (2), group moves (3), 7, 12, 13, the looter actions (EQMacEmu
+      sends 0x17, 0x18 and 12 only for leader selected looters, which needs the selection).
 28. **Alternate advancement.** The AA window (`CAAWnd` @00401000: `Init`, `Update`, `UpdateSelected`,
     `UpdateTimer`, `ShowAbility`, `CAAWnd_WndNotification_AAAction` @004020d2), the AA table from
     `OP_RespondAA`, buying and activating with `OP_AAAction`, /alternateadv, the keymap's command and
