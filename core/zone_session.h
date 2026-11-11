@@ -488,6 +488,10 @@ public:
 			SkillUp,      // OP_SkillUpdate: id the skill, value its new value (Profile() has it already)
 			DoorsSpawned, // Doors() is set (none after OP_DespawnDoor)
 			Yelled,       // id: who yelled for help near us (OP_YellForHelp)
+			SneakHideCancelled, // OP_CancelSneakHide: the zone ended our hide and sneak
+			// OP_ShopEndConfirm: the zone ended the merchant session (HandleWorldMessage's 0x4146:
+			// with the new UI, CMerchantWnd::Deactivate)
+			MerchantEnded,
 			Consented,    // OP_ConsentResponse: text the grantee, text2 the owner, value the permission
 			SoundPlayed,  // OP_PlaySound: id the spawn, value the sound
 			DoorMoved,    // id: the door, value: its new state (OP_MoveDoor)
@@ -687,6 +691,7 @@ public:
 	// CEverQuest_DoSplit: OP_Split, the coins off ours.
 	void Split(int32_t platinum, int32_t gold, int32_t silver, int32_t copper);
 	void YellForHelp();                     // OP_YellForHelp
+	void MoveLog();                         // MSG_MOVELOG (/movelog yes)
 	void Consent(const std::string &name);  // OP_Consent
 	// Guilds (GuildCommand_Struct, GuildInviteAccept_Struct and the war and peace struct: see
 	// opcodes.h). Our name and guild in them are the profile's.
@@ -852,6 +857,9 @@ public:
 	// Our own spawn from OP_ZoneEntry (ServerZoneEntry_Struct): appearance, size, position.
 	// Set before the ZoneInfo event.
 	const ZoneSpawn &Self() const { return m_self; }
+	// OP_BerserkStart and OP_BerserkEnd (ActorInfo+0x42c): berserk until the zone says otherwise
+	// or we leave the zone.
+	bool Berserk() const { return m_berserk; }
 	ZoneSpawn &EditSelf() { return m_self; } // what the client sets of itself without telling the zone
 	uint16_t MySpawnId() const { return m_my_id; }
 	// CDisplay::PlayerDistance(spawn, us, 1): how far a spawn is from where we last moved, up and
@@ -958,6 +966,7 @@ private:
 	std::map<uint16_t, ZoneSpawn> m_spawns;
 	ZoneSpawn m_self;
 	uint16_t m_my_id = 0;
+	bool m_berserk = false;
 	// What we had on as UpdateAppearance last saw it (from OP_CharInventory on): the slots it tells.
 	void WornLook(uint16_t material[9], uint32_t color[9]) const;
 	uint16_t m_worn_material[9] = {};

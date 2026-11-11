@@ -258,7 +258,8 @@ namespace
 			"/lootnodrop", "/lootnodrop sometimes", "/lootnodrop", "/lootnodrop always", "/fastdrop", "/fastdrop never",
 			"/fastdrop off", "/smile", "/wave", "/hug", "/boggle", "/tap", "/fidget", "/smile nobodyhere", "/flipoff",
 			"/kiss blows you a kiss", "/usercolor", "/usercolor help", "/usercolor page7", "/usercolor 1 255 0 0",
-			"/usercolor 1 reset", "/usercolor 73 1 2 3"})
+			"/usercolor 1 reset", "/usercolor 73 1 2 3", "/loot", "/ttell hello", "/charinfo", "/movelog",
+			"/movelog no", "/stopsong"})
 			type(line);
 		// The nearest spawn, by name.
 		const ZoneProfile &me = zone.Profile();
@@ -280,7 +281,10 @@ namespace
 			type("/target " + first);
 			type("%t is %s, %o, %p, a %r; %m. x%t 50% '%t'");
 			type("/smile say waves at %t");
+			type("/ttell hello"); // an NPC's name with '_' in it: 13090
+			type("/loot");         // not a corpse: nothing
 		}
+
 		// The keys that open the chat line with something in it (their own character not typed
 		// after), and Target myself twice (no pet: still us).
 		auto press = [&](int scan, bool shift, char ch, const char *what) {
@@ -311,6 +315,7 @@ namespace
 		printf("[preview] target %u (us %u)\n", frontend.Target(), zone.MySpawnId());
 		press(0x3b, false, 0, "Target myself again (F1)");
 		printf("[preview] target %u (us %u)\n", frontend.Target(), zone.MySpawnId());
+		type("/ttell hello"); // a tell to ourselves: Talking to yourself again?
 		printf("[preview] exp %u (gauge %d)\n", me.exp, static_cast<int>(std::min(me.exp * 3.03031, 1000.0)));
 
 		// The right button on food and drink in the inventory window (CInvSlot_DoDrinkEatPoison).

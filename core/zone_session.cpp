@@ -40,6 +40,14 @@ namespace
 		memcpy(at, text.data(), std::min(text.size(), size - 1));
 	}
 
+	// stricmp, as EQPlayer_get_player compares names.
+	bool SameName(const std::string &a, const std::string &b)
+	{
+		return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) {
+			return std::tolower(static_cast<unsigned char>(x)) == std::tolower(static_cast<unsigned char>(y));
+		});
+	}
+
 	uint64_t NowMs()
 	{
 		return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -476,6 +484,7 @@ void ZoneSession::Reset(const std::string &character)
 	ClearLoot();
 	m_self = ZoneSpawn{};
 	m_my_id = 0;
+	m_berserk = false;
 	m_worn_known = false;
 	m_hp = m_max_hp = 0;
 	m_items.clear();
@@ -1541,6 +1550,12 @@ void ZoneSession::YellForHelp()
 		Send(ZoneOp::YellForHelp, nullptr, 0, "OP_YellForHelp");
 }
 
+void ZoneSession::MoveLog()
+{
+	if (m_state == State::InZone)
+		Send(ZoneOp::MoveLog, nullptr, 0, "OP_MoveLog");
+}
+
 void ZoneSession::Consent(const std::string &name)
 {
 	if (m_state == State::InZone)
@@ -2082,6 +2097,64 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 			events.push_back(e);
 		}
 		break;
+	case ZoneOp::CancelSneakHide:
+		events.push_back({Event::Type::SneakHideCancelled});
+		break;
+	case ZoneOp::ShopEndConfirm:
+		events.push_back({Event::Type::MerchantEnded});
+		break;
+	case ZoneOp::BerserkStart:
+	case ZoneOp::BerserkEnd:
+		m_berserk = opcode == ZoneOp::BerserkStart;
+		break;
+	case ZoneOp::GMLastName:
+	case ZoneOp::GMNameChange: {
+		// HandleWorldMessage's 0x416e (CDisplay_UpdateNameSprite @004e4651) and 0x40cb: the spawn
+		// named first (EQPlayer_get_player, us included), when the u16 at 194 isn't 0, takes the
+		// surname or name at 128; ours (pinstPCData's LastName or Name) too. The name over their
+		// head follows (drawn from the spawn each frame).
+		if (data.size() < 196 || Read<uint16_t>(data, 194) == 0)
+			break;
+		std::string name = CString(data, 0, 64), value = CString(data, 128, 64);
+		if (name.empty())
+			break;
+		ZoneSpawn *spawn = nullptr;
+		for (auto &[id, other] : m_spawns)
+			if (SameName(other.name, name)) {
+				spawn = &other;
+				break;
+			}
+		if (!spawn && SameName(m_self.name, name))
+			spawn = &m_self;
+		if (!spawn)
+			break;
+		bool surname = opcode == ZoneOp::GMLastName;
+		std::string ZoneSpawn::*field = surname ? &ZoneSpawn::surname : &ZoneSpawn::name;
+		spawn->*field = value;
+		if (spawn == &m_self || (m_my_id != 0 && spawn->id == m_my_id)) {
+			m_self.*field = value;
+			(surname ? m_profile.last_name : m_profile.name) = value;
+		}
+		break;
+	}
+	case ZoneOp::CorpsePosition: {
+		// CEverQuest_HandleWorldMessage_FloorRelated_ (@004dcdd1): the spawn put there, its speed,
+		// turning and velocities stopped (SpawnActor drops it to the floor below).
+		if (data.size() < 16)
+			break;
+		auto it = m_spawns.find(Read<uint16_t>(data, 0));
+		if (it == m_spawns.end())
+			break;
+		ZoneSpawn &corpse = it->second;
+		corpse.y = Read<float>(data, 4);
+		corpse.x = Read<float>(data, 8);
+		corpse.z = Read<float>(data, 12);
+		corpse.speed = corpse.heading_speed = 0;
+		corpse.dx = corpse.dy = corpse.dz = 0;
+		corpse.updated_ms = NowMs();
+		events.push_back({Event::Type::SpawnsMoved});
+		break;
+	}
 	case ZoneOp::ConsentResponse:
 		if (data.size() >= 129) {
 			Event e(Event::Type::Consented);

@@ -3998,6 +3998,15 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 		case Type::Yelled:
 			YelledForHelp(event.id);
 			break;
+		case Type::SneakHideCancelled:
+			m_abilities.CancelSneakHide(); // HandleWorldMessage's 0x415a
+			break;
+		case Type::MerchantEnded:
+			// HandleWorldMessage's 0x4146 with the new UI: CMerchantWnd::Deactivate (its vtable's
+			// 0x88). Ours does nothing once the window's closed; eqgame's runs again when this
+			// answers our own OP_ShopEnd (a second SavePC, our target cleared again).
+			m_merchant.Deactivate();
+			break;
 		case Type::Consented: {
 			// msg_consent_verify (@004e3314): to us, given or denied the grantee; else, to them, the
 			// owner's corpse (an ignored owner's isn't said: no ignore list yet).

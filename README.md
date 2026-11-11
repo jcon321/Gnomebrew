@@ -349,7 +349,8 @@ eqgame's `OP_MoveItem`.
   /auction, /ooc, /emote (`:`, /me), /hail, /target, /assist, /consider, /location, /time,
   /played, /motd, /afk, /anonymous, /shownames, /sit, /stand, /book, /cast, /camp, /clearchat,
   /random, /lootnodrop, /fastdrop, /autosplit, /roleplay, /targetgroupbuff (/tgb), /split, /yell,
-  /consent, /attack, /combatmusic, /doability, the guild commands (see Guilds under In the zone),
+  /consent, /loot, /ttell, /charinfo, /movelog, /stopsong, /attack, /combatmusic, /doability, the
+  guild commands (see Guilds under In the zone),
   the raid commands (see Raids), /filter, /serverfilter and the socials (/smile, /wave and the
   other 86).
 - **The default channel:** text typed with no command goes where the chat window's default channel
@@ -1470,13 +1471,19 @@ details and the nearest spawns at the top left and the radar at the top right.
   (`ProcessChatOptionsTab`), so a `/filter` while the page is up shows on the next pick.
   `ChatPageWndNotification` (@0042c747) takes a click's check or a combo's choice (in range) into
   the switch, then `CEverQuest_send_update_filters`, `saveOptions` and `saveOptions2` (eqOptions1.opt
-  and eqOptions2.opt in eqgame; my-client.ini's `[Filters]` here). The constructor also gives the
-  four combo boxes `CComboWnd::SetColors(0xff808080, ...)`, which we don't do yet.
+  and eqOptions2.opt in eqgame; my-client.ini's `[Filters]` here). The constructor also gives every
+  page's combo boxes (the General, Display, Keyboard and Filters pages' eleven)
+  `CComboWnd::SetColors(0xffffffff, 0xffffff00, 0xff808080)`: their lists' text, hover and choice
+  colors.
 - **Combo boxes** (`CComboWnd`): the choice in white (grey disabled) down the middle of the client
   area left of the button, which is as wide as its `Button` template's Normal and drawn Pressed
   while the list is down. The list hangs from the box's bottom, as wide as the box left of the
   button and half a line plus a line a choice tall, `ListHeight` at most (`GetListRect`,
-  `InsertChoice`). A press on the box drops it; a press on a choice picks it.
+  `InsertChoice`). A press on the box drops it; a press on a choice picks it. The list is a
+  `CListWnd` of style 0x110000 (`CComboWnd::CComboWnd`), so it draws the choice on its select
+  color (`DrawLine`) and the row under the mouse in its hover color (`DrawItem`): `CListWnd`'s red
+  and yellow on white text, unless `CComboWnd::SetColors` (@005a1720, `CListWnd::SetColors` on the
+  list) changes them.
 
 ## Spells
 
@@ -1626,9 +1633,36 @@ details and the nearest spawns at the top left and the radar at the top right.
   `OP_ConsentResponse` (0x40d5, {grantee[64], owner[64], u8 permission, zone[32]}):
   `msg_consent_verify` (@004e3314) says to the owner 1427 or 1428 with the grantee, to anyone else
   2080 or 2103 with the owner (not when the owner's ignored).
+- **/loot** (@004fb5ae): `CEverQuest_LootCorpse` on our target, or 13201 with none.
+  **/charinfo** (@004f4a7a): 12967 with `EQWorldData::GetFullZoneName` of the profile's bind zone.
+  **/movelog** (@004fba78): "yes" (13219, the whole line, any case) sends MSG_MOVELOG (0x41e4, no
+  body; EQMacEmu has no handler), anything else says 13220. **/stopsong** (@004f5c74): a bard's
+  `StopSpellCast2`, which is `StopSpellCast(0, CastingSpellId)`; nothing for anyone else.
+- **/ttell** (@004f839a): nothing with nothing typed or no target. The target's name, cut at an
+  apostrophe (a player's corpse, `Name's corpse12`, is its owner's), goes to `send_tell` (12323,
+  "Talking to yourself again?", when that's us) unless it has a '#' or '_' in it, which says 13090.
+  The check's odd shape is eqgame's: an empty name or an NPC fails first, then anything but an NPC
+  corpse is checked again by the '#' and '_' alone (so an NPC named without either passes), and an
+  NPC corpse goes whatever its name.
 - **OP_ManaUpdate** (0x4219, {u16 spawn, u16 mana}) sets our mana, whoever it names. **OP_DespawnDoor**
   (0x409b, no body) deletes every door and switch. **OP_PlaySound** (0x4048, {u16 spawn, u16 sound})
   plays the wave where the spawn is, full to 100 and silent past it.
+- **OP_CancelSneakHide** (0x415a, no body): `CEverQuest_CancelSneakHide` (@00537dc9): hiding
+  (`DAT_00798780`, or `DAT_007989e2` 29) ends, `UpdateMyVisibleStatus`, 12337; sneaking ends,
+  12338. **OP_ShopEndConfirm** (0x4146, 2 bytes): the old UI's `EQ_Main::ReleaseMerchant`; the new
+  UI's `CMerchantWnd::Deactivate` (vtable 0x88), which runs whole even when the window's already
+  down (EQMacEmu sends it in answer to our `OP_ShopEnd` too). **OP_BerserkStart** and
+  **OP_BerserkEnd** (0x41a9, 0x41aa, no body) set and clear the local player's ActorInfo+0x42c:
+  `EQ_Character::Str` (@004bafcb) adds level / 10 + 9 for it under 56 Drunkness, or
+  (Drunkness - 40) / 16 from 56; `compute_tohit` (@004b9b96) adds level * 2 / 5 while Drunkness / 2
+  is 20 or under. **OP_GMLastName** (0x416e, {name[64], gm[64], surname[64] @128, u16, i16 @194})
+  and **OP_GMNameChange** (0x40cb, {old[64], gm[64], new[64] @128, u8, u8[3]}): with the u16 at 194
+  not 0, `EQPlayer_get_player` (stricmp, us included) of the first name takes the string at 128
+  as its LastName (`CDisplay_UpdateNameSprite` @004e4651) or Name, ours (`pinstPCData`) too, then
+  its name sprite is remade; both set `EQ_Main`+0xe64. **OP_CorpsePosition** (0x4021, {u16 spawn,
+  u16, float y, x, z}): `CEverQuest_HandleWorldMessage_FloorRelated_` (@004dcdd1) puts any spawn
+  there, its speeds and velocities to 0, its floor from `GetPlayerFloorHeight` at z + 1, and
+  `UpdatePlayerActor`.
 - **What the client tells the zone of its own** (`ZoneSession::SetRunMode`, `SavePC`,
   `ReportEnvDamage`, `SafeFallSuccess`, `TargetGroupBuff`):
   - `OP_SetRunMode` (0x401f, {u8 mode, 3}): `DoPassageOfTime` takes `__RunWalkState` the first time

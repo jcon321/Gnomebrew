@@ -57,7 +57,7 @@ no rules of its own.
      Skills button opening the skills window (`frontend/game_windows.*`), and items picked up, put
      down, split through the quantity window and put away on the character view (`core/inventory.*`).
      Still to do: for stats, resists, AC and ATK, items' worn effects, ATK's buffs, AAs,
-     the Resistant Discipline, drunkenness and berserking; Alt. Advance, icons in the hot button
+     the Resistant Discipline, and drunkenness but for STR; Alt. Advance, icons in the hot button
      window's weapon slots; lore duplicates (`CheckDupLoreItems` @004f13d2, `DelLoreItemDup`
      @004f1266) on an item arriving by trade (msg_trade_final_ieq), theft (msg_steal), the zone
      (msg_snd_ieq) or the start (`CEverQuest::msgStartIcon` @004e0a6d, `msgStartInotes` @004e0d29).
@@ -75,7 +75,7 @@ no rules of its own.
      more than 20 away (checked every 500 ms) close it with "Come back soon!", the inventory if it
      opened it, the quantity window if it was the bank's, and every bag window. Alt shows every
      slot's tooltip. Activate makes us visible (MakeMeVisible) and plays the bank's music
-     (SetMusicSelection 3) until Deactivate. Still to do: Deactivate's SavePC.
+     (SetMusicSelection 3) until Deactivate, which saves (SavePC).
    - Merchant window: done (`frontend/merchant_window.*`, eqgame's CMerchantWnd): the right button
      on a merchant asks for its shop (OP_ShopRequest), the answer opens it with its items
      (OP_ShopInventoryPacket, OP_ShopDelItem) in the scrolling slots, a
@@ -84,8 +84,10 @@ no rules of its own.
      and their answers (the price out of the purse, the sale's coins in and the item gone), Done,
      the close box, Escape and walking away (OP_ShopEnd). Checked live against the server for
      opening, the prices and the welcome; buying and selling only through their refusals (the
-     test character has no coins or anything worth selling). Still to do: a Bazaar trader's
-     (Type 0: OP_TraderShop, OP_TraderBuy), Deactivate's SavePC, and the item display of a
+     test character has no coins or anything worth selling). The zone ending the session
+     (OP_ShopEndConfirm, HandleWorldMessage's 0x4146) runs Deactivate; eqgame's runs again when that
+     answers our own OP_ShopEnd (a second SavePC, the target cleared again), ours not. Still to do: a
+     Bazaar trader's (Type 0: OP_TraderShop, OP_TraderBuy), and the item display of a
      merchant's item (the slots' alt+click goes through the selection now). The right button makes
      us visible (MakeMeVisible) and the window plays the merchant's music (SetMusicSelection 6).
    - Loot window: done (`frontend/loot_window.*`, eqgame's CLootWnd): the right button on a corpse
@@ -95,7 +97,8 @@ no rules of its own.
      the inventory (OP_LootItem, a NO DROP item from another's corpse asking first), the slots
      locked until the zone answers; Done, the close box, Escape and walking away end it
      (OP_EndLootRequest), and the zone's answer, or the corpse gone, closes it. Not checked
-     against a server yet (the test character hasn't killed anything of its own to loot). /lootnodrop sets whether a
+     against a server yet (the test character hasn't killed anything of its own to loot). /loot
+     (@004fb5ae) loots our target (eqstr 13201 with none). /lootnodrop sets whether a
      NO DROP item asks first (`LootNoDrop`). Still to do: the
      items in a corpse's bags (shown only to GMs and on player corpses past the eighth), the
      PvP item (Loot_Request_Type 5) and the mounted check (ActorInfo's AttachedEntity; no mounts
@@ -293,15 +296,17 @@ no rules of its own.
    clip plane, the windows' global fades) is done; still to do there: Video Modes (CVideoModesWnd)
    and Level of Detail's effect (s3dSetDynamicLOD: models are always drawn whole); Gamma does
    nothing, as in eqgame windowed. Still to do: the Mouse page, which shows empty
-   (InitKeyboardAssignments' mouse settings); the combo boxes' list colors
-   (CComboWnd::SetColors 0xff808080, on the Keyboard and Filters pages); the reverb's drugged room (23) while stunned (StunMe;
+   (InitKeyboardAssignments' mouse settings); the reverb's drugged room (23) while stunned (StunMe;
    OP_Stun isn't ours) or drunk at 40 and over (DoPassageOfTime's drunkenness wearing off isn't
    ours); the Keyboard page's
    temporary red rows (commands not yet done) go once every command is done.
    A combo box's list that's down takes any press (CXWndManager's 0x34): off it, the list goes
-   and the press goes no further. Still to do: its scrollbar when ListHeight cuts it short
-   (InsertChoice sets CListWnd style 1; no combo box in the default options window gets there),
-   and its own selected row color (ours the dark blue bar). Scrollbars
+   and the press goes no further. Its list draws the choice on the select color and the row under
+   the mouse in the hover color (style 0x10000), CListWnd's or CComboWnd::SetColors' (white, yellow
+   and gray on every options page's combo box). Still to do: its scrollbar when ListHeight cuts it
+   short (InsertChoice sets CListWnd style 1; no combo box in the default options window gets
+   there), and SetColors' text color for the box itself (CComboWnd+0x68; white either way here).
+   Scrollbars
    step by pixels in eqgame, not rows: a press on an arrow is HandleVScroll 0 or 2
    (adjustScrollPosition @005744d0: 2 pixels; CListWnd's @0057c780 the same, then its update), and
    CXWndManager::ProcessWindowTransitions (@005a07d0) calls it again (1 or 3) every frame while the
@@ -452,7 +457,10 @@ no rules of its own.
       food or drink, running and moving (DAT_0079856d), or swimming (water types 5..10); down 10
       when it hasn't changed since the last call and we're fed and watered; 0 under DAT_00798560
       or DAT_00798620. Ours only goes up by swings and comes down by the zone's OP_Stamina;
-    - berserking: OP_BerserkStart and OP_BerserkEnd (0x41a9, 0x41aa) aren't handled;
+    - berserking: OP_BerserkStart and OP_BerserkEnd (0x41a9, 0x41aa; ActorInfo+0x42c) set
+      `ZoneSession::Berserk`, which STR (`EQ_Character::Str`: level / 10 + 9 under 56 drunk) and ATK
+      (`compute_tohit`: level * 2 / 5 while Drunkness / 2 is 20 or under) count. Past that,
+      compute_tohit takes a value of the drunkenness the decompile loses (an `__ftol`), not ours;
     - the blood of our crushing, slashing, piercing, backstab and bash hits (SpurtBloodOnDag);
     - ReportDeath's duel ending (eqstr 12100, 12101), a group member's HP, the tracking window; our
       death's first person view (still standing height), KnockedOut's "You have been knocked
@@ -565,19 +573,18 @@ no rules of its own.
       (`OP_Surname` from `ProcessYes`), and the gems game (`CGemsGameWnd` @0041cd06, /gems).
 35. **The other slash commands** that still say they aren't supported, not under another item
     (/split, `CEverQuest_DoSplit`, and /yell with `msg_yell`'s directions are done; /split doesn't
-    close the windows DoSplit puts away, `DAT_007914a4` and `DAT_007952f4`): /shield (@004fd688, `OP_Shielding`), /discipline (@004f4fb5,
-    `OP_Discipline`; `OP_DisciplineChange` back), /surname, /stopsong, /language,
+    close the windows DoSplit puts away, `DAT_007914a4` and `DAT_007952f4`. /loot, /charinfo
+    (`FullZoneName` of the bind), /ttell (@004f839a: the target's name to its apostrophe, eqstr 13090
+    for a name with '#' or '_' but an NPC corpse's), /movelog (@004fba78: "yes" sends MSG_MOVELOG,
+    0x41e4, which EQMacEmu ignores) and /stopsong (@004f5c74: a bard's StopSpellCast2) are done too;
+    /ttell's `send_tell` also stops on `DAT_007985f1`, as the socials do, not known): /shield
+    (@004fd688, `OP_Shielding`), /discipline (@004f4fb5,
+    `OP_Discipline`; `OP_DisciplineChange` back), /surname, /language,
     /dismount, /facepick, /hotbutton, /alias, /log, /note, /keys, /quit and /exit, the chat
     channels (/join, /leave, /leaveall, /list, /announce, /autojoin, /1../10, /chat,
     /toggletell), and the client settings (/wincolor, /resetwindows, /chatfontsize, /invwinlabels,
     /particledensity, /showspelleffects, /mousespeed, /viewport, /showgrass, /dynamiclights,
     /mixahead, /reverb, /reversesound, /vrdelay, /audiodebug, /dopropertinting, /newui). Also:
-    - /loot (@004fb5ae): `CEverQuest_LootCorpse` on the target, eqstr 0x3391 with none.
-    - /charinfo (@004f4a7a): the bind's zone (`EQWorldData::GetFullZoneName`), eqstr 0x32a7.
-    - /ttell (@004f839a): a tell to the target (`send_tell`), eqstr 0x3322 without one.
-    - /height (@004f47b8): OP_SpawnAppearance 29 (size) for the target, `EQPlayer::ChangeHeight`,
-      eqstr 0x32a3 and 0x32a4.
-    - /movelog (@004fba78): 0x41e4 to the zone, eqstr 0x33a3 and 0x33a4.
     - /mcicontrol (@004ff739, `mciSendStringA` with the line, the error printed), /webupdate
       (@004f3951, 0x423c with the text) and /edit (@004fa6fc, `EQ_Guide::Edit`, the old UI's):
       kept out unless asked.
@@ -587,9 +594,17 @@ no rules of its own.
     /searchcorpse, /delcorpse, /emotezone, /servers, /find, /broadcast, /lastname, /approval and the
     `OP_GM*` packets; the petition queue (`CPetitionQWnd` @0042d1ca, `msg_pq_update` @004dce71,
     /viewpetition, /deletepetition); soulmarks (`CSoulmarkWnd` @00433258, /inquire, /praise,
-    /warn, `OP_SoulMarkAdd`, `OP_SoulMarkList`, `OP_SoulMarkUpdate`).
-37. **What the zone sends that isn't handled yet** (`OP_ManaUpdate`, `OP_PlaySound` and
-    `OP_DespawnDoor` are done): `OP_Charm`, `OP_Reward`, `OP_MultiLineMsg`, `OP_ResetSkill`, `OP_SetTitle`,
+    /warn, `OP_SoulMarkAdd`, `OP_SoulMarkList`, `OP_SoulMarkUpdate`); /height (@004f47b8, GM level
+    4): the target's (or our) height to the number typed, said (eqstr 0x32a4) and sent as 0x40f5
+    {spawn id, 29 (size), the height}, or with `DAT_00798560` or `DAT_00798620` said (0x32a3) and
+    changed here (`EQPlayer::ChangeHeight`).
+37. **What the zone sends that isn't handled yet** (`OP_ManaUpdate`, `OP_PlaySound`,
+    `OP_DespawnDoor`, `OP_CancelSneakHide` (`CEverQuest_CancelSneakHide`), `OP_ShopEndConfirm` (the
+    merchant window's Deactivate), `OP_BerserkStart` and `OP_BerserkEnd` (under 24),
+    `OP_CorpsePosition` (`CEverQuest_HandleWorldMessage_FloorRelated_`: the spawn put there,
+    stopped, and dropped to the floor) and `OP_GMLastName` and `OP_GMNameChange` (the spawn's, and
+    our profile's, surname or name, and the name over their head) are done; the two name changes
+    also set `EQ_Main`+0xe64 (`DAT_007f9574`), not known): `OP_Charm`, `OP_Reward`, `OP_MultiLineMsg`, `OP_ResetSkill`, `OP_SetTitle`,
     `OP_FreezeClientControl`, `OP_UnfreezeClientControl` and `OP_ReturnClientControl`,
     `OP_RequestClientZoneChange` (a zone change the server asks for), and boats: boarding and
     leaving (`OP_BoardBoat` and 0x41bc from `DoPassageOfTime` on a boat's spawn), `OP_ControlBoat`,
@@ -597,16 +612,8 @@ no rules of its own.
     sent by EQMacEmu and dropped here:
     - `OP_Illusion` (0x4091, `Mob::SendIllusionPacket`): any spawn's new race, gender, texture and
       face (`EQPlayer::do_change_form` @005074fa); an illusioned spawn keeps its old look now.
-    - `OP_CancelSneakHide` (0x415a, `Mob::CommonBreakSneakHide`): the zone ending our hide and
-      sneak (casting, being hit...); ours ends them only for what we see ourselves
-      (`Abilities::CancelSneakHide`).
     - `OP_SpellTextMessageStringID` (0x4241, `EntityList::SpellTextMessageClose_StringID`): others'
       spell messages by string id.
-    - `OP_CorpsePosition` (0x4021, `Mob::SendRealPosition` for a corpse): a corpse moved or summoned.
-    - `OP_ShopEndConfirm` (0x4146, `Client::SendMerchantEnd`): the zone ending a merchant session
-      itself; eqgame's `EQ_Main::ReleaseMerchant` closes the window.
-    - `OP_GMLastName` (0x416e) and `OP_GMNameChange` (0x40cb): someone's surname or name changed,
-      for everyone in the zone (not only a GM's business, so not left to 36).
     - Not sent by EQMacEmu (no `OP_` name in `patch_Mac.conf`; their original names from
       `../my-eqmac-server/server/utils/structs/opcodes.h`, byte-swapped): 90 more opcodes eqgame's
       dispatchers handle. EQMacEmu does most of their jobs through other packets (MSG_GSAY,

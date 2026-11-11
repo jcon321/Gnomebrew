@@ -1919,6 +1919,22 @@ void SidlWindow::DrawStml(const Control &control, Canvas &canvas, TextRenderer &
 void SidlWindow::UpdateListHover(int mouse_x, int mouse_y)
 {
 	for (Control &control : m_controls) {
+		if (control.def->type == "Combobox") {
+			// Its list while it's down: a CListWnd of style 0x110000 (CComboWnd::CComboWnd).
+			control.hover_row = -1;
+			if (!control.list_open || m_minimized)
+				continue;
+			Rect list = ComboListRect(control);
+			int left = 0, top = 0, right = 0, bottom = 0;
+			ComboListInsets(control, left, top, right, bottom);
+			Rect inside{list.x + left, list.y + top, list.w - left - right, list.h - top - bottom};
+			if (!inside.Contains(mouse_x, mouse_y))
+				continue;
+			int row = (mouse_y - inside.y) / std::max(SidlFontHeight(control.def->font), 1);
+			if (row < static_cast<int>(control.choices.size()))
+				control.hover_row = row;
+			continue;
+		}
 		if (control.def->type != "Listbox")
 			continue;
 		control.hover_row = -1;
@@ -2093,8 +2109,10 @@ void SidlWindow::DrawCombo(const Control &combo, Canvas &canvas, TextRenderer &t
 void SidlWindow::DrawComboList(const Control &combo, Canvas &canvas, TextRenderer &text, SidlTextures &textures,
 	uint64_t now_ms) const
 {
-	// Its CListWnd: the combo box's DrawTemplate around it, a line a choice, the choice showing
-	// highlighted (CListWnd's current selection; ours the same dark blue as a list's selected row).
+	// Its CListWnd: the combo box's DrawTemplate around it, a line a choice; with its style's 0x10000
+	// (CComboWnd::CComboWnd), the choice (its current selection) on the select color, 2 pixels
+	// wider each side within the list (DrawLine), and the row under the mouse in the hover color
+	// (DrawItem). CListWnd's white, yellow and red unless SetColors changed them.
 	Control list = combo;
 	list.rect = ComboListRect(combo);
 	int left, top, right, bottom;
@@ -2108,9 +2126,10 @@ void SidlWindow::DrawComboList(const Control &combo, Canvas &canvas, TextRendere
 	int y = list.client.y;
 	for (int i = 0; i < static_cast<int>(combo.choices.size()) && y < list.client.Bottom(); ++i, y += height) {
 		if (i == combo.choice)
-			canvas.Fill({list.client.x, y, list.client.w, height}, 0x203c6c);
+			canvas.Fill(Intersect({list.client.x - 2, y, list.client.w + 4, height}, list.client), combo.select_color);
 		TextSize size = text.Measure(combo.choices[i], height, weight);
-		text.Draw(canvas, list.client.x + 2, y + (height - size.h) / 2, combo.choices[i], height, 0xffffff, weight);
+		uint32_t color = i == combo.hover_row ? combo.hover_color : combo.row_color;
+		text.Draw(canvas, list.client.x + 2, y + (height - size.h) / 2, combo.choices[i], height, color, weight);
 	}
 }
 

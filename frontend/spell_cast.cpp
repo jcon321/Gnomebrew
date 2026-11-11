@@ -92,6 +92,12 @@ void SpellCast::GemClicked(int gem, uint64_t now_ms)
 		Say(12029, "You haven't recovered yet...", ChatType::Spells);
 }
 
+void SpellCast::StopSong()
+{
+	if (m_zone && m_zone->Profile().class_id == Bard)
+		StopSpellCast(0, m_spell);
+}
+
 bool SpellCast::CastSpell(int gem, uint64_t now_ms)
 {
 	const ZoneProfile &me = m_zone->Profile();

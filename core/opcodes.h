@@ -230,6 +230,24 @@ namespace ZoneOp
 	constexpr uint16_t DespawnDoor = 0x409b;
 	// Sound_Struct {u16 spawn id, u16 sound}: the wave played at the spawn, 100 out (WavePlay).
 	constexpr uint16_t PlaySound = 0x4048;
+	// No body: the zone ends our hide and sneak (HandleWorldMessage's 0x415a, CEverQuest_CancelSneakHide).
+	constexpr uint16_t CancelSneakHide = 0x415a;
+	// No body: we're berserk, or no longer (0x41a9, 0x41aa: ActorInfo+0x42c, which EQ_Character::Str
+	// and compute_tohit read).
+	constexpr uint16_t BerserkStart = 0x41a9;
+	constexpr uint16_t BerserkEnd = 0x41aa;
+	// GMLastName_Struct {char name[64], char gm[64] @64, char surname[64] @128, u16 @192, i16
+	// response @194}: someone's surname changed (HandleWorldMessage's 0x416e, CDisplay_UpdateNameSprite
+	// @004e4651), when the response isn't 0.
+	constexpr uint16_t GMLastName = 0x416e;
+	// GMName_Struct {char old[64], char gm[64] @64, char new[64] @128, u8 badname @192, u8[3]}:
+	// someone's name changed (HandleWorldMessage's 0x40cb), when the u16 at 194 isn't 0.
+	constexpr uint16_t GMNameChange = 0x40cb;
+	// CorpsePosition_Struct {u16 spawn id, u16, float y @4, x @8, z @12}: a corpse put somewhere
+	// (HandleWorldMessage's 0x4021, CEverQuest_HandleWorldMessage_FloorRelated_ @004dcdd1).
+	constexpr uint16_t CorpsePosition = 0x4021;
+	// No body (/movelog yes): MSG_MOVELOG, a move to a less crowded server. EQMacEmu has no handler.
+	constexpr uint16_t MoveLog = 0x41e4;
 	// Guilds. GuildCommand_Struct (136 bytes) {char other[64], char me[64] @64, i16 guild @128, u16,
 	// u32 rank @132}: ours to invite or promote (CEverQuest::GuildInvite) and remove
 	// (CEverQuest_GuildRemove); the zone's invite to us (msg_invite_guild: us, then the inviter).
@@ -468,6 +486,13 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::ManaUpdate, "OP_ManaUpdate"},
 	{ZoneOp::DespawnDoor, "OP_DespawnDoor"},
 	{ZoneOp::PlaySound, "OP_PlaySound"},
+	{ZoneOp::CancelSneakHide, "OP_CancelSneakHide"},
+	{ZoneOp::BerserkStart, "OP_BerserkStart"},
+	{ZoneOp::BerserkEnd, "OP_BerserkEnd"},
+	{ZoneOp::GMLastName, "OP_GMLastName"},
+	{ZoneOp::GMNameChange, "OP_GMNameChange"},
+	{ZoneOp::CorpsePosition, "OP_CorpsePosition"},
+	{ZoneOp::MoveLog, "OP_MoveLog"},
 	{ZoneOp::GuildInvite, "OP_GuildInvite"},
 	{ZoneOp::GuildRemove, "OP_GuildRemove"},
 	{ZoneOp::GuildInviteAccept, "OP_GuildInviteAccept"},

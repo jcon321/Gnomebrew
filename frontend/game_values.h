@@ -12,8 +12,9 @@
 //           our buffs' names
 // Others draw an empty gauge and keep a label's own text.
 // Our buffs count (TotalSpellAffects) in the stats, the resists, AC and max mana, as eqgame adds
-// them. What none of these count yet: items' worn effects, AAs, being drunk or berserk, and the
-// skill caps (GetSkillLimit: the zone keeps our skills to them).
+// them. Being berserk (OP_BerserkStart) counts in STR and ATK, being drunk in STR. What none of
+// these count yet: items' worn effects, AAs, being drunk (but STR), and the skill caps
+// (GetSkillLimit: the zone keeps our skills to them).
 
 #include "sidl.h"
 #include "zone_session.h"
@@ -91,7 +92,8 @@ public:
 	int AntiTwinkAdj(const ZoneItem &item, int value) const;
 	// A stat (5..11, as the labels number them) with what worn items add (AntiTwinkAdj), the
 	// food and drink we'd eat next (FoodAndDrink) and our buffs (EQ_Character::Str @004bafcb...:
-	// TotalSpellAffects 4..10), 1..255, and its base. AGI (EQ_Character::Agi @004bb5d8) is then
+	// TotalSpellAffects 4..10), 1..255, and its base. STR has berserk's level / 10 + 9 under 56
+	// drunk, or from there (Drunkness - 40) / 16. AGI (EQ_Character::Agi @004bb5d8) is then
 	// brought down by encum_factor.
 	int Stat(int eq_type, int &base) const;
 	// EQ_Character::save_poison, save_disease, save_fire, save_cold and save_magic (@004bae34,
@@ -122,7 +124,8 @@ public:
 	int Ac(bool buffs = true) const;
 	// CalcATKValue (@0043655a): the inventory window's ATK, (offense + compute_tohit) * 1000 / 744,
 	// with the primary's skill (hand to hand without a weapon there). compute_tohit (@004b9b96):
-	// offense (the skill) + 7 and the weapon's skill. offense (@004b9dda): the weapon's skill,
+	// offense (the skill) + 7 and the weapon's skill, and berserk's level * 2 / 5 while Drunkness /
+	// 2 is 20 or under (past it, an unknown value of the drunkenness instead: not ours). offense (@004b9dda): the weapon's skill,
 	// (STR * 2 - 150) / 3 for STR over 74 (DEX for archery and throwing), and a ranger's level * 4
 	// - 216 above 54.
 	int Atk() const;

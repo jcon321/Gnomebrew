@@ -207,6 +207,16 @@ int GameValues::Stat(int eq_type, int &base) const
 		if (slot >= FirstWornSlot && slot <= LastWornSlot && item.item_class == 0)
 			value += AntiTwinkAdj(item, item.*field);
 	value += FoodAndDrink(zone->Items(), field);
+	if (eq_type == 5) {
+		// EQ_Character::Str: berserk (OP_BerserkStart) adds level / 10 + 9 while we're under 56
+		// drunk; from 56, being drunk adds (Drunkness - 40) / 16 instead.
+		if (p.drunk < 56) {
+			if (zone->Berserk())
+				value += p.level / 10 + 9;
+		}
+		else if ((p.drunk - 40) / 16 > 0)
+			value += (p.drunk - 40) / 16;
+	}
 	if (buffs)
 		value += static_cast<int16_t>(buffs->Total(spa));
 	if (eq_type == 8)
@@ -441,7 +451,12 @@ int GameValues::Atk() const
 	if (primary != zone->Items().end() && primary->second.item_class == 0 && IsWeapon(primary->second))
 		skill = SkillUsed(primary->second.item_type);
 
-	int tohit = std::max(Skill(33) + 7 + Skill(skill), 1);
+	// compute_tohit: berserk adds level * 2 / 5 while Drunkness / 2 is 20 or under. Past that eqgame
+	// puts something of the drunkenness in its place (an __ftol of a value the decompile loses).
+	int tohit = Skill(33) + 7 + Skill(skill);
+	if (me.drunk / 2 <= 20 && zone->Berserk())
+		tohit += me.level * 2 / 5;
+	tohit = std::max(tohit, 1);
 
 	int base = 0;
 	int stat = skill == 7 || skill == 51 ? Stat(7, base) : Stat(5, base);

@@ -20,7 +20,7 @@ namespace
 		Random, LootNoDrop, FastDrop, AutoSplit, Roleplay, TargetGroupBuff, Split, Yell, Consent, Social, Attack, CombatMusic, DoAbility, Filter, ServerFilter, Invite, Disband, Who, WhoTarget, Follow, MakeLeader, Lfg,
 		UserColor, GuildInvite, GuildRemove, GuildDelete, GuildStatus, GuildLeader, GuildWar, GuildPeace, GuildMotd,
 		MakeRaidLeader, RaidInvite, RaidDecline, RaidAccept, RaidDisband, SetLootType, AddRaidLooter, RemoveRaidLooter,
-		RaidSay, RaidWindow, Channel,
+		RaidSay, RaidWindow, Channel, Loot, TargetTell, CharInfo, MoveLog, StopSong,
 	};
 
 	struct CommandEntry
@@ -37,10 +37,10 @@ namespace
 		{"/anonymous", 0, Command::Anonymous}, {"/afk", 0, Command::Afk}, {"/filter", 0, Command::Filter},
 		{"/assist", 0, Command::Assist}, {"/duel", 0, Command::None}, {"/decline", 0, Command::None},
 		{"/split", 0, Command::Split}, {"/autosplit", 0, Command::AutoSplit}, {"/quit", 0, Command::None},
-		{"/stopsong", 0, Command::None}, {"/friends", 0, Command::None}, {"/shield", 0, Command::None},
+		{"/stopsong", 0, Command::StopSong}, {"/friends", 0, Command::None}, {"/shield", 0, Command::None},
 		{"/shownames", 0, Command::ShowNames}, {"/shownpcnames", 10, Command::None}, {"/emote", 0, Command::Emote},
 		{":", 0, Command::Emote}, {"/say", 0, Command::Say}, {"'", 0, Command::Say}, {"/tell", 0, Command::Tell},
-		{"/msg", 0, Command::Tell}, {"/send", 0, Command::Tell}, {"/ttell", 0, Command::None}, {"/gsay", 0, Command::Group},
+		{"/msg", 0, Command::Tell}, {"/send", 0, Command::Tell}, {"/ttell", 0, Command::TargetTell}, {"/gsay", 0, Command::Group},
 		{"/shout", 0, Command::Shout}, {"/auction", 0, Command::Auction}, {"/ooc", 0, Command::Ooc},
 		{"/reply", 0, Command::Reply}, {"/channel", 0, Command::Channel}, {"/guildsay", 0, Command::Guild},
 		{"/guildinvite", 0, Command::GuildInvite}, {"/guildremove", 0, Command::GuildRemove},
@@ -89,11 +89,11 @@ namespace
 		{"/broadcast", 4, Command::None}, {"/lastname", 4, Command::None}, {"/zone", 3, Command::None},
 		{"/kick", 4, Command::None}, {"/kill", 3, Command::None}, {"/delcorpse", 8, Command::None},
 		{"/hideme", 3, Command::None}, {"/servers", 3, Command::None}, {"/height", 4, Command::None},
-		{"/exit", 0, Command::None}, {"/loot", 0, Command::None}, {"/roleplay", 0, Command::Roleplay},
+		{"/exit", 0, Command::None}, {"/loot", 0, Command::Loot}, {"/roleplay", 0, Command::Roleplay},
 		{"/follow", 0, Command::Follow}, {"/report", 0, Command::None}, {"/surname", 0, Command::None},
 		{"/log", 0, Command::None}, {"/toggletell", 3, Command::None}, {"/inquire", 3, Command::None},
 		{"/praise", 3, Command::None}, {"/warn", 3, Command::None}, {"/edit", 3, Command::None},
-		{"/voice", 0, Command::None}, {"/microphone", 0, Command::None}, {"/movelog", 0, Command::None},
+		{"/voice", 0, Command::None}, {"/microphone", 0, Command::None}, {"/movelog", 0, Command::MoveLog},
 		{"/hidecorpses", 0, Command::None}, {"/vrdelay", 0, Command::None}, {"/reverb", 0, Command::None},
 		{"/fastdrop", 0, Command::FastDrop}, {"/trackplayers", 0, Command::None}, {"/help", 0, Command::None},
 		{"/lfg", 0, Command::Lfg}, {"/approval", 4, Command::None}, {"/sit", 0, Command::Sit},
@@ -108,7 +108,7 @@ namespace
 		{"/tracksort", 0, Command::None}, {"/trackfilter", 0, Command::None}, {"/mousespeed", 0, Command::None},
 		{"/gems", 0, Command::None}, {"/inspect", 0, Command::None}, {"/serverfilter", 0, Command::ServerFilter},
 		{"/showspelleffects", 0, Command::None}, {"/combatmusic", 0, Command::CombatMusic}, {"/mixahead", 0, Command::None},
-		{"/guildmotd", 0, Command::GuildMotd}, {"/charinfo", 0, Command::None}, {"/safelock", 0, Command::None},
+		{"/guildmotd", 0, Command::GuildMotd}, {"/charinfo", 0, Command::CharInfo}, {"/safelock", 0, Command::None},
 		{"/alternateadv", 0, Command::None}, {"/targetgroupbuff", 0, Command::TargetGroupBuff}, {"/tgb", 0, Command::TargetGroupBuff},
 		{"/hotbutton", 0, Command::None}, {"/particledensity", 0, Command::None}, {"/facepick", 0, Command::None},
 		{"/dismount", 0, Command::None}, {"/rtarget", 0, Command::None}, {"/showgrass", 0, Command::None},
@@ -1308,6 +1308,55 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 		// /yell (@004f82ea): said in red, then OP_YellForHelp; the zone tells those near.
 		ChatOut(format(13087, "You yell for help.", {}), ChatType::Red);
 		m_zone.YellForHelp();
+		break;
+	case Command::TargetTell: {
+		// /ttell (@004f839a): with something to say and a target, a tell to the target's name (cut at
+		// an apostrophe: a player's corpse is its owner's). Anything but an NPC corpse needs a name
+		// with no '#' or '_' in it (so an NPC with neither passes); an NPC corpse only a name.
+		// Ourselves too (F1): we're not among Spawns().
+		const ZoneSpawn *who = target != spawns.end() ? &target->second
+		                       : Target() != 0 && Target() == m_zone.MySpawnId() ? &m_zone.Self()
+		                                                                         : nullptr;
+		if (args.empty() || !who)
+			break;
+		std::string to = who == &m_zone.Self() ? me.name : who->name;
+		bool ok = !to.empty() && who->npc != 1;
+		if (who->npc != 3) {
+			ok = to.find('#') == std::string::npos && to.find('_') == std::string::npos;
+			if (size_t quote = to.find('\''); quote != std::string::npos)
+				to.resize(quote);
+		}
+		if (!ok)
+			ChatOut(format(13090, "You must have another person or a corpse targeted to send a targeted tell.", {}),
+				ChatType::Default);
+		else if (Lower(to) == Lower(me.name)) // send_tell: EQPlayer_get_player is us
+			ChatOut(format(12323, "Talking to yourself again?", {}), ChatType::Default);
+		else
+			m_zone.SendChannel(7, to, PercentConvert(args));
+		break;
+	}
+	case Command::Loot:
+		// /loot (@004fb5ae): CEverQuest_LootCorpse on our target.
+		if (Target() == 0)
+			ChatOut(format(13201, "You must first target a corpse to loot!", {}), ChatType::Default);
+		else
+			m_loot.LootCorpse(Target());
+		break;
+	case Command::CharInfo:
+		// /charinfo (@004f4a7a): the zone we're bound in (EQWorldData::GetFullZoneName).
+		ChatOut(format(12967, "You are currently bound in: %1", {FullZoneName(me.bind_zone, m_ui.eqstr)}), ChatType::Default);
+		break;
+	case Command::MoveLog:
+		// /movelog (@004fba78): "yes" (the whole of it, any case) asks the server to move our
+		// characters (MSG_MOVELOG); anything else says how.
+		if (Lower(args) == Lower(format(13219, "yes", {})))
+			m_zone.MoveLog();
+		else
+			ChatOut(format(13220, "If you wish have all of your characters permanently moved to a less crowded server, type '/movelog yes' (without the quotes).", {}),
+				ChatType::Default);
+		break;
+	case Command::StopSong:
+		m_spell_cast.StopSong(); // /stopsong (@004f5c74)
 		break;
 	case Command::Consent:
 		// /consent (@004fb39e): the rest of the line as the name, if there is any.

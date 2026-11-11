@@ -71,6 +71,9 @@ public:
 
 	// HandleSpellLeftClick, without a book spell on the cursor.
 	void GemClicked(int gem, uint64_t now_ms);
+	// /stopsong (@004f5c74): a bard's StopSpellCast2 (StopSpellCast 0 of whatever's cast, a song
+	// or not, or nothing); anyone else, nothing.
+	void StopSong();
 	// CastSpell for an item's click effect (gem 10, CInvSlot_DoDrinkEatPoison): from the slot it's in.
 	bool CastItem(const ZoneItem &item, int16_t slot, uint64_t now_ms);
 	// The zone's: ZoneSession::Event's SpellMemorized, SpellForgotten, SpellRecast, ManaChanged.

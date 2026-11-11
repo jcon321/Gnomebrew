@@ -115,6 +115,9 @@ public:
 	void Hit();
 	// EQ_Character::MakeMeVisible: visible again, and CancelSneakHide.
 	void MakeMeVisible();
+	// CEverQuest_CancelSneakHide (@00537dc9): hiding and sneaking end, each said; also the zone's
+	// OP_CancelSneakHide.
+	void CancelSneakHide();
 	bool Busy() const { return m_busy > 0; }   // DAT_007d0254
 	bool Hidden() const { return m_hidden; }   // DAT_00798780
 	int Activity() const { return m_activity; } // DAT_007989e2: 9 bandaging, 29 hiding, 53 tracking, 55 fishing
@@ -131,7 +134,6 @@ private:
 	// EQ_Character::UpdateMyVisibleStatus: our VisibilityState from hiding and the invisibility
 	// buffs, the ones that don't fit it taken off and the zone told when it changed.
 	void UpdateMyVisibleStatus();
-	void CancelSneakHide();          // CEverQuest_CancelSneakHide
 	void DoFishingEvent(uint64_t now_ms);
 	// FindItemBySkillId: the first item of a type in slots 0..29 or their bags; false none.
 	bool FindItemByType(int type, int16_t &slot, int &bag_slot) const;

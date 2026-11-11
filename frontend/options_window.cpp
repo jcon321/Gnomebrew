@@ -111,6 +111,17 @@ namespace
 	constexpr uint32_t NotImplementedColor = 0xff0000;
 }
 
+namespace
+{
+	// CComboWnd::SetColors (@005a1720), as COptionsWnd's constructor calls it.
+	void SetComboColors(SidlWindow::Control &combo)
+	{
+		combo.row_color = 0xffffff;
+		combo.hover_color = 0xffff00;
+		combo.select_color = 0x808080;
+	}
+}
+
 void OptionsWindow::Attach(WindowManager &windows, KeyBindings &keys, Host host)
 {
 	m_windows = &windows;
@@ -133,6 +144,15 @@ void OptionsWindow::Attach(WindowManager &windows, KeyBindings &keys, Host host)
 		}
 	if (SidlWindow::Control *list = wnd->Find(AssignmentList))
 		list->header_color = 0x8aa3ff; // COptionsWnd::COptionsWnd: the list's +0x14c, 0xff8aa3ff
+	// COptionsWnd::COptionsWnd: every page's combo boxes SetColors(white, yellow, gray), their lists'
+	// text, the row under the mouse and the choice's bar.
+	for (const char *id : {PlayerTradeCombo, ItemDroppingCombo, SkyCombo, SpellDensityCombo, SpellNearClipCombo,
+	         ParticleDensityCombo, FilterCombo})
+		if (SidlWindow::Control *combo = wnd->Find(id))
+			SetComboColors(*combo);
+	for (const ChatCombo &chat : ChatCombos)
+		if (SidlWindow::Control *combo = wnd->Find(chat.id))
+			SetComboColors(*combo);
 	// UpdateKeyboardAssignmentList: the first category.
 	if (SidlWindow::Control *combo = wnd->Find(FilterCombo))
 		combo->choice = 0;
