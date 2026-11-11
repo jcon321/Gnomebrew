@@ -888,6 +888,18 @@ namespace
 		h.RunUntil([] { return false; }, 1500);
 		chat();
 		ui("removed");
+		// The chat window's default channel: the raid again, then plain text to it, a tell and say;
+		// and camping out in the raid (OP_GroupDisband and OP_RaidInvite 5 after OP_LogoutReply).
+		type("/target Claudebot");
+		click(RaidWindow::Screen, "Raid_InviteButton");
+		h.RunUntil([&] { return raid.Count() >= 2; }, 10000);
+		h.RunUntil([] { return false; }, 1500);
+		chat();
+		for (const char *line : {"/channel", "/channel nowhere", "/channel rs", "to the raid by default", "/channel tell Claudebot",
+		                         "a tell by default", "/channel gsay", "/channel say", "said by default"})
+			type(line);
+		h.RunUntil([] { return false; }, 1000);
+		chat();
 		type("/camp");
 		h.RunUntil([&] { return zone.GetState() != ZoneSession::State::InZone && zone.GetState() != ZoneSession::State::Camping; },
 			40000);

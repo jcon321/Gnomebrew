@@ -1078,7 +1078,7 @@ bool ZoneSession::GroupMakeLeader(const std::string &member)
 
 bool ZoneSession::RaidCommand(uint32_t action, const std::string &first, const std::string &second, int32_t param)
 {
-	if (m_state != State::InZone)
+	if (m_state != State::InZone && !m_logout_pending)
 		return false;
 	std::vector<uint8_t> body(0x88, 0);
 	std::memcpy(body.data(), &action, 4);
@@ -1102,7 +1102,7 @@ bool ZoneSession::SendLfg(bool on)
 
 bool ZoneSession::GroupDisband(const std::string &name)
 {
-	if (m_state != State::InZone)
+	if (m_state != State::InZone && !m_logout_pending)
 		return false;
 	std::vector<uint8_t> body(128, 0);
 	PutName(body, 0, name);
@@ -3373,8 +3373,9 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		m_state = State::LoggedOut;
 		Log("[zone]    logged out");
 		events.push_back({Event::Type::LoggedOut});
-		if (m_session)
-			m_session->Close();
+		// Still open for what eqgame sends after DoMainLoop ends (ProcessGameLoop's 0xca: the group
+		// and raid left); FinishLogout, or the next Pump, closes it.
+		m_logout_pending = true;
 		break;
 	default:
 		break;
@@ -3404,8 +3405,18 @@ bool ZoneSession::NextReplayed(uint16_t &opcode, std::vector<uint8_t> &data)
 	return false;
 }
 
+void ZoneSession::FinishLogout()
+{
+	if (!m_logout_pending)
+		return;
+	m_logout_pending = false;
+	if (m_session)
+		m_session->Close();
+}
+
 void ZoneSession::Pump(int timeout_ms, std::vector<Event> &events)
 {
+	FinishLogout();
 	if ((!m_session && !m_replay) || m_state == State::Idle || m_state == State::Failed || m_state == State::LoggedOut)
 		return;
 

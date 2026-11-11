@@ -40,8 +40,8 @@
 //     UpdateOptionsWindow @0049ea1c), and SetTargetRaidPlayer (@0049d2c2): a member clicked there
 //     is the selection the leader's Disband, Make Leader and looter commands act on, red in the
 //     list, and /target of them; UpdateClassColor (@0049e46a), a class color picked.
-// Not ours: on camping out eqgame's last RemoveRaidMember (ProcessGameLoop's 0xca, after our
-// session's closed).
+//   - ProcessGameLoop's 0xca, a camp's end: SetTargetRaidPlayer(0) and RemoveRaidMember in a raid,
+//     then ResetRaid (FrontEnd's LoggedOut, before the zone session closes).
 
 #include "zone_session.h"
 

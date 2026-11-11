@@ -40,8 +40,8 @@
 //   - the raid's say (frontend/raid.*): CEverQuest_Invite only as one of its group leaders (5087),
 //     doInvite's 4 (asked to a raid) and 5 (in a raid, the inviter not in it or we lead a group of
 //     it), and msg_wldgroup's 7 and 9 dropping a raid invitation (CRaid::ResetFromDeath).
-// Not ours: on camping out eqgame's last CEverQuest_Disband (ProcessGameLoop's 0xca, after our
-// session's closed).
+//   - ProcessGameLoop's 0xca, a camp's end: the selection and invitation gone and CEverQuest_Disband
+//     (FrontEnd's LoggedOut, before the zone session closes).
 
 #include "zone_session.h"
 

@@ -549,6 +549,11 @@ private:
 	// __LastTell: who sent us tells, the newest first, 50 at most (AddNameToTellList); /reply goes
 	// to the first, Cycle reply steps through them (CycleNamesInTellList's DAT_007cf0dc).
 	std::vector<std::string> m_tell_list;
+	// The chat window's default channel for what's typed without a command (CChatWindow+0x140, set
+	// by /channel; CChatManager starts it at DAT_00798598, SetDefaultGameValues' 8, say) and a
+	// tell's name or chat channel's (+0x148).
+	uint8_t m_chat_channel = 8;
+	std::string m_chat_channel_to;
 	int m_tell_index = 0;
 	// A key that opened the chat line (OpenChatLine): its own character, which Windows sends after
 	// the key, isn't typed into it (eqgame's DirectInput key reaches the edit box before the

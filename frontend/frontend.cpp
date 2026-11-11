@@ -4302,8 +4302,20 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			m_weather.Receive(event.id, event.value);
 			break;
 		case Type::LoggedOut:
-			m_group.Clear(); // ProcessGameLoop's "Cleaning up groups"
-			m_raid.Clear();  // and its CRaid::ResetRaid
+			// ProcessGameLoop's "Cleaning up groups" (0xca), before the connection closes: the
+			// selection and invitation gone, CEverQuest_Disband (OP_GroupDisband with our name, grouped
+			// or not), and in a raid SetTargetRaidPlayer(0) and RemoveRaidMember (OP_RaidInvite 5),
+			// then CRaid::ResetRaid.
+			m_group.Unselect();
+			m_group.DropInvitation();
+			m_group.Disband();
+			if (m_raid.InRaid()) {
+				m_raid.Select("");
+				m_raid.Disband();
+			}
+			m_group.Clear();
+			m_raid.Clear();
+			m_zone.FinishLogout();
 			ShowMessage("You have camped.", [this](bool) { EnterStart(); });
 			break;
 		case Type::Error:

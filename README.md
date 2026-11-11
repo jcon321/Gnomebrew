@@ -345,12 +345,26 @@ eqgame's `OP_MoveItem`.
   input line, and the keymap's History up and down (Shift+Up and Shift+Down) bring back the last 40
   lines sent. Commands are looked up in eqgame's own
   table, in its order, so abbreviations work as they do there (`/g` is /gsay, `/s` is /split).
-  So far: /say (or no slash, or `'`), /tell (/msg, /send), /reply, /gsay, /guildsay, /shout,
+  So far: /say (or `'`), /channel, /tell (/msg, /send), /reply, /gsay, /guildsay, /shout,
   /auction, /ooc, /emote (`:`, /me), /hail, /target, /assist, /consider, /location, /time,
   /played, /motd, /afk, /anonymous, /shownames, /sit, /stand, /book, /cast, /camp, /clearchat,
   /random, /lootnodrop, /fastdrop, /autosplit, /roleplay, /targetgroupbuff (/tgb), /split, /yell,
   /consent, /attack, /combatmusic, /doability, the guild commands (see Guilds under In the zone),
-  /filter, /serverfilter and the socials (/smile, /wave and the other 86).
+  the raid commands (see Raids), /filter, /serverfilter and the socials (/smile, /wave and the
+  other 86).
+- **The default channel:** text typed with no command goes where the chat window's default channel
+  says (`CEverquest_InterpretCmd`, after `CChatWindow::WndNotification` puts the window's +0x140 in
+  `DAT_00798598`): 0 /guildsay, 2 /gsay, 4 /auction, 5 /ooc, 7 a /tell to the name at +0x148 (`"%s
+  %s"`), 15 `CRaid_SendRaidChat` (no expansion check, unlike /rsay), 19 /chat to a chat channel,
+  anything else /say; a line starting `/` that isn't a command is 12380 in red. It starts as
+  `DAT_00798598` (`SetDefaultGameValues`: 8, or eqclient.ini's `DefaultChannel`; ours is always 8)
+  and `/channel` (@004f799f) changes it: the word matched whole and without case against eqstr
+  13070 GuildSay, 13071 gsay, 5111 rsay, 13072 tell (the next word the name), 13074 Auction, 13075
+  OOC, 13076 Say, 13077 chat (the next word the channel), or the short forms gu, g, rs, t and auc;
+  13079 "Your default channel for typing is now %1." with the matched string (13073 "Tell to %1",
+  13078 "Chat to Channel %1"); nothing or anything else prints the usage, 13080..13083. The new UI
+  keeps it per chat window (the active one's); the old UI wrote eqclient.ini instead. We have one
+  chat window, and no chat server for 19 (it says /chat isn't supported).
   The rest say they aren't supported yet; a GM's commands act as if they weren't there for
   anyone else.
 - `/consider` sends `OP_Consider` (`OP_ConsiderCorpse` on a corpse) and prints the answer as
@@ -611,8 +625,9 @@ through `eqclient -u clauderobot -p testpass1 --char Claudebot --zone 200 --raid
 /raidwindow, take it with the window's Accept, type them as a member, leave with Disband, then
 /target them and Invite, type them as the leader, click their row, open Options and pick Leader
 Selected, Add and Remove Looter, color warriors through the color picker, Make Leader them and
-Disband, printing the raid, both lists with their colors, the labels and the buttons at each step;
-or `guild`, as Replaytest leading a
+Disband, printing the raid, both lists with their colors, the labels and the buttons at each step,
+then form it again, set the default channel with /channel (rs, tell Claudebot, gsay, say, and
+the usage) typing plain text between, and camp out in the raid; or `guild`, as Replaytest leading a
 guild (one made in the database: rows in `guilds` and `guild_members`, rank 2, an id under the
 server's `Guild:MaxGuilds`, then a server restart), to type each guild command, set and ask for
 the MOTD, answer /guilddelete's question yes (which deletes the guild) and camp; or `skills`, as the account's
@@ -2561,7 +2576,12 @@ A rejected world login gets no error packet. The server just drops the connectio
 - **Server messages:** `0x4236` FormattedMessage carries an `eqstr_en.txt` id and NUL-separated
   arguments.
 - **Camping:** `0x4207` Camp, then `0x4150` Logout 30 seconds later (the server's camp timer), and
-  `0x4159` LogoutReply.
+  `0x4159` LogoutReply. On it `DoMainLoop` ends with 0xca, and before the connection closes
+  `ProcessGameLoop` ("Cleaning up groups") clears the group selection and invitation, calls
+  `CEverQuest_Disband` (`OP_GroupDisband` with our name, grouped or not), and in a raid
+  `SetTargetRaidPlayer(0)` and `RemoveRaidMember` (`OP_RaidInvite` 5 with our name twice), then
+  `ResetRaid`. `ZoneSession` keeps the session open after LogoutReply for these (`FinishLogout`, or
+  the next `Pump`, closes it).
 
 
   ## Thanks

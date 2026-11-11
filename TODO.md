@@ -33,9 +33,9 @@ no rules of its own.
      zone). Checked live with a second
      player (`eqclient --group-invite`, `--group-accept`; `frontend_preview ... group`). The raid's
      branches (5087; doInvite's why 4 and 5; msg_wldgroup 7 and 9's CRaid::ResetFromDeath) ask
-     `frontend/raid.*`. Still to do: the group window's menu (`CGroupWnd::CreateLocalMenu`: its pet gauges toggle, 0x32),
-     CEverQuest_Disband sent as a camp ends (ProcessGameLoop's 0xca; our session's already
-     closed), and AcceptGroupInvite's OP_GroupFollow2 (0x4042) for an invitation that came as
+     `frontend/raid.*`. CEverQuest_Disband goes as a camp ends (ProcessGameLoop's 0xca). Still to do:
+     the group window's menu (`CGroupWnd::CreateLocalMenu`: its pet gauges toggle, 0x32), and
+     AcceptGroupInvite's OP_GroupFollow2 (0x4042) for an invitation that came as
      OP_GroupInvite2 (the zone never hands one on as that; we always send OP_GroupFollow).
    - Buff window: done (`frontend/buffs.*`, `game_windows.cpp`): our buffs from the profile, those
      landing on us (HitBySpell's FindAffectSlot stacking and overwriting), `OP_Buff`, the 6 s tick
@@ -44,7 +44,12 @@ no rules of its own.
      AC, max HP (worked out as `Max_HP` does, not the zone's), max mana and our speed (SoW,
      snares, roots). Still to do: the effects that act as a buff
      lands or fades (levitation, invisibility, see invisible, infravision, illusions, Eye of Zomm,
-     mounts) and a bard's instrument mastery. Alt+click or the right button held on a buff shows its
+     mounts) and a bard's instrument mastery; HitBySpell's own branches: Locate Corpse
+     (`eqspa_locate_corpse` @004cac8a, eqstr 0x309d), the bind's place checks
+     (`InSpecialBindSpot` @004cadbc, `EQWorldData::IsNoBindZone`), the teleport checks
+     (`CDisplay::IsValidTeleport` @004af646, `EQPlayer::HandoverControlToZoneserver`), `Levitate`
+     (@004cac0d) and the illusion's change of form (`eqspa_change_form` @004ca8b2, through
+     `EQPlayer::do_change_form` @005074fa and `HandleSpecialPCAffects` @004c62bd). Alt+click or the right button held on a buff shows its
      spell's name and icon in the item display (HandleSpellInfoDisplay), and Alt over the window
      shows every buff's tooltip (CBuffWindow::PostDraw, `FrontEnd::DrawBuffTooltips`).
    - Inventory: name, level, class (its title from 51), deity, HP, stats and resists (base, worn
@@ -53,7 +58,9 @@ no rules of its own.
      down, split through the quantity window and put away on the character view (`core/inventory.*`).
      Still to do: for stats, resists, AC and ATK, items' worn effects, ATK's buffs, AAs,
      the Resistant Discipline, drunkenness and berserking; Alt. Advance, icons in the hot button
-     window's weapon slots.
+     window's weapon slots; lore duplicates (`CheckDupLoreItems` @004f13d2, `DelLoreItemDup`
+     @004f1266) on an item arriving by trade (msg_trade_final_ieq), theft (msg_steal), the zone
+     (msg_snd_ieq) or the start (`CEverQuest::msgStartIcon` @004e0a6d, `msgStartInotes` @004e0d29).
    - Coins: done (`Inventory::MoveMoney`, CEverQuest_MoveMoney, OP_MoveCoin): a money button with
      nothing on the cursor asks how many through the quantity window and puts them on the cursor
      (A_DragItem's cell 143 + CursorMoneyType, the count across its bottom), with coins on it takes
@@ -183,6 +190,17 @@ no rules of its own.
      cast or recovering; a bard's song stops on a gem click (an empty OP_ManaChange). Still to do:
      - casting: stuns and divine aura (OP_Stun), the AA and focus cast time and range modifiers,
        abilities (gem 9), and a bard being hit (StopSpellCast 1);
+     - the cast's end (`EQ_Character::CastingRequirementsMet` @004c5a5d, from `DoPassageOfTime`;
+       failing it is `StopSpellCast2`): standing (token 0xd5), moving during the cast (more than
+       0.1 off where it began, or not stopped) rolled against Channeling (skill 13, the
+       interruptions counted at +0xcfc, the Channeling AA 0x18) with "You regain your
+       concentration" (token 0x10e) or "Your casting has been interrupted!" (12477, and 12478 to
+       others); the reagents (`FindItemBySpellId` for the four focus items, `HasEnoughItemsForSpell`
+       and `ExpendItemCharge` for the four components, the focus chance to keep one,
+       `GetSpellFocusChanceBonus`); a bard's `CalculateBardSongMod`. Running now lets a cast finish
+       and reagents are never looked at;
+     - `SpellFizzled` (@004c712b), which `CastSpell` rolls only with DAT_00798560 set (as
+       CanIHitTarget's under 24);
      - the spell info display (done: `ToggleSpellDisplay`, CItemDisplayWnd::SetSpell, from a book
        slot, a gem or a buff): "Your Cast Time" (eqstr 3106) waits on the AA and focus casting
        time modifiers, and the hot button's call (CHotButtonWnd::WndNotification @00420462, with a
@@ -332,7 +350,8 @@ no rules of its own.
      CActionsWnd::KeyMapUpdated_UpdateActionWindowKeyTooltips, CSelectorWnd::KeyMapUpdated).
    - Character select's explore mode takes only the movement, Jump and Toggle camera view
      commands from the keymap (ProcessNewUICharacterSelectKeys runs ProcessMovementKeys).
-7. **Map window.** Draw the line maps from `../Maps` with our position and nearby spawns.
+7. ~~**Map window.**~~ Not eqgame's: the in-game map is Zeal's, so it stays out of the base client
+   for now.
 8. **Loading screen** while zoning, with progress.
 23. ~~**Character select**~~: done (`frontend/frontend.cpp`, `frontend/charselect_view.*`, eqgame's
     CCharacterSelect and CEverQuest::DoCharacterSelection @0053b9cf): explore mode
@@ -427,7 +446,13 @@ no rules of its own.
     - /filter's client side: the spell lines by PC spells, NPC spells and bard songs
       (ReportSuccessfulHit's spell branch, StartCasting), the chat channels and the bad word filter
       (msg_new_text), and the hit modes (/hitsmode, CChatManager's MyHitsMode and the rest: eqstr
-      2130's short form, the number only);
+      2130's short form, the number only; /clearhits, `do_clearhits` @00500dbf, and `DrawHits`
+      @00501483);
+    - fatigue's own changes (`EQ_PC::ProcessFatigue` @004d0424, from `DoPassageOfTime`): up 1 out of
+      food or drink, running and moving (DAT_0079856d), or swimming (water types 5..10); down 10
+      when it hasn't changed since the last call and we're fed and watered; 0 under DAT_00798560
+      or DAT_00798620. Ours only goes up by swings and comes down by the zone's OP_Stamina;
+    - berserking: OP_BerserkStart and OP_BerserkEnd (0x41a9, 0x41aa) aren't handled;
     - the blood of our crushing, slashing, piercing, backstab and bash hits (SpurtBloodOnDag);
     - ReportDeath's duel ending (eqstr 12100, 12101), a group member's HP, the tracking window; our
       death's first person view (still standing height), KnockedOut's "You have been knocked
@@ -487,12 +512,8 @@ no rules of its own.
     and ungrouped lists, ranks, class colors, the selection and its highlight, the buttons,
     /raidwindow and Toggle Raid Window) and the raid options window (`CRaidOptionsWnd`: the loot type
     combo, the looter list, the class color buttons through the color picker). Checked live with a
-    second player (`eqclient --raid-invite`, `--raid-accept`; `frontend_preview ... raid`). Still to
-    do:
-    - The chat window's raid default channel (`CEverquest_InterpretCmd`'s channel 15 sending
-      through `CRaid_SendRaidChat`).
-    - On camping out, eqgame's `SetTargetRaidPlayer(0)` and `RemoveRaidMember` (ProcessGameLoop's
-      0xca, after our session's closed; we only reset the raid).
+    second player (`eqclient --raid-invite`, `--raid-accept`; `frontend_preview ... raid`), the chat
+    window's raid default channel (/channel rsay), and leaving the raid as a camp ends. Still to do:
     - Not checked live: renames (2), group moves (3), 7, 12, 13 and the separator rows' look (the
       window shows six rows; EQMacEmu puts each member in their own group).
 28. **Alternate advancement.** The AA window (`CAAWnd` @00401000: `Init`, `Update`, `UpdateSelected`,
@@ -525,7 +546,8 @@ no rules of its own.
 33. **The Bazaar.** Trader mode (/trader, `OP_BecomeTrader`, `OP_Trader`), a trader's shop
     (`OP_TraderShop`, `OP_TraderBuy`; the merchant window's trader branch under 2), the bazaar
     window (`CBazaarWnd`) and search (`CBazaarSearchWnd` @00404e21: `PerformBazaarSearch`,
-    `HandleBazaarMsg`, `OP_BazaarSearch`), /bazaar, and the trader tag on names (under 9).
+    `HandleBazaarMsg`, `OP_BazaarSearch`), /bazaar, and the trader tag on names (under 9);
+    `OP_MoneyUpdate` (0x4008), the coins a sale to a trader's customer brings in.
 34. **The smaller windows**, each opened by its command or key and none built yet:
     - Breath (`CBreathWnd` @00408bee, `UpdateBreathIndicator`): the air left under water
       (`EQ_PC::ProcessAirSupply` @004d0568) and drowning.
@@ -546,10 +568,21 @@ no rules of its own.
     close the windows DoSplit puts away, `DAT_007914a4` and `DAT_007952f4`): /shield (@004fd688, `OP_Shielding`), /discipline (@004f4fb5,
     `OP_Discipline`; `OP_DisciplineChange` back), /surname, /stopsong, /language,
     /dismount, /facepick, /hotbutton, /alias, /log, /note, /keys, /quit and /exit, the chat
-    channels (/channel, /join, /leave, /leaveall, /list, /announce, /autojoin, /1../10, /chat,
+    channels (/join, /leave, /leaveall, /list, /announce, /autojoin, /1../10, /chat,
     /toggletell), and the client settings (/wincolor, /resetwindows, /chatfontsize, /invwinlabels,
     /particledensity, /showspelleffects, /mousespeed, /viewport, /showgrass, /dynamiclights,
-    /mixahead, /reverb, /reversesound, /vrdelay, /audiodebug, /dopropertinting, /newui).
+    /mixahead, /reverb, /reversesound, /vrdelay, /audiodebug, /dopropertinting, /newui). Also:
+    - /loot (@004fb5ae): `CEverQuest_LootCorpse` on the target, eqstr 0x3391 with none.
+    - /charinfo (@004f4a7a): the bind's zone (`EQWorldData::GetFullZoneName`), eqstr 0x32a7.
+    - /ttell (@004f839a): a tell to the target (`send_tell`), eqstr 0x3322 without one.
+    - /height (@004f47b8): OP_SpawnAppearance 29 (size) for the target, `EQPlayer::ChangeHeight`,
+      eqstr 0x32a3 and 0x32a4.
+    - /movelog (@004fba78): 0x41e4 to the zone, eqstr 0x33a3 and 0x33a4.
+    - /mcicontrol (@004ff739, `mciSendStringA` with the line, the error printed), /webupdate
+      (@004f3951, 0x423c with the text) and /edit (@004fa6fc, `EQ_Guide::Edit`, the old UI's):
+      kept out unless asked.
+    - /private, /voice, /microphone and /popmail are in our table but have no handler in the
+      decompile: find what eqgame's table does with them before taking them out.
 36. **GM tools**, for a GM account: /goto, /summon, /zone, /kill, /kick, /hideme, /becomenpc,
     /searchcorpse, /delcorpse, /emotezone, /servers, /find, /broadcast, /lastname, /approval and the
     `OP_GM*` packets; the petition queue (`CPetitionQWnd` @0042d1ca, `msg_pq_update` @004dce71,
@@ -560,7 +593,29 @@ no rules of its own.
     `OP_FreezeClientControl`, `OP_UnfreezeClientControl` and `OP_ReturnClientControl`,
     `OP_RequestClientZoneChange` (a zone change the server asks for), and boats: boarding and
     leaving (`OP_BoardBoat` and 0x41bc from `DoPassageOfTime` on a boat's spawn), `OP_ControlBoat`,
-    `msg_vehicle_reset` @004de593, /adriver and /sdriver (with 22's MovePlayer boat branch).
+    `msg_vehicle_reset` @004de593, /adriver and /sdriver (with 22's MovePlayer boat branch). Also
+    sent by EQMacEmu and dropped here:
+    - `OP_Illusion` (0x4091, `Mob::SendIllusionPacket`): any spawn's new race, gender, texture and
+      face (`EQPlayer::do_change_form` @005074fa); an illusioned spawn keeps its old look now.
+    - `OP_CancelSneakHide` (0x415a, `Mob::CommonBreakSneakHide`): the zone ending our hide and
+      sneak (casting, being hit...); ours ends them only for what we see ourselves
+      (`Abilities::CancelSneakHide`).
+    - `OP_SpellTextMessageStringID` (0x4241, `EntityList::SpellTextMessageClose_StringID`): others'
+      spell messages by string id.
+    - `OP_CorpsePosition` (0x4021, `Mob::SendRealPosition` for a corpse): a corpse moved or summoned.
+    - `OP_ShopEndConfirm` (0x4146, `Client::SendMerchantEnd`): the zone ending a merchant session
+      itself; eqgame's `EQ_Main::ReleaseMerchant` closes the window.
+    - `OP_GMLastName` (0x416e) and `OP_GMNameChange` (0x40cb): someone's surname or name changed,
+      for everyone in the zone (not only a GM's business, so not left to 36).
+    - Not sent by EQMacEmu (no `OP_` name in `patch_Mac.conf`; their original names from
+      `../my-eqmac-server/server/utils/structs/opcodes.h`, byte-swapped): 90 more opcodes eqgame's
+      dispatchers handle. EQMacEmu does most of their jobs through other packets (MSG_GSAY,
+      MSG_SHOUT, MSG_CURHP, MSG_BUFF, MSG_ZONE_SKY); the rest are Sony's GM, housing, message
+      board and limbo features. Worth a look if the server ever sends them: MSG_SPELLWORNOFF
+      (0x4265), MSG_SPELLACTIVATEPARTICLES (0x4266, 0x4267), MSG_TRAP_LOCATION (0x41f4),
+      MSG_NPC_SAY_TEXT (0x425e), MSG_ABILITY_CHANGE (0x41bf), MSG_SND_CORPSE_CON (0x4053),
+      MSG_DUST_CORPSE (0x404c), MSG_ADD_MLIST (0x4007, coins on the ground) and MSG_INVITE_OK
+      (0x4042, group follow 2, under 2).
 
 ## Rendering / presentation
 
@@ -644,6 +699,24 @@ no rules of its own.
     - `DoFloorCheck` with no floor below keeps the last one and we fall; we stay put instead.
     - MovePlayer's other branch (mounts, boats and races 72/73/114/141, no lift, the vehicle
       moves), and `MovementSpeedZ` held to -1 when the move didn't change our height.
+    - Walking into a switch (`EQPlayer::TouchingSwitch` @0050b7ac, from MovePlayer; doors are only
+      clicked now): type 50 a pressure plate (a PC, once, until `GetSwitchStateChangeTime` puts it
+      back; `UseSwitch` with our id), 57 a teleporter (a PC, every 2 s, our cursor item, the
+      destination from `GetTeleportTableEntryByID` only if `DoesZoneFileExist`), 35 every 1 s on
+      a 49% roll (`UseSwitch` with id 0), 115 and up hurting (`GetSwitchDamage` through
+      `IWasHit`, damage type 0xfd, every 1000 ms, 400 for a fast switch); a switch in state 4
+      does nothing.
+    - `CDisplay::MoveLocalPlayerToSafeCoords` (@004b459c): `DoMainLoop`'s way out when the
+      vehicle still can't be set ("Still can't set vehicle"), a floor height found or the safe
+      point.
+
+38. **Mounts.** No horses at all: the zone sends the horse as its own spawn (`horse.cpp`, race
+    216, OP_NewSpawn) and the rider rides it in eqgame (`EQPlayer::MountEQPlayer` @0051fd83,
+    `MakeRiderMountUp` @0051fcf5, `Dismount` @0051ff5f, `Dismount2`, `CDisplay::GetOnActor`
+    @00504202, `AttachPlayerToPlayerDag` @004b079f; ActorInfo's Mount and Rider). Then what waits
+    on them across the list: /dismount (35), MovePlayer's mount branch (22), the spell book and
+    casting on a mount (2), being hit on one and the right button on a horse (2, 24), the
+    targeting of riders (6), and /follow of a rider (3).
 
 ## Infrastructure / tooling
 

@@ -20,7 +20,7 @@ namespace
 		Random, LootNoDrop, FastDrop, AutoSplit, Roleplay, TargetGroupBuff, Split, Yell, Consent, Social, Attack, CombatMusic, DoAbility, Filter, ServerFilter, Invite, Disband, Who, WhoTarget, Follow, MakeLeader, Lfg,
 		UserColor, GuildInvite, GuildRemove, GuildDelete, GuildStatus, GuildLeader, GuildWar, GuildPeace, GuildMotd,
 		MakeRaidLeader, RaidInvite, RaidDecline, RaidAccept, RaidDisband, SetLootType, AddRaidLooter, RemoveRaidLooter,
-		RaidSay, RaidWindow,
+		RaidSay, RaidWindow, Channel,
 	};
 
 	struct CommandEntry
@@ -42,7 +42,7 @@ namespace
 		{":", 0, Command::Emote}, {"/say", 0, Command::Say}, {"'", 0, Command::Say}, {"/tell", 0, Command::Tell},
 		{"/msg", 0, Command::Tell}, {"/send", 0, Command::Tell}, {"/ttell", 0, Command::None}, {"/gsay", 0, Command::Group},
 		{"/shout", 0, Command::Shout}, {"/auction", 0, Command::Auction}, {"/ooc", 0, Command::Ooc},
-		{"/reply", 0, Command::Reply}, {"/channel", 0, Command::None}, {"/guildsay", 0, Command::Guild},
+		{"/reply", 0, Command::Reply}, {"/channel", 0, Command::Channel}, {"/guildsay", 0, Command::Guild},
 		{"/guildinvite", 0, Command::GuildInvite}, {"/guildremove", 0, Command::GuildRemove},
 		{"/guilddelete", 0, Command::GuildDelete}, {"/guildstatus", 0, Command::GuildStatus},
 		{"/guildleader", 0, Command::GuildLeader}, {"/guildwar", 0, Command::GuildWar},
@@ -857,8 +857,28 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 			ChatOut(format(12380, "That is not a valid command.  Please use /help.", {}), ChatType::Red);
 			return;
 		}
-		args = line; // not a command: said, the default channel
+		// Not a command: to the chat window's default channel (CChatWindow::WndNotification puts its
+		// 0x140 in DAT_00798598 for InterpretCmd): 0 guild, 2 group, 4 auction, 5 OOC, 7 a tell to its
+		// name, 15 the raid (CRaid_SendRaidChat, without the commands' expansion check), 19 a chat
+		// channel, anything else said.
+		args = line;
+		switch (m_chat_channel) {
+		case 0: command = Command::Guild; break;
+		case 2: command = Command::Group; break;
+		case 4: command = Command::Auction; break;
+		case 5: command = Command::Ooc; break;
+		case 7: // sprintf("%s %s", the name, the text), then /tell
+			command = Command::Tell;
+			args = m_chat_channel_to + " " + line;
+			break;
+		case 15: command = Command::RaidSay; break;
+		case 19:
+			ChatOut("/chat isn't supported yet.", ChatType::Default);
+			return;
+		default: break;
+		}
 	}
+	const bool by_channel = !found;
 	if (found && command == Command::None) {
 		ChatOut(std::string(name) + " isn't supported yet.", ChatType::Default);
 		return;
@@ -1610,6 +1630,60 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 	case Command::MakeLeader:
 		m_group.MakeLeader(args);
 		break;
+	case Command::Channel: {
+		// /channel (@004f799f): the chat window's default channel for what's typed without a
+		// command, by name or its short form; a tell's or chat channel's name after it.
+		std::string rest = args;
+		std::string word = GrabFirstWord(rest).substr(0, 63);
+		std::string to = GrabFirstWord(rest).substr(0, 31);
+		if (word.empty()) {
+			ChatOut(format(13080, "Usage: /channel <channel>", {}), ChatType::Default);
+			ChatOut(format(13081, "<channel> can be one of: guildsay, gsay, tell, auction, ooc, or chat.", {}),
+				ChatType::Default);
+			ChatOut(format(13082, "If you specify tell then follow it with the name of the person to tell. (e.g. /channel tell Fippy)",
+				{}), ChatType::Default);
+			ChatOut(format(13083, "If you specify chat, follow it with the name of the channel. (e.g. /channel chat mychannel)",
+				{}), ChatType::Default);
+			break;
+		}
+		struct Choice
+		{
+			uint32_t id;
+			const char *text, *brief;
+			uint8_t channel;
+		};
+		static const Choice choices[] = {
+			{13070, "GuildSay", "gu", 0}, {13071, "gsay", "g", 2}, {5111, "rsay", "rs", 15}, {13072, "tell", "t", 7},
+			{13074, "Auction", "auc", 4}, {13075, "OOC", nullptr, 5}, {13076, "Say", nullptr, 8}, {13077, "chat", nullptr, 19},
+		};
+		const Choice *picked = nullptr;
+		for (const auto &choice : choices)
+			if (Lower(word) == Lower(format(choice.id, choice.text, {})) || (choice.brief && Lower(word) == choice.brief)) {
+				picked = &choice;
+				break;
+			}
+		if (!picked) {
+			// An unknown name: the usage again.
+			ChatOut(format(13080, "Usage: /channel <channel>", {}), ChatType::Default);
+			ChatOut(format(13081, "<channel> can be one of: guildsay, gsay, tell, auction, ooc, or chat.", {}),
+				ChatType::Default);
+			ChatOut(format(13082, "If you specify tell then follow it with the name of the person to tell. (e.g. /channel tell Fippy)",
+				{}), ChatType::Default);
+			ChatOut(format(13083, "If you specify chat, follow it with the name of the channel. (e.g. /channel chat mychannel)",
+				{}), ChatType::Default);
+			break;
+		}
+		std::string shown;
+		m_chat_channel = picked->channel;
+		if (picked->channel == 7 || picked->channel == 19) {
+			m_chat_channel_to = to;
+			shown = picked->channel == 7 ? format(13073, "Tell to %1", {to}) : format(13078, "Chat to Channel %1", {to});
+		}
+		else
+			shown = format(picked->id, picked->text, {});
+		ChatOut(format(13079, "Your default channel for typing is now %1.", {shown}), ChatType::Default);
+		break;
+	}
 	// The raid's commands (@004f3b4f..@004f3c95): only with the Planes of Power (Expansions 8) or on
 	// a test server (@00799760).
 	case Command::MakeRaidLeader:
@@ -1622,7 +1696,7 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 	case Command::RemoveRaidLooter:
 	case Command::RaidSay:
 	case Command::RaidWindow:
-		if (!RaidAllowed())
+		if (!RaidAllowed() && !by_channel)
 			break;
 		switch (command) {
 		case Command::RaidWindow: // @004f3b0a: CRaidWnd::Activate, or down

@@ -813,6 +813,10 @@ public:
 	bool GroupDisband(const std::string &name);
 	// /makeleader: OP_GroupUpdate {8, us, the member} (GroupGeneric_Struct2, 136 bytes).
 	bool GroupMakeLeader(const std::string &member);
+	// After LoggedOut: the session closes (it stays open for eqgame's last sends as a camp ends,
+	// OP_GroupDisband and OP_RaidInvite 5, which GroupDisband and RaidCommand still send). The next
+	// Pump does it otherwise.
+	void FinishLogout();
 	// CRaid_RaidInvite (@0049e9b3): OP_RaidInvite, RaidGeneral_Struct (0x88 bytes) {action, first at
 	// 4, second at 0x44, param at 0x84}.
 	bool RaidCommand(uint32_t action, const std::string &first, const std::string &second, int32_t param);
@@ -929,6 +933,7 @@ private:
 	void RecordSent(const uint8_t *update); // a 15-byte SpawnPositionUpdate_Struct
 
 	std::unique_ptr<RdpSession> m_session;
+	bool m_logout_pending = false; // OP_LogoutReply came; the session's open until FinishLogout
 	std::string m_record_dir;
 	std::unique_ptr<PacketLogWriter> m_recorder;
 	std::unique_ptr<PacketLog> m_replay;
