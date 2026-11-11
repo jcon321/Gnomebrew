@@ -1556,6 +1556,12 @@ void ZoneSession::MoveLog()
 		Send(ZoneOp::MoveLog, nullptr, 0, "OP_MoveLog");
 }
 
+void ZoneSession::Shield(uint16_t id)
+{
+	if (m_state == State::InZone)
+		Send(ZoneOp::Shielding, &id, sizeof(id), "OP_Shielding " + std::to_string(id));
+}
+
 void ZoneSession::Consent(const std::string &name)
 {
 	if (m_state == State::InZone)

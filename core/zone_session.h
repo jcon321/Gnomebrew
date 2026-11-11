@@ -692,6 +692,7 @@ public:
 	void Split(int32_t platinum, int32_t gold, int32_t silver, int32_t copper);
 	void YellForHelp();                     // OP_YellForHelp
 	void MoveLog();                         // MSG_MOVELOG (/movelog yes)
+	void Shield(uint16_t id);               // OP_Shielding (/shield)
 	void Consent(const std::string &name);  // OP_Consent
 	// Guilds (GuildCommand_Struct, GuildInviteAccept_Struct and the war and peace struct: see
 	// opcodes.h). Our name and guild in them are the profile's.

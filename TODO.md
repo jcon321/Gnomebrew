@@ -576,11 +576,12 @@ no rules of its own.
     close the windows DoSplit puts away, `DAT_007914a4` and `DAT_007952f4`. /loot, /charinfo
     (`FullZoneName` of the bind), /ttell (@004f839a: the target's name to its apostrophe, eqstr 13090
     for a name with '#' or '_' but an NPC corpse's), /movelog (@004fba78: "yes" sends MSG_MOVELOG,
-    0x41e4, which EQMacEmu ignores) and /stopsong (@004f5c74: a bard's StopSpellCast2) are done too;
-    /ttell's `send_tell` also stops on `DAT_007985f1`, as the socials do, not known): /shield
-    (@004fd688, `OP_Shielding`), /discipline (@004f4fb5,
+    0x41e4, which EQMacEmu ignores), /stopsong (@004f5c74: a bard's StopSpellCast2), /shield
+    (@004fd688, `OP_Shielding`) and /quit and /exit (@004fa8c5: the connection closed, the game
+    ended) are done too; /ttell's `send_tell` also stops on `DAT_007985f1`, as the socials do, not
+    known; /quit doesn't say /safelock's 12095, there being no /safelock): /discipline (@004f4fb5,
     `OP_Discipline`; `OP_DisciplineChange` back), /surname, /language,
-    /dismount, /facepick, /hotbutton, /alias, /log, /note, /keys, /quit and /exit, the chat
+    /dismount, /facepick, /hotbutton, /alias, /log, /note, /keys, the chat
     channels (/join, /leave, /leaveall, /list, /announce, /autojoin, /1../10, /chat,
     /toggletell), and the client settings (/wincolor, /resetwindows, /chatfontsize, /invwinlabels,
     /particledensity, /showspelleffects, /mousespeed, /viewport, /showgrass, /dynamiclights,

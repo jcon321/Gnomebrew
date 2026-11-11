@@ -20,7 +20,7 @@ namespace
 		Random, LootNoDrop, FastDrop, AutoSplit, Roleplay, TargetGroupBuff, Split, Yell, Consent, Social, Attack, CombatMusic, DoAbility, Filter, ServerFilter, Invite, Disband, Who, WhoTarget, Follow, MakeLeader, Lfg,
 		UserColor, GuildInvite, GuildRemove, GuildDelete, GuildStatus, GuildLeader, GuildWar, GuildPeace, GuildMotd,
 		MakeRaidLeader, RaidInvite, RaidDecline, RaidAccept, RaidDisband, SetLootType, AddRaidLooter, RemoveRaidLooter,
-		RaidSay, RaidWindow, Channel, Loot, TargetTell, CharInfo, MoveLog, StopSong,
+		RaidSay, RaidWindow, Channel, Loot, TargetTell, CharInfo, MoveLog, StopSong, Shield, Quit,
 	};
 
 	struct CommandEntry
@@ -36,8 +36,8 @@ namespace
 		{"/consent", 0, Command::Consent}, {"/played", 0, Command::Played}, {"/ignore", 0, Command::None},
 		{"/anonymous", 0, Command::Anonymous}, {"/afk", 0, Command::Afk}, {"/filter", 0, Command::Filter},
 		{"/assist", 0, Command::Assist}, {"/duel", 0, Command::None}, {"/decline", 0, Command::None},
-		{"/split", 0, Command::Split}, {"/autosplit", 0, Command::AutoSplit}, {"/quit", 0, Command::None},
-		{"/stopsong", 0, Command::StopSong}, {"/friends", 0, Command::None}, {"/shield", 0, Command::None},
+		{"/split", 0, Command::Split}, {"/autosplit", 0, Command::AutoSplit}, {"/quit", 0, Command::Quit},
+		{"/stopsong", 0, Command::StopSong}, {"/friends", 0, Command::None}, {"/shield", 0, Command::Shield},
 		{"/shownames", 0, Command::ShowNames}, {"/shownpcnames", 10, Command::None}, {"/emote", 0, Command::Emote},
 		{":", 0, Command::Emote}, {"/say", 0, Command::Say}, {"'", 0, Command::Say}, {"/tell", 0, Command::Tell},
 		{"/msg", 0, Command::Tell}, {"/send", 0, Command::Tell}, {"/ttell", 0, Command::TargetTell}, {"/gsay", 0, Command::Group},
@@ -89,7 +89,7 @@ namespace
 		{"/broadcast", 4, Command::None}, {"/lastname", 4, Command::None}, {"/zone", 3, Command::None},
 		{"/kick", 4, Command::None}, {"/kill", 3, Command::None}, {"/delcorpse", 8, Command::None},
 		{"/hideme", 3, Command::None}, {"/servers", 3, Command::None}, {"/height", 4, Command::None},
-		{"/exit", 0, Command::None}, {"/loot", 0, Command::Loot}, {"/roleplay", 0, Command::Roleplay},
+		{"/exit", 0, Command::Quit}, {"/loot", 0, Command::Loot}, {"/roleplay", 0, Command::Roleplay},
 		{"/follow", 0, Command::Follow}, {"/report", 0, Command::None}, {"/surname", 0, Command::None},
 		{"/log", 0, Command::None}, {"/toggletell", 3, Command::None}, {"/inquire", 3, Command::None},
 		{"/praise", 3, Command::None}, {"/warn", 3, Command::None}, {"/edit", 3, Command::None},
@@ -120,7 +120,7 @@ namespace
 		{"/deletepetition", 0, Command::None}, {"/raidwindow", 0, Command::RaidWindow}, {"/makeraidleader", 0, Command::MakeRaidLeader},
 		{"/raidinvite", 0, Command::RaidInvite}, {"/raiddecline", 0, Command::RaidDecline}, {"/raidaccept", 0, Command::RaidAccept},
 		{"/raiddisband", 0, Command::RaidDisband}, {"/setloottype", 0, Command::SetLootType}, {"/addraidlooter", 0, Command::AddRaidLooter},
-		{"/removeraidlooter", 0, Command::RemoveRaidLooter}, {"/rsay", 0, Command::RaidSay}, {"/quit", 0, Command::None},
+		{"/removeraidlooter", 0, Command::RemoveRaidLooter}, {"/rsay", 0, Command::RaidSay}, {"/quit", 0, Command::Quit},
 	};
 
 
@@ -825,6 +825,29 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 	const auto &spawns = m_zone.Spawns();
 	auto target = spawns.find(Target());
 	bool npc_target = target != spawns.end() && target->second.npc == 1;
+	// EQPlayer_get_player_partial_name (@0050820e): us if our name starts with it, else the nearest
+	// spawn whose name does (a space as '_'); 0 none.
+	auto partial_name = [&](const std::string &typed) -> uint16_t {
+		std::string want = Lower(typed);
+		for (auto &c : want)
+			if (c == ' ')
+				c = '_';
+		if (Lower(me.name).compare(0, want.size(), want) == 0)
+			return m_zone.MySpawnId();
+		const ZoneMovement &at = m_zone_view ? m_zone_view->Movement() : ZoneMovement{};
+		uint16_t id = 0;
+		float best_d = 0;
+		for (const auto &[spawn_id, spawn] : spawns) {
+			if (Lower(spawn.name).compare(0, want.size(), want) != 0)
+				continue;
+			float d = std::hypot(spawn.x - at.x, spawn.y - at.y);
+			if (id == 0 || d < best_d) {
+				id = spawn_id;
+				best_d = d;
+			}
+		}
+		return id;
+	};
 
 	// The command word: up to a space after a '/', or else just the first character (' and :).
 	std::string args;
@@ -1355,6 +1378,47 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 			ChatOut(format(13220, "If you wish have all of your characters permanently moved to a less crowded server, type '/movelog yes' (without the quotes).", {}),
 				ChatType::Default);
 		break;
+	case Command::Shield: {
+		// /shield (@004fd688): not while we can't (allowslashcommand), nor with a merchant, a
+		// guildmaster or a banker. A warrior of 30 and up shields our target, or the one named
+		// (EQPlayer_get_player_partial_name; nobody, nothing said), but not us; without either, how.
+		if (!allow() || m_merchant.Merchant() != 0 || m_train.Guildmaster() != 0 || m_bank.Banker() != 0)
+			break;
+		if (me.class_id != 1 || me.level < 30) {
+			ChatOut(format(4033, "This ability is only available to Warriors who are 30th level and higher.", {}),
+				ChatType::Default);
+			break;
+		}
+		uint16_t id = Target();
+		if (!args.empty()) {
+			id = partial_name(PercentConvert(args));
+			if (id == 0)
+				break;
+		}
+		else if (id == 0) {
+			ChatOut(format(4031, "You must /SHIELD with another character targeted, or type /SHIELD followed by that character's name.", {}),
+				ChatType::Default);
+			ChatOut(format(4034, "This ability allows you to act as a living shield.", {}), ChatType::Default);
+			break;
+		}
+		if (id == m_zone.MySpawnId())
+			ChatOut(args.empty() ? format(4030, "You cannot shield yourself!", {})
+			                     : format(3278, "You must first target a living Player Character.", {}),
+				ChatType::Default);
+		else
+			m_zone.Shield(id);
+		break;
+	}
+	case Command::Quit:
+		// /quit and /exit (@004fa8c5), with nothing after them and while we've control of ourselves:
+		// the connection closed without a camp, and the game ends (GameState 0xff). Nothing goes to
+		// the zone first: ProcessGameLoop's 0xca cleanup finds the connection gone. (Not under
+		// /safelock's interface lock, DAT_007cf29c, eqstr 12095: no /safelock yet.)
+		if (!args.empty() || m_zone.Self().stance == 102)
+			break;
+		m_zone.Close();
+		m_quit = true;
+		break;
 	case Command::StopSong:
 		m_spell_cast.StopSong(); // /stopsong (@004f5c74)
 		break;
@@ -1444,26 +1508,7 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 				m_config.attack_on_assist = false;
 				ChatOut(format(13264, "Auto attack on assist is now *OFF*.", {}), ChatType::Default);
 			}
-			// EQPlayer_get_player_partial_name: the nearest whose name starts with it, us included.
-			std::string want = Lower(args);
-			for (auto &c : want)
-				if (c == ' ')
-					c = '_';
-			if (Lower(me.name).compare(0, want.size(), want) == 0)
-				id = m_zone.MySpawnId();
-			else {
-				const ZoneMovement &at = m_zone_view ? m_zone_view->Movement() : ZoneMovement{};
-				float best_d = 0;
-				for (const auto &[spawn_id, spawn] : spawns) {
-					if (Lower(spawn.name).compare(0, want.size(), want) != 0)
-						continue;
-					float d = std::hypot(spawn.x - at.x, spawn.y - at.y);
-					if (id == 0 || d < best_d) {
-						id = spawn_id;
-						best_d = d;
-					}
-				}
-			}
+			id = partial_name(args);
 			if (id == 0)
 				break;
 		}

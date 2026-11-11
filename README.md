@@ -349,7 +349,7 @@ eqgame's `OP_MoveItem`.
   /auction, /ooc, /emote (`:`, /me), /hail, /target, /assist, /consider, /location, /time,
   /played, /motd, /afk, /anonymous, /shownames, /sit, /stand, /book, /cast, /camp, /clearchat,
   /random, /lootnodrop, /fastdrop, /autosplit, /roleplay, /targetgroupbuff (/tgb), /split, /yell,
-  /consent, /loot, /ttell, /charinfo, /movelog, /stopsong, /attack, /combatmusic, /doability, the
+  /consent, /loot, /ttell, /charinfo, /movelog, /stopsong, /shield, /quit (/exit), /attack, /combatmusic, /doability, the
   guild commands (see Guilds under In the zone),
   the raid commands (see Raids), /filter, /serverfilter and the socials (/smile, /wave and the
   other 86).
@@ -1644,6 +1644,16 @@ details and the nearest spawns at the top left and the radar at the top right.
   The check's odd shape is eqgame's: an empty name or an NPC fails first, then anything but an NPC
   corpse is checked again by the '#' and '_' alone (so an NPC named without either passes), and an
   NPC corpse goes whatever its name.
+- **/shield** (@004fd688): nothing while `allowslashcommand` refuses or with a merchant, guildmaster
+  or banker active. Not a warrior (class 1) of 30 and up: 4033. With nothing typed, our target (none:
+  4031 then 4034, the ability's description), or us, 4030; with a name, `DoPercentConvert` then
+  `EQPlayer_get_player_partial_name` (nobody: nothing said), or us, 3278. Otherwise OP_Shielding
+  (0x424b, {u16 spawn id}: EQPlayer+0x94); the server checks the class, level and its reuse timer.
+- **/quit** and **/exit** (@004fa8c5): only with nothing after them. Under /safelock's lock
+  (`DAT_007cf29c`) 12095; while we've no control of ourselves (stance 0x66) nothing. Otherwise the
+  world connection is closed (`connection_close` 1000) with no camp and no packet,
+  `DAT_0079855c = 0xca` and GameState 0xff, so the game ends; ProcessGameLoop's 0xca cleanup sends
+  into a closed connection. The character stays linkdead on the server.
 - **OP_ManaUpdate** (0x4219, {u16 spawn, u16 mana}) sets our mana, whoever it names. **OP_DespawnDoor**
   (0x409b, no body) deletes every door and switch. **OP_PlaySound** (0x4048, {u16 spawn, u16 sound})
   plays the wave where the spawn is, full to 100 and silent past it.

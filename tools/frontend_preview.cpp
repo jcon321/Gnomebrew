@@ -259,7 +259,7 @@ namespace
 			"/fastdrop off", "/smile", "/wave", "/hug", "/boggle", "/tap", "/fidget", "/smile nobodyhere", "/flipoff",
 			"/kiss blows you a kiss", "/usercolor", "/usercolor help", "/usercolor page7", "/usercolor 1 255 0 0",
 			"/usercolor 1 reset", "/usercolor 73 1 2 3", "/loot", "/ttell hello", "/charinfo", "/movelog",
-			"/movelog no", "/stopsong"})
+			"/movelog no", "/stopsong", "/shield", "/quit now"})
 			type(line);
 		// The nearest spawn, by name.
 		const ZoneProfile &me = zone.Profile();
