@@ -590,6 +590,10 @@ build/eqclient -u USER -p PASS [options]
                         (OP_RaidInvite 3)
   --raid-accept         with --zone: accept any raid invitation 2 s after it comes (OP_RaidInvite 4);
                         every raid packet prints
+  --aa TEXT             with --zone: send OP_AAAction TEXT ("buy 12", "on 50", "off", "activate 12 0")
+                        and print our AA ranks, points and timers as they change. Repeatable, with
+                        --say-more: each 3 s after the one before, in order
+  --say-more TEXT       with --zone: a /say in the --aa queue (a GM's "#level 60")
   --idle SECONDS        without --char, stay at character select this long (default 0)
   --record DIR          with --zone: write each zone session's packets to DIR/<char>-<time>.eqr
   --replay FILE         play a recorded zone session back (no server): stay --zone seconds (default
@@ -601,7 +605,7 @@ build/eqclient -u USER -p PASS [options]
 ## Preview tool (Linux)
 
 ```
-build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|train|ground|commands|group|raid|guild|skills]]
+build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|train|ground|commands|group|raid|guild|skills|aa]]
 build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS]
 ```
 
@@ -635,7 +639,11 @@ the MOTD, answer /guilddelete's question yes (which deletes the guild) and camp;
 Replayrogue, to target the nearest NPC and turn auto attack on for 4.5 s (our swings' messages and
 fatigue), then use bind wound, feign death, hide, sneak, pick pockets, tracking, fishing, begging,
 hide and sneak again from the abilities page (`UseSkill`), printing the chat and our stance,
-visibility, sneaking and hiding after each, then hide and step forward. `create` instead makes an Erudite wizard from the first empty slot,
+visibility, sneaking and hiding after each, then hide and step forward; or `aa`, as Replaytest (51
+or more, with AA points: a GM's `#level 60` and `#set aa_points 30`), to open the AA window from the
+inventory's Alt. Adv. button and print its pages, labels and buttons, then "-" and "+", the class,
+archetype and general tabs, the general page's second row, Train, `/alternateadv buy 3` and an
+untrainable `buy 200`, and Done. `create` instead makes an Erudite wizard from the first empty slot,
 snapshots every creation screen and the face picker, submits it, and deletes it again (Yes in the
 confirmation dialog). `createluclin` does the same with every Luclin model on, as a dwarf warrior
 whose face picker steps through each feature, printing the rows shown and what the model takes,
@@ -1886,6 +1894,82 @@ details and the nearest spawns at the top left and the radar at the top right.
   `get_melee_range` (@004f3898): both models' `t3dGetScaledActorBoundingRadius` (the skeleton's
   bounding radius, flag 2 of the 0x10 fragment, times the model's scale) times 0.75, at least 14,
   plus the difference of their `ModelHeightOffset`s, plus 2, at most 75.
+
+## Alternate advancement
+
+- **The table** (`core/alt_adv.*`). eqgame keeps all 227 abilities in its binary:
+  `AltAdvManager::AltAdvManager` (@004b74f9) makes a 0x38-byte entry for each id 0..226 with
+  `AltAdvEntry_initializeAltAdvancement` (@004b4c36), a switch on the id over the defaults (level 51,
+  cost 1, 1 rank, cost step 1, spell -1). An entry: +0x00 and +0x04 the eqstr ids of a hot button's
+  two words; +0x08 name, +0x0c description; +0x10 the level it opens at (i16); +0x12 the first
+  rank's cost; +0x14 and +0x16 the ability and rank it requires (0 none, -1 six points in the general
+  abilities, -2 twelve in the archetype ones); +0x18 its ranks (u8); +0x1a each rank's cost step;
+  +0x1c in use at all; +0x1e a spell id; +0x20 set once trainable (the old UI's); +0x21 its page (1
+  general, 2 archetype, 3 class, 4 PoP advance, 5 PoP ability); +0x24 when it was last used (our
+  time_t); +0x28 and +0x2a a PoP ability's cost type and step; +0x2c ranks per level and +0x34
+  levels per rank (PoP); +0x30 the reuse in seconds (0 passive). The ids are eqgame's ("Mac AA ids");
+  EQMacEmu maps them to its own (`GetMacToEmuAA`). Our table was read out of the decompile by running
+  the switch for each id (its gotos as written); every name matches eqstr. MQ2's `_ALTABILITY`
+  layout in `types.h` is a later client's and doesn't fit. `AltAdvManager_Add_MGB_for_Beastlords_fix`
+  (@004b8231) is which abilities a class has: everyone 1..13, 15..17, 129..142 and 225 (14,
+  Innate Regeneration, is no one's; 225 is its replacement), the rest by class; ours is a list per
+  class taken from the decompiled function compiled and run for every class and id.
+- **The rules.** `EQ_Character::GetAbility` (@004c3fb0) is ActorInfo's `AAAbilities[id]` for 1..226,
+  else 0. `CalculateAbilityPointCost` (@004b7802), the next rank's cost at rank r: the cost alone for
+  a one-rank ability or a step of 1; pages 1..3 (r + 1) * step (archetype 2, 4, 6; class 3, 6, 9);
+  the PoP pages by cost type: 1 (r + 1) / per + 1 (plus +0x2a on a multiple), 2 the cost, 3 cost + 1
+  + r, 4 cost + step * r from the second rank (step -1 makes them cheaper), others 0.
+  `TotalPointsInSkill` sums ranks 0..r-1 for a class that has it. `GetAbilityRequiredLevel`
+  (@004b805e): with +0x34, level + 0x34 * rank (one less at the last rank); with +0x2c, rank / 0x2c +
+  level and at least 61, or past what the level allows (level - min + 1) * 0x2c the cap's level;
+  never under +0x10. `CheckAbilityRequirements` (@004b7e8a): -1 counts the general ranks (141 by its
+  points), -2 the archetype points; otherwise an archetype ability wants the six general ranks first,
+  a class one the twelve archetype points, then the required ability at its rank; Body and Mind
+  Rejuvenation (0x77) wants Mental Clarity (0xe0) and Natural Healing (0x1d) at 3 besides.
+  `CanTrainAbility` (@004b812a): not at its last rank, the cost within our unspent points, the PoP
+  pages only with Expansions 0x18, in use, the class's, our level at the required one, and the
+  requirements. `GetCalculatedTimer` (@004b761a): the reuse less 10% a rank of its Hastened ability
+  (0x27..0x2b, 0x32, 0x39, 0x42, 0x62, 0x66, 0x6b, 0x6d, 0x6e, 0x75), or a fixed time a rank (Divine
+  Stun 7 s by Rush to Judgment, Mend Companion 540 s, the two touches 720 s). `IsAbilityReady`
+  (@004b755b): reuse + last used <= `time()`. `GetAbilityTitle` (@004b7db5): 1 for more than 5
+  general points, 2 more than 11 archetype, 3 more than 23 class; EQPlayer::EQPlayer sets our own
+  spawn's from it (`ZoneSession`'s OP_ZoneEntry).
+- **The packets.** The profile's `aa_array` (@5612, 120 words: the id in the low 12 bits, the rank in
+  the top 4; EQMacEmu sends value * 16) fills the ranks as `EQPlayer::EQPlayer` reads them, only with
+  Expansions 0x1c; `aapoints` @5902, `perAA` @5425, the GM flag @4966. `OP_RespondAA` (0x4215, 227
+  bytes, a rank by id, [0] the points spent: `AltAdvManager_UpdateTrainableAbilities`) replaces them
+  all; EQMacEmu sends it after a purchase and an "on"/"off", not on entering the zone.
+  `OP_AAExpUpdate` (`HandleWorldMessage_AA_update2`). The zone's `OP_AAAction` (0x4214, {i32 begin,
+  i16 ability, i16, i32 end}: `updateAltAdvancementTimers` @004e15c9) sets the ability's last use to
+  begin + (our `time()` - end); the four elemental forms (61..64) share one, and the two touches (86,
+  87). Ours is 256 bytes of text: "buy <id>", "on <percent>", "off", "activate <id> <target>". Each
+  of these calls `CAAWnd::Update`.
+- **The AA window** (`CAAWnd` @00401000, `frontend/aa_window.*`, the `AAWindow` screen): the
+  inventory's Alt. Adv. button (`CInventoryWnd::WndNotification`) and Toggle Alt. Adv. window
+  (`ExecuteCmd` 0x62: with Expansions 4 or as a GM) open or close it; it starts down in each zone
+  and Escape closes it after help. `Init` puts each ability the class has and that's in use onto its
+  page's list (`List1..5` on the TabBox `Subwindows`), white, yellow under the mouse, gray 0x808080
+  selected, the headings 0x8aa3ff, the rank and cost centered. `Update`: `ExpCount` "%d%%";
+  `LessExpButton` with a share over 0 and `MoreExpButton` under 100, both from level 51 and only with
+  the world's Luclin or PoP bits (`OP_ExpansionInfo` 4 and 8, `parseUIRefreshFlags`); each row's
+  "%d/%d" and next cost (blank at the last rank), white if `CanTrainAbility`, else 0xc0c0c0;
+  `CurrentCount` and `TotalCount` (`TotalPointsInSkill` summed). `UpdateSelected`: nothing selected
+  shows eqstr 3108 and disables Train and Hotkey; else "(ID#%d) " for a GM, "Type: Activated, Refresh
+  Time:" (3109) " %d:%02d:%02d" of the table's reuse or 3110 (passive, Hotkey off), `<BR>`,
+  `GetAbilityReqs` (@004b8b78: 2185 for Death Peace, 2186 for 0x77, 2187 and 2188 for -1 and -2,
+  2191 with the level, 2189 a class ability needing a general one, else 2190), `<BR>`, the
+  description; no name. `UpdateTimer` (and every 500 ms while an activated ability we have is
+  selected): "Ready" (3111) or "%02d:%02d:%02d" left, Hotkey enabled once we have it. The buttons
+  (`WndNotification`): "-" and "+" change the profile's share by 10 and send "on n" or "off"
+  (`CAAWnd_WndNotification_AAAction`), Train sends "buy id" and disables itself until the zone
+  answers, Done closes it; a row selects its ability; a new tab (`Subwindows`, which reports a page
+  change as the button comes up) clears the old list's selection and selects nothing. Checked live
+  as Replaytest at 60 (`eqclient --aa`, `frontend_preview ... aa`).
+- **/alternateadv** (@004fed79), with Expansions 4: "on" (12947, 2 letters) sets the share to 1 and
+  "off" (12946) to 0, then go as typed; "list" (13271) prints each of the class's abilities (13274
+  name, 13275 description, 13276 the +0x1a step) in 0x111; "buy" (13272) sends "buy <id>" if
+  `CanTrainAbility`, else 13277 in red; "act" (13273) sends what was typed and our target's id;
+  anything else goes as typed.
 
 ## Items and stats
 

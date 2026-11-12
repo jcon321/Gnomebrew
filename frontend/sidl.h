@@ -405,6 +405,7 @@ public:
 	void Check(const std::string &screen_id);
 	// CTabWnd::SetActivePage: a TabBox shows its index'th page and hides the rest.
 	void SelectTab(Control &tab_box, int index);
+	Rect TabRect(const Control &tab_box, int index) const; // CalculateTabRectangle
 	// CXWnd::MoveAndInvalidate: a control's new rect, with its children laid out again.
 	void Move(const std::string &screen_id, const Rect &rect);
 	void Move(const Rect &rect) { Place(0, rect); } // the window itself
@@ -491,7 +492,6 @@ private:
 	// CTabWnd: the tabs across the top of a TabBox and the page under them.
 	int TabHeight(const Control &tab_box) const;
 	Rect PageRect(const Control &tab_box) const;        // GetTabContentRect
-	Rect TabRect(const Control &tab_box, int index) const; // CalculateTabRectangle
 	int TabAt(const Control &tab_box, int x, int y) const; // GetTabPageFromMousePosition; -1 none
 	void DrawTabBox(const Control &tab_box, Canvas &canvas, TextRenderer &text, SidlTextures &textures, uint64_t now_ms,
 		const Rect &clip) const;
@@ -546,6 +546,7 @@ private:
 	int m_scroll_grab_y = 0, m_scroll_grab_pos = 0;
 	int m_scroll_hover = -1;
 	int m_slider = -1; // a slider being moved
+	int m_tab_changed = -1; // a TabBox whose page a press changed, told as the button comes up
 	std::string m_pressed_pick; // a list row or combo choice picked by the press, for the release
 	ScrollPart m_scroll_hover_part = ScrollPart::None;
 	bool m_minimized = false;

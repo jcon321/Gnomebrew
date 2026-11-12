@@ -339,7 +339,7 @@ no rules of its own.
    zone is entered; the mouse look check is our right button held (no Toggle mouse look yet). Still to do:
    - ExecuteCmd's commands not done yet (the page's "No"): Toggle mouse look, Duck, Use
      centerscreen, Center view, Toggle netstat, the clip plane, voice input, screenshots, the chat line's cursor and page up and down (CChatWindow::ScrollChatWindowUp),
-     the AA, bazaar, bazaar search and music player
+     the bazaar, bazaar search and music player
      windows, and the six camera moves (ExecuteCmd 0x6f..0x74, ProcessControls).
    - Send tell for a GM helping a petitioner (`/tell <petitioner> `, CPetitionQWnd), and
      ExecuteCmd 0x81 and 0x82 (`;` and `/` command modes; not on the keyboard page).
@@ -524,10 +524,20 @@ no rules of its own.
     window's raid default channel (/channel rsay), and leaving the raid as a camp ends. Still to do:
     - Not checked live: renames (2), group moves (3), 7, 12, 13 and the separator rows' look (the
       window shows six rows; EQMacEmu puts each member in their own group).
-28. **Alternate advancement.** The AA window (`CAAWnd` @00401000: `Init`, `Update`, `UpdateSelected`,
-    `UpdateTimer`, `ShowAbility`, `CAAWnd_WndNotification_AAAction` @004020d2), the AA table from
-    `OP_RespondAA`, buying and activating with `OP_AAAction`, /alternateadv, the keymap's command and
-    the inventory's Alt. Adv. button; then the AA effects the other items list as missing.
+28. **Alternate advancement.** Done so far: the table and `AltAdvManager`'s rules (`core/alt_adv.*`:
+    `AltAdvEntry_initializeAltAdvancement`, `Add_MGB_for_Beastlords_fix`, `CalculateAbilityPointCost`,
+    `TotalPointsInSkill`, `GetAbilityRequiredLevel`, `CheckAbilityRequirements`, `CanTrainAbility`,
+    `GetCalculatedTimer`, `IsAbilityReady`, `GetAbilityReqs`, `GetAbilityTitle` for our own title),
+    the ranks from the profile and `OP_RespondAA`, the timers from the zone's `OP_AAAction`, the AA
+    window (`frontend/aa_window.*`, `CAAWnd`: `Init`, `Update`, `UpdateSelected`, `UpdateTimer`,
+    `OnProcessFrame`, `WndNotification`'s "-", "+", Train, Done, rows and tabs), /alternateadv, Toggle
+    Alt. Adv. window and the inventory's Alt. Adv. button. Still to do:
+    - the window's Hotkey (`CCursorAttachment::Activate` type 4, 0x78 + id) and AA hot buttons:
+      `CHotButtonWnd::OnProcessFrame`'s two words (+0x00, +0x04) and checked while we lack it or it
+      isn't ready, `DoHotButton` starting it as a social (`__CurrentSocial`, "/alt activate %d" from
+      `DoPassageOfTime`), `DoHotButtonRightClick` (`CAAWnd::Activate` and `ShowAbility`);
+    - the AA effects the other items list as missing (stats, resists, HP, casting, timers);
+    - not checked live: the PoP pages trainable (61 and up with the Planes of Power), a GM's "(ID#n)".
 29. **Friends, ignore, inspect and notes.**
     - The friends window opens empty: `CFriendsWnd` (@0041c285: `UpdateFriendsList`,
       `UpdateIgnoreList`, `AddFriend`, `AddIgnore`), /friends and /ignore, `__FriendsList` and

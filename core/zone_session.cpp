@@ -1,4 +1,6 @@
 #include "zone_session.h"
+
+#include "alt_adv.h"
 #include "eqstr.h"
 #include "inflate.h"
 #include "inventory.h"
@@ -14,6 +16,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 
 namespace
 {
@@ -476,6 +479,10 @@ void ZoneSession::RecordSent(const uint8_t *update)
 void ZoneSession::Reset(const std::string &character)
 {
 	Close();
+	// The AA timers are eqgame's AltAdvManager's, kept from zone to zone (the zone sends them
+	// again as we come in); another character's are its own.
+	if (character != m_character)
+		std::fill(std::begin(m_aa_last_used), std::end(m_aa_last_used), 0);
 	m_character = character;
 	m_profile = ZoneProfile{};
 	m_info = ZoneInfo{};
@@ -1096,6 +1103,16 @@ bool ZoneSession::RaidCommand(uint32_t action, const std::string &first, const s
 	std::memcpy(body.data() + 0x84, &param, 4);
 	return Send(ZoneOp::RaidInvite, body.data(), body.size(),
 		"OP_RaidInvite " + std::to_string(action) + " " + first + " " + second + " " + std::to_string(param));
+}
+
+bool ZoneSession::SendAltAdv(const std::string &text)
+{
+	// send_message(0x4214, 256 bytes): the text, zero-filled.
+	if (m_state != State::InZone)
+		return false;
+	std::vector<uint8_t> body(256, 0);
+	std::copy_n(text.begin(), std::min<size_t>(text.size(), 255), body.begin());
+	return Send(ZoneOp::AAAction, body.data(), body.size(), "OP_AAAction " + text);
 }
 
 bool ZoneSession::SendLfg(bool on)
@@ -1941,6 +1958,18 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 			p.mem_spells[i] = Read<int16_t>(data, 2870 + i * 2);
 		for (int i = 0; i < ZoneProfile::BuffSlots; ++i)
 			p.buffs[i] = ReadBuff(data, 616 + i * 10);
+		p.aa_unspent = Read<int16_t>(data, 5902);
+		p.aa_percentage = Read<int8_t>(data, 5425);
+		p.gm = data[4966];
+		// EQPlayer::EQPlayer: with Luclin or later (Expansions 0x1c), the 120 aa_array entries, each
+		// a word of the id (the low 12 bits; 0 none, past 226 an error) and the rank (the top 4).
+		if (p.expansions & 0x1c)
+			for (int i = 0; i < 120; ++i) {
+				uint16_t entry = Read<uint16_t>(data, 5612 + i * 2);
+				int id = entry & 0xfff;
+				if (id != 0 && id < 227)
+					p.aa_ranks[id] = static_cast<uint8_t>(entry >> 12);
+			}
 		m_have_profile = true;
 		char line[160];
 		snprintf(line, sizeof(line), "[zone]    profile: %s level %u, zone %u at (%.1f, %.1f, %.1f), hp %d", p.name.c_str(), p.level,
@@ -1953,6 +1982,13 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		// ServerZoneEntry_Struct: our own spawn record.
 		if (data.size() >= ZoneEntrySize) {
 			m_self = ParseZoneEntry(data);
+			// EQPlayer::EQPlayer: our own AA title is worked out from our ranks
+			// (AltAdvManager::GetAbilityTitle), not taken from the record.
+			if (m_have_profile) {
+				AltAdv::Character ch{m_profile.class_id, m_profile.level, m_profile.expansions, m_profile.aa_unspent,
+					m_profile.aa_ranks};
+				m_self.aa_title = static_cast<uint8_t>(AltAdv::Title(ch));
+			}
 			// msg_eq_netplayer: a player's guild we don't know is asked for.
 			if (MissingGuild(m_self))
 				RequestGuild(m_self.guild_id);
@@ -2209,10 +2245,35 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		m_profile.exp = Read<uint32_t>(data, 0);
 		break;
 	case ZoneOp::AAExpUpdate:
+		// CEverQuest_HandleWorldMessage_AA_update2, then CAAWnd::Update.
 		if (data.size() >= 7) {
 			m_profile.aa_exp = Read<int32_t>(data, 0);
 			m_profile.aa_unspent = Read<int16_t>(data, 4);
 			m_profile.aa_percentage = Read<int8_t>(data, 6);
+			events.push_back({Event::Type::AltAdvChanged});
+		}
+		break;
+	case ZoneOp::RespondAA:
+		// AltAdvManager_UpdateTrainableAbilities: every rank, then CAAWnd::Update.
+		if (data.size() >= 227) {
+			std::copy(data.begin(), data.begin() + 227, m_profile.aa_ranks);
+			events.push_back({Event::Type::AltAdvChanged});
+		}
+		break;
+	case ZoneOp::AAAction:
+		// updateAltAdvancementTimers: the ability's last use, moved by how far the zone's clock
+		// (its `end`) is from ours; the four elemental forms share a timer, and the two touches.
+		if (data.size() >= 12) {
+			int32_t begin = Read<int32_t>(data, 0), end = Read<int32_t>(data, 8);
+			int16_t id = Read<int16_t>(data, 4);
+			int64_t skew = static_cast<int64_t>(std::time(nullptr)) - end;
+			if (id > 0 && id < 227) {
+				for (int shared : AltAdv::SharedTimer(id))
+					m_aa_last_used[shared] = begin + skew;
+				Event event{Event::Type::AltAdvChanged};
+				event.id = static_cast<uint16_t>(id);
+				events.push_back(event);
+			}
 		}
 		break;
 	case ZoneOp::LevelUpdate:

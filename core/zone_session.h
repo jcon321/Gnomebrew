@@ -60,6 +60,11 @@ struct ZoneProfile
 	int32_t aa_exp = 0;  // OP_AAExpUpdate's 0..330 of the way to the next AA point
 	int16_t aa_unspent = 0;
 	int8_t aa_percentage = 0; // how much of our experience goes to AAs
+	// Our rank in each AA by its id (ActorInfo's AAAbilities): the profile's aa_array (with an
+	// expansion past Velious, as EQPlayer::EQPlayer reads it), then OP_RespondAA's. [0] is
+	// OP_RespondAA's points spent.
+	uint8_t aa_ranks[227] = {};
+	uint8_t gm = 0; // the profile's GM flag (EQ_Character+0x1362): the AA window shows ids
 	int16_t str = 0, sta = 0, cha = 0, dex = 0, int_ = 0, agi = 0, wis = 0; // base stats, without items or spells
 	int8_t fatigue = 0; // 0 rested .. 100 exhausted (OP_Stamina keeps it up to date)
 	int32_t hunger = 0, thirst = 0; // 0 .. 6000 eaten and drunk (the profile's, then OP_Stamina's)
@@ -594,6 +599,10 @@ public:
 			// Raids (raid): OP_RaidInvite (an invitation, or why ours was turned down) and OP_RaidUpdate.
 			RaidInvited,
 			RaidUpdated,
+			// Alternate advancement: our ranks (OP_RespondAA), points and share of experience
+			// (OP_AAExpUpdate), or an ability's timer (OP_AAAction: id the ability) changed; all in
+			// Profile() and AltAdvLastUsed() already.
+			AltAdvChanged,
 			LoggedOut,    // camp finished; the zone closes the connection
 			ZoneApproved, // value: the zone we're going to; OP_DeleteSpawn is sent
 			ZoneDenied,   // value: the answer (ZoningMessage: 0 down, -1 not ready, -7 not experienced...)
@@ -844,6 +853,11 @@ public:
 	bool TradeSkillCombine(uint8_t bag_type, int16_t slot, const int16_t ids[10], uint16_t bag_id);
 	// OP_Buff about a buff slot of ours: what's there, and how (ZoneOp::Buff).
 	bool SendBuff(int slot, const ZoneBuff &buff, uint32_t how);
+	// OP_AAAction: /alternateadv's text, as the AA window and the command send it ("buy 12").
+	bool SendAltAdv(const std::string &text);
+	// updateAltAdvancementTimers: when each ability was last used, by id, a time_t of ours (the
+	// zone's, moved by how far its clock is from ours); 0 never.
+	int64_t AltAdvLastUsed(int id) const { return id >= 0 && id < 227 ? m_aa_last_used[id] : 0; }
 	void Close();
 
 	// One of the client's own one-shot animations on a spawn (a spell's caster and target, as
@@ -929,6 +943,7 @@ public:
 	static uint64_t Now(); // the clock behind PacketRecord::ms, SentPosition::ms and ZoneSpawn::updated_ms
 
 private:
+	int64_t m_aa_last_used[227] = {};
 	void TakeOne(int16_t slot); // an item's charges (or a stack) less one
 	void Reset(const std::string &character);
 	void Log(const std::string &line);

@@ -693,6 +693,127 @@ namespace
 		return 0;
 	}
 
+	// aa: the warrior (Replaytest, 51 or more) opens the AA window from the inventory's Alt. Adv.
+	// button, and its pages, rows, labels and buttons print: "-" and "+", each page's tab, a row
+	// selected (the description and timer), Train on an ability it can train, /alternateadv list and
+	// buy, then Done.
+	int AATest(FrontEnd &frontend, Harness &h)
+	{
+		WindowManager &windows = frontend.Windows();
+		const ZoneSession &zone = frontend.Zone();
+		h.Key(InputEvent::Key::F11);
+		size_t chat_seen = frontend.Chat().Lines().size();
+		auto chat = [&] {
+			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
+				printf("[preview] chat: %s\n", frontend.Chat().Lines()[chat_seen].text.c_str());
+		};
+		auto type = [&](const std::string &line) {
+			printf("[preview] > %s\n", line.c_str());
+			h.Key(InputEvent::Key::Enter);
+			h.Type(line);
+			h.Key(InputEvent::Key::Enter);
+			h.RunUntil([] { return false; }, 1500);
+			chat();
+		};
+		auto press = [&](int x, int y) {
+			Rect area = frontend.ScreenArea();
+			frontend.OnEvent({InputEvent::Type::MouseMove, area.x + x, area.y + y});
+			frontend.OnEvent({InputEvent::Type::MouseDown, area.x + x, area.y + y});
+			frontend.OnEvent({InputEvent::Type::MouseUp, area.x + x, area.y + y});
+			frontend.Update(NowMs());
+		};
+		auto click = [&](const char *window, const std::string &id) {
+			const SidlWindow *wnd = windows.Find(window);
+			const SidlWindow::Control *c = wnd ? wnd->Find(id) : nullptr;
+			if (!c || !windows.Shown(window)) {
+				printf("[preview] no %s in %s\n", id.c_str(), window);
+				return;
+			}
+			printf("[preview] click %s.%s%s\n", window, id.c_str(), c->enabled ? "" : " (disabled)");
+			press(c->rect.x + c->rect.w / 2, c->rect.y + c->rect.h / 2);
+			h.RunUntil([] { return false; }, 1500);
+			chat();
+		};
+		auto show = [&](const char *when, bool all_rows) {
+			const ZoneProfile &me = zone.Profile();
+			printf("[preview] %s: level %u, %d unspent, %d%%\n", when, me.level, me.aa_unspent, me.aa_percentage);
+			SidlWindow *wnd = windows.Find(AAWindow::Screen);
+			if (!wnd || !windows.Shown(AAWindow::Screen)) {
+				printf("[preview]   AA window down\n");
+				return;
+			}
+			std::string line;
+			for (const char *id : {"ExpCount", "CurrentCount", "TotalCount", "Timer"})
+				if (const SidlWindow::Control *c = wnd->Find(id))
+					line += std::string(" ") + id + " '" + c->text + "'";
+			for (const char *id : {"LessExpButton", "MoreExpButton", "TrainButton", "HotButton", "DoneButton"})
+				if (const SidlWindow::Control *c = wnd->Find(id))
+					line += std::string(" ") + id + (c->enabled ? " on" : " off");
+			printf("[preview]  %s\n", line.c_str());
+			const SidlWindow::Control *tabs = wnd->Find("Subwindows");
+			printf("[preview]   page %d; description: %s\n", tabs ? tabs->tab + 1 : 0, wnd->Find("Description")->text.c_str());
+			for (int page = 1; page <= AAWindow::Pages; ++page) {
+				const SidlWindow::Control *list = wnd->Find("List" + std::to_string(page));
+				if (!list || (!all_rows && tabs && tabs->tab != page - 1))
+					continue;
+				printf("[preview]   List%d: %zu rows, selected %d\n", page, list->rows.size(), list->selected_row);
+				for (size_t r = 0; r < list->rows.size(); ++r) {
+					std::string cells;
+					for (size_t c = 0; c < list->rows[r].size(); ++c) {
+						uint32_t color = r < list->cell_colors.size() && c < list->cell_colors[r].size() ? list->cell_colors[r][c] : 0;
+						char hex[16];
+						snprintf(hex, sizeof(hex), " (%06x)", color);
+						cells += " | " + list->rows[r][c] + (c == 0 ? hex : "");
+					}
+					printf("[preview]     %2zu%s\n", r, cells.c_str());
+				}
+			}
+		};
+		chat();
+		windows.Show("InventoryWindow", true);
+		frontend.Update(NowMs());
+		click("InventoryWindow", "IW_AltAdvBtn");
+		show("opened from the inventory", true);
+		h.Snapshot("aa-1-open");
+		click(AAWindow::Screen, "LessExpButton");
+		show("after -", false);
+		click(AAWindow::Screen, "MoreExpButton");
+		show("after +", false);
+		// Each page's tab, then back to the general page.
+		SidlWindow *wnd = windows.Find(AAWindow::Screen);
+		SidlWindow::Control *tabs = wnd ? wnd->Find("Subwindows") : nullptr;
+		for (int page : {2, 1, 0}) {
+			if (!tabs)
+				break;
+			Rect tab = wnd->TabRect(*tabs, page);
+			printf("[preview] tab %d\n", page + 1);
+			press(tab.x + tab.w / 2, tab.y + tab.h / 2);
+			h.RunUntil([] { return false; }, 300);
+			show("tab", false);
+			if (page == 2)
+				h.Snapshot("aa-2-class");
+		}
+		// A row of the general page: Innate Stamina (its second), then Train.
+		if (SidlWindow::Control *list = wnd ? wnd->Find("List1") : nullptr; list && list->rows.size() > 1) {
+			int row_h = list->row_height > 0 ? list->row_height : 14;
+			const Rect content = wnd->ContentRect(*list);
+			int header = list->header_hidden ? 0 : row_h + 2;
+			press(content.x + 20, content.y + header + row_h + row_h / 2);
+			h.RunUntil([] { return false; }, 300);
+			show("a row clicked", false);
+			h.Snapshot("aa-3-selected");
+			click(AAWindow::Screen, "TrainButton");
+			h.RunUntil([] { return false; }, 1500);
+			show("after Train", false);
+		}
+		type("/alternateadv buy 3");
+		type("/alternateadv buy 200");
+		show("after /alternateadv buy", false);
+		click(AAWindow::Screen, "DoneButton");
+		show("after Done", false);
+		return 0;
+	}
+
 	// Live: with Claudebot in the zone through `eqclient -u clauderobot -p testpass1 --char Claudebot
 	// --zone 200 --raid-invite <us> --raid-accept`: the raid commands out of a raid; /raidwindow, their
 	// invitation accepted with its Accept, the commands as a member, its Disband; then /target and its
@@ -1956,6 +2077,7 @@ int main(int argc, char **argv)
 	bool passage = argc == 7 && std::string(argv[6]) == "passage";
 	bool group_test = argc == 7 && std::string(argv[6]) == "group";
 	bool raid_test = argc == 7 && std::string(argv[6]) == "raid";
+	bool aa_test = argc == 7 && std::string(argv[6]) == "aa";
 	bool guild_test = argc == 7 && std::string(argv[6]) == "guild";
 	bool skills_test = argc == 7 && std::string(argv[6]) == "skills";
 	bool train_test = argc == 7 && std::string(argv[6]) == "train";
@@ -3902,10 +4024,10 @@ int main(int argc, char **argv)
 		}
 		// skills: the account's rogue (Replayrogue), picked with Down; train and guild: its warrior
 		// (Replaytest).
-		for (int i = 0; (skills_test || train_test || guild_test) && i < 10; ++i) {
+		for (int i = 0; (skills_test || train_test || guild_test || aa_test) && i < 10; ++i) {
 			int sel = frontend.SelectedCharacter();
 			if (sel >= 0 && sel < static_cast<int>(frontend.Characters().size()) &&
-				frontend.Characters()[sel].name == (train_test || guild_test ? "Replaytest" : "Replayrogue"))
+				frontend.Characters()[sel].name == (train_test || guild_test || aa_test ? "Replaytest" : "Replayrogue"))
 				break;
 			h.Key(InputEvent::Key::Down);
 			h.RunUntil([] { return false; }, 300);
@@ -3944,6 +4066,8 @@ int main(int argc, char **argv)
 				return GroupTest(frontend, h);
 			if (raid_test)
 				return RaidTest(frontend, h);
+			if (aa_test)
+				return AATest(frontend, h);
 			if (guild_test)
 				return GuildTest(frontend, h);
 			if (skills_test)

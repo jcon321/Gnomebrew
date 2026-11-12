@@ -1571,16 +1571,27 @@ std::string SidlWindow::Press(const InputEvent &event)
 		return "";
 	}
 
-	// CTabWnd's left button down: a press on a tab shows its page.
+	// CTabWnd's left button down: a press on a tab shows its page, and a new page is told its
+	// window (WndNotification 0x16, the page) as the button comes up: the TabBox's ScreenID, as a
+	// button's click.
 	if (event.type == InputEvent::Type::MouseDown || event.type == InputEvent::Type::DoubleClick)
-		for (auto &control : m_controls)
+		for (int i = 0; i < static_cast<int>(m_controls.size()); ++i) {
+			Control &control = m_controls[i];
 			if (control.def->type == "TabBox" && HitTest(control, event.x, event.y)) {
 				int tab = TabAt(control, event.x, event.y);
 				if (tab >= 0) {
+					if (tab != control.tab)
+						m_tab_changed = i;
 					SelectTab(control, tab);
 					return "";
 				}
 			}
+		}
+	if (event.type == InputEvent::Type::MouseUp && m_tab_changed >= 0) {
+		const Control &tab_box = m_controls[m_tab_changed];
+		m_tab_changed = -1;
+		return tab_box.def->screen_id;
+	}
 
 	// A slider moves with the mouse while the button's down on it.
 	if (m_slider >= 0) {

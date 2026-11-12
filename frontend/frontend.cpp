@@ -916,6 +916,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		m_merchant.Frame(now_ms);
 		m_train.Frame(now_ms);
 		m_raid_window.Frame(now_ms);
+		m_aa_window.Frame(now_ms);
 		m_loot.Frame(now_ms);
 		m_trade.Frame(now_ms);
 		m_ground.Frame(now_ms);
@@ -2097,7 +2098,7 @@ namespace
 		{"ConfirmationDialogBox", false}, {"CastingWindow", false}, {"BankWnd", false},
 		{"MerchantWnd", false}, {"LootWnd", false}, {"TradeWnd", false}, {"GiveWnd", false},
 		{"SkillsSelectWindow", false}, {"NoteWindow", false}, {"BookWindow", false}, {"TrainWindow", false},
-		{RaidWindow::Screen, false}, {RaidWindow::OptionsScreen, false},
+		{RaidWindow::Screen, false}, {RaidWindow::OptionsScreen, false}, {AAWindow::Screen, false},
 	};
 
 	// The selector's buttons (EQUI_SelectorWnd.xml) and the windows they open and close.
@@ -2243,6 +2244,13 @@ void FrontEnd::BuildZoneWindows()
 		m_raid_window.Activate();
 	else
 		m_windows.Show(RaidWindow::Screen, false);
+	// CAAWnd made (Init with our class's abilities); CDisplay_ActivateMainUI leaves it down.
+	AAWindow::Host aa_host;
+	aa_host.send = [this](const std::string &text) { m_zone.SendAltAdv(text); };
+	aa_host.world_expansions = [this] { return m_world.Expansions(); };
+	aa_host.set_percentage = [this](int percent) { m_zone.EditProfile().aa_percentage = static_cast<int8_t>(percent); };
+	m_aa_window.Attach(m_windows, m_game_values, std::move(aa_host));
+	m_windows.Show(AAWindow::Screen, false);
 	m_windows.TakeChanged();
 	SpellBook::Host host;
 	host.change_stance = [this](uint8_t stance) { ChangeStance(stance); };
@@ -2634,8 +2642,13 @@ void FrontEnd::HandleWindowClicks()
 		// A bag window's Done and Combine, the bank's Done, the merchant's Buy, Sell and Done.
 		if (m_containers.Click(click.window, click.control) || m_bank.Click(click.window, click.control) ||
 		    m_merchant.Click(click.window, click.control, click.shift, click.ctrl) || m_train.Click(click.window, click.control) ||
-		    m_raid_window.Click(click.window, click.control))
+		    m_raid_window.Click(click.window, click.control) || m_aa_window.Click(click.window, click.control))
 			continue;
+		// CInventoryWnd::WndNotification: the Alt. Adv. button opens the AA window, or closes it.
+		if (click.window == "InventoryWindow" && click.control == "IW_AltAdvBtn") {
+			m_aa_window.Toggle();
+			continue;
+		}
 		// While a merchant's up, a slot anywhere is picked to buy or sell (CInvSlot::HandleLButtonUp).
 		if (m_merchant.SlotClick(click.window, click.control))
 			continue;
@@ -4177,6 +4190,11 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 		case Type::GroupUpdated:
 			m_group.ZoneEvent(event);
 			break;
+		case Type::AltAdvChanged:
+			// CAAWnd::Update, after AltAdvManager_UpdateTrainableAbilities, AA_update2 and
+			// updateAltAdvancementTimers.
+			m_aa_window.Update();
+			break;
 		case Type::RaidInvited:
 		case Type::RaidUpdated:
 			// HandleWorldMessage's 0x425f and 0x4260 (the new UI's only).
@@ -4707,6 +4725,12 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 	case KeyMap::ToggleOptionsWin: toggle("OptionsWindow"); break;
 	case KeyMap::ToggleSelectorWin: toggle("SelectorWindow"); break;
 	case KeyMap::ToggleCompassWin: toggle("CompassWindow"); break;
+	case KeyMap::ToggleAltAdvWin:
+		// ExecuteCmd 0x62: pressed, with Luclin (the profile's Expansions 4) or as a GM; CAAWnd::Activate
+		// or down.
+		if (down && in_zone && ((m_zone.Profile().expansions & 4) || m_zone.Profile().gm))
+			m_aa_window.Toggle();
+		break;
 	case KeyMap::ToggleRaidWin:
 		// ExecuteCmd 0x6d: pressed, with the raid's expansion; CRaidWnd::Activate or down.
 		if (down && in_zone && RaidAllowed())
@@ -5032,13 +5056,13 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 		}
 		// ExecuteCmd's escape: no target, then CDisplay_NewUIProcessEscape closes the first of its
 		// windows that's open (of the ones we have: the item display, quantity, the bank, a merchant,
-		// loot, a trade, a book, a note, help, skills, then every bag window at once, options, the
+		// loot, a trade, a book, a note, help, the AA window, skills, then every bag window at once, options, the
 		// spellbook, the social editor, inventory).
 		SetTarget(0);
 		ChatOut(EqString(12375, "You no longer have a target."), ChatType::Default);
 		for (const char *screen :
 			{"ItemDisplayWindow", "QuantityWnd", "BankWnd", "MerchantWnd", "LootWnd", "TradeWnd", "BookWindow",
-			 "NoteWindow", "HelpWindow", "SkillsWindow", "", "OptionsWindow", "SpellBookWnd", "TrainWindow", "SocialEditWnd",
+			 "NoteWindow", "HelpWindow", "AAWindow", "SkillsWindow", "", "OptionsWindow", "SpellBookWnd", "TrainWindow", "SocialEditWnd",
 			 "InventoryWindow"}) {
 			if (!*screen) {
 				if (m_containers.CloseAll())

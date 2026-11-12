@@ -73,6 +73,13 @@ namespace ZoneOp
 	constexpr uint16_t ZoneInAvatarSet = 0x406f;
 	constexpr uint16_t ExpUpdate = 0x4199;   // {u32 exp}: how far into the level, 0..330
 	constexpr uint16_t AAExpUpdate = 0x4223; // AltAdvStats_Struct {i32 exp (0..330), i16 unspent, i8 percentage, i8}
+	// AA_Skills: 227 bytes, our rank in each ability by its id (the first, the points spent):
+	// AltAdvManager_UpdateTrainableAbilities.
+	constexpr uint16_t RespondAA = 0x4215;
+	// Ours: 256 bytes of text, "buy <id>", "on <percent>", "off", "activate <id> <target>" (/alternateadv's
+	// words). The zone's: UseAA_Struct {i32 begin, i16 ability, i16, i32 end}, an ability's last use
+	// (its time_t then, and the zone's now): updateAltAdvancementTimers.
+	constexpr uint16_t AAAction = 0x4214;
 	constexpr uint16_t CharInventory = 0x41f6;
 	constexpr uint16_t ItemPacket = 0x4164;
 	constexpr uint16_t SpawnDoor = 0x41f7;     // u16 count, then the Door_Structs (44 bytes each) deflated
@@ -378,6 +385,8 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::ZoneInAvatarSet, "OP_ZoneInAvatarSet"},
 	{ZoneOp::ExpUpdate, "OP_ExpUpdate"},
 	{ZoneOp::AAExpUpdate, "OP_AAExpUpdate"},
+	{ZoneOp::RespondAA, "OP_RespondAA"},
+	{ZoneOp::AAAction, "OP_AAAction"},
 	{ZoneOp::CharInventory, "OP_CharInventory"},
 	{ZoneOp::ItemPacket, "OP_ItemPacket"},
 	{ZoneOp::SpawnDoor, "OP_SpawnDoor"},

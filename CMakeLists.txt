@@ -44,6 +44,7 @@ add_library(eqcore STATIC
     core/creation_rules.cpp
     core/inventory.cpp
     core/spell_file.cpp
+    core/alt_adv.cpp
 )
 target_include_directories(eqcore PUBLIC core)
 target_link_libraries(eqcore PUBLIC rdplib)
@@ -131,6 +132,7 @@ add_library(eqfrontend STATIC
     frontend/group.cpp
     frontend/raid.cpp
     frontend/raid_window.cpp
+    frontend/aa_window.cpp
     frontend/guild.cpp
     frontend/ranged_attack.cpp
     frontend/melee_attack.cpp

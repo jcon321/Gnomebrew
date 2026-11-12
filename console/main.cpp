@@ -11,6 +11,7 @@
 #include <cmath>
 
 #include <cstdio>
+#include <ctime>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -54,6 +55,10 @@ namespace
 			"  --raid-invite NAME    with --zone, 15 s after coming in and NAME is here, invite NAME to a raid\n"
 			"  --raid-accept         with --zone, accept any raid invitation 2 s after it comes; every raid\n"
 			"                        packet prints\n"
+			"  --aa TEXT             with --zone, once in, send OP_AAAction TEXT (\"buy 12\", \"on 50\", \"off\",\n"
+			"                        \"activate 12 0\"), and print our AA ranks, points and timers as they change.\n"
+			"                        Repeatable, with --say-more: each 3 s after the one before, in order\n"
+			"  --say-more TEXT       with --zone, a /say in the --aa queue (a GM's #level 60)\n"
 			"  --record DIR          with --zone, write each zone session's packets to DIR/<char>-<time>.eqr\n"
 			"  --replay FILE         play a recorded zone session back (no server): stay --zone seconds\n"
 			"                        (default 10), print what's around, then camp out\n"
@@ -128,6 +133,7 @@ namespace
 	}
 
 	std::string g_record_dir;
+	std::vector<std::pair<bool, std::string>> g_aa_steps; // --aa (true) and --say-more, in order
 	int g_click_link = -1; // --click-link
 	std::string g_replay_path;
 	std::vector<std::string> g_moves; // --move
@@ -295,6 +301,8 @@ namespace
 		uint64_t raid_invite_at = 0;  // when --raid-invite goes
 		uint64_t raid_accept_at = 0;  // when --raid-accept answers
 		std::string raid_inviter;
+		size_t next_aa = 0;
+		uint64_t aa_at = 0; // when the next --aa step goes
 		for (;;) {
 			std::vector<ZoneSession::Event> events;
 			zone.Pump(100, events);
@@ -309,6 +317,8 @@ namespace
 					}
 					if (!say.empty())
 						zone.Say(say);
+					if (!g_aa_steps.empty())
+						aa_at = NowMs() + 2000;
 					if (!g_attack.empty())
 						StartAttack(zone);
 					if (click_door >= 0) {
@@ -471,6 +481,19 @@ namespace
 					break;
 				}
 				case ZoneSession::Event::Type::RaidInvited:
+				case ZoneSession::Event::Type::AltAdvChanged: {
+					const ZoneProfile &me = zone.Profile();
+					printf("[aa] level %u, %d unspent, %d%% to AAs, aa exp %d/330;", me.level, me.aa_unspent,
+						me.aa_percentage, me.aa_exp);
+					for (int id = 1; id < 227; ++id)
+						if (me.aa_ranks[id])
+							printf(" %d:%u", id, me.aa_ranks[id]);
+					if (event.id)
+						printf("; ability %u last used %lld s ago", event.id,
+							static_cast<long long>(time(nullptr) - zone.AltAdvLastUsed(event.id)));
+					printf("\n");
+					break;
+				}
 				case ZoneSession::Event::Type::RaidUpdated: {
 					const ZoneRaid &r = event.raid;
 					printf("[raid] %s %u: '%s' '%s' param %d, class %d level %d group leader %d\n",
@@ -545,6 +568,16 @@ namespace
 				printf("[group] accepting %s's invitation\n", inviter.c_str());
 				zone.GroupFollow(inviter);
 			}
+			if (aa_at && NowMs() >= aa_at && next_aa < g_aa_steps.size()) {
+				const auto &[aa, text] = g_aa_steps[next_aa++];
+				if (aa) {
+					printf("[aa] sending '%s'\n", text.c_str());
+					zone.SendAltAdv(text);
+				}
+				else
+					zone.Say(text);
+				aa_at = next_aa < g_aa_steps.size() ? NowMs() + 3000 : 0;
+			}
 			if (pickup_at && NowMs() >= pickup_at) {
 				pickup_at = 0;
 				DoPickup(zone);
@@ -607,6 +640,10 @@ int main(int argc, char **argv)
 			zone_seconds = atoi(next().c_str());
 		else if (arg == "--say")
 			say_text = next();
+		else if (arg == "--aa")
+			g_aa_steps.push_back({true, next()});
+		else if (arg == "--say-more")
+			g_aa_steps.push_back({false, next()});
 		else if (arg == "--click-door")
 			click_door = atoi(next().c_str());
 		else if (arg == "--cast") {

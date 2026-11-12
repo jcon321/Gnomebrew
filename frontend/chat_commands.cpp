@@ -3,6 +3,7 @@
 // word starts is the one, so "/s" is /split and "/g" is /gsay, as in eqgame. Anything else is said.
 
 #include "frontend.h"
+#include "../core/alt_adv.h"
 #include "item_display.h"
 #include "zone_names.h"
 
@@ -21,6 +22,7 @@ namespace
 		UserColor, GuildInvite, GuildRemove, GuildDelete, GuildStatus, GuildLeader, GuildWar, GuildPeace, GuildMotd,
 		MakeRaidLeader, RaidInvite, RaidDecline, RaidAccept, RaidDisband, SetLootType, AddRaidLooter, RemoveRaidLooter,
 		RaidSay, RaidWindow, Channel, Loot, TargetTell, CharInfo, MoveLog, StopSong, Shield, Quit, Log, Keys, Dismount,
+		AlternateAdv,
 	};
 
 	struct CommandEntry
@@ -109,7 +111,7 @@ namespace
 		{"/gems", 0, Command::None}, {"/inspect", 0, Command::None}, {"/serverfilter", 0, Command::ServerFilter},
 		{"/showspelleffects", 0, Command::None}, {"/combatmusic", 0, Command::CombatMusic}, {"/mixahead", 0, Command::None},
 		{"/guildmotd", 0, Command::GuildMotd}, {"/charinfo", 0, Command::CharInfo}, {"/safelock", 0, Command::None},
-		{"/alternateadv", 0, Command::None}, {"/targetgroupbuff", 0, Command::TargetGroupBuff}, {"/tgb", 0, Command::TargetGroupBuff},
+		{"/alternateadv", 0, Command::AlternateAdv}, {"/targetgroupbuff", 0, Command::TargetGroupBuff}, {"/tgb", 0, Command::TargetGroupBuff},
 		{"/hotbutton", 0, Command::None}, {"/particledensity", 0, Command::None}, {"/facepick", 0, Command::None},
 		{"/dismount", 0, Command::Dismount}, {"/rtarget", 0, Command::None}, {"/showgrass", 0, Command::None},
 		{"/alias", 0, Command::None}, {"/hitsmode", 0, Command::None}, {"/clearhits", 0, Command::None},
@@ -1439,6 +1441,52 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 	case Command::Keys:
 		m_zone.Keys(); // /keys (@004f8ec7)
 		break;
+	case Command::AlternateAdv: {
+		// /alternateadv (@004fed79), with Luclin (the profile's Expansions 4) and something typed:
+		// "on" and "off" (eqstr 12947, 12946) set our share of experience (to 1 or 0 till the zone
+		// says) and go to the zone as typed; "list" (13271) prints the class's abilities, their
+		// names, descriptions and cost per rank (13274..13276); "buy <id>" (13272) goes only if it
+		// can be trained, else 13277; "act..." (13273) goes with our target's id after it
+		// ("activate 12 345"); anything else goes as typed. OP_AAAction each.
+		if (!(me.expansions & 4) || args.empty())
+			break;
+		auto word = [this](uint32_t id, const char *fallback) { return FormatEqString(m_ui.eqstr, id, fallback, {}); };
+		AltAdv::Character ch{me.class_id, me.level, me.expansions, me.aa_unspent, me.aa_ranks};
+		if (SamePrefix(args, word(12947, "on"), 2))
+			m_zone.EditProfile().aa_percentage = 1;
+		else if (SamePrefix(args, word(12946, "off"), 3))
+			m_zone.EditProfile().aa_percentage = 0;
+		else if (SamePrefix(args, word(13271, "list"), 4)) {
+			for (int id = 0; id < AltAdv::Count; ++id) {
+				const AltAdv::Ability &a = AltAdv::Abilities[id];
+				if (!a.enabled || !AltAdv::ClassHas(me.class_id, id))
+					continue;
+				std::string name = FormatEqString(m_ui.eqstr, static_cast<uint32_t>(a.name), "", {});
+				std::string description = FormatEqString(m_ui.eqstr, static_cast<uint32_t>(a.description), "", {});
+				ChatOut(format(13274, "Ability: %1", {name}), ChatType::Default);
+				ChatOut(format(13275, "Description: %1", {description}), ChatType::Default);
+				ChatOut(format(13276, "Cost per Level: %1", {std::to_string(a.cost_inc)}), ChatType::Default);
+			}
+			break;
+		}
+		else if (SamePrefix(args, word(13272, "buy"), 3)) {
+			std::string rest = args;
+			std::string first = GrabFirstWord(rest);
+			std::string id = GrabFirstWord(rest);
+			if (AltAdv::CanTrain(ch, std::atoi(id.c_str())))
+				m_zone.SendAltAdv(first + " " + id);
+			else
+				ChatOut(format(13277, "Unable to train in ability.", {}), ChatType::Red);
+			break;
+		}
+		else if (SamePrefix(args, word(13273, "act"), 3)) {
+			uint16_t target_id = target != spawns.end() ? target->first : 0;
+			m_zone.SendAltAdv(args + " " + std::to_string(target_id));
+			break;
+		}
+		m_zone.SendAltAdv(args);
+		break;
+	}
 	case Command::Dismount:
 		// /dismount (@004ff5a6): on a mount (ActorInfo's Mount), 13284, the mount's buff (SPA 113)
 		// off and EQPlayer::Dismount; else 13285. We've no mounts yet.
