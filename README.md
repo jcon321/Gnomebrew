@@ -607,7 +607,7 @@ build/eqclient -u USER -p PASS [options]
 
 ```
 build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|train|ground|commands|group|raid|guild|skills|aa]]
-build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings]]
+build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse]]
 ```
 
 This drives the real front-end code with scripted input and writes PNG snapshots. Text is
@@ -654,7 +654,12 @@ whose face picker steps through each feature, printing the rows shown and what t
 then what's sent and what the server lists. `explore` goes into explore mode, turns to the chase
 camera, prints the name tags, clicks the other character, walks forward, and leaves with Escape. It's for
 checking layout and flow without Windows. `--replay` plays a packet log back instead (no server;
-`settings` after SECONDS reads `OUTDIR/my-client.ini` first, such as its `[Filters]`)
+`settings` after SECONDS reads `OUTDIR/my-client.ini` first, such as its `[Filters]`; `mounts`
+prints each horse (its speeds, Rider, whether it's drawn), who rides what and the chat for SECONDS,
+and each second where another's rider and horse are and what they play, with the old models,
+`mountsluclin` with the human Luclin models and `mountshorse` with them and the horse models; on
+a horse of ours it snapshots it, rides forward 5 s and lets go (printing the speed each half
+second), looks in first person and dismounts)
 and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,
 opens, minimizes, resizes and closes windows (the layout goes to OUTDIR), types into the chat window
 (a say, commands, /target) and prints what the chat window holds, then stands near the target to
@@ -1025,6 +1030,78 @@ functions):
   and beard, `ServerZoneEntry_Struct` 341..346, and `CharacterSelect_Struct` has them [10] each at
   1560..1610.
 
+## Horses
+
+A summoned horse is an NPC of its own: the zone's `Client::SummonHorse` spawns race 216 named
+`<rider>`s_Mount00` where the rider stands (the `horses` table's race, gender, texture and
+`mountspeed`, sent as its run speed: 0.75..1.75; its walk speed comes as 0.68), and never moves
+it; the client puts the rider on it. Ported in `frontend/mounts.*` (who's on what) and
+`frontend/zone_view.cpp` (riding), checked through replays of a horse summoned with the GM's
+`#castspell 2866` (Summon Horse, `SumHorseBrFast`): ours, and another player's walking on one.
+
+- **Getting on** (`EQPlayer::MakeRiderMountUp` @0051fcf5, from `EQPlayer::EQPlayer` for every new
+  NPC and `CEverQuest_CreateInitialActors` as the zone loads): a horse with no Rider, its name
+  over 8 letters with `` `s_Mount `` in it, is the mount of the spawn named as it is less its last
+  10 letters (`EQPlayer_get_player`, `stricmp`, us too). `EQ_Character::ProcessAffects` tries
+  again for us each 6 s with a buff of SPA 113 (0x71) and no Mount: `%s`s_Mount` through
+  `EQPlayer_get_player_partial_name` (both `trimName`d, the shortest name that starts so).
+- **`EQPlayer::MountEQPlayer`** (@0051fd83): off any other horse first. Then, without a Luclin
+  player model loaded (CDisplay+0xa0, set by `InitWorld` for any but the Vah Shir's), the horse
+  only takes the rider as its `Rider`. With one, a horse takes a rider whose model is an old one
+  (`EQPlayer::HasInvalidRiderTexture` @0051fca6: the model's +0x3b0, 1 for a Luclin model) as its
+  `Rider` too, and `ChangeHeight`s to the rider's height; then `CDisplay_AttachPlayerToPlayerDag`
+  (@004b079f) hangs the rider's model on the horse's `<tag>RIDER_DAG` (`HSMRIDER_DAG`,
+  `HSNRIDER_DAG`), which fails for an old model or an untextured horse
+  (`EQPlayer::IsUntexturedHorse` @0051fc6d: drawn as `HUM_ACTORDEF`, the horse models in
+  `global5_chr` not loaded: they come only with `UseLuclinElementals`). Failing, for us: "You must
+  have both the Horse Models and your current Luclin Character Model enabled to ride a horse."
+  (eqstr 5524, color 13) and the SPA 113 buff off, which tells the zone (it takes the horse away).
+  Done, the rider's `Mount` and the horse's `Rider` are set, and for us `pinstCharSpawn` is the
+  horse, both speeds 0, and `CameraHeightOffset` x 0.85.
+- **Unseen horses** (`CDisplay::UpdatePlayerVisibility` @004af894, `msg_eq_netplayer`'s
+  `ForceInvisible`): an untextured horse, and a horse whose `Rider` has an old model. Ours aren't
+  drawn (`ZoneView::SetHiddenSpawns`), so they have no name, take no click and aren't in view for
+  targeting.
+- **The old models' horse** follows from that: no horse is seen, the buff stays (unless some
+  Luclin model is on and the rider's isn't), the rider has no Mount and goes on as before (own
+  speeds, no acceleration, speed buffs counting: `eqspa_movement_rate` leaves out the positive ones
+  only with a Mount), and /dismount says 13285. The zone counts a client with a horse id as
+  meditating while it's still and not attacking (`client_mods.cpp`), whatever the model; its horse
+  NPC stays unseen where it was summoned. The zone's own comments call this `AllLuclinPcModelsOff`'s
+  horse bug (the levitated rider's z then right, and the buff not taken off under water: that's
+  `headEnvironmentChange` on a `pinstCharSpawn` with a Rider, which an old model never has).
+- **Riding ourselves** (`pinstCharSpawn` the horse): `CEverQuest::ProcessControls` drives it with
+  its walk and run speeds (`MovementBackward/ForwardSpeedMultiplier`) through
+  `EQPlayer::SetAccel` (@00520074), which with a `Rider` gets to the speed asked 0.02 a tick
+  faster or 0.03 slower (0 to 1.75 in about 4.4 s, back down in 3), turns at most 8 a tick (12
+  on foot), strafes standing still at a quarter (`Zeal_strafe_speed` x 0.25 with a Rider), takes
+  no encumbrance; `DoMainLoop` and `ExecuteCmd`'s jump do nothing on race 216; `process_physics`
+  gives the horse only our snares (its `MovementSpeedModifier` ours under 0, else 0). Our
+  `OP_ClientUpdate` is the horse's (every 300 ms, under our id) with z its floor plus our
+  `ModelHeightOffset`: the same as ours on foot, the horse being as tall as we are.
+  `EQPlayer::headEnvironmentChange` (@0050bcac) on it, its head going into or out of water, takes
+  the SPA 113 buff off. Ours in `PlayerMovement::SetMounted` and `ZoneView::StartRiding`,
+  `DriveHorse`, `StopRiding`.
+- **Riders** (`process_physics`): on the horse's `RIDER_DAG` (its world place, or the horse's
+  position plus its `ModelHeightOffset` + 1 without one) with the horse's heading and no motion.
+  `CDisplay::PlayAnimationTrack2` plays P09 (74) in place of any standing animation, L10 (78)
+  while the horse goes its run speed or faster (`MovementForwardSpeedMultiplier <= MovementSpeed`);
+  others (casting, attacks) still play. Another's horse goes where its rider's updates put it
+  (`ProcessUpdateStats` @004dbcf5 moves a spawn's Mount, and a spawn with a Rider and no Mount takes
+  no update of its own). Ours in `ZoneView::UpdateSpawns` and `SpawnActor::Ride` and `Drive`.
+- **Getting off** (`EQPlayer::Dismount` @0051ff5f): the horse stops, `pinstCharSpawn` is us,
+  `SetHeights`; we're where the saddle was (we put the feet on the floor under it). Its callers:
+  /dismount, `EQPlayer::ChangeStance` (@0050be3c: sitting refused on a Mount; lying down, feign
+  death, gets off and takes our buff off), `EQPlayer::Dismount2` (@00508152, from `~EQPlayer`: a
+  spawn going takes its rider off, and gets off what it rides) and `do_change_form`.
+- **On a horse** otherwise: hunger and thirst say "You and your mount are hungry." / "thirsty."
+  (12486, 12484); `TakeFallDamage` takes none under 200; the spell book opens without sitting
+  (`ChangeStance` 110 refused) and scribes and memorizes from it (`CSpellBookWnd::WndNotification`),
+  forgetting only with the horse still (`HandleRightClickOnSpell`); Target nearest NPC passes over a
+  horse with a Rider (`GetNearestPlayerInView`'s third argument) and `ExecuteCmd` 29 hands a horse's
+  target to its Rider; `UseSkill` allows only its few skills (see Skills and abilities);
+  `IsCharacterMeditating` is a Mount standing still and not attacking.
+
 ## Character creation
 
 Clicking an empty slot ("Create New Character") opens `CharacterCreation` from
@@ -1345,8 +1422,8 @@ details and the nearest spawns at the top left and the radar at the top right.
   over the camera to 2.5 over it (`s3dCollideSphereWithWorld`). For an NPC, one of body type 11,
   60, 65 or 67 below race 2253 leaves the target as it was, and a horse (race 216) gives its rider.
   The target is set locally; `DoPassageOfTime` tells the zone. Ours in `FrontEnd::NearestInView`
-  over `ZoneView::SpawnsInView` (the spawns drawn last frame); we don't know riders or whether we
-  see invisible.
+  over `ZoneView::SpawnsInView` (the spawns drawn last frame), the riders from `Mounts` (see
+  Horses); we don't know whether we see invisible.
 - **Toggle last two targets** (`ExecuteCmd` 63, not while the chat line has the keys:
   `UI_ChatInputCheck() == 2`): targeting ourselves, back to the target kept in `DAT_00799788` (if
   it's still there); targeting anyone else (or no one), that one is kept and we target ourselves.
@@ -1757,7 +1834,7 @@ details and the nearest spawns at the top left and the radar at the top right.
 - **/keys** (@004f8ec7): `OP_Key` (0x425d) with "KEY\0"; EQMacEmu checks only the size and lists
   the key ring (`Client::KeyRingList`). **/dismount** (@004ff5a6): on a mount (ActorInfo's Mount),
   13284, the SPA 113 buff removed (`GetPCSpellAffect`, `RemovePCAffect`) and `EQPlayer::Dismount`;
-  else 13285.
+  else 13285, which is what an old model on its unseen horse gets (see Horses).
 - **OP_ManaUpdate** (0x4219, {u16 spawn, u16 mana}) sets our mana, whoever it names. **OP_DespawnDoor**
   (0x409b, no body) deletes every door and switch. **OP_PlaySound** (0x4048, {u16 spawn, u16 sound})
   plays the wave where the spawn is, full to 100 and silent past it.

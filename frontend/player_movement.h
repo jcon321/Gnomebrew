@@ -68,6 +68,14 @@ public:
 	// Sneaking (EQPlayer::InitSneakMod's: 0.5, a rogue's 0.1 more each level past 50, 1.5 at most);
 	// 0 not.
 	void SetSneakModifier(float modifier) { m_sneak_modifier = modifier; }
+	// On a horse (pinstCharSpawn the horse, which has a Rider): the movement is the horse's, with its
+	// walk and run speeds (Place's) and race (SetRace 216: twice the sphere). EQPlayer::SetAccel
+	// (@00520074) gets to the speed the keys ask for 0.02 a tick faster or 0.03 slower instead of at
+	// once; ProcessControls turns it 8 a tick at most (not 12), and a strafe standing still goes at a
+	// quarter (the strafe speed's 0.25 with a Rider); DoMainLoop never jumps it; process_physics
+	// gives it only our snares (MovementSpeedModifier under 0), no speed buff.
+	void SetMounted(bool on) { m_mounted = on; }
+	bool Mounted() const { return m_mounted; }
 	// Advances `ms` milliseconds. Returns true when a jump started.
 	bool Step(const MoveControls &controls, float ms, const render::ZoneScene &scene);
 	// Turns by `delta` 512ths at once (mouse look).
@@ -123,6 +131,7 @@ private:
 	int m_swim_skill = 0;
 	float m_speed_modifier = 0;
 	float m_sneak_modifier = 0;
+	bool m_mounted = false;
 	float m_pitch = 0;
 	float m_clock_ms = 0, m_swim_jump_ms = 0; // DoSwimJump's 1.5 s
 	float m_last_jump_ms = 0;  // when the last jump went up

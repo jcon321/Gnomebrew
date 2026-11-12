@@ -321,6 +321,17 @@ int Buffs::FindAffectSlot(int id, const SpellInfo &spell, const Caster &caster)
 	return found;
 }
 
+bool Buffs::HasAffect(int spa) const
+{
+	for (int slot = 0; slot < Slots; ++slot) {
+		const ZoneBuff &b = m_slots[slot];
+		const SpellInfo *spell = b.type != 0 ? Spell(b.spell) : nullptr;
+		if (spell && spell->HasSpa(spa))
+			return true;
+	}
+	return false;
+}
+
 bool Buffs::RemoveAffect(int spa)
 {
 	for (int slot = 0; slot < Slots; ++slot) {
@@ -352,10 +363,10 @@ void Buffs::Remove(int slot, bool tell)
 	}
 }
 
-void Buffs::Frame(uint64_t now_ms)
+bool Buffs::Frame(uint64_t now_ms)
 {
 	if (!m_zone || now_ms - m_tick_ms <= TickMs)
-		return;
+		return false;
 	m_tick_ms = now_ms;
 	for (int slot = 0; slot < Slots; ++slot) {
 		ZoneBuff &b = m_slots[slot];
@@ -377,6 +388,7 @@ void Buffs::Frame(uint64_t now_ms)
 		if (spell->HasSpa(57) && NotASong(*spell))
 			Say(12482, "You feel as if you are about to fall.", ChatType::SpellFailure);
 	}
+	return true;
 }
 
 bool Buffs::ClickOff(int slot)

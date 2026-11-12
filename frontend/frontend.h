@@ -39,6 +39,7 @@
 #include "train_window.h"
 #include "options_window.h"
 #include "group.h"
+#include "mounts.h"
 #include "raid.h"
 #include "raid_window.h"
 #include "aa_window.h"
@@ -174,6 +175,7 @@ public:
 	const ZoneSession &Zone() const { return m_zone; }
 	ZoneSession &ZoneForTests() { return m_zone; } // the preview's injected packets
 	const Group &GroupState() const { return m_group; }
+	const Mounts &MountState() const { return m_mounts; }
 	const Raid &RaidState() const { return m_raid; }
 	const ChatWindow &Chat() const { return m_chat; }
 	Abilities &Skills() { return m_abilities; } // the ability buttons and UseSkill (for the preview tool)
@@ -639,6 +641,7 @@ private:
 	LootWindow m_loot;
 	TradeWindow m_trade;            // and the give window
 	Group m_group;
+	Mounts m_mounts;                // who's on which horse
 	Raid m_raid;
 	RaidWindow m_raid_window; // CRaidWnd and CRaidOptionsWnd
 	AAWindow m_aa_window;     // CAAWnd

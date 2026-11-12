@@ -359,8 +359,9 @@ bool SpellBook::Key(InputEvent::Key key, uint64_t now_ms)
 
 void SpellBook::ClickSlot(int slot)
 {
-	// Only sitting (or on a mount, which we don't have).
-	if (Stance() != Sitting || slot < 0 || slot >= ZoneProfile::BookSlots)
+	// Only sitting or on a horse (CSpellBookWnd::WndNotification).
+	bool mounted = m_host.mounted && m_host.mounted();
+	if ((Stance() != Sitting && !mounted) || slot < 0 || slot >= ZoneProfile::BookSlots)
 		return;
 	if (m_zone->Items().count(Inventory::Cursor)) {
 		if (!Valid(m_zone->Profile().spell_book[slot]))
@@ -457,7 +458,9 @@ bool SpellBook::BeginMemorize(int slot, int gem)
 
 void SpellBook::RightClickSlot(int slot)
 {
-	if (Stance() != Sitting)
+	// HandleRightClickOnSpell: sitting, or on a horse standing still.
+	bool still = m_host.mounted && m_host.mounted() && m_host.mount_still && m_host.mount_still();
+	if (Stance() != Sitting && !still)
 		return;
 	if (slot == m_selected) {
 		m_selected = -1;

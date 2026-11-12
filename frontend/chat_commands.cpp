@@ -1488,9 +1488,10 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 		break;
 	}
 	case Command::Dismount:
-		// /dismount (@004ff5a6): on a mount (ActorInfo's Mount), 13284, the mount's buff (SPA 113)
-		// off and EQPlayer::Dismount; else 13285. We've no mounts yet.
-		ChatOut(format(13285, "You do not have a horse to dismount.", {}), ChatType::Default);
+		// /dismount (@004ff5a6): on a horse (ActorInfo's Mount), 13284, the mount's buff (SPA 113)
+		// off and EQPlayer::Dismount; else 13285. An old model's horse is only its Rider, so it's 13285.
+		if (!m_mounts.DismountCommand())
+			ChatOut(format(13285, "You do not have a horse to dismount.", {}), ChatType::Default);
 		break;
 	case Command::StopSong:
 		m_spell_cast.StopSong(); // /stopsong (@004f5c74)

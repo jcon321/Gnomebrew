@@ -46,6 +46,16 @@ public:
 	void Step(const render::ZoneScene &scene, float ms, bool physics, uint64_t now_ms);
 	// Picks and advances the animation for the model (after Step). The model may change.
 	void Animate(const ZoneSpawn &spawn, const render::CharacterModel &model, float ms, uint64_t now_ms);
+	// A rider on its horse, every frame in place of Step (process_physics): its feet where the
+	// horse's RIDER_DAG puts it, the horse's heading, no motion of its own, and the riding animation
+	// in place of standing about (PlayAnimationTrack2: P09, or L10 while the horse goes as fast as it
+	// runs). Getting off, Step takes over from there (it falls to the floor).
+	void Ride(const render::Vec3 &feet, float heading, int animation);
+	void StopRiding() { m_riding = 0; }
+	// The horse we ride (pinstCharSpawn), every frame in place of Update and Step: where our movement
+	// has it.
+	void Drive(const render::Vec3 &feet, float heading, float speed, float heading_speed, const render::Vec3 &velocity,
+		bool on_ground, render::Environment body, render::Environment feet_environment);
 
 	const render::Vec3 &Feet() const { return m_feet; }
 	float Heading() const { return m_heading; }
@@ -108,6 +118,7 @@ private:
 	render::Environment m_feet_environment = render::Environment::Dry;
 	// MovePlayer's flags for ProcessAnimation, from the last Step.
 	bool m_stationary = true, m_turning = false;
+	int m_riding = 0; // Ride's animation; 0 not riding
 
 	// Animation.
 	bool m_animated = false;

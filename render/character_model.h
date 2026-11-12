@@ -218,6 +218,13 @@ namespace render
 		// item model IT<n> (what ChangeDag hangs there; n with the race's AttachmentOffset already
 		// in), and whether there's a material (CDisplay_SetEyeMaterial's CHR_EYE<n>_MDF).
 		bool IsLuclin(uint16_t race, uint8_t gender);
+		// Whether the race has a model of its own: CreatePlayerActor finds its <tag>_ACTORDEF (not a
+		// stand-in's: race 75's here, eqgame's HUM_ACTORDEF, what IsUntexturedHorse looks for).
+		bool HasOwnModel(uint16_t race, uint8_t gender) const;
+		// CDisplay's +0xa0, set by InitWorld once a Luclin player model other than the Vah Shir's is
+		// loaded: what MountEQPlayer calls "the Horse Models" (the horses themselves, HSM and HSN, come
+		// with global5_chr, UseLuclinElementals).
+		bool LuclinPcModels() const { return m_luclin_pc_models; }
 		bool HasPoint(uint16_t race, uint8_t gender, const std::string &point);
 		bool HasItemModel(unsigned it) const;
 		bool HasMaterial(const std::string &name) const;
@@ -247,6 +254,7 @@ namespace render
 		std::vector<std::unique_ptr<Source>> m_armor; // global17..23_amr.s3d: materials, searched after the model's own
 		bool m_velious_textures = false;
 		bool m_old_skeletons = true;
+		bool m_luclin_pc_models = false;
 		bool Skipped(const Source &source, const std::string &code) const; // LoadOldSkeletons
 		// The race's skeleton as Build finds it (race 75's when it has none); false for none.
 		bool FindSkeleton(uint16_t race, uint8_t gender, std::string &code, WldSkeleton &skeleton);

@@ -30,6 +30,7 @@
 #include <map>
 #include <memory>
 #include <set>
+#include <utility>
 #include <vector>
 #include <optional>
 #include <string>
@@ -109,6 +110,21 @@ public:
 	// CastRay: nothing of the zone's between two points (render space); true until it's loaded.
 	bool CanSee(const render::Vec3 &from, const render::Vec3 &to) const;
 
+	// Who's on which horse (Mounts' rider -> horse, our own id for us), every frame before
+	// UpdateSpawns. A rider is drawn on its horse's <tag>RIDER_DAG (process_physics puts it there,
+	// CDisplay_AttachPlayerToPlayerDag hangs its model there) with the horse's heading, playing P09,
+	// or L10 while the horse goes as fast as it runs (PlayAnimationTrack2). Another's horse goes where
+	// its rider's updates put it (ProcessUpdateStats moves a spawn's Mount, and a horse with a Rider
+	// takes none of its own), as tall as its rider (EQPlayer::ChangeHeight), so the update's z, our
+	// floor plus the rider's ModelHeightOffset, is its too. Ours is where our movement takes it
+	// (pinstCharSpawn: PlayerMovement::SetMounted), which is what OP_ClientUpdate tells the zone;
+	// the camera rides along, its height 0.85 of ours (MountEQPlayer's CameraHeightOffset).
+	// Getting off, we're left where the saddle was, over the horse.
+	void SetMounts(std::map<uint16_t, uint16_t> mounts) { m_mounts = std::move(mounts); }
+	bool Riding() const { return m_horse != 0; }
+	// EQPlayer::headEnvironmentChange on pinstCharSpawn: our horse's head going into (or out of)
+	// water takes the SPA 113 buff off (RemovePCAffect). True once for each change.
+	bool TakeHorseHeadChanged() { return std::exchange(m_horse_head_changed, false); }
 	// Everyone else, every frame: their models, carried on from their last update.
 	void UpdateSpawns(const std::map<uint16_t, ZoneSpawn> &spawns, uint16_t my_id, uint64_t now_ms);
 	// The light we carry (our ZoneSpawn::light; we're not among the spawns).
@@ -169,6 +185,14 @@ public:
 	}
 	// The spawns drawn last frame (in the view and the zone's visible regions).
 	std::vector<uint16_t> DrawnSpawns() const;
+	// Spawns kept out of sight (EQPlayer::ForceInvisible, CDisplay::UpdatePlayerVisibility's horses):
+	// not drawn, so no name, no click and no target in view.
+	void SetHiddenSpawns(std::set<uint16_t> ids) { m_hidden = std::move(ids); }
+	// What the models tell the mounts, once loaded (CharacterModels' LuclinPcModels, IsLuclin and
+	// HasOwnModel).
+	bool LuclinPcModels() const { return m_loaded && m_models.LuclinPcModels(); }
+	bool IsLuclinModel(uint16_t race, uint8_t gender);
+	bool HasOwnModel(uint16_t race, uint8_t gender) const { return m_loaded && m_models.HasOwnModel(race, gender); }
 	// The name sprites the last Render drew: their head point's screen position, nearest first.
 	std::vector<NameTag> NameTags(float yon) const;
 	// s3dGetWorldVisibleActorList (flags 0x11): the spawns drawn last frame (in the view and the
@@ -344,8 +368,26 @@ private:
 
 	void Load();
 	void PlacePlayer();
+	// Getting on and off our horse (MountEQPlayer, Dismount: pinstCharSpawn), as SetMounts changes.
+	void UpdateRiding();
+	void StartRiding(uint16_t horse);
+	void StopRiding();
+	// The horse's walk and run speeds and race on our movement.
+	void ConfigureHorse();
+	// Our horse moved with us, and where that puts us on it.
+	void DriveHorse(uint64_t now_ms);
+	// Where our model is drawn: on the feet, or on the horse's saddle; and the feet the camera and
+	// the eyes go from (under the saddle's place, standing).
+	render::Transform MyPlacement() const;
+	render::Vec3 MyFeet() const;
 	struct SpawnView;
 	void PoseSpawn(SpawnView &view, const ZoneSpawn &spawn, uint64_t now_ms);
+	// The model built (or rebuilt) for a spawn near enough to be seen.
+	void ResolveModel(SpawnView &view, const ZoneSpawn &spawn, bool near);
+	// The horse's <tag>RIDER_DAG where it's posed now (world space); false without one.
+	bool RiderDag(const SpawnView &horse, render::Transform &out) const;
+	// PlayAnimationTrack2's riding animation for a horse going `speed` with run speed `run`.
+	static int RidingAnimation(float speed, float run);
 	static std::string SpawnModelKey(const ZoneSpawn &spawn);
 	std::shared_ptr<render::CharacterModel> SpawnModel(const ZoneSpawn &spawn, const std::string &key);
 	void DrawSpawns(uint64_t now_ms);
@@ -461,6 +503,10 @@ private:
 		bool player = false;
 		uint8_t level = 1;
 		bool dead = false;   // a corpse: missiles stop steering at it
+		float walk_speed = 0, run_speed = 0; // the spawn's (a horse's, for its rider)
+		// A rider on its horse: drawn at the horse's RIDER_DAG, `attach`, not on its feet.
+		bool attached = false;
+		render::Transform attach;
 		const render::Vec3 &Feet() const { return actor.Feet(); }
 	};
 	std::vector<NameSprite> m_name_sprites;
@@ -469,6 +515,15 @@ private:
 	std::map<const render::CharacterModel *, std::pair<int, float>> m_head_points; // HeadPoint's, by model
 	std::vector<render::Vertex> m_name_vertices;
 	std::map<uint16_t, SpawnView> m_actors;
+	std::set<uint16_t> m_hidden; // SetHiddenSpawns'
+	std::map<uint16_t, uint16_t> m_mounts; // SetMounts': rider -> horse
+	uint16_t m_horse = 0;          // the horse we ride (pinstCharSpawn), 0 none
+	ZoneSpawn m_horse_spawn;       // as the zone last had it, for its model
+	bool m_rider_attached = false; // our model on the saddle, at m_rider_placement
+	render::Environment m_horse_head = render::Environment::Dry; // its IsSwimmingUnderwater
+	bool m_horse_head_changed = false;
+	render::Transform m_rider_placement;
+	std::map<uint32_t, bool> m_luclin_models; // IsLuclinModel's, by race << 8 | gender
 	struct GroundItemView
 	{
 		std::string model_name;

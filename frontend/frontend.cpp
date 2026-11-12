@@ -865,6 +865,12 @@ void FrontEnd::Update(uint64_t now_ms)
 		float minute;
 		if (m_zone.GameTime(hour, minute))
 			m_zone_view->SetGameTime(hour, minute);
+		// CreateInitialActors' horses once the models are in, and the horses UpdatePlayerVisibility
+		// keeps unseen.
+		m_mounts.SetView(m_zone_view.get());
+		m_mounts.Frame();
+		m_zone_view->SetHiddenSpawns(m_mounts.Hidden());
+		m_zone_view->SetMounts(m_mounts.Riders());
 		m_zone_view->UpdateSpawns(m_zone.Spawns(), m_zone.MySpawnId(), now_ms);
 		// What we put on or took off (UpdatePlayerAppearance), and the light we carry.
 		const ZoneSpawn &me = m_zone.Self();
@@ -895,6 +901,8 @@ void FrontEnd::Update(uint64_t now_ms)
 		bool jumped = m_zone_view->Move(controls, now_ms, m_mouse_turn || m_mouse_pan);
 		if (m_zone_view->Placed())
 			m_zone.SetMovement(m_zone_view->Movement());
+		if (m_zone_view->TakeHorseHeadChanged())
+			m_buffs.RemoveAffect(113); // headEnvironmentChange with a Rider
 		if (jumped)
 			m_zone.Jump();
 		if (m_zone_view->Crouching() != m_crouch_sent) {
@@ -933,7 +941,8 @@ void FrontEnd::Update(uint64_t now_ms)
 		m_spell_book.Frame(now_ms);
 		m_spell_cast.Frame(now_ms);
 		m_abilities.Frame(now_ms);
-		m_buffs.Frame(now_ms);
+		if (m_buffs.Frame(now_ms))
+			m_mounts.Tick(); // ProcessAffects' SPA 113
 		if (m_zone_view) {
 			m_zone_view->SetSpeedModifier(m_buffs.SpeedModifier(m_zone.Self().run_speed, m_game_values.running));
 			// EQPlayer::InitSneakMod: half the walk speed sneaking, a rogue's 0.1 more a level past 50.
@@ -2264,6 +2273,8 @@ void FrontEnd::BuildZoneWindows()
 	SpellBook::Host host;
 	host.change_stance = [this](uint8_t stance) { ChangeStance(stance); };
 	host.moving_forward = [this] { return m_zone_view && m_zone_view->Movement().speed > 0; };
+	host.mounted = [this] { return m_mounts.Mounted(); };
+	host.mount_still = [this] { return m_zone_view && m_zone_view->Movement().speed == 0; };
 	host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
 	SpellCast::Host cast_host;
 	cast_host.target = [this] { return m_game_values.target; };
@@ -2274,6 +2285,11 @@ void FrontEnd::BuildZoneWindows()
 	cast_host.stunned = [this] { return m_stunned; };
 	m_spell_cast.Attach(m_windows, m_zone, m_ui.spells, m_ui.eqstr, std::move(cast_host));
 	m_buffs.Attach(m_zone, m_ui.spells, m_ui.eqstr, [this](const std::string &text, int type) { ChatOut(text, type); });
+	Mounts::Host mounts_host;
+	mounts_host.say = [this](uint32_t id, const std::string &fallback, int type) { ChatOut(EqString(id, fallback), type); };
+	mounts_host.has_affect = [this](int spa) { return m_buffs.HasAffect(spa); };
+	mounts_host.remove_affect = [this](int spa) { return m_buffs.RemoveAffect(spa); };
+	m_mounts.Attach(m_zone, std::move(mounts_host));
 	m_book.Attach(m_windows, m_text);
 	m_game_values.buffs = &m_buffs;
 	m_spell_book.Attach(m_windows, m_window_state, m_zone, m_game_values, m_spell_cast, m_ui.spells, m_ui.eqstr,
@@ -2850,10 +2866,10 @@ uint16_t FrontEnd::NearestInView(float range, bool npc) const
 			if (spawn.pet_owner == me || (owner != m_zone.Spawns().end() && owner->second.npc == 0))
 				continue;
 		}
-		// Heard from in the last 12 seconds, moving, or an NPC standing still; not invisible to us.
-		// (An NPC with a rider, a mount, is passed over too; we don't know riders.)
+		// Heard from in the last 12 seconds, moving, or an NPC standing still; not invisible to us;
+		// for an NPC, not a horse with a rider (ActorInfo's Rider).
 		bool current = m_now_ms - spawn.updated_ms < 12001 || spawn.speed != 0 || npc;
-		if (!current || InvisibleToMe(spawn))
+		if (!current || InvisibleToMe(spawn) || (npc && m_mounts.RiderOf(seen.id)))
 			continue;
 		if (seen.from_camera <= range && (!best || seen.from_camera < best_distance) && seen.camera_clear) {
 			best = seen.id;
@@ -2870,10 +2886,12 @@ void FrontEnd::TargetNearest(bool npc)
 		return;
 	const ZoneSpawn &spawn = m_zone.Spawns().at(id);
 	// ExecuteCmd 29: an NPC of an untargetable body type (11, 60, 65, 67) below race 2253 leaves
-	// the target as it was. A horse (race 216) would give its rider; we don't know riders.
+	// the target as it was. A horse (race 216) with a Rider gives its rider.
 	if (npc && spawn.race < 0x8cd &&
 		(spawn.body_type == 11 || spawn.body_type == 60 || spawn.body_type == 65 || spawn.body_type == 67))
 		return;
+	if (uint16_t rider = spawn.race == 216 ? m_mounts.RiderOf(id) : 0)
+		id = rider;
 	SetTarget(id);
 }
 
@@ -2902,7 +2920,7 @@ void FrontEnd::CycleNearestTarget()
 		// and a line to it from our head or feet.
 		if (spawn.npc != 1 || spawn.level == 0 || seen.from_me_2d > 250 || !seen.me_clear || InvisibleToMe(spawn))
 			continue;
-		// A pet only of an NPC (or of no one we know); a mount (a player its rider) we can't tell.
+		// A pet only of an NPC (or of no one we know).
 		if (spawn.pet_owner) {
 			auto owner = m_zone.Spawns().find(spawn.pet_owner);
 			bool npc_owner = owner != m_zone.Spawns().end() && (owner->second.npc == 1 || owner->second.npc == 3);
@@ -3171,7 +3189,7 @@ int FrontEnd::TakeFallDamage(float fall)
 	// EQ_Character::TakeFallDamage (@004bfe16): the fall, plus a hundredth of what we carry
 	// (cur_encumbrance), less 1.5; 10 damage a unit of it, 20000 past 9. Safe fall takes its skill
 	// off (Acrobatics, AA 0x7a, adds 10, 20 or 30% of it) and tells the zone either way. None on a
-	// mount under 200 (no mounts yet), nor in the Bazaar (zone 151).
+	// horse (ActorInfo's Mount) under 200, nor in the Bazaar (zone 151).
 	const ZoneProfile &me = m_zone.Profile();
 	float over = static_cast<int16_t>(m_game_values.Weight()) * 0.01f + fall - 1.5f;
 	int damage = 0;
@@ -3188,6 +3206,8 @@ int FrontEnd::TakeFallDamage(float fall)
 		}
 		damage = std::max(damage, 0);
 	}
+	if (m_mounts.Mounted() && damage < 200)
+		damage = 0;
 	if (me.zone_id == 151)
 		damage = 0;
 	if (damage <= 0 || m_dead)
@@ -3271,13 +3291,16 @@ void FrontEnd::HungerAndThirst(uint64_t now_ms)
 	if (now_ms - m_hunger_ms <= every)
 		return;
 	auto text = [this](uint32_t id, const char *fallback) { return FormatEqString(m_ui.eqstr, id, fallback, {}); };
-	// Not while the zone's answer to something is waiting (DAT_007d0254, DAT_007d0258). The
-	// mount's versions of these (12484, 12486) wait for mounts.
+	// Not while the zone's answer to something is waiting (DAT_007d0254, DAT_007d0258). On a horse
+	// (ActorInfo's Mount) the mount's versions.
 	bool waiting = ZoneAnswerWaiting();
+	bool mounted = m_mounts.Mounted();
 	if (me.thirst < 3000 && !waiting && !AutoEat(false))
-		ChatOut(text(12485, "You are thirsty."), ChatType::Default);
+		ChatOut(mounted ? text(12484, "You and your mount are thirsty.") : text(12485, "You are thirsty."),
+			ChatType::Default);
 	if (me.hunger < 3000 && !waiting && !AutoEat(true))
-		ChatOut(text(12487, "You are hungry."), ChatType::Default);
+		ChatOut(mounted ? text(12486, "You and your mount are hungry.") : text(12487, "You are hungry."),
+			ChatType::Default);
 	m_hunger_ms = now_ms;
 	if (sustained)
 		return;
@@ -3511,6 +3534,9 @@ void FrontEnd::ChangeStance(uint8_t stance)
 {
 	uint8_t was = m_zone.Self().stance;
 	if (stance == was || m_zone.GetState() != ZoneSession::State::InZone)
+		return;
+	// EQPlayer::ChangeStance: no sitting on a horse; lying down gets off it, the buff with it.
+	if (!m_mounts.StanceChange(m_zone.MySpawnId(), stance))
 		return;
 	m_zone.SetStance(stance);
 	if (m_zone_view)
@@ -4096,6 +4122,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			if (!m_windows_built)
 				BuildZoneWindows();
 			m_buffs.Reset(m_now_ms); // the profile's, which came first
+			m_mounts.Reset();
 			// CEverQuest_EnterZone -> CDisplay::StartWorldDisplay: load the zone, and put our
 			// character (OP_ZoneEntry came first) in it.
 			if (m_ui.eq_dir.empty())
@@ -4450,7 +4477,18 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			m_game_values.target = event.id;
 			m_debug.SelectTarget(event.id);
 			break;
+		case Type::SpawnAdded:
+			m_mounts.SpawnAdded(event.id); // EQPlayer::EQPlayer's MakeRiderMountUp
+			break;
+		case Type::SpawnChanged: {
+			// msg_stat_change's ChangeStance of another: lying down gets them off their horse.
+			auto it = m_zone.Spawns().find(event.id);
+			if (it != m_zone.Spawns().end() && it->second.stance == 115)
+				m_mounts.StanceChange(event.id, 115);
+			break;
+		}
 		case Type::SpawnRemoved:
+			m_mounts.SpawnRemoved(event.id); // ~EQPlayer's Dismount2
 			if (event.id == m_game_values.target) {
 				SetAutoAttack(false);
 				m_game_values.target = 0;

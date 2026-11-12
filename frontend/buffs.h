@@ -64,12 +64,14 @@ public:
 	void Reset(uint64_t now_ms);
 	// The zone's: SpellAction (one landing on us) and BuffChanged.
 	void ZoneEvent(const ZoneSession::Event &event);
-	void Frame(uint64_t now_ms); // ProcessAffects, every 6 s
+	bool Frame(uint64_t now_ms); // ProcessAffects, every 6 s: true when it ticked
 	// RemoveMyAffect: false (and why in the chat) when it can't be.
 	bool ClickOff(int slot);
 	// EQ_Character::GetPCSpellAffect then RemovePCAffect: the first buff with the effect goes (its
 	// fading text, the zone told); false for none.
 	bool RemoveAffect(int spa);
+	// EQ_Character::GetPCSpellAffect: whether a buff has the effect.
+	bool HasAffect(int spa) const;
 
 	const ZoneBuff &Slot(int slot) const;
 	// IsValidAffect: a buff there of a spell we know.

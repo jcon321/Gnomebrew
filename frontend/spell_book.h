@@ -75,7 +75,10 @@ public:
 	struct Host
 	{
 		std::function<void(uint8_t)> change_stance;        // EQPlayer::ChangeStance, for us
-		std::function<bool()> moving_forward;              // our MovementSpeed > 0
+		std::function<bool()> moving_forward;              // our MovementSpeed > 0 (pinstCharSpawn's: the horse's)
+		// On a horse (ActorInfo's Mount), and whether it's standing still (its MovementSpeed 0).
+		std::function<bool()> mounted;
+		std::function<bool()> mount_still;
 		std::function<void(const std::string &, int)> chat; // a line in a ChatType's color
 	};
 

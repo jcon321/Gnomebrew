@@ -347,7 +347,7 @@ void Abilities::Use(int skill, uint64_t now_ms)
 		Say(12368, "You do not have control of yourself right now.", RedColor);
 		return;
 	}
-	// On a horse (here only its buff, SPA 113): only these.
+	// On a horse (ActorInfo's Mount, or the SPA 113 buff, which a Mount always has): only these.
 	if (m_host.total && m_host.total(113) != 0) {
 		static const int allowed[] = {Tracking, Bash, Disarm, 30, Mend, SenseHeading, Fishing, Intimidation, Taunt, 105, 107};
 		if (std::find(std::begin(allowed), std::end(allowed), skill) == std::end(allowed)) {

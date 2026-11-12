@@ -13,6 +13,7 @@ namespace
 	constexpr float AirFriction = 0.99f;
 	constexpr float JumpHeightModifier = 1.35f; // EQPlayer::SetHeights
 	constexpr float MaxTurnRate = 12;           // heading units per tick
+	constexpr float MaxHorseTurnRate = 8;      // on a horse
 	constexpr float JumpCooldownMs = 1500;      // ProcessControls: since the last jump
 	constexpr float JumpWindUpMs = 500;         // DoMainLoop: how long a press stays armed
 	// process_physics applies the friction once a frame, not once a tick, so the real client
@@ -76,25 +77,32 @@ bool PlayerMovement::Step(const MoveControls &controls, float ms, const render::
 	m_pitch = controls.pitch;
 	bool swimming = Swimming();
 	// What our buffs add (MovementSpeedModifier): a snare slows us to a crawl at most; rooted, nothing.
-	bool rooted = m_speed_modifier < -1000;
+	// A horse gets only the snares.
+	float modifier = m_mounted ? std::min(m_speed_modifier, 0.0f) : m_speed_modifier;
+	bool rooted = modifier < -1000;
 	// Sneaking (IsSneaking) forward goes at the sneak modifier of the walk speed, back and beside at
-	// half of it, water or not.
-	bool sneaking = m_sneak_modifier > 0;
+	// half of it, water or not. A horse doesn't sneak.
+	bool sneaking = m_sneak_modifier > 0 && !m_mounted;
+	float speed = 0;
 	if (controls.forward && !controls.back) {
 		if (sneaking)
-			m_speed = m_sneak_modifier * m_walk_speed + m_speed_modifier;
+			speed = m_sneak_modifier * m_walk_speed + modifier;
 		else
-			m_speed = (controls.run ? m_run_speed : m_walk_speed) + (swimming ? m_swim_skill * 0.01f : 0) + m_speed_modifier;
-		m_speed = rooted ? 0 : m_speed < 0 ? 0.01f : m_speed;
+			speed = (controls.run ? m_run_speed : m_walk_speed) + (swimming ? m_swim_skill * 0.01f : 0) + modifier;
+		speed = rooted ? 0 : speed < 0 ? 0.01f : speed;
 	}
 	else if (controls.back && !controls.forward) {
-		m_speed = (sneaking ? -m_walk_speed * 0.5f : swimming ? 0 : -m_walk_speed) - m_speed_modifier;
-		m_speed = rooted ? 0 : m_speed > 0 ? -0.01f : m_speed;
+		speed = (sneaking ? -m_walk_speed * 0.5f : swimming ? 0 : -m_walk_speed) - modifier;
+		speed = rooted ? 0 : speed > 0 ? -0.01f : speed;
 	}
-	else
-		m_speed = 0;
-
 	float ticks = std::min(ms * 0.02f, 3.0f);
+	if (!m_mounted || rooted)
+		m_speed = speed;
+	else if (speed > m_speed)
+		m_speed = std::min(speed, m_speed + 0.02f * ticks); // SetAccel with a Rider
+	else
+		m_speed = std::max(speed, m_speed - 0.03f * ticks);
+
 	int direction = (controls.left ? 1 : 0) - (controls.right ? 1 : 0);
 	m_strafe = 0;
 	if (controls.strafe && direction != 0) {
@@ -102,7 +110,7 @@ bool PlayerMovement::Step(const MoveControls &controls, float ms, const render::
 		// speed (2, unencumbered) times that when standing still.
 		m_strafe = direction * (controls.run && !sneaking ? m_run_speed : m_walk_speed) * 0.5f;
 		if (m_speed == 0)
-			m_strafe *= 2;
+			m_strafe *= m_mounted ? 0.5f : 2;
 		if (sneaking)
 			m_strafe *= 0.5f;
 		if (rooted)
@@ -111,7 +119,7 @@ bool PlayerMovement::Step(const MoveControls &controls, float ms, const render::
 	}
 	if (direction != 0) {
 		// The real client adds one per frame: at 60 frames a second, three a tick.
-		m_turn_ramp = std::min(m_turn_ramp + ticks / FrameTicks, MaxTurnRate);
+		m_turn_ramp = std::min(m_turn_ramp + ticks / FrameTicks, m_mounted ? MaxHorseTurnRate : MaxTurnRate);
 		m_heading_speed = direction * std::max(1.0f, std::floor(m_turn_ramp));
 	}
 	else
@@ -127,7 +135,7 @@ bool PlayerMovement::Step(const MoveControls &controls, float ms, const render::
 	}
 
 	// ProcessControls: a press on the ground, out of the water, 1.5 s after the last jump arms one.
-	if (controls.jump && !swimming && !m_jump_armed && m_on_ground && m_clock_ms - m_last_jump_ms > JumpCooldownMs) {
+	if (controls.jump && !swimming && !m_mounted && !m_jump_armed && m_on_ground && m_clock_ms - m_last_jump_ms > JumpCooldownMs) {
 		m_jump_armed = true;
 		m_jump_armed_ms = m_clock_ms;
 	}

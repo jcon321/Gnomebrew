@@ -43,8 +43,8 @@ no rules of its own.
      EQTypes 45..59) and the blink in their last ticks. Their effects count in the stats, resists,
      AC, max HP (worked out as `Max_HP` does, not the zone's), max mana and our speed (SoW,
      snares, roots). Still to do: the effects that act as a buff
-     lands or fades (levitation, invisibility, see invisible, infravision, illusions, Eye of Zomm,
-     mounts) and a bard's instrument mastery; HitBySpell's own branches: Locate Corpse
+     lands or fades (levitation, invisibility, see invisible, infravision, illusions, Eye of Zomm;
+     a horse's is `frontend/mounts.*`) and a bard's instrument mastery; HitBySpell's own branches: Locate Corpse
      (`eqspa_locate_corpse` @004cac8a, eqstr 0x309d), the bind's place checks
      (`InSpecialBindSpot` @004cadbc, `EQWorldData::IsNoBindZone`), the teleport checks
      (`CDisplay::IsValidTeleport` @004af646, `EQPlayer::HandoverControlToZoneserver`), `Levitate`
@@ -101,8 +101,8 @@ no rules of its own.
      (@004fb5ae) loots our target (eqstr 13201 with none). /lootnodrop sets whether a
      NO DROP item asks first (`LootNoDrop`). Still to do: the
      items in a corpse's bags (shown only to GMs and on player corpses past the eighth), the
-     PvP item (Loot_Request_Type 5) and the mounted check (ActorInfo's AttachedEntity; no mounts
-     yet). Dead (DeathTimer) and deity 20000 don't ask; asking makes us visible (MakeMeVisible).
+     PvP item (Loot_Request_Type 5) and the mounted check (ActorInfo's AttachedEntity; nothing
+     sets it yet: our horses are Mount and Rider). Dead (DeathTimer) and deity 20000 don't ask; asking makes us visible (MakeMeVisible).
    - Trade and give windows: done (`frontend/trade_window.*`, eqgame's CTradeWnd and CGiveWnd): an
      item or coins on the cursor clicked onto a player or NPC in reach asks to trade
      (DropItemOrMoneyOnPlayer, OP_TradeRequest), the go-ahead opens the trade window with it in
@@ -155,7 +155,7 @@ no rules of its own.
      with the slot; not checked live, the test characters have none). Eating and drinking for us
      when low (`ProcessHungerandThirst`, `AutoEat`: every 46 s, a monk's 92 s, OP_Consume with -1,
      and the hunger, thirst and out-of-food messages, Innate Metabolism's longer wait): done,
-     checked live. Still to do there: the "You and your mount" messages, and no eating while a
+     checked live ("You and your mount..." on a horse). Still to do there: no eating while a
      bazaar trader. Still to do: poisons
      (CEverQues_ApplyPoison), Alcohol Tolerance's skill-up (EQ_PC_CheckSkillImprove 66), what
      drunkenness does. Notes and books are read (EQ_Note::SendTextRequestMsg's OP_ReadBook;
@@ -204,7 +204,8 @@ no rules of its own.
        third argument other than -1) on spell hot buttons;
      - spell hot buttons: a gem held onto the cursor (CCursorAttachment type 9) and the book button
        (type 5); a spell on the cursor clicked on a hot button;
-     - what the book doesn't do yet: on a mount (Activate's own branch), a bard's AA 0x7b doubling
+     - what the book doesn't do yet: Activate's auto attack off (12371) when ChangeStance's sit is
+       refused on a horse (eqgame turns it off anyway), a bard's AA 0x7b doubling
        memorizing, the spell bar locking other things while it waits (DAT_007d0254 also blocks
        casting);
      - spellsets and memorizing a whole page are later eras (the default UI's "Mem. This Page"
@@ -245,8 +246,9 @@ no rules of its own.
    the Who key and button, and /follow (FollowPlayerAI's turning, running, walking and stopping,
    TurnOffAutoFollow on Move back and the turn keys) are done. Still to do: /who all friends
    (OP_FriendsWho with a friends list; no /friends yet), traders (ActorInfo's IsTrader), the
-   spawn list's order (pinstSpawnList; ours by id), and /follow on a mount or of a rider
-   (pinstCharSpawn, ActorInfo's Mount) and its line of sight from them to us (CastRay is ours,
+   spawn list's order (pinstSpawnList; ours by id), and /follow on a horse or of a rider
+   (ProcessControls hands FollowPlayerAI's Following to pinstCharSpawn, the horse; not checked
+   riding) and its line of sight from them to us (CastRay is ours,
    from us). DoPercentConvert (@00538110, `FrontEnd::PercentConvert`): %t, %m, %s, %o, %p and %r
    at a line's start or after a space or apostrophe, eleven at most (then '@'), on every line
    printed (`ChatOut`, as print_chat_dsp_chat) and on what's said, told, sent to a channel, emoted
@@ -338,9 +340,8 @@ no rules of its own.
    - Send tell for a GM helping a petitioner (`/tell <petitioner> `, CPetitionQWnd), and
      ExecuteCmd 0x81 and 0x82 (`;` and `/` command modes; not on the keyboard page).
    - Target myself's pet: eqgame takes the first in pinstSpawnList's order; ours the lowest id.
-   - Target nearest and Cycle nearest target don't know a spawn's rider (ActorInfo's Rider): an
-     NPC with a rider (a mount) isn't passed over, a horse (race 216) doesn't give its rider. They
-     don't know whether we see invisible (EQ_Character::CanISeeInvis: SPA 13 and the races'), so
+   - Cycle nearest target (Zeal's) doesn't look at riders (Target nearest NPC passes over a horse
+     with a Rider and hands a horse's target to it). Both don't know whether we see invisible (EQ_Character::CanISeeInvis: SPA 13 and the races'), so
      an invisible spawn is never picked, nor a GM's VisibilityState.
    - Look up and down held (ProcessControls, DAT_0079974c and DAT_0079974e) pitch to EQ's 128
      either way, but our view stops at -80 and 60 degrees (ZoneView::Pitch); and the pitch going
@@ -435,8 +436,8 @@ no rules of its own.
       UseSkill only sends OP_Track;
     - the AA abilities (105 Harm Touch and 107 Lay on Hands: CastSpell gem 9 of spell 88 and 87, the
       profile's timers at +0xc7a and +0xc7e, with AdjustSpellRecastTimeByClassAbility's 12 min a rank
-      of Fervent Blessing or Touch of the Wicked off; 111 Slam as bash), a real mount (ActorInfo's Mount; only the SPA 113 buff here),
-      stealing under the PvP deity rules (DAT_006ec740 4: NotOnSameDeity, the level range, 12412,
+      of Fervent Blessing or Touch of the Wicked off; 111 Slam as bash), UseSkill's horse check by
+      ActorInfo's Mount (ours is the SPA 113 buff, which a Mount always has), stealing under the PvP deity rules (DAT_006ec740 4: NotOnSameDeity, the level range, 12412,
       12413), fishing's splash particles (DoParticleEffect 2) and the pole
       shown in hand as the cast starts (UpdateItemSlot), and someone picking our pockets (msg_steal
       0xff: 12897 and the answer);
@@ -482,7 +483,7 @@ no rules of its own.
       `HitBySpell`.
     - ApplyDamage's own half for a fall: the HP taken here before the zone's update, divine aura,
       and OP_Death (`SendDeathMessage`) in place of OP_Damage when it kills (the zone's OP_Damage
-      handler kills us too); and TakeFallDamage's mount under 200. (Its stun, and Stalwart
+      handler kills us too). (Its stun, and Stalwart
       Endurance against it, need an attacker, which no caller passes.)
     - The other environment damage the client reports: lava and the rest (`ProcessEnvironment`
       @004c0e32) and drowning (`ProcessAirSupply`, with the breath window, 34).
@@ -588,7 +589,7 @@ no rules of its own.
     0x41e4, which EQMacEmu ignores), /stopsong (@004f5c74: a bard's StopSpellCast2), /shield
     (@004fd688, `OP_Shielding`), /quit and /exit (@004fa8c5: the connection closed, the game
     ended), /log (@004fbad0, `eqlog`; [Defaults] Log), /keys (@004f8ec7, `OP_Key`) and /dismount
-    (@004ff5a6: 13285 only, no mounts) are done too; /ttell's `send_tell` also stops on `DAT_007985f1`, as the socials do, not
+    (@004ff5a6, `Mounts::DismountCommand`) are done too; /ttell's `send_tell` also stops on `DAT_007985f1`, as the socials do, not
     known; /quit doesn't say /safelock's 12095, there being no /safelock): /discipline (@004f4fb5,
     `OP_Discipline`; `OP_DisciplineChange` back), /surname, /language,
     /facepick, /hotbutton, /alias, /note, the chat
@@ -715,8 +716,8 @@ no rules of its own.
     - `CanIFitHere`: the move is undone where floor to ceiling (`GetCeilingHeight`) is under twice
       the `ModelHeightOffset` + 0.5, and a duck stands back up when there's room again.
     - `DoFloorCheck` with no floor below keeps the last one and we fall; we stay put instead.
-    - MovePlayer's other branch (mounts, boats and races 72/73/114/141, no lift, the vehicle
-      moves), and `MovementSpeedZ` held to -1 when the move didn't change our height.
+    - MovePlayer's other branch (a horse we ride, boats and races 72/73/114/141, no lift, the
+      vehicle moves: our horse moves as we do, lifted, its sphere twice ours), and `MovementSpeedZ` held to -1 when the move didn't change our height.
     - Walking into a switch (`EQPlayer::TouchingSwitch` @0050b7ac, from MovePlayer; doors are only
       clicked now): type 50 a pressure plate (a PC, once, until `GetSwitchStateChangeTime` puts it
       back; `UseSwitch` with our id), 57 a teleporter (a PC, every 2 s, our cursor item, the
@@ -728,14 +729,30 @@ no rules of its own.
       vehicle still can't be set ("Still can't set vehicle"), a floor height found or the safe
       point.
 
-38. **Mounts.** No horses at all: the zone sends the horse as its own spawn (`horse.cpp`, race
-    216, OP_NewSpawn) and the rider rides it in eqgame (`EQPlayer::MountEQPlayer` @0051fd83,
-    `MakeRiderMountUp` @0051fcf5, `Dismount` @0051ff5f, `Dismount2`, `CDisplay::GetOnActor`
-    @00504202, `AttachPlayerToPlayerDag` @004b079f; ActorInfo's Mount and Rider). Then what waits
-    on them across the list: /dismount's mounted branch (13284, the SPA 113 buff off,
-    `EQPlayer::Dismount`), MovePlayer's mount branch (22), the spell book and
-    casting on a mount (2), being hit on one and the right button on a horse (2, 24), the
-    targeting of riders (6), and /follow of a rider (3).
+38. ~~**Mounts.**~~ Done (`frontend/mounts.*`, `ZoneView::SetMounts`, `PlayerMovement::SetMounted`,
+    `SpawnActor::Ride` and `Drive`): the zone's horse (race 216, `<rider>`s_Mount00`) taken by its
+    rider (`MakeRiderMountUp` @0051fcf5, ProcessAffects' SPA 113 retry), `MountEQPlayer`
+    (@0051fd83) with the old models' quirk (no Luclin player model: the horse only gets its Rider;
+    an old model's or an untextured horse's attach fails, with eqstr 5524 and the buff off for us)
+    and the horses UpdatePlayerVisibility never draws; riding: the rider on the horse's
+    `RIDER_DAG` playing P09 or L10, another's horse moved by its rider's updates
+    (`ProcessUpdateStats`), ours by our movement (`SetAccel`'s acceleration, turns of 8, no jumps,
+    snares only, the camera at 0.85), the buff off as its head changes water; `Dismount` from
+    /dismount, feign death, sitting refused, and a horse or rider going (`Dismount2`); the mount's
+    hunger messages, fall damage, spell book and targeting. Checked through replays of our horse
+    (each model setting) and another player's. Still to do:
+    - Not checked against the real client: how high the rider sits (the rider's model root on the
+      `RIDER_DAG`, scale 1) and the camera there (our eye 0.85 up from under the saddle).
+    - MountEQPlayer's levitation (`SetNoGrav` on the horse of a levitating rider; no levitation
+      yet), onto something not a horse (its `DagRightPoint`), and a boat's `AttachedEntity` branch.
+    - `UpdatePlayerVisibility`: a ridden horse follows its rider's visibility (we draw the invisible).
+    - `do_change_form` (an illusion gets off and back on; `OP_Illusion` isn't handled), and
+      `EQPlayer::ChangeHeight` of a rider (a `/height` or size change) carrying on to its horse.
+    - Being hit on a horse (`ReportSuccessfulHit`'s `DeacSpellScreen` and `ChangeStance`) and the
+      right button on one (24, 2), `PlayAnimationTrack2`'s horse pitch (64) and its riding-skill
+      `EQ_PC_CheckSkillImprove` while the horse moves, and the horse's swim jump (the swim skill's
+      speed counts for it as for us).
+    - `IsCharacterMeditating` for the client's own regen display (the zone's is what counts).
 
 ## Infrastructure / tooling
 

@@ -96,6 +96,40 @@ void SpawnActor::Step(const ZoneScene &scene, float ms, bool physics, uint64_t n
 	m_turning = m_heading_speed != 0 || m_heading != heading;
 }
 
+void SpawnActor::Ride(const Vec3 &feet, float heading, int animation)
+{
+	m_feet = feet;
+	m_heading = WrapHeading(heading);
+	m_speed = m_heading_speed = 0;
+	m_velocity = {};
+	m_stationary = true;
+	m_turning = false;
+	m_on_ground = true;
+	m_settled = false; // off the horse, it drops to the floor
+	m_placed = true;
+	m_riding = animation;
+}
+
+void SpawnActor::Drive(const Vec3 &feet, float heading, float speed, float heading_speed, const Vec3 &velocity,
+	bool on_ground, Environment body, Environment feet_environment)
+{
+	Vec3 moved = feet - m_feet;
+	float was = m_heading;
+	m_feet = feet;
+	m_heading = WrapHeading(heading);
+	m_speed = speed;
+	m_heading_speed = heading_speed;
+	m_velocity = velocity;
+	m_on_ground = on_ground;
+	m_body_environment = body;
+	m_feet_environment = feet_environment;
+	m_stationary = !m_placed || (m_speed == 0 && std::fabs(moved.x) < 0.2f && std::fabs(moved.y) < 0.2f &&
+	                                std::fabs(moved.z) < 0.2f);
+	m_turning = m_heading_speed != 0 || m_heading != was;
+	m_placed = true;
+	m_settled = false;
+}
+
 void SpawnActor::Physics(float t, const ZoneScene &scene, bool floor)
 {
 	m_heading = WrapHeading(m_heading + t * m_heading_speed);
@@ -263,6 +297,10 @@ void SpawnActor::ProcessAnimation(const ZoneSpawn &spawn, const CharacterModel &
 {
 	if (m_kind == Kind::Dead || (m_kind == Kind::Action && !Finished(model)))
 		return;
+	if (m_riding) {
+		Play(spawn, model, m_riding, Kind::Base, End::Loop, false, 1, false);
+		return;
+	}
 	bool body_wet = Swimming(m_body_environment);
 	bool feet_wet = Swimming(m_feet_environment);
 	bool crouching = spawn.stance == 111;

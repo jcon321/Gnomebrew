@@ -3,7 +3,7 @@
 // outline boxes of an estimated Arial size, since GDI isn't available.
 //
 //   frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|shop|train|ground|commands|group|skills]]
-//   frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings]]
+//   frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse]]
 //
 // Without a login server it snapshots the start screen, a dialog and the login
 // screen. With one it also logs in and snapshots server select and the play result.
@@ -531,6 +531,89 @@ namespace
 			40000);
 		chat();
 		printf("[preview] camped\n");
+		return 0;
+	}
+
+	// A replay of a horse summoned (the zone's "<name>`s_Mount00", race 216): who's on what, which
+	// horses aren't drawn, what the chat says, then /dismount.
+	int MountsTest(FrontEnd &frontend, Harness &h, int seconds)
+	{
+		const ZoneSession &zone = frontend.Zone();
+		const Mounts &mounts = frontend.MountState();
+		size_t chat_seen = 0; // from the start: the horse may be in as the zone loads
+		auto chat = [&] {
+			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
+				printf("[preview] chat: %s\n", frontend.Chat().Lines()[chat_seen].text.c_str());
+		};
+		std::string last;
+		for (int ms = 0; ms <= seconds * 1000; ms += 250) {
+			h.RunUntil([] { return false; }, 250);
+			chat();
+			std::string state;
+			std::set<uint16_t> hidden = mounts.Hidden();
+			for (const auto &[id, spawn] : zone.Spawns())
+				if (spawn.race == 216) {
+					char line[200];
+					snprintf(line, sizeof(line), "horse %u '%s' gender %u walk %.2f run %.2f rider %u%s; ", id, spawn.name.c_str(),
+						spawn.gender, spawn.walk_speed, spawn.run_speed, mounts.RiderOf(id), hidden.count(id) ? " hidden" : " shown");
+					state += line;
+				}
+			state += "our mount " + std::to_string(mounts.MountOf(zone.MySpawnId()));
+			if (state != last) {
+				printf("[preview] %.2f s: %s\n", ms / 1000.0, state.c_str());
+				last = state;
+			}
+			// Others riding: the horse where the rider's updates put it, the rider on it.
+			if (ms % 1000 == 0)
+				for (const auto &[rider, horse] : mounts.Riders()) {
+					if (rider == zone.MySpawnId())
+						continue;
+					ZoneView::SpawnDebug h_stats, r_stats;
+					ZoneView *v = frontend.ZoneScene();
+					auto spawn = zone.Spawns().find(rider);
+					if (!v || !v->SpawnStats(horse, h_stats) || !v->SpawnStats(rider, r_stats) || spawn == zone.Spawns().end())
+						continue;
+					printf("[preview] %.0f s: rider %u (server %.1f, %.1f, speed %.2f) %s %s at %.1f, %.1f, %.1f%s; horse %s %s at "
+					       "%.1f, %.1f, %.1f%s\n",
+						ms / 1000.0, rider, spawn->second.y, spawn->second.x, spawn->second.speed, r_stats.model.c_str(),
+						r_stats.animation.c_str(), r_stats.feet.x, r_stats.feet.y, r_stats.feet.z, r_stats.drawn ? " drawn" : "",
+						h_stats.model.c_str(), h_stats.animation.c_str(), h_stats.feet.x, h_stats.feet.y, h_stats.feet.z,
+						h_stats.drawn ? " drawn" : "");
+				}
+		}
+		if (!mounts.Mounted()) {
+			h.Snapshot("mounts");
+			return 0;
+		}
+		// Riding: forward for 5 s (SetAccel's 0.02 a tick up to the horse's run speed), then let go
+		// (0.03 down), each half second.
+		h.Key(InputEvent::Key::F11); // the debug menu out of the way
+		ZoneView *view = frontend.ZoneScene();
+		auto speeds = [&](const char *when, int halves) {
+			for (int i = 0; i < halves; ++i) {
+				h.RunUntil([] { return false; }, 500);
+				ZoneMovement m = view->Movement();
+				printf("[preview] %s %.1f s: riding %d, speed %.3f, at %.1f, %.1f, %.1f\n", when, (i + 1) * 0.5,
+					view->Riding(), m.speed, m.x, m.y, m.z);
+			}
+		};
+		h.Snapshot("mounted");
+		h.Key(InputEvent::Key::Up);
+		speeds("forward", 10);
+		h.Snapshot("riding");
+		h.KeyUp(InputEvent::Key::Up);
+		speeds("let go", 8);
+		h.Key(InputEvent::Key::F9);
+		h.Snapshot("riding-first-person");
+		h.Key(InputEvent::Key::F9);
+		h.Key(InputEvent::Key::Enter);
+		h.Type("/dismount");
+		h.Key(InputEvent::Key::Enter);
+		h.RunUntil([] { return false; }, 300);
+		chat();
+		printf("[preview] after /dismount: our mount %u, riding %d\n", mounts.MountOf(zone.MySpawnId()), view->Riding());
+		h.RunUntil([] { return false; }, 1000);
+		h.Snapshot("mounts");
 		return 0;
 	}
 
@@ -2110,7 +2193,7 @@ int main(int argc, char **argv)
 	if (!replay && argc != 3 && argc != 6 && argc != 7) {
 		fprintf(stderr,
 			"usage: %s EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create]]\n"
-			"       %s EQDIR OUTDIR --replay FILE [SECONDS [options|settings]]\n",
+			"       %s EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse]]\n",
 			argv[0], argv[0]);
 		return 2;
 	}
@@ -2147,6 +2230,14 @@ int main(int argc, char **argv)
 	bool commands = argc == 7 && std::string(argv[6]) == "commands";
 	bool passage = argc == 7 && std::string(argv[6]) == "passage";
 	bool group_test = argc == 7 && std::string(argv[6]) == "group";
+	// mounts: a replay's horses with the old models; mountsluclin with the human Luclin models (no
+	// horse models: UseLuclinElementals off); mountshorse with both.
+	bool mounts_test = argc == 7 && std::string(argv[6]).rfind("mounts", 0) == 0;
+	if (mounts_test && std::string(argv[6]) != "mounts") {
+		config.luclin_models.use[render::LuclinModels::Index(1)][0] = true;
+		config.luclin_models.use[render::LuclinModels::Index(1)][1] = true;
+		config.luclin_models.elementals = std::string(argv[6]) == "mountshorse";
+	}
 	bool raid_test = argc == 7 && std::string(argv[6]) == "raid";
 	bool aa_test = argc == 7 && std::string(argv[6]) == "aa";
 	bool guild_test = argc == 7 && std::string(argv[6]) == "guild";
@@ -2199,6 +2290,8 @@ int main(int argc, char **argv)
 			return 1;
 		}
 		h.RunUntil([&] { return frontend.ZoneScene() && frontend.ZoneScene()->Loaded(); }, 30000);
+		if (mounts_test)
+			return MountsTest(frontend, h, seconds);
 		h.RunUntil([] { return false; }, 500);
 		h.Snapshot("r0-zone");
 		// Toggle UI Display (F10, ExecuteCmd 0x15): the windows and cursor gone, then back.

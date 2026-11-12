@@ -345,6 +345,19 @@ namespace render
 		return HasPoint(race, gender, "TUNIC_POINT_DAG");
 	}
 
+	bool CharacterModels::HasOwnModel(uint16_t race, uint8_t gender) const
+	{
+		std::string tag = ActorTag(race, gender);
+		for (const auto &candidate : m_sources) {
+			if (Skipped(*candidate, tag))
+				continue;
+			int actor = candidate->wld.Find(tag + "_ACTORDEF");
+			if (actor >= 0 && candidate->wld.ActorSkeleton(actor) >= 0)
+				return true;
+		}
+		return false;
+	}
+
 	bool CharacterModels::HasItemModel(unsigned it) const
 	{
 		std::string tag = "IT" + std::to_string(it);
@@ -386,6 +399,7 @@ namespace render
 		// The Luclin player models, each race and sex that ShouldLoad: global<tag>_chr2 (more of its
 		// animations) and global<tag>_chr. VEquip goes with the Vah Shir's (their helms), the
 		// LGEquip files (everyone else's hair, helms, robes and armor pieces) with the others'.
+		m_luclin_pc_models = false;
 		bool luclin_armor = false, vah_shir_items = false;
 		for (uint16_t race : LuclinRaces) {
 			for (uint8_t gender = 0; gender < 2; ++gender) {
@@ -410,6 +424,7 @@ namespace render
 			AddSource(m_sources, eq_dir, "global5_chr2");
 			AddSource(m_sources, eq_dir, "global5_chr");
 		}
+		m_luclin_pc_models = luclin_armor;
 		if (luclin_armor)
 			for (const char *name : {"lgequip_amr2", "lgequip_amr", "lgequip2", "lgequip"})
 				AddSource(m_items, eq_dir, name);

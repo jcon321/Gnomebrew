@@ -130,6 +130,7 @@ add_library(eqfrontend STATIC
     frontend/loot_window.cpp
     frontend/trade_window.cpp
     frontend/group.cpp
+    frontend/mounts.cpp
     frontend/raid.cpp
     frontend/raid_window.cpp
     frontend/aa_window.cpp

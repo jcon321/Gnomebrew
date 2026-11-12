@@ -35,8 +35,8 @@
 //     DoFishingEvent).
 // UseSkill's answers keep a count of requests the zone hasn't answered (DAT_007d0254, bind wound's
 // DAT_007d0258 too): Busy() while there are. Not yet: the AA abilities (105 Harm Touch, 107 Lay on
-// Hands, 111 Slam: the AAs aren't ours) and the timers' AA reductions, the mount checks (a mount is
-// only the SPA 113 buff here), PvP stealing's rules (DAT_006ec740), fishing's splash particles.
+// Hands, 111 Slam: the AAs aren't ours) and the timers' AA reductions, PvP stealing's rules
+// (DAT_006ec740), fishing's splash particles.
 
 #include "zone_session.h"
 

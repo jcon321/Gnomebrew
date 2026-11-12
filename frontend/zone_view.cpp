@@ -258,6 +258,132 @@ void ZoneView::PlacePlayer()
 	m_movement.Place(m_feet, m_heading, height, m_walk_speed, m_run_speed, m_info.gravity);
 	m_movement.SetEyeHeight(m_model ? (m_model->HeadZ() - m_model->MinZ()) * 1.05f : height * 0.9f);
 	m_placed = true;
+	if (m_horse)
+		ConfigureHorse(); // put somewhere else on it
+}
+
+void ZoneView::ConfigureHorse()
+{
+	auto it = m_actors.find(m_horse);
+	float walk = it != m_actors.end() ? it->second.walk_speed : 0, run = it != m_actors.end() ? it->second.run_speed : 0;
+	m_movement.SetRace(216);
+	m_movement.Place(m_feet, m_heading, m_height, walk, run, m_info.gravity);
+	m_movement.SetEyeHeight(m_model ? (m_model->HeadZ() - m_model->MinZ()) * 1.05f : m_height * 0.9f);
+	m_movement.SetMounted(true);
+}
+
+void ZoneView::UpdateRiding()
+{
+	auto it = m_mounts.find(m_my_id);
+	uint16_t horse = it != m_mounts.end() && m_actors.count(it->second) ? it->second : 0;
+	if (horse == m_horse)
+		return;
+	if (m_horse)
+		StopRiding();
+	if (horse)
+		StartRiding(horse);
+}
+
+void ZoneView::StartRiding(uint16_t horse)
+{
+	// MountEQPlayer: pinstCharSpawn is the horse, standing where it is, and our speeds are 0.
+	SpawnView &view = m_actors[horse];
+	m_horse = horse;
+	m_feet = view.Feet();
+	m_heading = view.actor.Heading();
+	ConfigureHorse();
+	m_pose.clear();
+	m_standing_up = false;
+	m_horse_head = m_movement.HeadEnvironment();
+	m_horse_head_changed = false;
+	DriveHorse(m_last_move_ms);
+}
+
+void ZoneView::StopRiding()
+{
+	// EQPlayer::Dismount: the horse stops, pinstCharSpawn is us again where the saddle was, and
+	// SetHeights; we come down onto the floor under it.
+	auto it = m_actors.find(m_horse);
+	if (it != m_actors.end())
+		it->second.actor.Drive(it->second.Feet(), it->second.actor.Heading(), 0, 0, {}, true,
+			m_movement.BodyEnvironment(), m_movement.FeetEnvironment());
+	render::Vec3 feet = MyFeet();
+	m_horse = 0;
+	m_rider_attached = false;
+	float floor_z;
+	if (m_zone.FloorBelow({feet.x, feet.y, feet.z + 2}, 30, floor_z))
+		feet.z = floor_z;
+	m_feet = feet;
+	m_movement.SetMounted(false);
+	m_movement.SetRace(m_appearance ? m_appearance->race : 1);
+	m_movement.Place(m_feet, m_heading, m_height, m_walk_speed, m_run_speed, m_info.gravity);
+	m_movement.SetEyeHeight(m_model ? (m_model->HeadZ() - m_model->MinZ()) * 1.05f : m_height * 0.9f);
+	m_server_position = {m_feet.y, m_feet.x, m_feet.z + m_height / 5 * 3.125f};
+}
+
+void ZoneView::DriveHorse(uint64_t now_ms)
+{
+	auto it = m_actors.find(m_horse);
+	if (it == m_actors.end())
+		return;
+	SpawnView &view = it->second;
+	float ms = view.last_ms && now_ms > view.last_ms ? static_cast<float>(now_ms - view.last_ms) : 0;
+	view.last_ms = now_ms;
+	// As tall as we are (ChangeHeight).
+	view.size = m_height;
+	view.center_height = m_height / 5 * 3.125f;
+	view.actor.Drive(m_feet, m_heading, m_movement.Speed(), m_movement.HeadingSpeed(), m_movement.Velocity(),
+		m_movement.OnGround(), m_movement.BodyEnvironment(), m_movement.FeetEnvironment());
+	ZoneSpawn spawn = m_horse_spawn;
+	spawn.size = m_height;
+	ResolveModel(view, spawn, true);
+	if (view.model)
+		view.actor.Animate(spawn, *view.model, ms, now_ms);
+	render::Transform dag;
+	m_rider_attached = RiderDag(view, dag);
+	if (m_rider_attached)
+		m_rider_placement = {dag.rotation, dag.translation, 1};
+}
+
+render::Transform ZoneView::MyPlacement() const
+{
+	if (m_rider_attached)
+		return m_rider_placement;
+	render::Transform placement;
+	placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(m_heading));
+	placement.translation = m_feet + render::Vec3{0, 0, m_model ? m_model->OriginOverFeet() : 0};
+	return placement;
+}
+
+render::Vec3 ZoneView::MyFeet() const
+{
+	if (!m_rider_attached)
+		return m_feet;
+	return m_rider_placement.translation - render::Vec3{0, 0, m_model ? m_model->OriginOverFeet() : 0};
+}
+
+bool ZoneView::RiderDag(const SpawnView &horse, render::Transform &out) const
+{
+	if (!horse.model)
+		return false;
+	int bone = horse.model->FindBone(horse.model->Code() + "RIDER_DAG");
+	if (bone < 0)
+		return false;
+	render::Transform placement;
+	placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(horse.actor.Heading()));
+	placement.translation = horse.Feet() + render::Vec3{0, 0, horse.model->OriginOverFeet()};
+	std::vector<render::Transform> placed;
+	horse.model->PlaceBones(placement, horse.actor.AnimationTime(*horse.model),
+		render::AnimationCode(horse.actor.Animation()), horse.actor.AnimationLoops(), {bone}, placed);
+	if (placed.empty())
+		return false;
+	out = placed[0];
+	return true;
+}
+
+int ZoneView::RidingAnimation(float speed, float run)
+{
+	return run <= speed ? 78 : 74; // L10, P09
 }
 
 bool ZoneView::Move(const MoveControls &controls, uint64_t now_ms, bool looking)
@@ -277,6 +403,7 @@ bool ZoneView::Move(const MoveControls &controls, uint64_t now_ms, bool looking)
 	if (!m_placed || ms <= 0)
 		return false;
 
+	UpdateRiding();
 	// We swim where we look: the view's pitch from where each camera starts out.
 	MoveControls swim = controls;
 	swim.jump = std::exchange(m_jump_pressed, false);
@@ -284,7 +411,16 @@ bool ZoneView::Move(const MoveControls &controls, uint64_t now_ms, bool looking)
 	bool jumped = m_movement.Step(swim, ms, m_zone);
 	m_feet = m_movement.Feet();
 	m_heading = m_movement.Heading();
+	// Riding, the horse's x and y and its floor plus our ModelHeightOffset (DoMainLoop's update for a
+	// pinstCharSpawn with a Rider): the same, the horse being as tall as we are.
 	m_server_position = {m_feet.y, m_feet.x, m_feet.z + m_height / 5 * 3.125f};
+	if (m_horse) {
+		DriveHorse(now_ms);
+		if (m_movement.HeadEnvironment() != m_horse_head) {
+			m_horse_head = m_movement.HeadEnvironment();
+			m_horse_head_changed = true;
+		}
+	}
 	// The chase camera drifts back behind us as we move, unless the mouse is holding it.
 	if (m_movement.Speed() != 0 && !looking && m_view == CameraView::Chase) {
 		m_orbit = std::fmod(m_orbit, 512.0f);
@@ -350,6 +486,8 @@ int ZoneView::SoundAnimation(bool jumped) const
 {
 	// ProcessAnimation's pick, which unlike our track goes back to walking or running once a jump's
 	// rise slows. The jump itself is the frame it starts.
+	if (m_horse) // the horse's steps are its own
+		return RidingAnimation(m_movement.Speed(), m_movement.RunSpeed());
 	const render::Vec3 &velocity = m_movement.Velocity();
 	bool moving = std::fabs(velocity.x) >= 0.001f || std::fabs(velocity.y) >= 0.001f;
 	if (jumped)
@@ -539,6 +677,13 @@ void ZoneView::ChooseAnimation(float ms)
 	}
 	else
 		m_standing_up = false;
+	if (m_horse) {
+		// On the horse: PlayAnimationTrack2's riding animation for anything standing or moving.
+		animation = render::AnimationCode(RidingAnimation(speed, m_movement.RunSpeed()));
+		if (m_model && !m_model->HasAnimation(animation))
+			animation = m_model->HasAnimation("P09") ? "P09" : "P01";
+		m_standing_up = false;
+	}
 	if (animation.empty()) {
 		if (speed > 0)
 			animation = speed >= m_movement.RunSpeed() ? "L02" : "L01";
@@ -551,7 +696,7 @@ void ZoneView::ChooseAnimation(float ms)
 		else
 			animation = "P01";
 	}
-	if (animation == "L01" || animation == "L02")
+	if ((animation == "L01" || animation == "L02") && !m_horse)
 		rate = MoveAnimationRate(across);
 	if (m_model && !m_model->HasAnimation(animation))
 		animation = animation == "L01" || animation == "L02" ? animation : "P01";
@@ -824,9 +969,7 @@ ZoneView::Picked ZoneView::Pick(int x, int y, uint16_t me) const
 		}
 	}
 	if (me != 0 && m_model_shown) {
-		render::Transform placement;
-		placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(m_heading));
-		placement.translation = m_feet + render::Vec3{0, 0, m_model->OriginOverFeet()};
+		render::Transform placement = MyPlacement();
 		if (m_model->RayHit(placement, m_player_time_ms, m_animation, m_player_loops, from, direction, best, distance)) {
 			best = distance;
 			picked = Picked{me, false, 0};
@@ -911,6 +1054,9 @@ render::Camera ZoneView::MakeCamera(float &distance) const
 {
 	float height = m_model ? m_model->MaxZ() - m_model->MinZ() : 6;
 	float eye = m_model ? (m_model->HeadZ() - m_model->MinZ()) * 1.05f : height * 0.9f;
+	if (m_horse)
+		eye *= 0.85f; // MountEQPlayer: CameraHeightOffset * 0.85
+	render::Vec3 feet = MyFeet();
 	float yaw = render::HeadingToRadians(m_heading + m_orbit);
 	float pitch = m_pitch * render::Pi / 180;
 	render::Vec3 look{std::cos(yaw) * std::cos(pitch), std::sin(yaw) * std::cos(pitch), std::sin(pitch)};
@@ -936,7 +1082,7 @@ render::Camera ZoneView::MakeCamera(float &distance) const
 	}
 	distance = 0;
 	if (m_view == CameraView::FirstPerson) {
-		camera.position = m_feet + render::Vec3{0, 0, eye - m_eye_drop * 1.05f};
+		camera.position = feet + render::Vec3{0, 0, eye - m_eye_drop * 1.05f};
 		camera.forward = look;
 	}
 	else {
@@ -944,7 +1090,7 @@ render::Camera ZoneView::MakeCamera(float &distance) const
 		// client's camera, it comes in closer when a wall or the floor is in the way. The
 		// test covers a box around the camera, not just its center, so a slope or wall it
 		// backs into at a shallow angle stays clear of the near plane.
-		render::Vec3 target = m_feet + render::Vec3{0, 0, eye};
+		render::Vec3 target = feet + render::Vec3{0, 0, eye};
 		render::Vec3 right = render::Normalize(render::Cross(look, {0, 0, 1}));
 		if (render::Length(right) == 0)
 			right = {0, 1, 0};
@@ -1029,12 +1175,10 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 		                   m_animation == "P02" || m_animation == "D05");
 	}
 	if (m_model_shown) {
-		render::Transform placement;
-		placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(m_heading));
-		placement.translation = m_feet + render::Vec3{0, 0, m_model->OriginOverFeet()};
+		render::Transform placement = MyPlacement();
 		uint64_t time = m_player_time_ms;
 		bool held = !m_player_loops;
-		m_model->Draw(*m_renderer, placement, ModelLightingAt(m_feet + render::Vec3{0, 0, m_height / 5 * 3.125f}), time,
+		m_model->Draw(*m_renderer, placement, ModelLightingAt(MyFeet() + render::Vec3{0, 0, m_height / 5 * 3.125f}), time,
 			m_animation, !held);
 		m_held.Draw(*m_renderer, *m_model, placement, time, m_animation, !held, now_ms, light.ambient);
 	}
@@ -1384,8 +1528,7 @@ bool ZoneView::FindActor(uint16_t id, SpellEffects::Actor &actor) const
 		if (!m_model || !m_appearance)
 			return false;
 		actor.model = m_model.get();
-		actor.placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(m_heading));
-		actor.placement.translation = m_feet + render::Vec3{0, 0, m_model->OriginOverFeet()};
+		actor.placement = MyPlacement();
 		actor.time_ms = m_player_time_ms;
 		actor.animation = m_animation;
 		actor.loop = m_player_loops;
@@ -1427,6 +1570,12 @@ void ZoneView::UpdateSpawns(const std::map<uint16_t, ZoneSpawn> &spawns, uint16_
 			m_sound->RemoveActorLoop(it->first);
 		it = m_actors.erase(it);
 	}
+	// The horses (and everyone else) first, then the riders on them.
+	std::map<uint16_t, uint16_t> riders; // horse -> rider, theirs
+	for (const auto &[rider, horse] : m_mounts)
+		if (rider != my_id && spawns.count(rider) && spawns.count(horse))
+			riders[horse] = rider;
+	std::vector<std::pair<uint16_t, const ZoneSpawn *>> on_horses;
 	for (const auto &[id, spawn] : spawns) {
 		if (id == my_id || id == 0)
 			continue;
@@ -1435,9 +1584,67 @@ void ZoneView::UpdateSpawns(const std::map<uint16_t, ZoneSpawn> &spawns, uint16_
 		view.player = spawn.npc == 0;
 		view.level = spawn.level;
 		view.dead = spawn.npc == 2 || spawn.npc == 3;
-		PoseSpawn(view, spawn, now_ms);
+		view.walk_speed = spawn.walk_speed;
+		view.run_speed = spawn.run_speed;
+		auto mount = m_mounts.find(id);
+		if (mount != m_mounts.end() && spawns.count(mount->second)) {
+			on_horses.emplace_back(id, &spawn);
+			continue;
+		}
+		if (view.attached) { // off the horse: on its own feet from here
+			view.attached = false;
+			view.actor.StopRiding();
+		}
+		if (id == m_horse)
+			m_horse_spawn = spawn; // moved with us (DriveHorse)
+		else if (auto rider = riders.find(id); rider != riders.end()) {
+			// ProcessUpdateStats: the rider's updates move the horse; ChangeHeight: as tall as the rider.
+			const ZoneSpawn &by = spawns.at(rider->second);
+			ZoneSpawn moved = spawn;
+			moved.x = by.x;
+			moved.y = by.y;
+			moved.z = by.z;
+			moved.heading = by.heading;
+			moved.dx = by.dx;
+			moved.dy = by.dy;
+			moved.dz = by.dz;
+			moved.speed = by.speed;
+			moved.heading_speed = by.heading_speed;
+			moved.updated_ms = by.updated_ms;
+			moved.size = by.size > 0 ? by.size : (render::IsPlayerRace(by.race) ? render::RaceHeight(by.race) : 6);
+			PoseSpawn(view, moved, now_ms);
+		}
+		else
+			PoseSpawn(view, spawn, now_ms);
 		if (m_sound)
 			SpawnSounds(view, spawn, id, now_ms);
+	}
+	for (const auto &[id, spawn] : on_horses) {
+		SpawnView &view = m_actors[id];
+		const SpawnView &horse = m_actors[m_mounts.at(id)];
+		float ms = view.last_ms && now_ms > view.last_ms ? static_cast<float>(now_ms - view.last_ms) : 0;
+		view.last_ms = now_ms;
+		float size = spawn->size > 0 ? spawn->size : (render::IsPlayerRace(spawn->race) ? render::RaceHeight(spawn->race) : 6);
+		view.actor.Update(*spawn, size, m_info.gravity, now_ms);
+		view.light = spawn->light;
+		view.warm = spawn->body_type != 3 && spawn->body_type != 5 && spawn->body_type != 8 && spawn->body_type != 12;
+		view.center_height = size / 5 * 3.125f;
+		view.size = size;
+		render::Transform dag;
+		view.attached = RiderDag(horse, dag);
+		if (view.attached) {
+			view.attach = {dag.rotation, dag.translation, 1};
+			float origin = view.model ? view.model->OriginOverFeet() : 0;
+			view.actor.Ride(dag.translation - render::Vec3{0, 0, origin}, horse.actor.Heading(),
+				RidingAnimation(spawn->speed, horse.run_speed));
+		}
+		else
+			view.actor.Ride(horse.Feet(), horse.actor.Heading(), RidingAnimation(spawn->speed, horse.run_speed));
+		ResolveModel(view, *spawn, render::Length(view.Feet() - m_camera_position) < FarPlane() + 50);
+		if (view.model)
+			view.actor.Animate(*spawn, *view.model, ms, now_ms);
+		if (m_sound)
+			SpawnSounds(view, *spawn, id, now_ms);
 	}
 }
 
@@ -1563,6 +1770,13 @@ void ZoneView::PoseSpawn(SpawnView &view, const ZoneSpawn &spawn, uint64_t now_m
 	float range = FarPlane() + 50;
 	bool near = render::Length(view.Feet() - m_camera_position) < range;
 	view.actor.Step(m_zone, ms, near, now_ms);
+	ResolveModel(view, spawn, near);
+	if (view.model)
+		view.actor.Animate(spawn, *view.model, ms, now_ms);
+}
+
+void ZoneView::ResolveModel(SpawnView &view, const ZoneSpawn &spawn, bool near)
+{
 	if ((near && !view.resolved) || (view.resolved && spawn.look_serial != view.look_serial)) {
 		std::string key = SpawnModelKey(spawn);
 		if (!view.resolved || key != view.model_key)
@@ -1571,8 +1785,6 @@ void ZoneView::PoseSpawn(SpawnView &view, const ZoneSpawn &spawn, uint64_t now_m
 		view.look_serial = spawn.look_serial;
 		view.resolved = true;
 	}
-	if (view.model)
-		view.actor.Animate(spawn, *view.model, ms, now_ms);
 }
 
 void ZoneView::DrawSpawns(uint64_t now_ms)
@@ -1580,7 +1792,7 @@ void ZoneView::DrawSpawns(uint64_t now_ms)
 	float far_plane = FarPlane();
 	for (auto &[id, view] : m_actors) {
 		view.drawn = false;
-		if (!view.model)
+		if (!view.model || m_hidden.count(id))
 			continue;
 		const render::CharacterModel &model = *view.model;
 		float height = model.MaxZ() - model.MinZ();
@@ -1592,6 +1804,8 @@ void ZoneView::DrawSpawns(uint64_t now_ms)
 		render::Transform placement;
 		placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(view.actor.Heading()));
 		placement.translation = view.Feet() + render::Vec3{0, 0, model.OriginOverFeet()};
+		if (view.attached)
+			placement = view.attach;
 		uint64_t time = view.actor.AnimationTime(model);
 		std::string animation = render::AnimationCode(view.actor.Animation());
 		model.Draw(*m_renderer, placement, ModelLightingAt(view.Feet() + render::Vec3{0, 0, view.center_height}, view.warm),
@@ -1633,6 +1847,17 @@ std::vector<ZoneView::ViewedSpawn> ZoneView::SpawnsInView(float range) const
 		out.push_back(s);
 	}
 	return out;
+}
+
+bool ZoneView::IsLuclinModel(uint16_t race, uint8_t gender)
+{
+	if (!m_loaded)
+		return false;
+	uint32_t key = static_cast<uint32_t>(race) << 8 | gender;
+	auto it = m_luclin_models.find(key);
+	if (it == m_luclin_models.end())
+		it = m_luclin_models.emplace(key, m_models.IsLuclin(race, gender)).first;
+	return it->second;
 }
 
 std::vector<uint16_t> ZoneView::DrawnSpawns() const
@@ -1706,8 +1931,7 @@ void ZoneView::DrawNameSprites(const render::Camera &camera)
 			if (!m_model_shown)
 				continue;
 			model = m_model.get();
-			placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(m_heading));
-			placement.translation = m_feet + render::Vec3{0, 0, m_model->OriginOverFeet()};
+			placement = MyPlacement();
 			time = m_player_time_ms;
 			animation = m_animation;
 			loops = m_player_loops;
