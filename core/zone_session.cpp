@@ -2163,6 +2163,13 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 	case ZoneOp::CancelSneakHide:
 		events.push_back({Event::Type::SneakHideCancelled});
 		break;
+	case ZoneOp::Stun: {
+		Event e(Event::Type::Stunned);
+		e.value = data.size() >= 4 ? static_cast<int32_t>(Read<uint32_t>(data, 0)) : 0;
+		Log("[zone]    stunned for " + std::to_string(e.value) + " ms");
+		events.push_back(e);
+		break;
+	}
 	case ZoneOp::ShopEndConfirm:
 		events.push_back({Event::Type::MerchantEnded});
 		break;

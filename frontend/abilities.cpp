@@ -750,6 +750,10 @@ void Abilities::PickPocket(uint16_t target)
 		Say(12406, "You must target a player to steal from first.  You may not steal from corpses.", SkillsColor);
 		return;
 	}
+	if (m_host.stunned && m_host.stunned()) {
+		Say(12407, "You can't try to steal while STUNNED!", SkillsColor);
+		return;
+	}
 	if (m_host.attacking && m_host.attacking()) {
 		Say(12408, "You can't try to steal while attacking.", SkillsColor);
 		return;
@@ -1002,10 +1006,14 @@ void Abilities::ZoneEvent(const ZoneSession::Event &event)
 
 void Abilities::UseCombatSkill(int skill, uint64_t now_ms)
 {
-	// EQPlayer::DoAttack(100, skill, target): not while casting; attacking ends our invisibility
-	// and hiding (the stunned check isn't ours yet).
+	// EQPlayer::DoAttack(100, skill, target): not while casting, nor stunned ("You can't attack while
+	// stunned!", 125, color 0xd); attacking ends our invisibility and hiding.
 	if (m_host.casting && m_host.casting())
 		return;
+	if (m_host.stunned && m_host.stunned()) {
+		Say(125, "You can't attack while stunned!", 0xd);
+		return;
+	}
 	if (m_host.remove_affect)
 		for (int spa : {12, 28, 29, 94})
 			m_host.remove_affect(spa);

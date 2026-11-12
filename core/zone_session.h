@@ -499,6 +499,7 @@ public:
 			DoorsSpawned, // Doors() is set (none after OP_DespawnDoor)
 			Yelled,       // id: who yelled for help near us (OP_YellForHelp)
 			SneakHideCancelled, // OP_CancelSneakHide: the zone ended our hide and sneak
+			Stunned,      // OP_Stun: value the duration in ms (0 from Client::UnStun)
 			// OP_ShopEndConfirm: the zone ended the merchant session (HandleWorldMessage's 0x4146:
 			// with the new UI, CMerchantWnd::Deactivate)
 			MerchantEnded,

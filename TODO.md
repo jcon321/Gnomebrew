@@ -194,9 +194,9 @@ no rules of its own.
      channeling are the zone's (eqgame's `SpellFizzled` and `CastingRequirementsMet` run only
      offline, see README Spells); others' fizzles, interrupts and regains are told
      (OP_SpellTextMessage, OP_SpellTextMessageStringID, by the spell filters); our own interrupt
-     (StopSpellCast 1, msg_stat_change's SpawnAppearance 0x12 of 0 on us) tells us and the zone.
-     Still to do:
-     - casting: stuns and divine aura (OP_Stun), the focus cast time and range modifiers,
+     (StopSpellCast 1, msg_stat_change's SpawnAppearance 0x12 of 0 on us) tells us and the zone;
+     divine aura (174) and being stunned (175, OP_Stun) stop a cast. Still to do:
+     - casting: the focus cast time and range modifiers,
        abilities (gem 9), and a bard being hit (StopSpellCast 1);
      - the spell info display (done: `ToggleSpellDisplay`, CItemDisplayWnd::SetSpell, from a book
        slot, a gem or a buff): "Your Cast Time" (eqstr 3106) has the AA casting time modifier and
@@ -291,9 +291,8 @@ no rules of its own.
    clip plane, the windows' global fades) is done; still to do there: Video Modes (CVideoModesWnd)
    and Level of Detail's effect (s3dSetDynamicLOD: models are always drawn whole); Gamma does
    nothing, as in eqgame windowed. Still to do: the Mouse page, which shows empty
-   (InitKeyboardAssignments' mouse settings); the reverb's drugged room (23) while stunned (StunMe;
-   OP_Stun isn't ours) or drunk at 40 and over (DoPassageOfTime's drunkenness wearing off isn't
-   ours); the Keyboard page's
+   (InitKeyboardAssignments' mouse settings); the reverb's drugged room (23) while drunk at 40 and
+   over (DoPassageOfTime's drunkenness wearing off isn't ours); the Keyboard page's
    temporary red rows (commands not yet done) go once every command is done.
    A combo box's list that's down takes any press (CXWndManager's 0x34): off it, the list goes
    and the press goes no further. Its list draws the choice on the select color and the row under
@@ -426,7 +425,7 @@ no rules of its own.
       -1), and the bow held while shooting. Not checked live: none of the test characters has a
       bow or anything to throw. Still to do: AimAtTarget's pitch and our own missile drawn
       (EQMissile);
-    - DoAttack's stunned states (StunnedState 1 says eqstr 125; 2..4 and 7 nothing), the
+    - DoAttack's other StunnedStates (2..4 and 7 say nothing; 1, stunned, is done), the
       ActorInfo +0xc8c+0x74 and DAT_007985f0 refusals, and DAT_00798560 (CanIHitTarget always
       passing);
     - the tracking window (CTrackingWnd, TrackingWnd: GenerateTrackingList within the skill's range,
@@ -438,7 +437,7 @@ no rules of its own.
       profile's timers at +0xc7a and +0xc7e, with AdjustSpellRecastTimeByClassAbility's 12 min a rank
       of Fervent Blessing or Touch of the Wicked off; 111 Slam as bash), a real mount (ActorInfo's Mount; only the SPA 113 buff here),
       stealing under the PvP deity rules (DAT_006ec740 4: NotOnSameDeity, the level range, 12412,
-      12413), being stunned (12407), fishing's splash particles (DoParticleEffect 2) and the pole
+      12413), fishing's splash particles (DoParticleEffect 2) and the pole
       shown in hand as the cast starts (UpdateItemSlot), and someone picking our pockets (msg_steal
       0xff: 12897 and the answer);
     - AllowedToAttack's duels, the server's PvP types and the water;

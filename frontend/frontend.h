@@ -417,6 +417,12 @@ private:
 	void DoDrinkEatPoison(const ZoneItem &item, int16_t slot);
 	// EQ_Character::ProcessHungerandThirst and AutoEat: eating and drinking for us when low.
 	void HungerAndThirst(uint64_t now_ms);
+	// EQ_Character::StunMe (@004c0001), from OP_Stun; and DoPassageOfTime's end of it.
+	void StunMe(int32_t duration_ms);
+	void StunPassageOfTime(uint64_t now_ms);
+	// DoAttack's own check (@0050a0f8): stunned, "You can't attack while stunned!" (125); true when
+	// that stops the attack.
+	bool AttackStunned();
 	bool AutoEat(bool food);
 	// EQ_Note::SendTextRequestMsg (@004ce45d): the right button on a book or note closes its window,
 	// and asks for its text unless it was this one's (CNoteWnd::CheckNote, CBookWnd::CheckBook); the
@@ -616,6 +622,8 @@ private:
 	Abilities m_abilities;          // the ability and combat skill buttons, and using skills
 	bool m_attack = false;          // auto attack (__Attack)
 	bool m_dead = false;            // we died in this zone (EQPlayer::IDied's stance 120): nothing moves us
+	bool m_stunned = false;         // EQ_Character's StunnedState 1 (StunMe)
+	uint64_t m_stun_until_ms = 0;   // ActorInfo's stun timer (+0xc4): 0 not stunned
 	uint64_t m_death_ms = 0;        // ActorInfo's DeathTimer: when we lay down; 1 once told we're going home
 	int m_cycle_index = -1;         // CycleNearestTarget's place in the list (Zeal's last_index)
 	uint64_t m_cycle_ms = 0;        // its last press

@@ -241,6 +241,7 @@ namespace ZoneOp
 	constexpr uint16_t PlaySound = 0x4048;
 	// No body: the zone ends our hide and sneak (HandleWorldMessage's 0x415a, CEverQuest_CancelSneakHide).
 	constexpr uint16_t CancelSneakHide = 0x415a;
+	constexpr uint16_t Stun = 0x415b; // Stun_Struct {u32 duration ms}: HandleWorldMessage's StunMe (0: Client::UnStun)
 	// No body: we're berserk, or no longer (0x41a9, 0x41aa: ActorInfo+0x42c, which EQ_Character::Str
 	// and compute_tohit read).
 	constexpr uint16_t BerserkStart = 0x41a9;
@@ -504,6 +505,7 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::DespawnDoor, "OP_DespawnDoor"},
 	{ZoneOp::PlaySound, "OP_PlaySound"},
 	{ZoneOp::CancelSneakHide, "OP_CancelSneakHide"},
+	{ZoneOp::Stun, "OP_Stun"},
 	{ZoneOp::BerserkStart, "OP_BerserkStart"},
 	{ZoneOp::BerserkEnd, "OP_BerserkEnd"},
 	{ZoneOp::GMLastName, "OP_GMLastName"},

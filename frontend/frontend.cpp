@@ -873,6 +873,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		MeleeControls();
 		RangedPassageOfTime(now_ms);
 		HungerAndThirst(now_ms);
+		StunPassageOfTime(now_ms);
 		if (me.look_serial != m_my_look_serial || m_ranged_look) {
 			m_my_look_serial = me.look_serial;
 			m_ranged_look = false;
@@ -887,7 +888,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		// keys only standing or crouching). Forward stands us up from sitting (ZoneEvent), and we go
 		// at once.
 		uint8_t stance = m_zone.Self().stance;
-		if ((stance != 100 && stance != 111) || m_dead) {
+		if ((stance != 100 && stance != 111) || m_dead || m_stunned) {
 			controls.forward = controls.back = controls.left = controls.right = false;
 			controls.strafe = controls.jump = false;
 		}
@@ -2168,6 +2169,7 @@ void FrontEnd::BuildZoneWindows()
 	abilities_host.target = [this] { return m_game_values.target; };
 	abilities_host.attacking = [this] { return m_attack; };
 	abilities_host.casting = [this] { return m_spell_cast.Casting() && m_zone.Profile().class_id != 8; };
+	abilities_host.stunned = [this] { return m_stunned; };
 	abilities_host.hp = [this] { return m_game_values.CurHp(); };
 	abilities_host.haste = [this] { return m_buffs.AttackSpeed(); };
 	abilities_host.can_hit = [this](uint16_t id) { return CanIHitTarget(id); };
@@ -2268,6 +2270,8 @@ void FrontEnd::BuildZoneWindows()
 	cast_host.set_target = [this](uint16_t id) { m_game_values.target = id; };
 	cast_host.can_see = [this](uint16_t id) { return CanSee(id); };
 	cast_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
+	cast_host.total = [this](int spa) { return m_buffs.Total(spa); };
+	cast_host.stunned = [this] { return m_stunned; };
 	m_spell_cast.Attach(m_windows, m_zone, m_ui.spells, m_ui.eqstr, std::move(cast_host));
 	m_buffs.Attach(m_zone, m_ui.spells, m_ui.eqstr, [this](const std::string &text, int type) { ChatOut(text, type); });
 	m_book.Attach(m_windows, m_text);
@@ -3200,6 +3204,46 @@ int FrontEnd::TakeFallDamage(float fall)
 	return damage;
 }
 
+void FrontEnd::StunMe(int32_t duration_ms)
+{
+	// Never under divine aura (SPA 40). Under a second is a second for a player (so the zone's 0,
+	// Client::UnStun, stuns us a second unless we're stunned already). Only when the stun timer is
+	// clear: the drugged room (SetSpecialEnvironment 0x17), our speed 0 (no control from here) and
+	// "You are stunned!" (12479).
+	if (m_buffs.Total(40) > 0)
+		return;
+	if (duration_ms < 1000)
+		duration_ms = 1000;
+	if (m_stun_until_ms != 0)
+		return;
+	m_stun_until_ms = m_now_ms + static_cast<uint32_t>(duration_ms);
+	m_stunned = true;
+	if (m_sound)
+		m_sound->SetSpecialEnvironment(23);
+	ChatOut(EqString(12479, "You are stunned!"), 0x111);
+}
+
+void FrontEnd::StunPassageOfTime(uint64_t now_ms)
+{
+	// DoPassageOfTime: the timer past, StunnedState 0, "You are unstunned." (12498) and
+	// SetGenericEnvironment.
+	if (m_stun_until_ms == 0 || m_stun_until_ms >= now_ms)
+		return;
+	m_stun_until_ms = 0;
+	m_stunned = false;
+	ChatOut(EqString(12498, "You are unstunned."), 0x111);
+	if (m_sound)
+		m_sound->SetGenericEnvironment();
+}
+
+bool FrontEnd::AttackStunned()
+{
+	if (!m_stunned)
+		return false;
+	ChatOut(EqString(125, "You can't attack while stunned!"), 0xd);
+	return true;
+}
+
 void FrontEnd::HungerAndThirst(uint64_t now_ms)
 {
 	// EQ_Character::ProcessHungerandThirst (@004c0f62), from DoPassageOfTime. The zone digests
@@ -4040,6 +4084,12 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			AddZoneLog("You have entered " + m_zone.Info().long_name + ".", ZoneYellow);
 			SetAutoAttack(false); // CEverQuest_EnterZone
 			m_dead = false;
+			// A new zone's ActorInfo has no stun timer, and StartWorldDisplay's SetGenericEnvironment
+			// takes the stun's room away.
+			if (m_stunned && m_sound)
+				m_sound->SetGenericEnvironment();
+			m_stunned = false;
+			m_stun_until_ms = 0;
 			m_death_ms = 0;
 			m_cycle_index = -1;    // Zeal's CycleTarget::on_zone
 			m_toggle_target = 0; // CEverQuest_EnterZone
@@ -4083,6 +4133,9 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			break;
 		case Type::SneakHideCancelled:
 			m_abilities.CancelSneakHide(); // HandleWorldMessage's 0x415a
+			break;
+		case Type::Stunned:
+			StunMe(event.value); // HandleWorldMessage's 0x415b
 			break;
 		case Type::MerchantEnded:
 			// HandleWorldMessage's 0x4146 with the new UI: CMerchantWnd::Deactivate (its vtable's
@@ -4911,7 +4964,7 @@ MoveControls FrontEnd::ZoneControls()
 	// back and the turn (or strafe) keys end it.
 	if (m_following && (m_keys.back || m_keys.left || m_keys.right))
 		TurnOffAutoFollow();
-	if (can_move && (stance == 100 || stance == 111))
+	if (can_move && (stance == 100 || stance == 111) && !m_stunned)
 		FollowPlayerAI();
 	if (can_move) {
 		// ProcessControls: forward with the key, autorun, or both mouse buttons.

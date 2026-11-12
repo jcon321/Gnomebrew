@@ -104,6 +104,19 @@ void SpellCast::Interrupted()
 		StopSpellCast(1, m_spell);
 }
 
+bool SpellCast::Incapacitated()
+{
+	if (m_host.total && m_host.total(40) > 0) {
+		Say(174, "You can't cast spells while invulnerable!", ChatType::SpellFailure);
+		return true;
+	}
+	if (m_host.stunned && m_host.stunned()) {
+		Say(175, "You can't cast spells while stunned!", ChatType::SpellFailure);
+		return true;
+	}
+	return false;
+}
+
 bool SpellCast::CastSpell(int gem, uint64_t now_ms)
 {
 	const ZoneProfile &me = m_zone->Profile();
@@ -114,6 +127,8 @@ bool SpellCast::CastSpell(int gem, uint64_t now_ms)
 			Say(12368, "You do not have control of yourself right now.", ChatType::SpellFailure);
 		return false;
 	}
+	if (Incapacitated())
+		return false;
 	if (m_spell != -1 && me.class_id != Bard) {
 		Say(12442, "You are already casting a spell!", ChatType::SpellFailure);
 		return false;
@@ -141,6 +156,8 @@ bool SpellCast::CastItem(const ZoneItem &item, int16_t slot, uint64_t now_ms)
 			Say(12368, "You do not have control of yourself right now.", ChatType::SpellFailure);
 		return false;
 	}
+	if (Incapacitated())
+		return false;
 	if (item.item_class != 0 || item.item_type == 20)
 		return false;
 	if (Casting() && !BardSong(Spell(m_spell)))

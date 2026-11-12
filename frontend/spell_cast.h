@@ -69,6 +69,8 @@ public:
 		std::function<void(uint16_t)> set_target;   // a pet spell targets our pet (pinstTarget)
 		std::function<bool(uint16_t)> can_see;      // CastRay from us to a spawn
 		std::function<void(const std::string &, int)> chat;
+		std::function<int(int)> total;              // TotalSpellAffects of an SPA (divine aura, 40)
+		std::function<bool()> stunned;              // StunnedState 1
 	};
 
 	void Attach(WindowManager &windows, ZoneSession &zone, const SpellFile *spells, const EqStr *eqstr, Host host);
@@ -104,6 +106,9 @@ private:
 	void Say(uint32_t id, const std::string &fallback, int type);
 	bool BardSong(const SpellInfo *spell) const; // EQ_Character_BardCastBard: ours, a bard's
 	bool CastSpell(int gem, uint64_t now_ms);
+	// CastSpell's checks after standing, for a gem and an item alike: divine aura (SPA 40, 174) and
+	// stunned (175), in 0x121. True when one stops the cast.
+	bool Incapacitated();
 	// What CastSpell does for a gem and an item alike, from the line of sight on; `item` null for a gem.
 	bool Cast(int gem, int spell, const SpellInfo &info, const ZoneItem *item, int16_t slot, uint64_t now_ms);
 	// What's in the way at `target` for target types that need one (LAB_004c50ba, LAB_004c5141):

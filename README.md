@@ -1563,6 +1563,22 @@ details and the nearest spawns at the top left and the radar at the top right.
   except for a bard without an instrument. `ReportSuccessfulHit` prints `cast_on_you`,
   "You have taken %2 points of damage." or `cast_on_other` (within 75 units of the target), and
   plays the target's `TargetAnim` (`D02` for detrimental damage).
+- **Stuns** (`FrontEnd::StunMe`, `StunPassageOfTime`): `OP_Stun` (0x415b, `Stun_Struct` {u32 ms})
+  is `EQ_Character::StunMe` (@004c0001). Under divine aura (SPA 40) nothing happens. Under 1000 ms
+  is 1000 for a player, so the zone's 0 (`Client::UnStun`) stuns us for a second unless we're
+  stunned already. With the ActorInfo stun timer (+0xc4) clear it's set to now plus the duration,
+  StunnedState goes to 1, the reverb takes the drugged room (`CDisplay::SetSpecialEnvironment`
+  0x17), our speed goes to 0 and "You are stunned!" (12479) prints in 0x111; a stun while stunned
+  does nothing (the zone doesn't chain a player's either). `DoPassageOfTime` clears it once the
+  timer passes: StunnedState 0, "You are unstunned." (12498, 0x111), `SetGenericEnvironment`.
+  Stunned (`ProcessControls`' `local_10` 0) we've no control: no movement, turning, jumping, auto
+  attack swings or auto-follow, as sitting. `CastSpell` refuses under divine aura ("You can't cast
+  spells while invulnerable!", 174) then stunned ("You can't cast spells while stunned!", 175),
+  both in 0x121 right after the standing check, for gems and clicked items alike. `DoAttack`
+  (melee, the Range button, combat skills) says "You can't attack while stunned!" (125, color 0xd)
+  after its casting check; pick pockets says "You can't try to steal while STUNNED!" (12407) after
+  the corpse check. A new zone starts unstunned (`StartWorldDisplay`'s `SetGenericEnvironment`).
+  The zone interrupts a stunned cast itself (`Mob::Stun`).
 - **Lifetaps** (`SpellCasting::TapReply`, `FrontEnd::SpellDamaged`): after our tap (target type
   13) lands, the zone sends us a second `OP_Damage` of type 231 from us and on us, its damage the
   negative of the tap's (`Mob::CommonDamage`'s lifetap packet). `ReportSuccessfulHit` gives it no

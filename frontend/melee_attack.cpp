@@ -28,7 +28,7 @@ void FrontEnd::MeleeControls()
 	// ProcessControls' local_10: we have control standing or crouching (not stunned, nor under
 	// another's control, stance 102), and not dead.
 	uint8_t stance = m_zone.Self().stance;
-	bool control = !m_dead && (stance == Standing || stance == Crouching);
+	bool control = !m_dead && !m_stunned && (stance == Standing || stance == Crouching);
 	if (!m_attack || !control)
 		return;
 	if (m_range_ready) {
@@ -76,6 +76,8 @@ void FrontEnd::MeleeAttack(int16_t hand, uint16_t target_id)
 	// EQPlayer::DoAttack(13 primary, 14 secondary, 0, target). Not while casting, but for a bard.
 	const ZoneProfile &me = m_zone.Profile();
 	if (m_spell_cast.Casting() && me.class_id != 8)
+		return;
+	if (AttackStunned())
 		return;
 	AttackBegins();
 	// The weapons back in our hands after shooting (UpdateItemSlot 7 and 8).

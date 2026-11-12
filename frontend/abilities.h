@@ -62,6 +62,7 @@ public:
 		std::function<uint16_t()> target;                   // ours, 0 none
 		std::function<bool()> attacking;                    // __Attack
 		std::function<bool()> casting;                      // a cast going (a bard's song doesn't count)
+		std::function<bool()> stunned;                      // StunnedState 1
 		std::function<int()> hp;                            // EQ_Character::Cur_HP
 		std::function<int()> haste;                         // TotalSpellAffects of SPA 11
 		std::function<bool(uint16_t)> can_hit;              // EQPlayer::CanIHitTarget, with its messages

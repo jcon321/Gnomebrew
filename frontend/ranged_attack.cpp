@@ -89,6 +89,8 @@ void FrontEnd::RangedAttack(uint16_t target_id)
 	auto text = [this](uint32_t id, const char *fallback) { return EqString(id, fallback); };
 	if (m_spell_cast.Casting() && m_zone.Profile().class_id != 8)
 		return;
+	if (AttackStunned())
+		return;
 	AttackBegins();
 	auto &items = m_zone.EditItems();
 	auto range_it = items.find(Inventory::Range);
