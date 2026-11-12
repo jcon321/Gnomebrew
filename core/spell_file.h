@@ -19,6 +19,7 @@
 
 struct SpellInfo
 {
+	int id = 0;
 	std::string name;
 	// What the chat says (EQ_Spell +0xdc..+0xec): a bard's own song starting, someone else's (after
 	// their name), the spell landing on us, on someone else (after their name), and wearing off.

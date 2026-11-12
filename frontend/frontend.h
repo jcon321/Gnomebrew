@@ -189,6 +189,7 @@ public:
 	ZoneView *ZoneScene() { return m_zone_view.get(); }
 	WindowManager &Windows() { return m_windows; }
 	const GameWindowState &WindowState() const { return m_window_state; }
+	GameValues &Values() { return m_game_values; } // the labels and gauges (the preview prints them)
 	const SpellBook &SpellBookState() const { return m_spell_book; }
 	BookWindow &Book() { return m_book; }
 	const std::string &UiLayoutPath() const { return m_ui_layout_path; }

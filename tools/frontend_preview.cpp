@@ -770,6 +770,20 @@ namespace
 			}
 		};
 		chat();
+		// The passive AAs: our stats, resists and max HP as the labels have them, and the zone's max
+		// HP (OP_HPUpdate, its own sum with the AAs).
+		auto stats = [&](const char *when) {
+			GameValues &values = frontend.Values();
+			std::string line;
+			for (int eq_type : {5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18}) {
+				std::string text;
+				uint32_t color = 0;
+				values.Label(eq_type, text, color);
+				line += " " + std::to_string(eq_type) + ":" + text;
+			}
+			printf("[preview] %s:%s; zone max HP %d\n", when, line.c_str(), zone.MaxHp());
+		};
+		stats("labels 5..16, 18");
 		windows.Show("InventoryWindow", true);
 		frontend.Update(NowMs());
 		click("InventoryWindow", "IW_AltAdvBtn");

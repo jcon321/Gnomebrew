@@ -75,7 +75,8 @@ bool SpellFile::Load(const std::string &path)
 		spell.icon = number(IconField);
 		spell.deletable = number(DeletableField) != 0;
 		spell.recourse = fields.size() > RecourseField ? number(RecourseField) : 0;
-		m_spells[std::atoi(fields[0].c_str())] = std::move(spell);
+		spell.id = std::atoi(fields[0].c_str());
+		m_spells[spell.id] = std::move(spell);
 	}
 	return !m_spells.empty();
 }

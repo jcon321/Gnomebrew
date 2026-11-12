@@ -595,12 +595,22 @@ std::string SpellDisplayText(const GameValues &values, const SpellInfo &spell, b
 		out += Text(values, 3006, "Mana Cost: %1", {Number(spell.mana)}) + Br;
 	if (me.class_id == 8) // a bard's songs: no casting time
 		return out;
-	// GetAACastingTimeModifier and GetFocusCastingTimeModifier are both 0 here (spell_cast.h), so
-	// it's always "Cast Time"; with either, "Normal Cast Time: %1    Your Cast Time: %2" (3106), the
-	// second no less than half the first.
+	// GetAACastingTimeModifier (AltAdv::CastingTimeModifier) and GetFocusCastingTimeModifier (0
+	// here: no focus items yet): with neither, "Cast Time"; with either, "Normal Cast Time: %1    Your
+	// Cast Time: %2" (3106), the second the cast time with both, no less than half of it.
 	char seconds[32];
 	snprintf(seconds, sizeof(seconds), "%4.1f", spell.cast_ms * 0.001);
-	out += Text(values, 3107, "Cast Time: %1", {seconds}) + Br;
+	int aa = AltAdv::CastingTimeModifier(values.AltAdvCharacter(), spell), focus = 0;
+	if (aa == 0 && focus == 0) {
+		out += Text(values, 3107, "Cast Time: %1", {seconds}) + Br;
+		return out;
+	}
+	int yours = spell.cast_ms + aa + focus;
+	if (yours < spell.cast_ms / 2)
+		yours = static_cast<int>(static_cast<uint32_t>(spell.cast_ms) >> 1);
+	char your_seconds[32];
+	snprintf(your_seconds, sizeof(your_seconds), "%4.1f", static_cast<float>(yours) * 0.001);
+	out += Text(values, 3106, "Normal Cast Time: %1    Your Cast Time: %2", {seconds, your_seconds}) + Br;
 	return out;
 }
 

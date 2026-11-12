@@ -34,11 +34,12 @@
 //     else the best speed.
 //   - eqspa_movement_rate (@004caaba), which HitBySpell and RemovePCAffectex call: a root (99) or
 //     else the movement total, in percent of the run speed, -65 at the least (below -999 rooted);
-//     ProcessControls adds it to the run or walk speed, at most 1.092006 (without AAs).
+//     ProcessControls adds it to the run or walk speed, at most 1.092006 (more with Fleet of Foot);
+//     running with none, Innate Run Speed's;
 // Not done: the effects that act as a buff lands or fades (levitation, invisibility, seeing
 // invisible, infravision, illusions, the Eye of Zomm, mounts, binding, gating...), the mana and
 // fatigue a buff gives each tick (the zone's updates carry them), the AAs (a bard's instrument
-// mastery, extended illusions), the item effects TotalSpellAffects adds, and a buff's caster's
+// mastery, Jam Fest), the item effects TotalSpellAffects adds, and a buff's caster's
 // level for its stacking when it came with the profile (it has the level it was cast at).
 
 #include "zone_session.h"
@@ -82,11 +83,16 @@ public:
 	// 50, 200 over 59). 0 none; else a percentage of the normal speed.
 	int AttackSpeed() const;
 	// eqspa_movement_rate as ProcessControls adds it to our speed (per tick); below -1000 rooted.
-	float SpeedModifier(float run_speed) const;
+	// Running (run mode, DAT_0079856d) with no speed buff or snare, Innate Run Speed is the modifier;
+	// then at most ProcessControls' cap, more with Fleet of Foot (AltAdv::RunSpeedCap). eqgame works
+	// the rate out each second (DoPassageOfTime) and as a buff lands or fades; this every frame.
+	float SpeedModifier(float run_speed, bool running = false) const;
 	uint32_t Serial() const { return m_serial; } // counts the changes
 
-	// EQ_Character::CalculateSpellDuration: ticks at a caster's level; -1 for ever.
-	static int Duration(const SpellInfo &spell, int level);
+	// EQ_Character::CalculateSpellDuration: ticks at a caster's level; -1 for ever. On us with
+	// Permanent Illusion (AA 0x37, `permanent_illusion` its rank), a beneficial illusion (SPA 0x3a)
+	// with a duration lasts 10000.
+	static int Duration(const SpellInfo &spell, int level, int permanent_illusion = 0);
 	// EQ_Character::CalcAffectChange: an effect's value at a caster's level (a decaying formula's
 	// from how long `buff` has had, if there's one).
 	static int Value(const SpellInfo &spell, int level, int effect, const ZoneBuff *buff);

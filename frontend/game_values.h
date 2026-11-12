@@ -12,10 +12,12 @@
 //           our buffs' names
 // Others draw an empty gauge and keep a label's own text.
 // Our buffs count (TotalSpellAffects) in the stats, the resists, AC and max mana, as eqgame adds
-// them. Being berserk (OP_BerserkStart) counts in STR and ATK, being drunk in STR. What none of
-// these count yet: items' worn effects, AAs, being drunk (but STR), and the skill caps
-// (GetSkillLimit: the zone keeps our skills to them).
+// them, and our AAs (core/alt_adv.h) in the stats, the resists, their caps, max HP and max mana.
+// Being berserk (OP_BerserkStart) counts in STR and ATK, being drunk in STR. What none of these
+// count yet: items' worn effects, being drunk (but STR), and the skill caps (GetSkillLimit: the
+// zone keeps our skills to them).
 
+#include "../core/alt_adv.h"
 #include "sidl.h"
 #include "zone_session.h"
 
@@ -58,9 +60,11 @@ public:
 	const ZoneSpawn *Target() const;
 	const ZoneSpawn *Pet() const;    // our pet: a living spawn we own
 
-	// EQ_Character::Max_Mana (@004b9483): level and INT or WIS (worn items' and buffs' included,
-	// to 255), plus the worn items' mana and the buffs' (97, to 500).
-	static int MaxMana(const ZoneProfile &profile, const std::map<int16_t, ZoneItem> &items, const Buffs *buffs = nullptr);
+	// EQ_Character::Max_Mana (@004b9483): level and INT or WIS (EQ_Character::Int and Wis, as Stat
+	// has them), plus the worn items' mana and the buffs' (97, to 500).
+	int MaxMana() const;
+	// Our AltAdvManager character: class, level, expansions, points and ranks.
+	AltAdv::Character AltAdvCharacter() const;
 	// The hit points worn items add (slots 1..20, Client::CalcItemBonuses), which the zone leaves
 	// out of our current hit points.
 	static int WornHp(const std::map<int16_t, ZoneItem> &items);
@@ -92,15 +96,16 @@ public:
 	int AntiTwinkAdj(const ZoneItem &item, int value) const;
 	// A stat (5..11, as the labels number them) with what worn items add (AntiTwinkAdj), the
 	// food and drink we'd eat next (FoodAndDrink) and our buffs (EQ_Character::Str @004bafcb...:
-	// TotalSpellAffects 4..10), 1..255, and its base. STR has berserk's level / 10 + 9 under 56
-	// drunk, or from there (Drunkness - 40) / 16. AGI (EQ_Character::Agi @004bb5d8) is then
-	// brought down by encum_factor.
+	// TotalSpellAffects 4..10), the innate AAs' 2 a rank, to its cap (CalculateMaxStatAA2: 1..255,
+	// past 255 from level 61), and its base. STR has berserk's level / 10 + 9 under 56 drunk, or
+	// from there (Drunkness - 40) / 16. AGI (EQ_Character::Agi @004bb5d8) is then brought down by
+	// encum_factor.
 	int Stat(int eq_type, int &base) const;
 	// EQ_Character::save_poison, save_disease, save_fire, save_cold and save_magic (@004bae34,
 	// @004bac4f, @004ba8c1, @004baa95, @004ba710): a resist (12..16, as the labels number them),
 	// to 500, and its base (basesave_*: by race, and a monk's disease and poison by level from 51).
-	// What worn items add (AntiTwinkAdj), the food and drink we'd eat next, our buffs (that
-	// resist's effect, 46..50, and 111 all of them), a warrior's half level
+	// What worn items add (AntiTwinkAdj), the food and drink we'd eat next, the innate AAs' 2 a
+	// rank, our buffs (that resist's effect, 46..50, and 111 all of them), a warrior's half level
 	// to magic, and the classes' bonuses: a monk's fire, a ranger's fire and cold, a beastlord's
 	// cold and disease, a paladin's and a shadow knight's disease, a rogue's and a shadow knight's
 	// poison, more each level from 50. Not the Resistant Discipline's (an active discipline of 30,

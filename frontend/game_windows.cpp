@@ -129,7 +129,7 @@ namespace
 			button->alpha = 255;
 			if (spell) {
 				const ZoneBuff &buff = values.buffs->Slot(i);
-				bool short_song = Buffs::Duration(*spell, buff.level) < 4 && values.zone->Profile().class_id == 8 &&
+				bool short_song = Buffs::Duration(*spell, buff.level, values.zone->Profile().aa_ranks[0x37]) < 4 && values.zone->Profile().class_id == 8 &&
 				                  spell->ClassLevel(8) != 0 && spell->ClassLevel(8) != 255;
 				if (buff.duration < 4 && buff.duration != -1 && !short_song)
 					button->alpha = static_cast<int>((100 - values.now_ms % 1000 / 10) * 255 / 100);

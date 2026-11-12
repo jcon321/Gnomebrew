@@ -640,7 +640,8 @@ Replayrogue, to target the nearest NPC and turn auto attack on for 4.5 s (our sw
 fatigue), then use bind wound, feign death, hide, sneak, pick pockets, tracking, fishing, begging,
 hide and sneak again from the abilities page (`UseSkill`), printing the chat and our stance,
 visibility, sneaking and hiding after each, then hide and step forward; or `aa`, as Replaytest (51
-or more, with AA points: a GM's `#level 60` and `#set aa_points 30`), to open the AA window from the
+or more, with AA points: a GM's `#level 60` and `#set aa_points 30`), to print the stat, resist and
+max HP labels against the zone's max HP, open the AA window from the
 inventory's Alt. Adv. button and print its pages, labels and buttons, then "-" and "+", the class,
 archetype and general tabs, the general page's second row, Train, `/alternateadv buy 3` and an
 untrainable `buy 200`, then (with `#set aa_points 10`) buy Rampage, select it, Hotkey it onto the
@@ -1840,8 +1841,8 @@ details and the nearest spawns at the top left and the radar at the top right.
   `OP_Disarm {us, target, skill, 0xff}`; 12416..12419). On a horse (ActorInfo's Mount, or the
   SPA 113 buff) only tracking, bash, disarm, 30, mend, sense heading, fishing, intimidation, taunt
   and the AA abilities 105 and 107 go (else 12393). Sneak and hide skip the timer to stop; begging
-  and pick pockets start each other's timer; hide's runs to `DAT_007cd6c4` (its reuse; an AA
-  takes 1..3 s off) and isn't ready while hidden; sneak isn't ready while sneaking. The messages
+  and pick pockets start each other's timer; hide's runs to `DAT_007cd6c4` (its reuse; Hastened
+  Stealth takes 1..3 s off) and isn't ready while hidden; sneak isn't ready while sneaking. The messages
   are color 0x10e unless said:
   - **Sneak** (42): sneaking, `IsSneaking` 0 and `OP_SpawnAppearance {us, 15, 0}`, 12338; else not
     attacking (12420) nor in water (12421), `OP_Sneak` and 12422. The zone rolls and answers with
@@ -1981,6 +1982,59 @@ details and the nearest spawns at the top left and the radar at the top right.
   `InterpretCmd` (/alt is /alternateadv's abbreviation, ahead of /alias) once, then ends it; so it
   goes as /alternateadv's "act" with our target. `DoHotButtonRightClick` opens the window on it
   (`CAAWnd::Activate`, `ShowAbility`). The zone answers an activation with `OP_AAAction`, the timer.
+- **Passive effects** (`core/alt_adv.*`, used where each system is ours):
+  - **Stats and resists.** `EQ_Character::Str` and the others, and `save_magic` and the others, add
+    2 a rank of the Innate ability and 2 of its Advanced one (STR 1 and 0x81, STA 2, AGI 3, DEX 4,
+    INT 5, WIS 6, CHA 7; fire 8, cold 9, magic 10, poison 0xb, disease 0xc, each with 0x80 more)
+    after the items and food, then cap by `CalculateMaxStatAA2` (@004ba483) with EQ_Character's
+    index (STR, STA, AGI, DEX, WIS, INT, CHA 0..6; magic 7, cold 8, fire 9, poison 10, disease 11):
+    the resists at most 500; a stat at most 255, or from level 61 `(level - 9) * 5` plus
+    `CalculateMaxStatAA` (@004b7d0c: Planar Power 0x8e 5 a rank, and Innate Enlightenment 0x90 10 a
+    rank for WIS and an INT caster's INT, each no more ranks than levels past 60), and at least 1.
+    `Max_Mana` uses `Int()` and `Wis()`, so it has them too. AGI is times `encum_factor` before the
+    cap.
+  - **Max HP.** `Max_HP(0)` adds `AltAdvManager_CalculateMaxHPAA` (@004b7bfc) of the level's, STA's
+    and items' HP: Natural Durability (0x1c) 2, 5, 10%, Physical Enhancement (0x78) 2% more only
+    with it, Planar Durability (0x8f) 1.5% a rank for a warrior and 1.25% for a paladin or shadow
+    knight (no more ranks than levels past 60), times 0.01 and truncated. Checked against the zone's
+    max HP for Replaytest with Natural Durability 3 (2626 both).
+  - **Movement.** `eqspa_movement_rate` (each second from `DoPassageOfTime`, and as a buff lands or
+    fades): in run mode with no speed buff or snare, Innate Run Speed (0xd) makes the modifier
+    0.08, 0.14 or 0.21. `ProcessControls` caps it at 1.092006, or 1.142006, 1.192006, 1.242006 with
+    Fleet of Foot (0xd3). Ours works it out each frame.
+  - **Hunger.** `ProcessHungerandThirst`'s wait (46 s, a monk's 92) is 110, 125 or 150% longer with
+    Innate Metabolism (0xf).
+  - **Skills.** `UseSkill`: Adv. Trap Negotiation (0x79) sets sense and disarm traps' last use back
+    so their reuse is 90, 70 or 50%, Rapid Feign (100) feign death's; Hastened Stealth (0xd1) takes 1,
+    2 or 3 s off hide's (`CalculateHideTimeReduce`); moving, Nimble Evasion (0xcd) hides anyway when
+    `RandNbr() % 100 + 1` is under 20 a rank (`CheckHidingSkillBonus`). 2 Hand Bash (0x4f) lets a
+    two-handed slashing, blunt or piercing weapon (types 1, 4, 35) in the primary bash, in
+    `UseSkill` and `DoAttack` (its `DoMissileHit` test stores the same item either way). `setskill`
+    lets a trade skill past 200 while no more than New Tanaan Crafting Mastery's (0x8d) rank of the
+    others are.
+  - **Falls.** `TakeFallDamage`: Acrobatics (0x7a) adds 10, 20 or 30% of safe fall's skill.
+  - **Archery.** `DoAttack(11)` with Endless Quiver (0x54) uses up no arrow.
+  - **Casting time.** `GetAACastingTimeModifier` (@004c5fb2), the change in ms, by the spell's
+    `+0x87` (beneficial), `+0x20` (duration formula) and effects (`SpellAffectIndex`): a buff of 4 s
+    or more by Spell Casting Deftness (0x1b: 95, 85, 75%) then Quick Buff (0x30: 90, 75, 50%); a
+    detrimental one of 4 s or more with no duration and SPA 0, with Spell Casting Fury (0x17) at 3,
+    by Quick Damage (0x2c: 98, 95, 90%); SPA 88 by Quick Evacuation (0x2a); a magician's SPA 32 or 33
+    or spells 1936 and 1771 by Quick Summoning (0xdf); a rank outside 1..3 keeps the last
+    percentage. Then, AA or not, a paladin's, ranger's, shadow knight's or beastlord's detrimental
+    spell of 3 s or more over level 50 is `t * ((100 - 3 * (level - 50)) * 0.01f)` on the x87 stack,
+    truncated (4000 at 60 is 2799). It shows only in the spell display; our own cast's time is the
+    zone's (`OP_BeginCast`).
+  - **Buffs.** `CalculateSpellDuration` on us with Permanent Illusion (0x37): a beneficial illusion
+    (SPA 0x3a) with a duration lasts 10000 ticks.
+  - **Not ours yet**, waiting on their systems: Channeling (0x18) and 0x43 in `CastingRequirementsMet`,
+    `SpellFizzled`'s Spell Casting Mastery (0x14), `DoMeditation`'s 0x77 and 0xe0, the archery and
+    throwing rolls (0xba, 0xbb, 0x51, `CalculateArcheryBonusFromAbilities`), a bard's instrument and
+    singing mastery (`CalculateBardSongMod`), Jam Fest (0x5e) in `CalcAffectChange`, Viscid Roots
+    (0xbe) in `HitBySpell`, `HandleSpecialPCAffects`' 0x37, Stalwart Endurance (0xde) against
+    `ApplyDamage`'s stun, the pet window's, and `AdjustSpellRecastTimeByClassAbility` (Fervent
+    Blessing 200, Touch of the Wicked 0xc9: 12 min a rank off Lay on Hands and Harm Touch).
+    `CalculateMitigationBoost` (Combat Stability 0x21, Physical Enhancement, Innate Defense 0x98) is
+    in `old_ac`'s soft caps, which the AC label leaves out.
 - **/alternateadv** (@004fed79), with Expansions 4: "on" (12947, 2 letters) sets the share to 1 and
   "off" (12946) to 0, then go as typed; "list" (13271) prints each of the class's abilities (13274
   name, 13275 description, 13276 the +0x1a step) in 0x111; "buy" (13272) sends "buy <id>" if
@@ -2496,8 +2550,8 @@ details and the nearest spawns at the top left and the radar at the top right.
   when our class's level is 255, else "Level: %1" (506), "Skill: %1" (3105), "Mana Cost: %1" (3006)
   only for skills 4, 5, 13, 14, 18, 24 and 43..47 (the casting skills, not a song's), and, but for
   a bard, "Cast Time: %1" (3107) in `%4.1f` seconds. With an AA or focus casting time modifier it's
-  "Normal Cast Time: %1    Your Cast Time: %2" (3106), yours no less than half (neither modifier is
-  ours, so we always say 3107). The buff window passes no details: title and icon only. Every
+  "Normal Cast Time: %1    Your Cast Time: %2" (3106), yours the cast time plus both, no less than
+  half (`GetAACastingTimeModifier`, see Alternate advancement; no focus items yet). The buff window passes no details: title and icon only. Every
   caller toggles: with the item display up (`IsActivated`, CItemDisplayWnd +0x140) it closes
   whatever it shows. Alt+click (`GetKeyboardFlags` 4) and the right button held (`WndNotification`
   0x17) on a book slot (`DisplaySpellInfo`, `DisplaySpellDetails` @0043525a), a gem
@@ -2511,8 +2565,9 @@ details and the nearest spawns at the top left and the radar at the top right.
   A click sends `OP_ItemLinkResponse` (0x4264) with the id and the first word. The zone answers an
   item's with its `Item_Struct`, or says a say link's phrase for us. A line holds at most 10, and
   Backspace takes one whole.
-- **Inventory window:** stats are base plus worn items through `AntiTwinkAdj`, 1..255, plus the
-  first food and drink in the general slots and bags (`GetAttributeModifierFromItems`). They're
+- **Inventory window:** stats are base plus worn items through `AntiTwinkAdj`, plus the first food
+  and drink in the general slots and bags (`GetAttributeModifierFromItems`), plus the innate AAs,
+  to their cap (`CalculateMaxStatAA2`, see Alternate advancement: 1..255 to level 60). They're
   colored as `getComparisonColor` does: grey at the base, green above, red below. AGI is times
   `encum_factor`. The class is its Kunark title from 51 (`KunarkClass`), and the AA gauge shows
   from 51.

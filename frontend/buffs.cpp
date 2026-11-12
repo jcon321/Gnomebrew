@@ -1,4 +1,5 @@
 #include "buffs.h"
+#include "../core/alt_adv.h"
 #include "chat_text.h"
 #include "spell_file.h"
 
@@ -158,7 +159,7 @@ void Buffs::Land(const ZoneCast &cast)
 		b.bard_modifier = static_cast<uint8_t>(cast.instrument_mod);
 	b.spell = static_cast<int16_t>(cast.spell);
 	b.level = static_cast<uint8_t>(level);
-	b.duration = static_cast<int16_t>(Duration(*spell, level));
+	b.duration = static_cast<int16_t>(Duration(*spell, level, m_zone->Profile().aa_ranks[0x37]));
 	b.activated = spell->activated;
 	++m_serial;
 }
@@ -501,7 +502,7 @@ int Buffs::AttackSpeed() const
 	return std::min(haste, cap);
 }
 
-float Buffs::SpeedModifier(float run_speed) const
+float Buffs::SpeedModifier(float run_speed, bool running) const
 {
 	int root = Total(99);
 	int rate = root < 0 ? root : Total(3);
@@ -511,10 +512,17 @@ float Buffs::SpeedModifier(float run_speed) const
 	float modifier = std::abs(rate) * 0.01f * run_speed;
 	if (rate < 0)
 		modifier = -modifier;
-	return std::min(modifier, 1.092006f);
+	AltAdv::Character ch;
+	if (m_zone) {
+		const ZoneProfile &me = m_zone->Profile();
+		ch = {me.class_id, me.level, me.expansions, me.aa_unspent, me.aa_ranks};
+	}
+	if (running && rate == 0 && AltAdv::InnateRunSpeed(ch) != 0)
+		modifier = AltAdv::InnateRunSpeed(ch);
+	return std::min(modifier, AltAdv::RunSpeedCap(ch));
 }
 
-int Buffs::Duration(const SpellInfo &spell, int level)
+int Buffs::Duration(const SpellInfo &spell, int level, int permanent_illusion)
 {
 	unsigned l = static_cast<uint8_t>(level);
 	unsigned formula = static_cast<unsigned>(spell.duration_formula);
@@ -546,6 +554,8 @@ int Buffs::Duration(const SpellInfo &spell, int level)
 		}
 	if (spell.duration != 0 && static_cast<unsigned>(spell.duration) < ticks)
 		ticks = static_cast<unsigned>(spell.duration);
+	if (spell.good_effect != 0 && permanent_illusion != 0 && spell.HasSpa(0x3a))
+		ticks = 10000;
 	return static_cast<int16_t>(ticks);
 }
 

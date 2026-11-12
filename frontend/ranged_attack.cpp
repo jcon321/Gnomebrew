@@ -172,8 +172,10 @@ void FrontEnd::RangedAttack(uint16_t target_id)
 		if (ammo_it == items.end() || target_id == 0)
 			return;
 		DoMissileHit(target_id, ammo_it->second);
-		// (An Endless Quiver AA, GetAbility 0x54, would keep it.) One off the ammo; a lone one is
-		// taken from the same item in the general slots or their bags instead, the last found.
+		// Endless Quiver (GetAbility 0x54) keeps it. Else one off the ammo; a lone one is taken from
+		// the same item in the general slots or their bags instead, the last found.
+		if (m_zone.Profile().aa_ranks[0x54] != 0)
+			return;
 		int16_t from = Inventory::Ammo;
 		if (ammo_it->second.charges < 2) {
 			uint16_t id = ammo_it->second.id;

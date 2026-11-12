@@ -30,6 +30,7 @@
 #include <vector>
 
 class EqStr;
+struct SpellInfo;
 
 namespace AltAdv
 {
@@ -107,6 +108,42 @@ namespace AltAdv
 	// updateAltAdvancementTimers (@004e15c9): the abilities sharing the timer the zone sent for
 	// `id` (the four elemental forms, 61..64; the two touches, 86 and 87); just `id` for the rest.
 	std::vector<int> SharedTimer(int id);
+	// The passive abilities' effects, as eqgame works them out for ourselves.
+	//
+	// AltAdvManager::CalculateMaxStatAA (@004b7d0c): what Planar Power (0x8e, 5 a rank) and, for WIS
+	// (index 4) and an INT caster's INT (5), Innate Enlightenment (0x90, 10 a rank) add to a stat's
+	// cap; each no more ranks than its +0x2c times our levels past 60.
+	int StatCapBonus(const Character &ch, int index);
+	// AltAdvManager::CalculateMaxStatAA2 (@004ba483), a stat or resist by EQ_Character's index (STR,
+	// STA, AGI, DEX, WIS, INT, CHA 0..6; magic, cold, fire, poison, disease 7..11): 7..12 at most 500;
+	// the stats at most 255, or from level 61 (level - 9) * 5 and StatCapBonus; the stats and
+	// anything else at least 1.
+	int CapStat(const Character &ch, int value, int index);
+	// What the innate abilities add to a stat or resist (EQ_Character::Str and the others,
+	// save_magic and the others): 2 a rank of the Innate one and of its Advanced one.
+	int InnateBonus(const Character &ch, int index);
+	// AltAdvManager_CalculateMaxHPAA (@004b7bfc): the share of `base` (the level's, STA's and the
+	// items' HP) Natural Durability (0x1c: 2, 5, 10%), Physical Enhancement with it (0x78: 2%) and
+	// Planar Durability (0x8f: 1.5% a rank for a warrior, 1.25% a paladin's or shadow knight's)
+	// add, truncated.
+	int MaxHpBonus(const Character &ch, int base);
+	// CEverQuest::ProcessControls' cap on MovementSpeedModifier: 1.092006, and 0.05 more a rank of
+	// Fleet of Foot (0xd3, AltAdvManager_GetRunSpeedAbilityLevel).
+	float RunSpeedCap(const Character &ch);
+	// EQ_Character::eqspa_movement_rate: running with no speed buff or snare, Innate Run Speed (0xd)
+	// is the modifier itself: 0.08, 0.14, 0.21; 0 without it.
+	float InnateRunSpeed(const Character &ch);
+
+	// EQ_Character::GetAACastingTimeModifier (@004c5fb2): how much the AAs change a spell's cast time
+	// for us, in ms (0 none). A buff of 4 s or more: Spell Casting Deftness (0x1b: 95, 85, 75%), then
+	// Quick Buff (0x30: 90, 75, 50%). A detrimental spell of 4 s or more with no duration that
+	// changes HP (SPA 0), with Spell Casting Fury (0x17) at 3: Quick Damage (0x2c: 98, 95, 90%). Any
+	// with SPA 88 (evacuate): Quick Evacuation (0x2a: 90, 75, 50%). A magician's summoning (SPA 32
+	// or 33, or spell 1936 or 1771): Quick Summoning (0xdf: 90, 75, 50%). Then, AA or not, a
+	// paladin's, ranger's, shadow knight's or beastlord's detrimental spell of 3 s or more over
+	// level 50: (100 - 3 * (level - 50)) * 0.01 of it, truncated.
+	int CastingTimeModifier(const Character &ch, const SpellInfo &spell);
+
 	// AltAdvManager::GetAbilityTitle (@004b7db5): 1 with more than 5 points in the general
 	// abilities, 2 more than 11 in the archetype ones, 3 more than 23 in the class ones; else 0.
 	int Title(const Character &ch);

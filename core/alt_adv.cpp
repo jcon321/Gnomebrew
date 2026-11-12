@@ -1,6 +1,7 @@
 #include "alt_adv.h"
 
 #include "eqstr.h"
+#include "spell_file.h"
 
 #include <algorithm>
 #include <iterator>
@@ -525,6 +526,115 @@ namespace AltAdv
 		if (id == 0x56 || id == 0x57)
 			return {0x56, 0x57};
 		return {id};
+	}
+
+	int StatCapBonus(const Character &ch, int index)
+	{
+		int bonus = 0;
+		if (int rank = Rank(ch, 0x8e); rank != 0)
+			bonus = std::min(rank, Abilities[0x8e].level_step * (ch.level - 60)) * 5;
+		bool mage = ch.class_id > 10 && ch.class_id < 15; // EQ_Character::IsMage
+		if (int rank = Rank(ch, 0x90); rank != 0 && (index == 4 || (index == 5 && mage)))
+			bonus += std::min(rank, Abilities[0x90].level_step * (ch.level - 60)) * 10;
+		return bonus;
+	}
+
+	int CapStat(const Character &ch, int value, int index)
+	{
+		value = static_cast<int16_t>(value);
+		if (index >= 7 && index <= 12)
+			return std::min(value, 500);
+		if (index < 0 || index > 12 || ch.level < 61)
+			value = std::min(value, 255);
+		else
+			value = std::min(value, (ch.level - 9) * 5 + StatCapBonus(ch, index));
+		return std::max(value, 1);
+	}
+
+	int InnateBonus(const Character &ch, int index)
+	{
+		// The Innate abilities by index: STR 1, STA 2, AGI 3, DEX 4, WIS 6, INT 5, CHA 7; magic 10,
+		// cold 9, fire 8, poison 0xb, disease 0xc. Each one's Advanced is 0x80 more.
+		static const int innate[12] = {1, 2, 3, 4, 6, 5, 7, 10, 9, 8, 0xb, 0xc};
+		if (index < 0 || index > 11)
+			return 0;
+		return Rank(ch, innate[index]) * 2 + Rank(ch, innate[index] + 0x80) * 2;
+	}
+
+	int MaxHpBonus(const Character &ch, int base)
+	{
+		double percent = 0;
+		if (int rank = Rank(ch, 0x1c); rank != 0) {
+			percent = rank == 1 ? 2.0 : rank == 2 ? 5.0 : rank == 3 ? 10.0 : 0.0;
+			if (Rank(ch, 0x78) != 0)
+				percent += 2.0;
+		}
+		if (int rank = Rank(ch, 0x8f); rank != 0) {
+			rank = std::min(rank, Abilities[0x8f].level_step * (ch.level - 60));
+			if (rank != 0) {
+				double per = ch.class_id == 1 ? 1.5 : ch.class_id == 3 || ch.class_id == 5 ? 1.25 : 0.0;
+				percent += rank * per;
+			}
+		}
+		return static_cast<int>(base * percent * 0.01);
+	}
+
+	float RunSpeedCap(const Character &ch)
+	{
+		switch (Rank(ch, 0xd3)) {
+		case 1: return 1.142006f;
+		case 2: return 1.192006f;
+		case 3: return 1.242006f;
+		default: return 1.092006f;
+		}
+	}
+
+	float InnateRunSpeed(const Character &ch)
+	{
+		switch (Rank(ch, 0xd)) {
+		case 1: return 0.08f;
+		case 2: return 0.14f;
+		case 3: return 0.21f;
+		default: return 0;
+		}
+	}
+
+	int CastingTimeModifier(const Character &ch, const SpellInfo &spell)
+	{
+		uint32_t cast = static_cast<uint32_t>(spell.cast_ms);
+		// The rank's percentage; the last one set stays when a rank isn't 1..3.
+		uint32_t percent = 100;
+		auto apply = [&](int rank, uint32_t one, uint32_t two, uint32_t three) {
+			if (rank == 1)
+				percent = one;
+			else if (rank == 2)
+				percent = two;
+			else if (rank == 3)
+				percent = three;
+			cast = percent * cast / 100;
+		};
+		if (spell.good_effect != 0) {
+			if (cast > 3999 && spell.duration_formula != 0) {
+				if (int rank = Rank(ch, 0x1b); rank != 0)
+					apply(rank, 0x5f, 0x55, 0x4b);
+				if (int rank = Rank(ch, 0x30); rank != 0)
+					apply(rank, 0x5a, 0x4b, 0x32);
+			}
+		}
+		else if (cast > 3999 && spell.duration_formula == 0 && spell.HasSpa(0) && Rank(ch, 0x17) == 3)
+			apply(Rank(ch, 0x2c), 0x62, 0x5f, 0x5a);
+		if (spell.HasSpa(0x58))
+			if (int rank = Rank(ch, 0x2a); rank != 0)
+				apply(rank, 0x5a, 0x4b, 0x32);
+		if (ch.class_id == 13 && (spell.HasSpa(0x20) || spell.HasSpa(0x21) || spell.id == 0x790 || spell.id == 0x6eb))
+			if (int rank = Rank(ch, 0xdf); rank != 0)
+				apply(rank, 0x5a, 0x4b, 0x32);
+		int c = ch.class_id;
+		if (ch.level > 50 && (c == 4 || c == 5 || c == 3 || c == 15) && cast > 2999 && spell.good_effect == 0)
+			// On the x87 stack: the float constants (0.01f is 0.0099999998), the product not rounded to
+			// a float, then truncated (4000 at level 60 is 2799).
+			cast = static_cast<uint32_t>(static_cast<double>(cast) * ((100.0 - (ch.level - 50) * 3.0) * static_cast<double>(0.01f)));
+		return static_cast<int>(cast - static_cast<uint32_t>(spell.cast_ms));
 	}
 
 	int Title(const Character &ch)

@@ -285,9 +285,9 @@ namespace Skills
 			for (int other : {60, 61, 63, 64, 65, 68, 69})
 				if (other != skill && me.skills[other] > 200)
 					++over;
-			// GetAbility(0x8d), Trade Skill Mastery: we don't have AAs yet, so none.
-			constexpr int Mastery = 0;
-			return value >= (Mastery + 1 <= over ? 200 : 250);
+			// GetAbility(0x8d), New Tanaan Crafting Mastery: a rank more of the others past 200.
+			int mastery = me.aa_ranks[0x8d];
+			return value >= (mastery + 1 <= over ? 200 : 250);
 		}
 		int class_level = cls >= 1 && cls <= Classes ? info.level[cls - 1] : 0;
 		auto specialized = [&](int self) { // another specialization over 50 holds this one to 50

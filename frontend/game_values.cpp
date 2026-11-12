@@ -191,22 +191,24 @@ int GameValues::Stat(int eq_type, int &base) const
 		return 0;
 	const ZoneProfile &p = zone->Profile();
 	int8_t ZoneItem::*field;
-	int spa = 0;
+	int spa = 0, index = 0; // index: EQ_Character's, for CalculateMaxStatAA2
 	switch (eq_type) {
-	case 5: base = p.str; field = &ZoneItem::str; spa = 4; break;
-	case 6: base = p.sta; field = &ZoneItem::sta; spa = 7; break;
-	case 7: base = p.dex; field = &ZoneItem::dex; spa = 5; break;
-	case 8: base = p.agi; field = &ZoneItem::agi; spa = 6; break;
-	case 9: base = p.wis; field = &ZoneItem::wis; spa = 9; break;
-	case 10: base = p.int_; field = &ZoneItem::int_; spa = 8; break;
-	case 11: base = p.cha; field = &ZoneItem::cha; spa = 10; break;
+	case 5: base = p.str; field = &ZoneItem::str; spa = 4; index = 0; break;
+	case 6: base = p.sta; field = &ZoneItem::sta; spa = 7; index = 1; break;
+	case 7: base = p.dex; field = &ZoneItem::dex; spa = 5; index = 3; break;
+	case 8: base = p.agi; field = &ZoneItem::agi; spa = 6; index = 2; break;
+	case 9: base = p.wis; field = &ZoneItem::wis; spa = 9; index = 4; break;
+	case 10: base = p.int_; field = &ZoneItem::int_; spa = 8; index = 5; break;
+	case 11: base = p.cha; field = &ZoneItem::cha; spa = 10; index = 6; break;
 	default: return 0;
 	}
+	AltAdv::Character ch = AltAdvCharacter();
 	int value = base;
 	for (const auto &[slot, item] : zone->Items())
 		if (slot >= FirstWornSlot && slot <= LastWornSlot && item.item_class == 0)
 			value += AntiTwinkAdj(item, item.*field);
 	value += FoodAndDrink(zone->Items(), field);
+	value += AltAdv::InnateBonus(ch, index);
 	if (eq_type == 5) {
 		// EQ_Character::Str: berserk (OP_BerserkStart) adds level / 10 + 9 while we're under 56
 		// drunk; from 56, being drunk adds (Drunkness - 40) / 16 instead.
@@ -221,8 +223,21 @@ int GameValues::Stat(int eq_type, int &base) const
 		value += static_cast<int16_t>(buffs->Total(spa));
 	if (eq_type == 8)
 		value = static_cast<int>(value * EncumFactor());
-	// CalculateMaxStatAA2 without AAs: 1..255.
-	return std::clamp(value, 1, 255);
+	return AltAdv::CapStat(ch, value, index);
+}
+
+AltAdv::Character GameValues::AltAdvCharacter() const
+{
+	AltAdv::Character ch;
+	if (!zone)
+		return ch;
+	const ZoneProfile &me = zone->Profile();
+	ch.class_id = me.class_id;
+	ch.level = me.level;
+	ch.expansions = me.expansions;
+	ch.unspent = me.aa_unspent;
+	ch.ranks = me.aa_ranks;
+	return ch;
 }
 
 int GameValues::Resist(int eq_type, int &base) const
@@ -236,6 +251,9 @@ int GameValues::Resist(int eq_type, int &base) const
 	auto from50 = [level](int bonus, int at50) { return level > 49 ? level - 50 + at50 : bonus; };
 	int8_t ZoneItem::*field;
 	int bonus = 0;
+	// EQ_Character's index (CalculateMaxStatAA2, InnateBonus): magic 7, cold 8, fire 9, poison 10,
+	// disease 11.
+	int index = eq_type == 16 ? 7 : eq_type == 15 ? 8 : eq_type == 14 ? 9 : eq_type == 12 ? 10 : 11;
 	switch (eq_type) {
 	case 12: // poison
 		base = race == 11 || race == 8 ? 20 : 15;
@@ -280,13 +298,15 @@ int GameValues::Resist(int eq_type, int &base) const
 		if (slot >= FirstWornSlot && slot <= LastWornSlot && item.item_class == 0)
 			value += AntiTwinkAdj(item, item.*field);
 	value += FoodAndDrink(zone->Items(), field);
+	AltAdv::Character ch = AltAdvCharacter();
+	value += AltAdv::InnateBonus(ch, index);
 	if (buffs) {
 		int spa = eq_type == 12 ? 48 : eq_type == 13 ? 49 : eq_type == 14 ? 46 : eq_type == 15 ? 47 : 50;
 		value += static_cast<int16_t>(buffs->Total(spa) + buffs->Total(111));
 	}
 	value += bonus;
 	// CalculateMaxStatAA2: no more than 500; unlike the stats, no least
-	return std::min(value, 500);
+	return AltAdv::CapStat(ch, value, index);
 }
 
 int GameValues::Weight() const
@@ -475,8 +495,12 @@ int GameValues::WornHp(const std::map<int16_t, ZoneItem> &items)
 	return WornSum(items, &ZoneItem::hp);
 }
 
-int GameValues::MaxMana(const ZoneProfile &p, const std::map<int16_t, ZoneItem> &items, const Buffs *buffs)
+int GameValues::MaxMana() const
 {
+	if (!zone)
+		return 0;
+	const ZoneProfile &p = zone->Profile();
+	const std::map<int16_t, ZoneItem> &items = zone->Items();
 	// Warriors, monks, rogues, berserkers and merchants have none; paladins, rangers, shadow
 	// knights and beastlords none of their own before level 9.
 	int level = p.level;
@@ -492,10 +516,8 @@ int GameValues::MaxMana(const ZoneProfile &p, const std::map<int16_t, ZoneItem> 
 	}
 	// Clerics, paladins, rangers, druids, shamans and beastlords cast from WIS; the rest from INT.
 	bool wisdom = p.class_id == 2 || p.class_id == 3 || p.class_id == 4 || p.class_id == 6 || p.class_id == 10 || p.class_id == 15;
-	int stat = wisdom ? p.wis + WornSum(items, &ZoneItem::wis) : p.int_ + WornSum(items, &ZoneItem::int_);
-	if (buffs)
-		stat += static_cast<int16_t>(buffs->Total(wisdom ? 9 : 8));
-	stat = std::clamp(stat, 0, 255);
+	int base = 0;
+	int stat = Stat(wisdom ? 9 : 10, base);
 	if (stat > 200)
 		stat = (stat - 200) / 2 + 200;
 	if (stat - 100 > 0)
@@ -544,6 +566,7 @@ int GameValues::MaxHp(bool with_buffs) const
 		if (slot >= FirstWornSlot && slot <= LastWornSlot && item.item_class == 0)
 			items += AntiTwinkAdj(item, item.hp);
 	int hp = levels + sta * levels / 300 + std::max(items, 0);
+	hp += AltAdv::MaxHpBonus(AltAdvCharacter(), hp); // Max_HP(0)'s AltAdvManager_CalculateMaxHPAA
 	if (with_buffs && buffs)
 		hp += static_cast<int16_t>(buffs->Total(69));
 	hp += 5;
@@ -597,7 +620,7 @@ int GameValues::Gauge(int eq_type, std::string &text)
 		return Permille(CurHp(), MaxHp());
 	}
 	case 2: { // mana; none for those who never have any
-		int max = MaxMana(me, zone->Items(), buffs);
+		int max = MaxMana();
 		if (max > 0)
 			return Permille(std::clamp<int>(me.mana, 0, max), max);
 		uint16_t c = me.class_id;

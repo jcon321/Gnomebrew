@@ -934,7 +934,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		m_abilities.Frame(now_ms);
 		m_buffs.Frame(now_ms);
 		if (m_zone_view) {
-			m_zone_view->SetSpeedModifier(m_buffs.SpeedModifier(m_zone.Self().run_speed));
+			m_zone_view->SetSpeedModifier(m_buffs.SpeedModifier(m_zone.Self().run_speed, m_game_values.running));
 			// EQPlayer::InitSneakMod: half the walk speed sneaking, a rogue's 0.1 more a level past 50.
 			float sneak = 0;
 			if (m_zone.Self().sneaking != 0) {
@@ -3166,7 +3166,7 @@ int FrontEnd::TakeFallDamage(float fall)
 {
 	// EQ_Character::TakeFallDamage (@004bfe16): the fall, plus a hundredth of what we carry
 	// (cur_encumbrance), less 1.5; 10 damage a unit of it, 20000 past 9. Safe fall takes its skill
-	// off (Acrobatics would add 10..30% of it: no AAs yet) and tells the zone either way. None on a
+	// off (Acrobatics, AA 0x7a, adds 10, 20 or 30% of it) and tells the zone either way. None on a
 	// mount under 200 (no mounts yet), nor in the Bazaar (zone 151).
 	const ZoneProfile &me = m_zone.Profile();
 	float over = static_cast<int16_t>(m_game_values.Weight()) * 0.01f + fall - 1.5f;
@@ -3176,7 +3176,10 @@ int FrontEnd::TakeFallDamage(float fall)
 	else if (over > 0) {
 		damage = static_cast<int16_t>(over * 10);
 		if (damage > 0 && Skills::HasSkill(me, 39) != 0) {
-			damage -= std::max<int16_t>(me.skills[39], 0);
+			int16_t safe_fall = std::max<int16_t>(me.skills[39], 0);
+			if (int rank = me.aa_ranks[0x7a]; rank >= 1 && rank <= 3)
+				safe_fall = static_cast<int16_t>(safe_fall + rank * 10 * safe_fall / 100);
+			damage -= safe_fall;
 			m_zone.SafeFallSuccess();
 		}
 		damage = std::max(damage, 0);
@@ -3215,8 +3218,12 @@ void FrontEnd::HungerAndThirst(uint64_t now_ms)
 		me.thirst = std::max(me.thirst, 3500);
 	}
 	// 46 s (a monk's 92 s) since the last time; it starts at zero, so the first is as we come in.
-	// Innate Metabolism (GetAbility 0xf) would stretch it: we don't have AAs yet.
+	// Innate Metabolism (GetAbility 0xf) stretches it 110, 125 or 150% more.
 	uint64_t every = me.class_id == 7 ? 92000 : 46000;
+	if (int rank = me.aa_ranks[0xf]; rank != 0) {
+		uint64_t percent = rank == 1 ? 0x6e : rank == 2 ? 0x7d : rank == 3 ? 0x96 : 0;
+		every += percent * every / 100;
+	}
 	if (now_ms - m_hunger_ms <= every)
 		return;
 	auto text = [this](uint32_t id, const char *fallback) { return FormatEqString(m_ui.eqstr, id, fallback, {}); };

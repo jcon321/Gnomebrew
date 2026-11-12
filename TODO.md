@@ -56,7 +56,7 @@ no rules of its own.
      items, the next food and drink; `GameValues::Stat`, `Resist`), AC, ATK and weight (`GameValues::Ac`, `Atk`, `Weight`), money, the class picture, item icons in the slots, the Alt. Adv. row from 51, Done, and the
      Skills button opening the skills window (`frontend/game_windows.*`), and items picked up, put
      down, split through the quantity window and put away on the character view (`core/inventory.*`).
-     Still to do: for stats, resists, AC and ATK, items' worn effects, ATK's buffs, AAs,
+     Still to do: for stats, resists, AC and ATK, items' worn effects, ATK's buffs,
      the Resistant Discipline, and drunkenness but for STR; Alt. Advance, icons in the hot button
      window's weapon slots; lore duplicates (`CheckDupLoreItems` @004f13d2, `DelLoreItemDup`
      @004f1266) on an item arriving by trade (msg_trade_final_ieq), theft (msg_steal), the zone
@@ -125,10 +125,10 @@ no rules of its own.
      TargetType refusals (0xb, 0x3c, 0x41, 0x43) after it.
    - Guildmaster training: done (`frontend/train_window.*`, CTrainWnd): msg_req_guildmaster's
      SetGMData and Activate, UpdateSkill's rows and CostToTrain's prices, the headings' sorts,
-     Train through BitchCanTrain (`frontend/skills.*`: setskill, GetSkillLimit2,
-     EQ_PC_GetKunarkThreshold, EQ_PC_checkLang) and OP_GMTrainSkill, OP_GMEndTraining on leaving,
-     the coin pictures as list headings, and OP_LevelUpdate's 5 practices. Still to do:
-     setskill's Trade Skill Mastery (GetAbility 0x8d, taken as 0: no AAs yet).
+     Train through BitchCanTrain (`frontend/skills.*`: setskill with New Tanaan Crafting Mastery,
+     GetSkillLimit2, EQ_PC_GetKunarkThreshold, EQ_PC_checkLang) and OP_GMTrainSkill,
+     OP_GMEndTraining on leaving, the coin pictures as list headings, and OP_LevelUpdate's 5
+     practices.
    - Bag windows: done (`frontend/containers.*`, eqgame's CContainerMgr and CContainerWnd): the right
      button on a bag opens or closes its window, laid out for its slots with Combine and Done
      under them, kept in the layout as BagInv1..8 (BagBank, BagTrade), picking up or swapping out
@@ -154,8 +154,8 @@ no rules of its own.
      down here; checked live) and items' click effects (`SpellCast::CastItem`, OP_CastSpell gem 10
      with the slot; not checked live, the test characters have none). Eating and drinking for us
      when low (`ProcessHungerandThirst`, `AutoEat`: every 46 s, a monk's 92 s, OP_Consume with -1,
-     and the hunger, thirst and out-of-food messages): done, checked live. Still to do there: Innate
-     Metabolism's longer wait (AAs), the "You and your mount" messages, and no eating while a
+     and the hunger, thirst and out-of-food messages, Innate Metabolism's longer wait): done,
+     checked live. Still to do there: the "You and your mount" messages, and no eating while a
      bazaar trader. Still to do: poisons
      (CEverQues_ApplyPoison), Alcohol Tolerance's skill-up (EQ_PC_CheckSkillImprove 66), what
      drunkenness does. Notes and books are read (EQ_Note::SendTextRequestMsg's OP_ReadBook;
@@ -191,7 +191,7 @@ no rules of its own.
      (EQType 7) and the zone's answers (OP_MemorizeSpell 3's recast and recovery, OP_ManaChange
      ending the cast, OP_TokenText's fizzles and interrupts), with the gems dim while anything's
      cast or recovering; a bard's song stops on a gem click (an empty OP_ManaChange). Still to do:
-     - casting: stuns and divine aura (OP_Stun), the AA and focus cast time and range modifiers,
+     - casting: stuns and divine aura (OP_Stun), the focus cast time and range modifiers,
        abilities (gem 9), and a bard being hit (StopSpellCast 1);
      - the cast's end (`EQ_Character::CastingRequirementsMet` @004c5a5d, from `DoPassageOfTime`;
        failing it is `StopSpellCast2`): standing (token 0xd5), moving during the cast (more than
@@ -205,8 +205,8 @@ no rules of its own.
      - `SpellFizzled` (@004c712b), which `CastSpell` rolls only with DAT_00798560 set (as
        CanIHitTarget's under 24);
      - the spell info display (done: `ToggleSpellDisplay`, CItemDisplayWnd::SetSpell, from a book
-       slot, a gem or a buff): "Your Cast Time" (eqstr 3106) waits on the AA and focus casting
-       time modifiers, and the hot button's call (CHotButtonWnd::WndNotification @00420462, with a
+       slot, a gem or a buff): "Your Cast Time" (eqstr 3106) has the AA casting time modifier and
+       waits on the focus one (GetFocusCastingTimeModifier), and the hot button's call (CHotButtonWnd::WndNotification @00420462, with a
        third argument other than -1) on spell hot buttons;
      - spell hot buttons: a gem held onto the cursor (CCursorAttachment type 9) and the book button
        (type 5); a spell on the cursor clicked on a hot button;
@@ -430,8 +430,8 @@ no rules of its own.
       to face them and OP_CombatAbility {target, 11, skill}, the ammo used (OP_DeleteCharge, the
       last of a stack taken from the general slots or bags) or the weapon thrown (OP_MoveItem to
       -1), and the bow held while shooting. Not checked live: none of the test characters has a
-      bow or anything to throw. Still to do: AimAtTarget's pitch, the Endless Quiver AA (GetAbility
-      0x54) and our own missile drawn (EQMissile);
+      bow or anything to throw. Still to do: AimAtTarget's pitch and our own missile drawn
+      (EQMissile);
     - DoAttack's stunned states (StunnedState 1 says eqstr 125; 2..4 and 7 nothing), the
       ActorInfo +0xc8c+0x74 and DAT_007985f0 refusals, and DAT_00798560 (CanIHitTarget always
       passing);
@@ -441,9 +441,8 @@ no rules of its own.
       and DoPassageOfTime's direction lines every 2 s and its end (12674..12681) and the lost target (12499);
       UseSkill only sends OP_Track;
     - the AA abilities (105 Harm Touch and 107 Lay on Hands: CastSpell gem 9 of spell 88 and 87, the
-      profile's timers at +0xc7a and +0xc7e; 111 Slam as bash), the timers' AA reductions
-      (GetAbility 0x79 for sense and disarm traps, 100 feign death, 0xd1 hide), the hiding AA
-      (CheckHidingSkillBonus), a real mount (ActorInfo's Mount; only the SPA 113 buff here),
+      profile's timers at +0xc7a and +0xc7e, with AdjustSpellRecastTimeByClassAbility's 12 min a rank
+      of Fervent Blessing or Touch of the Wicked off; 111 Slam as bash), a real mount (ActorInfo's Mount; only the SPA 113 buff here),
       stealing under the PvP deity rules (DAT_006ec740 4: NotOnSameDeity, the level range, 12412,
       12413), being stunned (12407), fishing's splash particles (DoParticleEffect 2) and the pole
       shown in hand as the cast starts (UpdateItemSlot), and someone picking our pockets (msg_steal
@@ -491,8 +490,8 @@ no rules of its own.
       `HitBySpell`.
     - ApplyDamage's own half for a fall: the HP taken here before the zone's update, divine aura,
       the stun it can bring, and OP_Death (`SendDeathMessage`) in place of OP_Damage when it kills
-      (the zone's OP_Damage handler kills us too); TakeFallDamage's Acrobatics AA and a mount's
-      under 200.
+      (the zone's OP_Damage handler kills us too), with Stalwart Endurance (AA 0xde,
+      CalculateStalwartEnduranceChance) against its stun; and TakeFallDamage's mount under 200.
     - The other environment damage the client reports: lava and the rest (`ProcessEnvironment`
       @004c0e32) and drowning (`ProcessAirSupply`, with the breath window, 34).
     - OP_SpellTextMessage (0x41d3: a lifetap's "%1 groans and looks a little weaker." (13301) from
@@ -535,8 +534,20 @@ no rules of its own.
     Alt. Adv. window and the inventory's Alt. Adv. button; the window's Hotkey and AA hot buttons
     (`CCursorAttachment::Activate` type 4, 0x78 + id; `CHotButtonWnd::OnProcessFrame`'s words and
     checked state; `DoHotButton` and `DoPassageOfTime`'s "/alt activate"; `DoHotButtonRightClick`'s
-    `CAAWnd::Activate` and `ShowAbility`). Still to do:
-    - the AA effects the other items list as missing (stats, resists, HP, casting, timers);
+    `CAAWnd::Activate` and `ShowAbility`); the passive abilities where the system is ours: the stats
+    and resists and their caps (`CalculateMaxStatAA2`, `CalculateMaxStatAA`), max mana by them, max
+    HP (`CalculateMaxHPAA`), the run speed (Innate Run Speed, Fleet of Foot), Innate Metabolism, the
+    trap, feign and hide timers, Nimble Evasion, 2 Hand Bash, New Tanaan Crafting Mastery,
+    Acrobatics, Endless Quiver, the spell display's `GetAACastingTimeModifier` and Permanent
+    Illusion's duration. Still to do:
+    - the passive abilities whose systems aren't ours yet: Channeling (0x18) and 0x43 in
+      `CastingRequirementsMet`, Spell Casting Mastery in `SpellFizzled`, `DoMeditation`'s 0x77 and
+      0xe0, the archery and throwing rolls (`CheckArcherySuccess` 0xba, 0xbb and
+      `CalculateArcheryBonusFromAbilities`, `CheckThrowingSkill` 0x51), a bard's
+      `CalculateBardSongMod` (instrument and singing mastery) and the book's 0x7b, Jam Fest (0x5e) in
+      `CalcAffectChange`, Viscid Roots (0xbe) in `HitBySpell`, `HandleSpecialPCAffects`' 0x37, the
+      pet window's (`CPetInfoWnd::Update`), Stalwart Endurance and the ability recast (above), and
+      Permanent Illusion in a decaying buff's value (`Buffs::Value` passes no rank);
     - not checked live: the PoP pages trainable (61 and up with the Planes of Power), a GM's "(ID#n)".
 29. **Friends, ignore, inspect and notes.**
     - The friends window opens empty: `CFriendsWnd` (@0041c285: `UpdateFriendsList`,

@@ -313,8 +313,15 @@ int Abilities::Rand()
 bool Abilities::CanBash() const
 {
 	// A shield (not a bag) in the secondary hand, or one of the three primaries that bash
-	// (11050, 10099, 14383). The two-handed bash of AA 0x4f isn't ours yet.
+	// (11050, 10099, 14383), or with 2 Hand Bash (AA 0x4f) a two-handed slashing, blunt or piercing
+	// weapon (item types 1, 4, 35) in the primary.
 	const auto &items = m_zone->Items();
+	if (auto two_handed = items.find(Inventory::Primary);
+	    two_handed != items.end() && m_zone->Profile().aa_ranks[0x4f] != 0) {
+		int type = two_handed->second.item_type;
+		if (type == 1 || type == 4 || type == 35)
+			return true;
+	}
 	auto secondary = items.find(Inventory::Secondary);
 	if (secondary != items.end() && secondary->second.item_class == 0 && secondary->second.item_type == 8)
 		return true;
@@ -371,8 +378,27 @@ void Abilities::Use(int skill, uint64_t now_ms)
 	if (!stopping) {
 		if (!m_available[skill])
 			return;
-		if (skill == HideSkill)
-			m_hide_ready_ms = now_ms + Skills::Get(HideSkill).reuse_ms;
+		const uint8_t *ranks = me.aa_ranks;
+		// The AAs' shorter times: Hastened Stealth (0xd1) a second a rank off hide's
+		// (CalculateHideTimeReduce); Adv. Trap Negotiation (0x79) and Rapid Feign (100) the sense and
+		// disarm traps and feign death timers at 90, 70 or 50% (the last use set back the rest).
+		auto shortened = [&](int rank) {
+			uint64_t reuse = Skills::Get(skill).reuse_ms;
+			uint64_t percent = rank == 1 ? 90 : rank == 2 ? 70 : rank == 3 ? 50 : 100;
+			uint64_t cut = reuse - reuse * percent / 100;
+			return now_ms > cut ? now_ms - cut : 0;
+		};
+		if (skill == HideSkill) {
+			int64_t reuse = Skills::Get(HideSkill).reuse_ms;
+			int rank = ranks[0xd1];
+			if (rank >= 1 && rank <= 3)
+				reuse -= 1000 * rank;
+			m_hide_ready_ms = now_ms + reuse;
+		}
+		else if ((skill == SenseTraps || skill == DisarmTraps) && ranks[0x79] != 0)
+			m_last_use[skill] = shortened(ranks[0x79]);
+		else if (skill == FeignDeath && ranks[100] != 0)
+			m_last_use[skill] = shortened(ranks[100]);
 		else if (skill == Mend)
 			m_mend_ready_ms = now_ms + Skills::Get(Mend).reuse_ms;
 		else if (skill == PickPockets || skill == Begging) {
@@ -579,7 +605,8 @@ void Abilities::Hide()
 		return;
 	}
 	// Standing still: within a thousandth a tick each way, more over 50 skill (a two-thousandth a
-	// point, half at most). The AA that hides on the move (CheckHidingSkillBonus) isn't ours.
+	// point, half at most). Moving, Nimble Evasion (AA 0xcd) hides us anyway 20% of the time a rank
+	// (CheckHidingSkillBonus: RandNbr % 100 + 1 under it).
 	double still = 0.001;
 	int skill = Skills::HasSkill(m_zone->Profile(), HideSkill);
 	if (skill > 50)
@@ -587,7 +614,13 @@ void Abilities::Hide()
 	float vx = 0, vy = 0, vz = 0;
 	if (m_host.velocity)
 		m_host.velocity(vx, vy, vz);
-	if (std::fabs(vx) > still || std::fabs(vy) > still || std::fabs(vz) > still) {
+	bool moving = std::fabs(vx) > still || std::fabs(vy) > still || std::fabs(vz) > still;
+	if (moving) {
+		int chance = m_zone->Profile().aa_ranks[0xcd] * 20;
+		if (Rand() % 100 + 1 < chance)
+			moving = false;
+	}
+	if (moving) {
 		Say(12424, "You must stand perfectly still to hide!", SkillsColor);
 		return;
 	}
