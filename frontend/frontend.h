@@ -80,6 +80,7 @@ struct FrontEndConfig
 	bool combat_music = true;            // /combatmusic on|off (CombatMusic): auto attack plays the combat music
 	int loot_no_drop = 0;                // /lootnodrop (LootNoDrop): 0 always ask, 1 for what we can't use, 2 never
 	int fast_drop = 0;                   // /fastdrop (FastDrop): 1 drop at once, 0 ask, -1 never
+	bool log = false;                    // /log on|off ([Defaults] Log): chat to eqlog_<name>_<server>.txt
 };
 
 class EqStr;
@@ -325,6 +326,7 @@ private:
 	void WorldClick(int x, int y); // CEverQuest_LMouseUp on the world (window pixels) // CEverQuest_IsOkToTransact: no window that deals with someone up
 	void AddZoneLog(const std::string &text, uint32_t color); // a line of chat in this color
 	void ChatOut(const std::string &text, int type);          // in a chat color type (ChatType)
+	void EqLog(const std::string &text);                      // eqlog: a chat line to the log, while /log is on
 	// TurnCharacterNameSpritesOn / TurnNPCNameSpritesOn: the names over the heads of the spawns
 	// drawn last frame (and ours), for the zone view's next Render to draw.
 	void BuildNameSprites(uint64_t now_ms);
@@ -573,6 +575,7 @@ private:
 	bool m_windows_built = false;
 	std::string m_ui_layout_path;
 	std::string m_hot_buttons_path;
+	std::string m_log_path; // CreateIniFilenames' eqlog_<name>_<server>.txt
 	// The movement commands held down (ExecuteCmd 3..6's Zeal_KeyInput, DAT_007ce05c and the
 	// turns'), until their key comes up.
 	struct HeldKeys

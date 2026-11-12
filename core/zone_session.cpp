@@ -1562,6 +1562,14 @@ void ZoneSession::Shield(uint16_t id)
 		Send(ZoneOp::Shielding, &id, sizeof(id), "OP_Shielding " + std::to_string(id));
 }
 
+void ZoneSession::Keys()
+{
+	// /keys (@004f8ec7): DAT_0060c99c's four bytes.
+	static const uint8_t body[4] = {'K', 'E', 'Y', 0};
+	if (m_state == State::InZone)
+		Send(ZoneOp::Key, body, sizeof(body), "OP_Key");
+}
+
 void ZoneSession::Consent(const std::string &name)
 {
 	if (m_state == State::InZone)

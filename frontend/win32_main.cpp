@@ -423,6 +423,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	bool char_select_emotes = GetPrivateProfileIntW(L"Defaults", L"CharSelectEmotes", 0, ini.c_str()) != 0;
 	bool attack_on_assist = GetPrivateProfileIntW(L"Defaults", L"AttackOnAssist", 0, ini.c_str()) != 0;
 	bool combat_music = GetPrivateProfileIntW(L"Defaults", L"CombatMusic", 1, ini.c_str()) != 0;
+	// CEverQuest::CEverQuest: Log starts /log on with T, t or 1.
+	wchar_t log_text[32] = {};
+	GetPrivateProfileStringW(L"Defaults", L"Log", L"FALSE", log_text, 32, ini.c_str());
+	bool log = log_text[0] == L'T' || log_text[0] == L't' || log_text[0] == L'1';
 	int loot_no_drop = std::clamp(static_cast<int>(GetPrivateProfileIntW(L"Defaults", L"LootNoDrop", 0, ini.c_str())), 0, 2);
 	int fast_drop = std::clamp(static_cast<int>(GetPrivateProfileIntW(L"Defaults", L"FastDrop", 0, ini.c_str())), -1, 1);
 	bool record_packets = GetPrivateProfileIntW(L"Debug", L"RecordPackets", 0, ini.c_str()) != 0;
@@ -470,6 +474,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	config.char_select_emotes = char_select_emotes;
 	config.attack_on_assist = attack_on_assist;
 	config.combat_music = combat_music;
+	config.log = log;
 	config.loot_no_drop = loot_no_drop;
 	config.fast_drop = fast_drop;
 	if (record_packets)

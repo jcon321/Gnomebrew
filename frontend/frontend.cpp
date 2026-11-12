@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <cctype>
 #include <limits>
 
@@ -2140,6 +2141,7 @@ void FrontEnd::BuildZoneWindows()
 	// server's address (UI_Name_loginse.ini for loginserver.takproject.net).
 	m_ui_layout_path.clear();
 	m_hot_buttons_path.clear();
+	m_log_path.clear();
 	m_window_state = GameWindowState{};
 	DefaultSocials(m_window_state, m_ui.eqstr);
 	const std::string &name = m_zone.Profile().name;
@@ -2157,6 +2159,7 @@ void FrontEnd::BuildZoneWindows()
 		Log("UI: " + std::to_string(m_windows.Count()) + " windows, layout " + m_ui_layout_path);
 		// CEverQuest::CreateIniFilenames: the character's own ini is the layout's name without UI_.
 		m_hot_buttons_path = m_config.ui_dir + "/" + suffix;
+		m_log_path = m_config.ui_dir + "/eqlog_" + name + "_" + m_config.login_host.substr(0, 7) + ".txt";
 	}
 	Abilities::Host abilities_host;
 	abilities_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
@@ -2749,12 +2752,32 @@ void FrontEnd::ActionsClick(const std::string &control)
 void FrontEnd::AddZoneLog(const std::string &text, uint32_t color)
 {
 	m_chat.Add(text, color);
+	EqLog(text);
+}
+
+void FrontEnd::EqLog(const std::string &text)
+{
+	// eqlog (@005240dc), from print_chat_dsp_chat while /log is on: "[" ctime "] ", the line with
+	// its item tags as their names (ConvertItemTags), "\n", appended.
+	if (!m_config.log || m_log_path.empty())
+		return;
+	std::time_t now = std::time(nullptr);
+	std::string stamp = std::ctime(&now);
+	if (!stamp.empty() && stamp.back() == '\n')
+		stamp.pop_back();
+	if (FILE *file = std::fopen(m_log_path.c_str(), "a")) {
+		std::string line = "[" + stamp + "] " + ShowItemTags(text) + "\n";
+		std::fwrite(line.data(), 1, line.size(), file);
+		std::fclose(file);
+	}
 }
 
 void FrontEnd::ChatOut(const std::string &text, int type)
 {
 	// print_chat_dsp_chat: DoPercentConvert first.
-	m_chat.Add(PercentConvert(text), m_chat_colors.Get(type));
+	std::string line = PercentConvert(text);
+	m_chat.Add(line, m_chat_colors.Get(type));
+	EqLog(line);
 }
 
 void FrontEnd::SetTarget(uint16_t id, bool command)

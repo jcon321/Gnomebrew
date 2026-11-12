@@ -349,7 +349,7 @@ eqgame's `OP_MoveItem`.
   /auction, /ooc, /emote (`:`, /me), /hail, /target, /assist, /consider, /location, /time,
   /played, /motd, /afk, /anonymous, /shownames, /sit, /stand, /book, /cast, /camp, /clearchat,
   /random, /lootnodrop, /fastdrop, /autosplit, /roleplay, /targetgroupbuff (/tgb), /split, /yell,
-  /consent, /loot, /ttell, /charinfo, /movelog, /stopsong, /shield, /quit (/exit), /attack, /combatmusic, /doability, the
+  /consent, /loot, /ttell, /charinfo, /movelog, /stopsong, /shield, /quit (/exit), /log, /keys, /dismount, /attack, /combatmusic, /doability, the
   guild commands (see Guilds under In the zone),
   the raid commands (see Raids), /filter, /serverfilter and the socials (/smile, /wave and the
   other 86).
@@ -1654,6 +1654,18 @@ details and the nearest spawns at the top left and the radar at the top right.
   world connection is closed (`connection_close` 1000) with no camp and no packet,
   `DAT_0079855c = 0xca` and GameState 0xff, so the game ends; ProcessGameLoop's 0xca cleanup sends
   into a closed connection. The character stays linkdead on the server.
+- **/log** (@004fbad0): `UTF8_strnicmp` of the line with "off" (12946) over 3 letters turns logging
+  off, with "on" (12947) over 2 on, anything else over; then 13221 or 13222 (color 0x111), so the
+  OFF line itself isn't logged. The start comes from eqclient.ini's [Defaults] Log (T, t or 1;
+  missing written as FALSE), ours from my-client.ini's; /log doesn't save it. `eqlog` (@005240dc)
+  is called by `print_chat_dsp_chat` for each line shown: `[` ctime without its newline `] `, the
+  line through `ConvertItemTags` (links as their names), `\n`, appended to
+  `CreateIniFilenames`' `.\eqlog_<name>_<server>.txt` (`eqlog_mpc_<class>_` for a deity 20000 GM
+  character).
+- **/keys** (@004f8ec7): `OP_Key` (0x425d) with "KEY\0"; EQMacEmu checks only the size and lists
+  the key ring (`Client::KeyRingList`). **/dismount** (@004ff5a6): on a mount (ActorInfo's Mount),
+  13284, the SPA 113 buff removed (`GetPCSpellAffect`, `RemovePCAffect`) and `EQPlayer::Dismount`;
+  else 13285.
 - **OP_ManaUpdate** (0x4219, {u16 spawn, u16 mana}) sets our mana, whoever it names. **OP_DespawnDoor**
   (0x409b, no body) deletes every door and switch. **OP_PlaySound** (0x4048, {u16 spawn, u16 sound})
   plays the wave where the spawn is, full to 100 and silent past it.

@@ -250,6 +250,8 @@ namespace ZoneOp
 	constexpr uint16_t MoveLog = 0x41e4;
 	// Shielding_Struct {u16 spawn id}: a warrior's /shield of them.
 	constexpr uint16_t Shielding = 0x424b;
+	// 4 bytes, "KEY\0" (/keys): the zone answers with our key ring's items (KeyRingList).
+	constexpr uint16_t Key = 0x425d;
 	// Guilds. GuildCommand_Struct (136 bytes) {char other[64], char me[64] @64, i16 guild @128, u16,
 	// u32 rank @132}: ours to invite or promote (CEverQuest::GuildInvite) and remove
 	// (CEverQuest_GuildRemove); the zone's invite to us (msg_invite_guild: us, then the inviter).
@@ -496,6 +498,7 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::CorpsePosition, "OP_CorpsePosition"},
 	{ZoneOp::MoveLog, "OP_MoveLog"},
 	{ZoneOp::Shielding, "OP_Shielding"},
+	{ZoneOp::Key, "OP_Key"},
 	{ZoneOp::GuildInvite, "OP_GuildInvite"},
 	{ZoneOp::GuildRemove, "OP_GuildRemove"},
 	{ZoneOp::GuildInviteAccept, "OP_GuildInviteAccept"},

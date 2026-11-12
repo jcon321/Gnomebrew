@@ -577,11 +577,12 @@ no rules of its own.
     (`FullZoneName` of the bind), /ttell (@004f839a: the target's name to its apostrophe, eqstr 13090
     for a name with '#' or '_' but an NPC corpse's), /movelog (@004fba78: "yes" sends MSG_MOVELOG,
     0x41e4, which EQMacEmu ignores), /stopsong (@004f5c74: a bard's StopSpellCast2), /shield
-    (@004fd688, `OP_Shielding`) and /quit and /exit (@004fa8c5: the connection closed, the game
-    ended) are done too; /ttell's `send_tell` also stops on `DAT_007985f1`, as the socials do, not
+    (@004fd688, `OP_Shielding`), /quit and /exit (@004fa8c5: the connection closed, the game
+    ended), /log (@004fbad0, `eqlog`; [Defaults] Log), /keys (@004f8ec7, `OP_Key`) and /dismount
+    (@004ff5a6: 13285 only, no mounts) are done too; /ttell's `send_tell` also stops on `DAT_007985f1`, as the socials do, not
     known; /quit doesn't say /safelock's 12095, there being no /safelock): /discipline (@004f4fb5,
     `OP_Discipline`; `OP_DisciplineChange` back), /surname, /language,
-    /dismount, /facepick, /hotbutton, /alias, /log, /note, /keys, the chat
+    /facepick, /hotbutton, /alias, /note, the chat
     channels (/join, /leave, /leaveall, /list, /announce, /autojoin, /1../10, /chat,
     /toggletell), and the client settings (/wincolor, /resetwindows, /chatfontsize, /invwinlabels,
     /particledensity, /showspelleffects, /mousespeed, /viewport, /showgrass, /dynamiclights,
@@ -722,7 +723,8 @@ no rules of its own.
     216, OP_NewSpawn) and the rider rides it in eqgame (`EQPlayer::MountEQPlayer` @0051fd83,
     `MakeRiderMountUp` @0051fcf5, `Dismount` @0051ff5f, `Dismount2`, `CDisplay::GetOnActor`
     @00504202, `AttachPlayerToPlayerDag` @004b079f; ActorInfo's Mount and Rider). Then what waits
-    on them across the list: /dismount (35), MovePlayer's mount branch (22), the spell book and
+    on them across the list: /dismount's mounted branch (13284, the SPA 113 buff off,
+    `EQPlayer::Dismount`), MovePlayer's mount branch (22), the spell book and
     casting on a mount (2), being hit on one and the right button on a horse (2, 24), the
     targeting of riders (6), and /follow of a rider (3).
 

@@ -20,7 +20,7 @@ namespace
 		Random, LootNoDrop, FastDrop, AutoSplit, Roleplay, TargetGroupBuff, Split, Yell, Consent, Social, Attack, CombatMusic, DoAbility, Filter, ServerFilter, Invite, Disband, Who, WhoTarget, Follow, MakeLeader, Lfg,
 		UserColor, GuildInvite, GuildRemove, GuildDelete, GuildStatus, GuildLeader, GuildWar, GuildPeace, GuildMotd,
 		MakeRaidLeader, RaidInvite, RaidDecline, RaidAccept, RaidDisband, SetLootType, AddRaidLooter, RemoveRaidLooter,
-		RaidSay, RaidWindow, Channel, Loot, TargetTell, CharInfo, MoveLog, StopSong, Shield, Quit,
+		RaidSay, RaidWindow, Channel, Loot, TargetTell, CharInfo, MoveLog, StopSong, Shield, Quit, Log, Keys, Dismount,
 	};
 
 	struct CommandEntry
@@ -55,7 +55,7 @@ namespace
 		{"/leaveall", 0, Command::None}, {"/list", 0, Command::None}, {"/announce", 0, Command::None},
 		{"/1", 0, Command::None}, {"/2", 0, Command::None}, {"/3", 0, Command::None}, {"/4", 0, Command::None},
 		{"/5", 0, Command::None}, {"/6", 0, Command::None}, {"/7", 0, Command::None}, {"/8", 0, Command::None},
-		{"/9", 0, Command::None}, {"/10", 0, Command::None}, {"/autojoin", 0, Command::None}, {"/keys", 0, Command::None},
+		{"/9", 0, Command::None}, {"/10", 0, Command::None}, {"/autojoin", 0, Command::None}, {"/keys", 0, Command::Keys},
 		{"/mp3", 0, Command::None}, {"/smile", 0, Command::Social}, {"/hail", 0, Command::Hail}, {"/frown", 0, Command::Social},
 		{"/laugh", 0, Command::Social}, {"/cry", 0, Command::Social}, {"/chuckle", 0, Command::Social}, {"/hug", 0, Command::Social},
 		{"/poke", 0, Command::Social}, {"/bow", 0, Command::Social}, {"/bounce", 0, Command::Social}, {"/panic", 0, Command::Social},
@@ -91,7 +91,7 @@ namespace
 		{"/hideme", 3, Command::None}, {"/servers", 3, Command::None}, {"/height", 4, Command::None},
 		{"/exit", 0, Command::Quit}, {"/loot", 0, Command::Loot}, {"/roleplay", 0, Command::Roleplay},
 		{"/follow", 0, Command::Follow}, {"/report", 0, Command::None}, {"/surname", 0, Command::None},
-		{"/log", 0, Command::None}, {"/toggletell", 3, Command::None}, {"/inquire", 3, Command::None},
+		{"/log", 0, Command::Log}, {"/toggletell", 3, Command::None}, {"/inquire", 3, Command::None},
 		{"/praise", 3, Command::None}, {"/warn", 3, Command::None}, {"/edit", 3, Command::None},
 		{"/voice", 0, Command::None}, {"/microphone", 0, Command::None}, {"/movelog", 0, Command::MoveLog},
 		{"/hidecorpses", 0, Command::None}, {"/vrdelay", 0, Command::None}, {"/reverb", 0, Command::None},
@@ -111,7 +111,7 @@ namespace
 		{"/guildmotd", 0, Command::GuildMotd}, {"/charinfo", 0, Command::CharInfo}, {"/safelock", 0, Command::None},
 		{"/alternateadv", 0, Command::None}, {"/targetgroupbuff", 0, Command::TargetGroupBuff}, {"/tgb", 0, Command::TargetGroupBuff},
 		{"/hotbutton", 0, Command::None}, {"/particledensity", 0, Command::None}, {"/facepick", 0, Command::None},
-		{"/dismount", 0, Command::None}, {"/rtarget", 0, Command::None}, {"/showgrass", 0, Command::None},
+		{"/dismount", 0, Command::Dismount}, {"/rtarget", 0, Command::None}, {"/showgrass", 0, Command::None},
 		{"/alias", 0, Command::None}, {"/hitsmode", 0, Command::None}, {"/clearhits", 0, Command::None},
 		{"/dopropertinting", 0, Command::None}, {"/makeleader", 0, Command::MakeLeader}, {"/viewport", 0, Command::None},
 		{"/clearchat", 0, Command::ClearChat}, {"/bazaar", 0, Command::None}, {"/trader", 0, Command::None},
@@ -1418,6 +1418,31 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 			break;
 		m_zone.Close();
 		m_quit = true;
+		break;
+	case Command::Log: {
+		// /log (@004fbad0): "off" (eqstr 12946, its first 3 letters, any case) turns eqlog off,
+		// "on" (12947, 2 letters) on, anything else turns it over; said either way. Not saved.
+		auto starts = [&](uint32_t id, const char *word, size_t n) {
+			return Lower(args).substr(0, n) == Lower(format(id, word, {})).substr(0, n);
+		};
+		if (starts(12946, "off", 3))
+			m_config.log = false;
+		else if (starts(12947, "on", 2))
+			m_config.log = true;
+		else
+			m_config.log = !m_config.log;
+		ChatOut(m_config.log ? format(13221, "Logging to 'eqlog.txt' is now *ON*.", {})
+		                     : format(13222, "Logging to 'eqlog.txt' is now *OFF*.", {}),
+			ChatType::Default);
+		break;
+	}
+	case Command::Keys:
+		m_zone.Keys(); // /keys (@004f8ec7)
+		break;
+	case Command::Dismount:
+		// /dismount (@004ff5a6): on a mount (ActorInfo's Mount), 13284, the mount's buff (SPA 113)
+		// off and EQPlayer::Dismount; else 13285. We've no mounts yet.
+		ChatOut(format(13285, "You do not have a horse to dismount.", {}), ChatType::Default);
 		break;
 	case Command::StopSong:
 		m_spell_cast.StopSong(); // /stopsong (@004f5c74)
