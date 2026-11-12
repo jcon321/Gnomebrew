@@ -452,6 +452,7 @@ private:
 	// tells it): someone's detrimental spell on us makes them our target, its damage the victim's
 	// get-hit sound and our standing up, and our hit points.
 	void SpellDamaged(const ZoneCast &cast);
+	std::vector<uint16_t> GroupSpawns() const; // pinstGroup: our group's spawns in the zone
 	// A /filter switch changed: the zone's told (CEverQuest_send_update_filters) and they're kept
 	// (saveOptions).
 	void FiltersChanged();

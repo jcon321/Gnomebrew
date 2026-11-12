@@ -607,7 +607,7 @@ build/eqclient -u USER -p PASS [options]
 
 ```
 build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|train|ground|commands|group|raid|guild|skills|aa]]
-build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS]
+build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings]]
 ```
 
 This drives the real front-end code with scripted input and writes PNG snapshots. Text is
@@ -653,7 +653,8 @@ confirmation dialog). `createluclin` does the same with every Luclin model on, a
 whose face picker steps through each feature, printing the rows shown and what the model takes,
 then what's sent and what the server lists. `explore` goes into explore mode, turns to the chase
 camera, prints the name tags, clicks the other character, walks forward, and leaves with Escape. It's for
-checking layout and flow without Windows. `--replay` plays a packet log back instead (no server)
+checking layout and flow without Windows. `--replay` plays a packet log back instead (no server;
+`settings` after SECONDS reads `OUTDIR/my-client.ini` first, such as its `[Filters]`)
 and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,
 opens, minimizes, resizes and closes windows (the layout goes to OUTDIR), types into the chat window
 (a say, commands, /target) and prints what the chat window holds, then stands near the target to
@@ -1542,9 +1543,7 @@ details and the nearest spawns at the top left and the radar at the top right.
   are `HandleWorldMessage`'s lines about someone's spell: "%1's spell fizzles!" (1218), "%1's
   casting is interrupted!" (12478), "%1 regains concentration and continues casting." (1033), "A
   missed note brings %1's song to a close!" (1219). Only for a spawn in the zone, in color 0x108,
-  as the filters say: a bard's by Bard Songs (`DAT_0079965c`: ours unless 3, a group member's at 0
-  or 2, others' at 0), anyone else's by PC Spells (`DAT_00799654`: ours always, a group member's at
-  0 or 2, another player's at 0) or an NPC's (or a corpse's) by NPC Spells (`DAT_00799658` 0).
+  as the filters say (StartCasting's rule above).
   The zone sends these to all but the caster, within 200 units. Checked against the live zone:
   one character fizzling and one stepping away while casting (`--cast-move`) told the other.
 - **Our own interrupt** (`frontend/spell_cast.*`, `StopSpellCast` 1 by way of `StopSpellCast2`):
@@ -1564,6 +1563,20 @@ details and the nearest spawns at the top left and the radar at the top right.
   except for a bard without an instrument. `ReportSuccessfulHit` prints `cast_on_you`,
   "You have taken %2 points of damage." or `cast_on_other` (within 75 units of the target), and
   plays the target's `TargetAnim` (`D02` for detrimental damage).
+- **Spell filters** (`SpellCasting::SpellTextShown`, `DamageShown`): the client also hides
+  lines by /filter's PC Spells (`DAT_00799654`: 0 all, 1 off, 2 the group's), NPC Spells
+  (`DAT_00799658`: 0 shown) and Bard Songs (`DAT_0079965c`: 0 all, 1 ours, 2 the group's, 3 off),
+  with `pinstGroup` (our group's spawns in the zone) as the group. `CEverQuest_StartCasting`'s
+  line about the caster and the zone's lines about someone's spell (below) go by one rule: a
+  bard's (class 8, NPC or not) by Bard Songs, ours unless 3, a group member's at 0 or 2, anyone
+  else's at 0; anyone else's always ours, a group member's at PC Spells 0 or 2, another player's
+  at PC Spells 0, an NPC's or a corpse's at NPC Spells 0. `ReportSuccessfulHit`'s spell branch
+  (type 231, after the 75-unit rule) goes by the caster, or the victim when there's none: a bard's
+  ours unless 3 and anyone else's at 0 or 2, whether in our group or not (the asm at @0052ac2a
+  searches the group and then reads `DAT_0079965c` either way); anyone else's is shown when it's
+  ours or lands on us, by PC Spells 0 or 2 when the caster or the victim is in our group, and
+  otherwise by PC Spells 0 for a player or NPC Spells 0 for anything else. Its first print (the
+  `local_454` line) never runs for a spell, as that string stays empty.
 - **Buffs** (`frontend/buffs.*`): the profile's, a spell landing on us (`HitBySpell`, with
   `FindAffectSlot`'s stacking, blocking and overwriting), `OP_Buff` both ways, the 6 s tick and
   expiry, and a click taking a beneficial one off. The buff window shows the icons on red or blue
@@ -1820,7 +1833,7 @@ details and the nearest spawns at the top left and the radar at the top right.
   songs, the server filter, the six channels, my misses, others' misses, others' hits, misses of
   me, critical spells, critical melee), as `msg_stat_change` gets our spawn id and at every change;
   EQMacEmu stops sending what's filtered. The client side reads the four melee switches and
-  damage shields (`ReportSuccessfulHit`).
+  damage shields (`ReportSuccessfulHit`), and the three spell switches (see Spells).
 - Checked against a live server: a level 1 warrior fighting a level 3 sewer rat in South Qeynos
   (`eqclient --attack a_sewer_rat --record`), then the recording through `frontend_preview`: "You
   try to punch a sewer rat, but miss!", "A sewer rat bites YOU for 8 points of damage.", "You punch

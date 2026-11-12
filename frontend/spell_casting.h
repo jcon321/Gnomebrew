@@ -20,12 +20,12 @@
 //                 its first letter made upper case. Someone else's on someone else is only told
 //                 within 75 units of the target. Then the target's TargetAnim, standing (stances 100
 //                 and 102) and not a corpse; a detrimental spell's damage without one plays 13 (D02).
+// The begin casting line and the spell lines from the zone go by /filter's spell switches as
+// SpellTextShown says; a damage line by DamageShown's.
 //   OP_SpellTextMessage, OP_SpellTextMessageStringID  HandleWorldMessage's 0x41d3 and 0x4241: the
 //                 zone's line about someone's spell (another's fizzle, interrupt, regained
 //                 concentration), in color 0x108, only for a spawn in the zone, and as /filter's
 //                 switches say (SpellTextShown).
-// The chat filters for spells (PC spells, NPC spells, bard songs) don't touch the three above yet:
-// everything shows.
 // Not done: being hit standing us up, the hit's sounds, a tap's amount (target type 13), HitBySpell
 // (our buffs: flag 4) and the fishing line (spell 0xffff).
 
@@ -42,7 +42,13 @@ class SpellFile;
 class SpellCasting
 {
 public:
-	SpellCasting(const SpellFile *spells, const EqStr *eqstr) : m_spells(spells), m_eqstr(eqstr) {}
+	// filters: /filter's switches (null: the defaults, everything shown); group: our group's spawns
+	// in the zone (pinstGroup).
+	SpellCasting(const SpellFile *spells, const EqStr *eqstr, const ChatFilters *filters = nullptr,
+		std::vector<uint16_t> group = {})
+		: m_spells(spells), m_eqstr(eqstr), m_filters(filters), m_group(std::move(group))
+	{
+	}
 
 	struct Line
 	{
@@ -63,12 +69,19 @@ public:
 	void DeathBlow(const ZoneCast &cast, bool told, const ZoneSession &zone, std::vector<Line> &lines,
 		std::vector<Animation> &animations) const;
 
-	// HandleWorldMessage's 0x41d3 and 0x4241: whether the zone's line about `spawn`'s spell is told.
+	// HandleWorldMessage's 0x41d3 and 0x4241, and CEverQuest_StartCasting's line: whether the line
+	// about `spawn`'s spell is told.
 	// A bard's by the bard songs switch (DAT_0079965c: ours unless 3, a group member's at 0 or 2,
 	// anyone else's at 0), anyone else's by the PC spells switch (DAT_00799654: ours always, a group
 	// member's at 0 or 2, another player's at 0) or an NPC's by the NPC spells one (DAT_00799658 0).
 	static bool SpellTextShown(const ZoneSpawn &spawn, bool ours, bool group_member, const ChatFilters &filters);
 	static constexpr int SpellTextColor = 0x108;
+	// ReportSuccessfulHit's spell branch (type 231): `who` is the caster, or the victim when there's
+	// none. A bard's by Bard Songs: ours unless 3, anyone else's at 0 or 2 (in our group or not: the
+	// group loop's answer goes unused). Anyone else's: shown when it's ours or lands on us; with the
+	// caster or the victim in our group, PC Spells at 0 or 2; otherwise a player's at PC Spells 0,
+	// an NPC's (or a corpse's) at NPC Spells 0.
+	static bool DamageShown(const ZoneSpawn &who, bool ours, bool on_us, bool group_member, const ChatFilters &filters);
 
 	// EQ_Character_IsRoguePoison (@004c4753): our own casting of these says nothing.
 	static bool IsRoguePoison(int spell);
@@ -83,6 +96,11 @@ private:
 		std::vector<Animation> &animations, int told = -1) const;
 	std::string Format(uint32_t id, const std::string &fallback, const std::vector<std::string> &args) const;
 
+	bool InGroup(uint16_t id) const;
+	const ChatFilters &Filters() const;
+
 	const SpellFile *m_spells;
 	const EqStr *m_eqstr;
+	const ChatFilters *m_filters;
+	std::vector<uint16_t> m_group;
 };

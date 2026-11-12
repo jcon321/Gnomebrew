@@ -3870,6 +3870,15 @@ void FrontEnd::FiltersChanged()
 		Log("filters: couldn't write " + m_config.settings_ini);
 }
 
+std::vector<uint16_t> FrontEnd::GroupSpawns() const
+{
+	std::vector<uint16_t> ids;
+	for (int i = 0; i < Group::Members; ++i)
+		if (const ZoneSpawn *member = m_group.MemberSpawn(i))
+			ids.push_back(member->id);
+	return ids;
+}
+
 void FrontEnd::SpellDamaged(const ZoneCast &cast)
 {
 	const SpellInfo *spell = m_ui.spells ? m_ui.spells->Find(cast.spell) : nullptr;
@@ -4152,10 +4161,8 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			}
 			if (!spawn)
 				break;
-			bool group_member = false;
-			for (int i = 0; i < Group::Members && !group_member; ++i)
-				if (const ZoneSpawn *member = m_group.MemberSpawn(i))
-					group_member = member->id == spawn->id;
+			const std::vector<uint16_t> group = GroupSpawns();
+			const bool group_member = std::find(group.begin(), group.end(), spawn->id) != group.end();
 			if (SpellCasting::SpellTextShown(*spawn, ours, group_member, m_filters))
 				ChatOut(event.text, SpellCasting::SpellTextColor);
 			break;
@@ -4273,7 +4280,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			std::vector<SpellCasting::Line> lines;
 			std::vector<SpellCasting::Animation> animations;
 			std::vector<SpellEffects::Request> effects;
-			SpellCasting(m_ui.spells, m_ui.eqstr).Handle(event, m_zone, lines, animations, effects);
+			SpellCasting(m_ui.spells, m_ui.eqstr, &m_filters, GroupSpawns()).Handle(event, m_zone, lines, animations, effects);
 			for (const SpellCasting::Line &line : lines)
 				ChatOut(line.text, line.type);
 			for (const SpellCasting::Animation &animation : animations) {
@@ -4318,7 +4325,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			if (event.cast.type == 231) {
 				std::vector<SpellCasting::Line> lines;
 				std::vector<SpellCasting::Animation> animations;
-				SpellCasting(m_ui.spells, m_ui.eqstr).DeathBlow(event.cast, report.told, m_zone, lines, animations);
+				SpellCasting(m_ui.spells, m_ui.eqstr, &m_filters, GroupSpawns()).DeathBlow(event.cast, report.told, m_zone, lines, animations);
 				for (const SpellCasting::Line &line : lines)
 					ChatOut(line.text, line.type);
 			}

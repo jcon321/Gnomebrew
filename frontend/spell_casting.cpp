@@ -3,6 +3,7 @@
 #include "chat_text.h"
 #include "spell_file.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 
@@ -87,6 +88,28 @@ bool SpellCasting::SpellTextShown(const ZoneSpawn &spawn, bool ours, bool group_
 	return spawn.npc == 0 ? filters.pc_spells == 0 : filters.npc_spells == 0;
 }
 
+bool SpellCasting::DamageShown(const ZoneSpawn &who, bool ours, bool on_us, bool group_member, const ChatFilters &filters)
+{
+	if (who.class_id == ClassBard)
+		return ours ? filters.bard_songs != 3 : filters.bard_songs == 0 || filters.bard_songs == 2;
+	if (ours || on_us)
+		return true;
+	if (group_member)
+		return filters.pc_spells == 0 || filters.pc_spells == 2;
+	return who.npc == 0 ? filters.pc_spells == 0 : filters.npc_spells == 0;
+}
+
+bool SpellCasting::InGroup(uint16_t id) const
+{
+	return id != 0 && std::find(m_group.begin(), m_group.end(), id) != m_group.end();
+}
+
+const ChatFilters &SpellCasting::Filters() const
+{
+	static const ChatFilters defaults;
+	return m_filters ? *m_filters : defaults;
+}
+
 std::string SpellCasting::Format(uint32_t id, const std::string &fallback, const std::vector<std::string> &args) const
 {
 	return FormatEqString(m_eqstr, id, fallback, args);
@@ -143,7 +166,8 @@ void SpellCasting::BeginCast(const ZoneCast &cast, const ZoneSession &zone, std:
 		text += Format(12208, "Item Cast Time (%1)", {std::to_string(cast.cast_ms)});
 	if (gm)
 		text += " (" + spell->name + ")";
-	if (!text.empty() && !(mine && caster->class_id != ClassBard && IsRoguePoison(cast.spell)))
+	if (!text.empty() && !(mine && caster->class_id != ClassBard && IsRoguePoison(cast.spell)) &&
+	    SpellTextShown(*caster, mine, InGroup(cast.caster), Filters()))
 		lines.push_back({text, mine ? OwnSpellColor : OtherSpellColor});
 	SpellEffects::Request effect;
 	effect.stage = 0;
@@ -229,7 +253,11 @@ void SpellCasting::Damaged(const ZoneCast &cast, const ZoneSession &zone, std::v
 	}
 	else if (!spell->cast_on_other.empty())
 		text = Expand("%1" + spell->cast_on_other, victim->DisplayName());
-	if (told && !text.empty()) {
+	// The filters' spawn: the caster, or the victim without one.
+	const ZoneSpawn &who = attacker ? *attacker : *victim;
+	const uint16_t who_id = attacker ? cast.caster : cast.target;
+	if (told && !text.empty() &&
+	    DamageShown(who, who_id == me, on_me, InGroup(who_id) || InGroup(cast.target), Filters())) {
 		text[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(text[0])));
 		lines.push_back({text, OwnSpellColor});
 	}

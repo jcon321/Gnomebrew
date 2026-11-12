@@ -3,7 +3,7 @@
 // outline boxes of an estimated Arial size, since GDI isn't available.
 //
 //   frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|shop|train|ground|commands|group|skills]]
-//   frontend_preview EQDIR OUTDIR --replay FILE [SECONDS]
+//   frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings]]
 //
 // Without a login server it snapshots the start screen, a dialog and the login
 // screen. With one it also logs in and snapshots server select and the play result.
@@ -2110,7 +2110,7 @@ int main(int argc, char **argv)
 	if (!replay && argc != 3 && argc != 6 && argc != 7) {
 		fprintf(stderr,
 			"usage: %s EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create]]\n"
-			"       %s EQDIR OUTDIR --replay FILE [SECONDS [options]]\n",
+			"       %s EQDIR OUTDIR --replay FILE [SECONDS [options|settings]]\n",
 			argv[0], argv[0]);
 		return 2;
 	}
@@ -2130,7 +2130,8 @@ int main(int argc, char **argv)
 
 	FrontEndConfig config;
 	config.ui_dir = argv[2];
-	if (replay && argc >= 7 && std::string(argv[6]) == "options")
+	// "settings": the plain replay, reading OUTDIR/my-client.ini (its [Filters] and the rest).
+	if (replay && argc >= 7 && (std::string(argv[6]) == "options" || std::string(argv[6]) == "settings"))
 		config.settings_ini = std::string(argv[2]) + "/my-client.ini"; // the keymap's saves
 	bool stop_at_charselect = argc == 7 && std::string(argv[6]) == "charselect";
 	bool explore = argc == 7 && std::string(argv[6]) == "explore";

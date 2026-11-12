@@ -442,8 +442,7 @@ no rules of its own.
       shown in hand as the cast starts (UpdateItemSlot), and someone picking our pockets (msg_steal
       0xff: 12897 and the answer);
     - AllowedToAttack's duels, the server's PvP types and the water;
-    - /filter's client side: the spell lines by PC spells, NPC spells and bard songs
-      (ReportSuccessfulHit's spell branch, StartCasting), the chat channels and the bad word filter
+    - /filter's client side: the chat channels and the bad word filter
       (msg_new_text), and the hit modes (/hitsmode, CChatManager's MyHitsMode and the rest: eqstr
       2130's short form, the number only; /clearhits, `do_clearhits` @00500dbf, and `DrawHits`
       @00501483);
