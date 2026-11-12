@@ -795,9 +795,10 @@ namespace
 		}
 		// A row of the general page: Innate Stamina (its second), then Train.
 		if (SidlWindow::Control *list = wnd ? wnd->Find("List1") : nullptr; list && list->rows.size() > 1) {
-			int row_h = list->row_height > 0 ? list->row_height : 14;
+			// ListRowHeight and ListHeaderHeight.
+			int row_h = list->row_height > 0 ? list->row_height : SidlFontHeight(list->def->font) + 2;
 			const Rect content = wnd->ContentRect(*list);
-			int header = list->header_hidden ? 0 : row_h + 2;
+			int header = SidlFontHeight(list->def->font) + 4;
 			press(content.x + 20, content.y + header + row_h + row_h / 2);
 			h.RunUntil([] { return false; }, 300);
 			show("a row clicked", false);
@@ -809,6 +810,61 @@ namespace
 		type("/alternateadv buy 3");
 		type("/alternateadv buy 200");
 		show("after /alternateadv buy", false);
+		// Rampage (109; with no target the zone does nothing with it) bought, selected on the class
+		// page, Hotkey onto the cursor, onto the tenth hot button; the button pressed with no target
+		// ("/alt activate 109"), its timer and the button after; then the button right-clicked.
+		type("#set aa_points 10"); // a GM's
+		type("/alternateadv buy 109");
+		printf("[preview] target %u\n", frontend.Target());
+		if (tabs) {
+			Rect tab = wnd->TabRect(*tabs, 2);
+			press(tab.x + tab.w / 2, tab.y + tab.h / 2);
+			h.RunUntil([] { return false; }, 300);
+		}
+		auto hot = [&](const char *when) {
+			const GameWindowState &state = frontend.WindowState();
+			const SidlWindow *hb = windows.Find("HotButtonWnd");
+			const SidlWindow::Control *b = hb ? hb->Find("HB_Button10") : nullptr;
+			printf("[preview] %s: cursor %d/%d '%s'; HB_Button10 '%s' checked %d\n", when, state.cursor.type,
+				state.cursor.value, state.cursor_text.c_str(), b ? b->text.c_str() : "?", b && b->checked ? 1 : 0);
+		};
+		if (SidlWindow::Control *list = wnd ? wnd->Find("List3") : nullptr) {
+			int row = -1;
+			for (size_t r = 0; r < list->rows.size(); ++r)
+				if (!list->rows[r].empty() && list->rows[r][0] == "Rampage")
+					row = static_cast<int>(r);
+			int row_h = list->row_height > 0 ? list->row_height : SidlFontHeight(list->def->font) + 2;
+			const Rect content = wnd->ContentRect(*list);
+			press(content.x + 20, content.y + SidlFontHeight(list->def->font) + 4 + row * row_h + row_h / 2);
+			h.RunUntil([] { return false; }, 300);
+			show("Rampage clicked", false);
+			click(AAWindow::Screen, "HotButton");
+			hot("after Hotkey");
+			windows.Show("HotButtonWnd", true);
+			frontend.Update(NowMs());
+			click("HotButtonWnd", "HB_Button10");
+			h.RunUntil([] { return false; }, 300);
+			hot("on the hot button");
+			h.Snapshot("aa-4-hotbutton");
+			click("HotButtonWnd", "HB_Button10");
+			h.RunUntil([] { return false; }, 2500);
+			chat();
+			hot("pressed");
+			show("after the hot button", false);
+			h.Snapshot("aa-5-used");
+			click(AAWindow::Screen, "DoneButton");
+			if (const SidlWindow *hb = windows.Find("HotButtonWnd"))
+				if (const SidlWindow::Control *b = hb->Find("HB_Button10")) {
+					Rect area = frontend.ScreenArea();
+					int x = area.x + b->rect.x + b->rect.w / 2, y = area.y + b->rect.y + b->rect.h / 2;
+					frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+					frontend.OnEvent({InputEvent::Type::RightDown, x, y});
+					frontend.OnEvent({InputEvent::Type::RightUp, x, y});
+					frontend.Update(NowMs());
+				}
+			h.RunUntil([] { return false; }, 300);
+			show("hot button right-clicked", false);
+		}
 		click(AAWindow::Screen, "DoneButton");
 		show("after Done", false);
 		return 0;

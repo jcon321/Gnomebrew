@@ -121,7 +121,7 @@ struct HotButton
 		Combat,      // the combat page's Melee Attack (0) and Range Attack (1)
 		CombatSkill, // the combat page's four skill buttons, 0..3
 		Ability,     // the abilities page's six, 0..5
-		Social,      // page * 12 + button
+		Social,      // page * 12 + button; from 0x78, an AA ability, 0x78 + its id (AltAdv::HotButtonBase)
 		Item,        // an inventory slot
 		Action,      // the main page's Who, Invite, Disband, Camp, Sit, Run (0..5); 7.. the menu buttons
 		Spell,       // a spell gem
@@ -197,6 +197,7 @@ struct GameWindowState
 	// A trade (or the give window) is up, and with an NPC: our empty trade slots take items.
 	bool trading = false, trade_npc = false;
 	bool fv_rules = false; // OP_LogServer's: anything can be dropped (CanDrop)
+	const EqStr *eqstr = nullptr; // an AA hot button's words; null: none
 };
 
 // A button clicked in one of the windows: the page arrows and the hot buttons. A hot button that
@@ -208,6 +209,11 @@ void GameWindowHold(WindowManager &windows, GameWindowState &state, const std::s
 // CHotButtonWnd::DoHotButton from the keymap: the showing page's button `slot` (0..9) run as a
 // click on it with nothing on the cursor would; what it returns is as GameWindowClick's.
 std::string DoHotButton(WindowManager &windows, GameWindowState &state, int slot);
+// A hot button holding an AA ability: its id, for DoHotButtonRightClick's CAAWnd::Activate and
+// ShowAbility; -1 for any other control or button.
+int HotButtonAltAbility(GameWindowState &state, const std::string &window, const std::string &control);
+// CAAWnd's Hotkey: the ability onto the cursor (CCursorAttachment::Activate type 4, 0x78 + id).
+void AttachAltAbility(WindowManager &windows, GameWindowState &state, int id);
 // A button right clicked: a social's opens the social editor on it.
 void GameWindowRightClick(WindowManager &windows, GameWindowState &state, const std::string &window, const std::string &control);
 // CInvSlot::SetItem: an InvSlot showing `item` (null: none), its icon, its stack's count and its tooltip.

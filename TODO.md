@@ -227,10 +227,11 @@ no rules of its own.
    - Hotbuttons: the Actions window's buttons and socials go on them and come off by holding
      them, and they're kept in `<char>_<server>.ini` (`frontend/game_windows.*`). Clicked or by
      key (Hot1..10) they do what their button does: Attack, Range, the combat skills and the
-     abilities (CHotButtonWnd::DoHotButton), and they're checked while they aren't ready
-     (OnProcessFrame: Attack and Range by __RangeAttackReady, a skill by its timer). Still to do:
-     items, spells, pet commands and AA abilities on them, DoHotButton's refusal while stunned or
-     DAT_007d0254 (string 0x2f34), and right-click on anything but a social.
+     abilities (CHotButtonWnd::DoHotButton), AA abilities (28), and they're checked while they
+     aren't ready (OnProcessFrame: Attack and Range by __RangeAttackReady, a skill by its timer, an
+     AA ability by IsAbilityReady). Still to do: items, spells and pet commands on them,
+     DoHotButton's refusal while stunned or DAT_007d0254 (string 0x2f34), and right-click on
+     anything but a social or an AA ability.
    - Socials: done (defaults, the editor, running them with `/pause`, `[Socials]`). Still to do:
      the edit boxes take typing only at their end (no caret to move, no Tab between them), and
      a social's lines go to InterpretCommand as typed, without eqgame's switch to the main chat
@@ -531,11 +532,10 @@ no rules of its own.
     the ranks from the profile and `OP_RespondAA`, the timers from the zone's `OP_AAAction`, the AA
     window (`frontend/aa_window.*`, `CAAWnd`: `Init`, `Update`, `UpdateSelected`, `UpdateTimer`,
     `OnProcessFrame`, `WndNotification`'s "-", "+", Train, Done, rows and tabs), /alternateadv, Toggle
-    Alt. Adv. window and the inventory's Alt. Adv. button. Still to do:
-    - the window's Hotkey (`CCursorAttachment::Activate` type 4, 0x78 + id) and AA hot buttons:
-      `CHotButtonWnd::OnProcessFrame`'s two words (+0x00, +0x04) and checked while we lack it or it
-      isn't ready, `DoHotButton` starting it as a social (`__CurrentSocial`, "/alt activate %d" from
-      `DoPassageOfTime`), `DoHotButtonRightClick` (`CAAWnd::Activate` and `ShowAbility`);
+    Alt. Adv. window and the inventory's Alt. Adv. button; the window's Hotkey and AA hot buttons
+    (`CCursorAttachment::Activate` type 4, 0x78 + id; `CHotButtonWnd::OnProcessFrame`'s words and
+    checked state; `DoHotButton` and `DoPassageOfTime`'s "/alt activate"; `DoHotButtonRightClick`'s
+    `CAAWnd::Activate` and `ShowAbility`). Still to do:
     - the AA effects the other items list as missing (stats, resists, HP, casting, timers);
     - not checked live: the PoP pages trainable (61 and up with the Planes of Power), a GM's "(ID#n)".
 29. **Friends, ignore, inspect and notes.**

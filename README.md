@@ -643,7 +643,9 @@ visibility, sneaking and hiding after each, then hide and step forward; or `aa`,
 or more, with AA points: a GM's `#level 60` and `#set aa_points 30`), to open the AA window from the
 inventory's Alt. Adv. button and print its pages, labels and buttons, then "-" and "+", the class,
 archetype and general tabs, the general page's second row, Train, `/alternateadv buy 3` and an
-untrainable `buy 200`, and Done. `create` instead makes an Erudite wizard from the first empty slot,
+untrainable `buy 200`, then (with `#set aa_points 10`) buy Rampage, select it, Hotkey it onto the
+tenth hot button, press that with no target (its timer and the button's state after), right-click it,
+and Done. `create` instead makes an Erudite wizard from the first empty slot,
 snapshots every creation screen and the face picker, submits it, and deletes it again (Yes in the
 confirmation dialog). `createluclin` does the same with every Luclin model on, as a dwarf warrior
 whose face picker steps through each feature, printing the rows shown and what the model takes,
@@ -1963,8 +1965,22 @@ details and the nearest spawns at the top left and the radar at the top right.
   (`WndNotification`): "-" and "+" change the profile's share by 10 and send "on n" or "off"
   (`CAAWnd_WndNotification_AAAction`), Train sends "buy id" and disables itself until the zone
   answers, Done closes it; a row selects its ability; a new tab (`Subwindows`, which reports a page
-  change as the button comes up) clears the old list's selection and selects nothing. Checked live
-  as Replaytest at 60 (`eqclient --aa`, `frontend_preview ... aa`).
+  change as the button comes up) clears the old list's selection and selects nothing; Hotkey puts the
+  ability on the cursor (below). `ShowAbility` (@00402015) raises the window, finds the ability's
+  page and index, sets that row on the list of the page that was showing (not the ability's), and
+  selects it without changing the tab. Checked live as Replaytest at 60 (`eqclient --aa`,
+  `frontend_preview ... aa`).
+- **Hot buttons.** An ability on a hot button is a social one (type 4) of 0x78 + its id
+  (`AltAdv::HotButtonBase`): Hotkey's `CCursorAttachment::Activate(0, 4, id + 0x78)` (ours refuses
+  it over an item or coins on the cursor, as the other holds). On the cursor its text is the two
+  words (+0x00 and +0x04, a space between), but `Activate` tests the value, not the id, under 0xe3,
+  so from id 107 on it has none. `CHotButtonWnd::OnProcessFrame` gives the button the words and
+  checks it while we haven't the ability, or while `IsAbilityReady` leaves a second or more; ready
+  or passive, unchecked. `DoHotButton` starts it as a social (`__CurrentSocial` = value << 3), and
+  `DoPassageOfTime`'s social step turns a value from 0x78 into "/alt activate <id>" through
+  `InterpretCmd` (/alt is /alternateadv's abbreviation, ahead of /alias) once, then ends it; so it
+  goes as /alternateadv's "act" with our target. `DoHotButtonRightClick` opens the window on it
+  (`CAAWnd::Activate`, `ShowAbility`). The zone answers an activation with `OP_AAAction`, the timer.
 - **/alternateadv** (@004fed79), with Expansions 4: "on" (12947, 2 letters) sets the share to 1 and
   "off" (12946) to 0, then go as typed; "list" (13271) prints each of the class's abilities (13274
   name, 13275 description, 13276 the +0x1a step) in 0x111; "buy" (13272) sends "buy <id>" if

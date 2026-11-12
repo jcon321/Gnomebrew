@@ -1,4 +1,5 @@
 #include "game_windows.h"
+#include "../core/alt_adv.h"
 #include "buffs.h"
 #include "chat_text.h"
 #include "eqstr.h"
@@ -16,6 +17,7 @@
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <iterator>
 #include <string>
 
@@ -428,6 +430,30 @@ namespace
 		return social >= 0 && social < SocialPages * SocialsPerPage;
 	}
 
+	// A social hot button's value from 0x78 is an AA ability: its id, 1..226; -1 for a social.
+	int AltAbilityId(int value)
+	{
+		int id = value - AltAdv::HotButtonBase;
+		return value >= AltAdv::HotButtonBase && id > 0 && id < AltAdv::Count ? id : -1;
+	}
+
+	// An AA hot button's text: the ability's two words (+0x00, +0x04), a space between. On the
+	// cursor (CCursorAttachment::Activate) eqgame tests the button's value, not the id, against
+	// 0xe3, so the abilities from 107 on have none there.
+	std::string AltAbilityText(const GameWindowState &state, int value, bool cursor)
+	{
+		int id = AltAbilityId(value);
+		if (id < 0 || (cursor && value >= AltAdv::Count) || !state.eqstr)
+			return "";
+		const AltAdv::Ability &a = AltAdv::Abilities[id];
+		std::string text;
+		if (a.label1 > 0)
+			text = state.eqstr->Format(static_cast<uint32_t>(a.label1), {});
+		if (a.label2 > 0)
+			text += " " + state.eqstr->Format(static_cast<uint32_t>(a.label2), {});
+		return text;
+	}
+
 	// Its keys in [Socials]: Page<p>Button<b>...
 	std::string SocialKey(int social)
 	{
@@ -546,11 +572,14 @@ namespace
 	}
 
 	// The text on a hot button: its button's (GetWindowText), or for the menu buttons and socials,
-	// their names (no AA abilities yet: socials from 120 on).
-	std::string HotButtonText(WindowManager &windows, const GameWindowState &state, const HotButton &button)
+	// their names, and an AA ability's words.
+	std::string HotButtonText(WindowManager &windows, const GameWindowState &state, const HotButton &button,
+		bool cursor = false)
 	{
 		if (button.type == HotButton::Action && button.value >= static_cast<int>(std::size(MainButtons)))
 			return button.value == 10 ? "Spells" : "Menu Button";
+		if (button.type == HotButton::Social && AltAbilityId(button.value) >= 0)
+			return AltAbilityText(state, button.value, cursor);
 		if (button.type == HotButton::Social)
 			return ValidSocial(button.value) ? state.socials[button.value].name : "";
 		std::string id = SourceButton(windows, button);
@@ -597,7 +626,7 @@ namespace
 	{
 		state.ClearCursor();
 		state.cursor = button;
-		state.cursor_text = HotButtonText(windows, state, button);
+		state.cursor_text = HotButtonText(windows, state, button, true);
 	}
 
 	void HotButtonWindow(SidlWindow &wnd, WindowManager &windows, const GameWindowState &state, const GameValues &values)
@@ -626,6 +655,18 @@ namespace
 				button->text_color = 0xffffff;
 				if (held.type == HotButton::Social && ValidSocial(held.value))
 					button->text_color = SocialColor(windows, state.socials[held.value].color);
+				// An AA ability's: checked while we haven't it, or while it isn't ready again.
+				if (int id = held.type == HotButton::Social ? AltAbilityId(held.value) : -1; id >= 0 && values.zone) {
+					const ZoneProfile &me = values.zone->Profile();
+					AltAdv::Character ch{me.class_id, me.level, me.expansions, me.aa_unspent, me.aa_ranks};
+					int64_t remaining = 0;
+					if (me.aa_ranks[id] == 0)
+						button->checked = true;
+					else if (AltAdv::Abilities[id].reuse != 0) {
+						AltAdv::Ready(ch, id, values.zone->AltAdvLastUsed(id), static_cast<int64_t>(std::time(nullptr)), &remaining);
+						button->checked = remaining >= 1;
+					}
+				}
 			}
 			Show(wnd, "HB_InvSlot" + n, false);
 			Show(wnd, "HB_SpellGem" + n, false);
@@ -687,7 +728,8 @@ std::string DoHotButton(WindowManager &windows, GameWindowState &state, int slot
 	if (slot < 0 || slot >= HotButtonsPerPage)
 		return "";
 	HotButton &button = PageButton(state, slot);
-	if (button.type == HotButton::Social && ValidSocial(button.value) && state.current_social < 0)
+	if (button.type == HotButton::Social && (ValidSocial(button.value) || AltAbilityId(button.value) >= 0) &&
+	    state.current_social < 0)
 		StartSocial(state, button.value);
 	return SourceButton(windows, button);
 }
@@ -710,6 +752,22 @@ void GameWindowHold(WindowManager &windows, GameWindowState &state, const std::s
 		button = {};
 		state.hot_buttons_changed = true;
 	}
+}
+
+int HotButtonAltAbility(GameWindowState &state, const std::string &window, const std::string &control)
+{
+	if (window != "HotButtonWnd")
+		return -1;
+	int slot = HotButtonSlot(control);
+	if (slot < 0)
+		return -1;
+	const HotButton &button = PageButton(state, slot);
+	return button.type == HotButton::Social ? AltAbilityId(button.value) : -1;
+}
+
+void AttachAltAbility(WindowManager &windows, GameWindowState &state, int id)
+{
+	Attach(windows, state, {HotButton::Social, AltAdv::HotButtonBase + id});
 }
 
 void GameWindowRightClick(WindowManager &windows, GameWindowState &state, const std::string &window, const std::string &control)
@@ -1182,7 +1240,12 @@ std::string SocialStep(GameWindowState &state, uint64_t now_ms)
 		--state.social_wait;
 		return "";
 	}
-	if (!ValidSocial(state.current_social)) { // an AA ability's "/alt activate" (not yet)
+	// DoPassageOfTime: an AA ability's is "/alt activate <id>", once.
+	if (int id = AltAbilityId(state.current_social); id >= 0) {
+		state.current_social = -1;
+		return "/alt activate " + std::to_string(id);
+	}
+	if (!ValidSocial(state.current_social)) {
 		state.current_social = -1;
 		return "";
 	}

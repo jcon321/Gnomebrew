@@ -2145,6 +2145,7 @@ void FrontEnd::BuildZoneWindows()
 	m_log_path.clear();
 	m_window_state = GameWindowState{};
 	DefaultSocials(m_window_state, m_ui.eqstr);
+	m_window_state.eqstr = m_ui.eqstr;
 	const std::string &name = m_zone.Profile().name;
 	if (!m_config.ui_dir.empty() && !name.empty()) {
 		std::string suffix = name + "_" + m_config.login_host.substr(0, 7) + ".ini";
@@ -2249,6 +2250,12 @@ void FrontEnd::BuildZoneWindows()
 	aa_host.send = [this](const std::string &text) { m_zone.SendAltAdv(text); };
 	aa_host.world_expansions = [this] { return m_world.Expansions(); };
 	aa_host.set_percentage = [this](int percent) { m_zone.EditProfile().aa_percentage = static_cast<int8_t>(percent); };
+	// Hotkey: the ability onto the cursor, as CCursorAttachment::Activate type 4 (not over an item or
+	// coins on the cursor, as the other buttons' holds).
+	aa_host.hotkey = [this](int id) {
+		if (!m_zone.Items().count(Inventory::Cursor) && !Inventory::CursorMoneyType(m_zone.Profile()))
+			AttachAltAbility(m_windows, m_window_state, id);
+	};
 	m_aa_window.Attach(m_windows, m_game_values, std::move(aa_host));
 	m_windows.Show(AAWindow::Screen, false);
 	m_windows.TakeChanged();
@@ -2571,6 +2578,12 @@ void FrontEnd::HandleWindowClicks()
 						DoDrinkEatPoison(copy, static_cast<int16_t>(slot));
 					}
 				}
+			continue;
+		}
+		// DoHotButtonRightClick on an AA ability: CAAWnd::Activate and ShowAbility.
+		if (int id = HotButtonAltAbility(m_window_state, click.window, click.control); id >= 0) {
+			m_aa_window.Activate();
+			m_aa_window.ShowAbility(id);
 			continue;
 		}
 		GameWindowRightClick(m_windows, m_window_state, click.window, click.control);
