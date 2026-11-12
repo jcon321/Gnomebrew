@@ -190,20 +190,14 @@ no rules of its own.
      line of sight, mana, the target, its range and body type), OP_CastSpell, the casting window
      (EQType 7) and the zone's answers (OP_MemorizeSpell 3's recast and recovery, OP_ManaChange
      ending the cast, OP_TokenText's fizzles and interrupts), with the gems dim while anything's
-     cast or recovering; a bard's song stops on a gem click (an empty OP_ManaChange). Still to do:
+     cast or recovering; a bard's song stops on a gem click (an empty OP_ManaChange). Fizzles and
+     channeling are the zone's (eqgame's `SpellFizzled` and `CastingRequirementsMet` run only
+     offline, see README Spells); others' fizzles, interrupts and regains are told
+     (OP_SpellTextMessage, OP_SpellTextMessageStringID, by the spell filters); our own interrupt
+     (StopSpellCast 1, msg_stat_change's SpawnAppearance 0x12 of 0 on us) tells us and the zone.
+     Still to do:
      - casting: stuns and divine aura (OP_Stun), the focus cast time and range modifiers,
        abilities (gem 9), and a bard being hit (StopSpellCast 1);
-     - the cast's end (`EQ_Character::CastingRequirementsMet` @004c5a5d, from `DoPassageOfTime`;
-       failing it is `StopSpellCast2`): standing (token 0xd5), moving during the cast (more than
-       0.1 off where it began, or not stopped) rolled against Channeling (skill 13, the
-       interruptions counted at +0xcfc, the Channeling AA 0x18) with "You regain your
-       concentration" (token 0x10e) or "Your casting has been interrupted!" (12477, and 12478 to
-       others); the reagents (`FindItemBySpellId` for the four focus items, `HasEnoughItemsForSpell`
-       and `ExpendItemCharge` for the four components, the focus chance to keep one,
-       `GetSpellFocusChanceBonus`); a bard's `CalculateBardSongMod`. Running now lets a cast finish
-       and reagents are never looked at;
-     - `SpellFizzled` (@004c712b), which `CastSpell` rolls only with DAT_00798560 set (as
-       CanIHitTarget's under 24);
      - the spell info display (done: `ToggleSpellDisplay`, CItemDisplayWnd::SetSpell, from a book
        slot, a gem or a buff): "Your Cast Time" (eqstr 3106) has the AA casting time modifier and
        waits on the focus one (GetFocusCastingTimeModifier), and the hot button's call (CHotButtonWnd::WndNotification @00420462, with a
@@ -540,9 +534,7 @@ no rules of its own.
     trap, feign and hide timers, Nimble Evasion, 2 Hand Bash, New Tanaan Crafting Mastery,
     Acrobatics, Endless Quiver, the spell display's `GetAACastingTimeModifier` and Permanent
     Illusion's duration. Still to do:
-    - the passive abilities whose systems aren't ours yet: Channeling (0x18) and 0x43 in
-      `CastingRequirementsMet`, Spell Casting Mastery in `SpellFizzled`, `DoMeditation`'s 0x77 and
-      0xe0, the archery and throwing rolls (`CheckArcherySuccess` 0xba, 0xbb and
+    - the passive abilities whose systems aren't ours yet: `DoMeditation`'s 0x77 and 0xe0, the archery and throwing rolls (`CheckArcherySuccess` 0xba, 0xbb and
       `CalculateArcheryBonusFromAbilities`, `CheckThrowingSkill` 0x51), a bard's
       `CalculateBardSongMod` (instrument and singing mastery) and the book's 0x7b, Jam Fest (0x5e) in
       `CalcAffectChange`, Viscid Roots (0xbe) in `HitBySpell`, `HandleSpecialPCAffects`' 0x37, the

@@ -772,6 +772,17 @@ bool ZoneSession::StopCasting()
 	return Send(ZoneOp::ManaChange, nullptr, 0, "OP_ManaChange (stop casting)");
 }
 
+bool ZoneSession::SendSpellText(const std::string &text)
+{
+	if (m_state != State::InZone)
+		return false;
+	// StopSpellCast's local_30c: the id, then the text and its NUL, sent as strlen + 6.
+	std::vector<uint8_t> body(text.size() + 6, 0);
+	memcpy(body.data(), &m_my_id, 2);
+	memcpy(body.data() + 2, text.data(), text.size());
+	return Send(ZoneOp::SpellTextMessage, body.data(), body.size(), "OP_SpellTextMessage");
+}
+
 bool ZoneSession::SendBuff(int slot, const ZoneBuff &buff, uint32_t how)
 {
 	if (m_state != State::InZone)
@@ -3108,7 +3119,11 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 				switch (type) {
 				case AppearanceInvis: spawn->invis = static_cast<uint8_t>(value); break;
 				case AppearancePvp: spawn->pvp = static_cast<uint8_t>(value); break;
-				case AppearanceLinkdead: spawn->linkdead = static_cast<uint8_t>(value); break;
+				case AppearanceLinkdead:
+					spawn->linkdead = static_cast<uint8_t>(value);
+					if (id != 0 && id == m_my_id && value == 0)
+						events.push_back(Event(Event::Type::OwnLinkdeadCleared));
+					break;
 				case AppearanceGm: spawn->gm = static_cast<uint8_t>(value); break;
 				case AppearanceAnonymous: spawn->anon = static_cast<uint8_t>(value); break;
 				default: spawn->afk = static_cast<uint8_t>(value); break;
@@ -3424,6 +3439,37 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 				e.text += " " + arg;
 		}
 		Log("[zone]    message: " + e.text);
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::SpellTextMessage:
+	case ZoneOp::SpellTextMessageStringID: {
+		// HandleWorldMessage's 0x41d3 and 0x4241: the zone's InterruptSpell, CastedSpellFinished and
+		// the like, told to those near the caster. 0x4241's arguments (CEverQuest_HandleWorldMessag2)
+		// are the NUL-separated strings from 6, the first even when empty, at most 9; its eqstr string
+		// is expanded with them (orderedStringExpansion).
+		if (data.size() < 2)
+			break;
+		Event e(Event::Type::SpellText);
+		e.id = Read<uint16_t>(data, 0);
+		if (opcode == ZoneOp::SpellTextMessage) {
+			e.text = CString(data, 2, 2048);
+		}
+		else {
+			if (data.size() < 6)
+				break;
+			uint32_t id = Read<uint32_t>(data, 2);
+			std::vector<std::string> args;
+			for (size_t pos = 6; args.size() < 9;) {
+				std::string arg = CString(data, pos, data.size());
+				args.push_back(arg);
+				pos += arg.size() + 1;
+				if (pos + 1 >= data.size())
+					break;
+			}
+			e.text = m_eqstr ? m_eqstr->Format(id, args) : "[string " + std::to_string(id) + "]";
+		}
+		Log("[zone]    spell text from " + std::to_string(e.id) + ": " + e.text);
 		events.push_back(e);
 		break;
 	}

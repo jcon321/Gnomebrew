@@ -487,6 +487,11 @@ public:
 			Chat,         // chat
 			Message,      // text: system/special message; value: its color (a chat color type, Chat::*)
 			Emote,        // text: "Name waves." (OP_Emote)
+			// OP_SpellTextMessage, OP_SpellTextMessageStringID (expanded): id the spawn whose spell
+			// it is (a fizzle, an interrupt, a regained concentration), text the line
+			SpellText,
+			// msg_stat_change's SpawnAppearance 0x12 (link dead) of 0 on us: our cast is interrupted
+			OwnLinkdeadCleared,
 			TargetChanged,// id: the zone set our target (OP_TargetCommand's answer); 0 none
 			TimeOfDay,    // text: "hour:minute"
 			Weather,      // OP_Weather: id the type (0 rain, 1 snow), value the intensity (0 stops it)
@@ -778,6 +783,9 @@ public:
 	bool ReadBook(uint8_t type, const std::string &file);
 	bool DeleteCharge(int16_t slot);
 	bool StopCasting(); // an empty OP_ManaChange: a bard's song stops (StopSpellCast)
+	// OP_SpellTextMessage from us (StopSpellCast 1): {our spawn id, text}, strlen + 6 bytes; the zone
+	// passes it to those within 200.
+	bool SendSpellText(const std::string &text);
 	// OP_MoveCoin (MoveCoin_Struct, 20 bytes: i32 from, to, from coin, to coin, amount): coins moved
 	// between the cursor (0), our purse (1), the bank (2) and the trade window (3), the coins 0
 	// copper .. 3 platinum. The zone doesn't answer one it agrees with.

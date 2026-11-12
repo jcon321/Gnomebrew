@@ -46,6 +46,7 @@ namespace
 			"  --cast GEM[:SPELL]    with --zone, once in, cast the spell in gem GEM (1..8; SPELL memorized there first)\n"
 			"                        on ourselves and print\n"
 			"                        the zone's answers. Repeatable: each 3 s after the zone ends the one before\n"
+			"  --cast-move           with --cast: step 5 units as each cast is sent, so the zone interrupts it\n"
 			"  --attack NAME         with --zone, once in, target the nearest NPC whose name starts with NAME, turn\n"
 			"                        auto attack on and walk at it, printing the hits and the death\n"
 			"  --skill N             with --attack, use combat skill N on it too (OP_CombatAbility), every 9 s\n"
@@ -140,6 +141,7 @@ namespace
 	std::vector<int> g_casts;         // --cast, gems from 1
 	std::vector<int> g_cast_spells;   // --cast GEM:SPELL's spell (0 the gem's)
 	std::string g_pickup;             // --pickup: a drop id or "far"
+	bool g_cast_move = false;         // --cast-move: step 5 units right after each --cast
 	std::string g_attack;             // --attack: the name of an NPC to fight
 	uint16_t g_attack_id = 0;         // whom we're fighting (0 nobody)
 	int g_skill = -1;                 // --skill: a combat skill to use on them too
@@ -436,6 +438,9 @@ namespace
 					if (g_click_link >= 0 || !g_casts.empty() || !g_attack.empty())
 						printf("[zone] message %d: %s\n", event.value, event.text.c_str());
 					break;
+				case ZoneSession::Event::Type::SpellText:
+					printf("[zone] spell text from %d: %s\n", event.id, event.text.c_str());
+					break;
 				case ZoneSession::Event::Type::CastBegan:
 					if (!g_casts.empty())
 						printf("[cast] %u begins casting %d, %d ms\n", event.cast.caster, event.cast.spell, event.cast.cast_ms);
@@ -530,6 +535,14 @@ namespace
 				int spell = gem >= 0 && gem < ZoneProfile::Gems ? zone.Profile().mem_spells[gem] : -1;
 				printf("[cast] casting gem %d (spell %d) on ourselves\n", gem + 1, spell);
 				zone.CastSpell(gem, spell, zone.MySpawnId());
+				if (g_cast_move) {
+					// The zone's CastedSpellFinished finds us more than 1 off where the cast began.
+					const ZoneProfile &me = zone.Profile();
+					ZoneMovement m;
+					m.x = me.x + 5, m.y = me.y, m.z = me.z, m.heading = me.heading;
+					zone.SetMovement(m);
+					printf("[cast] stepped 5 units while casting\n");
+				}
 			}
 			if (g_attack_id != 0 && !camping)
 				FollowAttackTarget(zone);
@@ -652,6 +665,8 @@ int main(int argc, char **argv)
 			g_casts.push_back(atoi(value.c_str()));
 			g_cast_spells.push_back(colon == std::string::npos ? 0 : atoi(value.c_str() + colon + 1));
 		}
+		else if (arg == "--cast-move")
+			g_cast_move = true;
 		else if (arg == "--pickup")
 			g_pickup = next();
 		else if (arg == "--attack")

@@ -71,6 +71,22 @@ bool SpellCasting::IsRoguePoison(int spell)
 	       spell == 2889 || spell == 2891;
 }
 
+bool SpellCasting::SpellTextShown(const ZoneSpawn &spawn, bool ours, bool group_member, const ChatFilters &filters)
+{
+	if (spawn.class_id == ClassBard) {
+		if (ours)
+			return filters.bard_songs != 3;
+		if (group_member)
+			return filters.bard_songs == 0 || filters.bard_songs == 2;
+		return filters.bard_songs == 0;
+	}
+	if (ours)
+		return true;
+	if (group_member)
+		return filters.pc_spells == 0 || filters.pc_spells == 2;
+	return spawn.npc == 0 ? filters.pc_spells == 0 : filters.npc_spells == 0;
+}
+
 std::string SpellCasting::Format(uint32_t id, const std::string &fallback, const std::vector<std::string> &args) const
 {
 	return FormatEqString(m_eqstr, id, fallback, args);

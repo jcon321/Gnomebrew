@@ -33,8 +33,13 @@
 // (StunnedState, OP_Stun), our invisibility and sneaking ending as we cast, the AA and focus cast
 // time modifiers (GetAACastingTimeModifier, GetFocusCastingTimeModifier: none of either here) and
 // the focus's range, Modulation and Mystical Transvergance's checks (items and abilities, not gems),
-// PvP deities, being hit interrupting a bard (StopSpellCast 1), abilities (gem 9) and the spell_crc
-// (the zone ignores it).
+// PvP deities, abilities (gem 9) and the spell_crc (the zone ignores it).
+//   - Our own interrupt (StopSpellCast 1, only from msg_stat_change's SpawnAppearance 0x12 clearing
+//     our link death): a spell, not a song, says "Your spell is interrupted." (439, 0x121) and
+//     sends OP_SpellTextMessage "%1's casting is interrupted!" (12478) for the zone to pass on, with
+//     no OP_ManaChange; a song ends "Your song ends abruptly." (12686). ApplyDamage's stun branch
+//     also calls it, but only falls, the environment and drowning reach ApplyDamage, with no
+//     attacker, so it never runs.
 //   - An item's click effect (gem 10): not while something's cast (but a bard's song); a
 //     must-equip effect only worn (179), a class-checked one only by those who can use it (181),
 //     either from its EffectLevel1 (136); a stackable item (IsStackable 1) never; out of charges
@@ -74,6 +79,8 @@ public:
 	// /stopsong (@004f5c74): a bard's StopSpellCast2 (StopSpellCast 0 of whatever's cast, a song
 	// or not, or nothing); anyone else, nothing.
 	void StopSong();
+	// msg_stat_change's SpawnAppearance 0x12 of 0 on us: StopSpellCast2(1), an interrupt of ours.
+	void Interrupted();
 	// CastSpell for an item's click effect (gem 10, CInvSlot_DoDrinkEatPoison): from the slot it's in.
 	bool CastItem(const ZoneItem &item, int16_t slot, uint64_t now_ms);
 	// The zone's: ZoneSession::Event's SpellMemorized, SpellForgotten, SpellRecast, ManaChanged.

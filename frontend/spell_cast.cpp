@@ -98,6 +98,12 @@ void SpellCast::StopSong()
 		StopSpellCast(0, m_spell);
 }
 
+void SpellCast::Interrupted()
+{
+	if (m_zone)
+		StopSpellCast(1, m_spell);
+}
+
 bool SpellCast::CastSpell(int gem, uint64_t now_ms)
 {
 	const ZoneProfile &me = m_zone->Profile();
@@ -373,8 +379,15 @@ void SpellCast::StopSpellCast(int how, int spell)
 	m_spell = -1;
 	m_gem = 0;
 	m_timeout = 0;
-	if (!song) // an interrupt of ours (how 1) would say so here; nothing does yet
+	if (!song) {
+		// An interrupt of ours: we're told, and the zone passes "%1's casting is interrupted!" on
+		// (CEverQuest::stripName of our name).
+		if (how == 1) {
+			Say(439, "Your spell is interrupted.", ChatType::SpellFailure);
+			m_zone->SendSpellText(FormatEqString(m_eqstr, 12478, "%1's casting is interrupted!", {m_zone->Profile().name}));
+		}
 		return;
+	}
 	// A song ends: gems without a recast time are ready again.
 	const ZoneProfile &me = m_zone->Profile();
 	for (int gem = 0; gem < GemCount; ++gem) {

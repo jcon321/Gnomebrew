@@ -66,6 +66,8 @@ namespace ZoneOp
 	constexpr uint16_t ChannelMessage = 0x4107; // ChannelMessage_Struct + text
 	constexpr uint16_t SpecialMesg = 0x4180; // u32 type + text
 	constexpr uint16_t FormattedMessage = 0x4236; // eqstr id + args
+	constexpr uint16_t SpellTextMessage = 0x41d3;         // {u16 spawn, text}: someone's spell, told near them
+	constexpr uint16_t SpellTextMessageStringID = 0x4241; // {u16 spawn, u32 eqstr id, NUL-separated args}
 	constexpr uint16_t Camp = 0x4207;
 	constexpr uint16_t Jump = 0x4020;          // no body; DoMainLoop sends it as the jump starts
 	constexpr uint16_t Logout = 0x4150;
@@ -378,6 +380,8 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::ChannelMessage, "OP_ChannelMessage"},
 	{ZoneOp::SpecialMesg, "OP_SpecialMesg"},
 	{ZoneOp::FormattedMessage, "OP_FormattedMessage"},
+	{ZoneOp::SpellTextMessage, "OP_SpellTextMessage"},
+	{ZoneOp::SpellTextMessageStringID, "OP_SpellTextMessageStringID"},
 	{ZoneOp::Camp, "OP_Camp"},
 	{ZoneOp::Jump, "OP_Jump"},
 	{ZoneOp::Logout, "OP_Logout"},

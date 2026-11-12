@@ -579,6 +579,7 @@ build/eqclient -u USER -p PASS [options]
                         cursor; N takes N of a stack; "auto" puts the cursor's item away). Repeatable
   --cast GEM[:SPELL]    with --zone: cast gem GEM (1..8; SPELL memorized there first) on ourselves and
                         print the zone's answers and our buffs. Repeatable, 3 s after each cast ends
+  --cast-move           with --cast: step 5 units as each cast is sent, so the zone interrupts it
   --attack NAME         with --zone: target the nearest NPC whose name starts with NAME, turn auto attack
                         on and walk at it (facing it, 30 units a second), printing the OP_Damage and
                         OP_Death packets and our own swings
@@ -1515,6 +1516,48 @@ details and the nearest spawns at the top left and the radar at the top right.
   sends `OP_CastSpell` and shows the casting window's gauge. The zone answers with
   `OP_MemorizeSpell` 3 for the recast and recovery, `OP_ManaChange` to end the cast, and
   `OP_TokenText` for why one failed. A gem click stops a bard's song.
+- **Fizzles and channeling are the zone's.** eqgame's own rolls, `SpellFizzled` (@004c712b, from
+  `CastSpell`) and `CastingRequirementsMet` (@004c5a5d, from `DoPassageOfTime` at the cast's end),
+  only run while `DAT_00798560` or `DAT_00798620` is set, and nothing in the exe ever sets them
+  (only `CEverQuest`'s constructor, `DoLogin` and `DoAttack` clear them): they are the offline
+  build's leftovers. Online the zone rolls both (`Client::CheckFizzle`,
+  `Mob::CastedSpellFinished`) and answers: `OP_TokenText` 173 "Your spell fizzles!", 439 "Your
+  spell is interrupted.", 213 to stand still, `OP_FormattedMessage` 270 "You regain your
+  concentration and continue your casting.", then `OP_ManaChange`. EQMacEmu's formulas follow the
+  offline code: the fizzle chance is 95 when the spell's difficulty (`+0x97`) is 0 and SPA 112
+  isn't negative; otherwise the casting skill plus SPA 112, plus `5 * (18 - min(level - 1, 50))`,
+  plus the prime stat / 10 (WIS, INT, or a bard's (DEX + CHA) / 2), less 0..10 and the
+  difficulty (none over level 55, over 40 for paladins, rangers and shadow knights, none on
+  Superior Healing (9) but a cleric's, a bard's at most 15), kept to 5..95 (a bard's 1..95);
+  then with a specialization the skill / 10 + 1 (under 252) and Spell Casting Mastery (0x14:
+  2, 5, 10), at most 98; silenced (SPA 96), it fails. A fizzle costs the spell's mana * 4 / 10,
+  at most an eighth of max mana. Channeling: not standing fails; hit or moved more than 0.1, a
+  move of more than 1 (or an animation) fails, otherwise one roll of 1..390, by Channeling Focus
+  (0x18) 95, 90 or 85%, against `min(370, Channeling + level + (3 * (level - spell level) + 35
+  over spell level + 5))` for each of `hits * 3 / 4 + 1`, fails over it from 39 up. A magician
+  with Elemental Pact (0x43) needs no reagents for a pet spell (SPA 33).
+- **Others' fizzles and interrupts** (`frontend/spell_casting.*`, `frontend/frontend.cpp`):
+  `OP_SpellTextMessage` (0x41d3: spawn id, text) and `OP_SpellTextMessageStringID` (0x4241: spawn
+  id, u32 eqstr id, NUL-separated arguments from 6, at most 9, `CEverQuest_HandleWorldMessag2`)
+  are `HandleWorldMessage`'s lines about someone's spell: "%1's spell fizzles!" (1218), "%1's
+  casting is interrupted!" (12478), "%1 regains concentration and continues casting." (1033), "A
+  missed note brings %1's song to a close!" (1219). Only for a spawn in the zone, in color 0x108,
+  as the filters say: a bard's by Bard Songs (`DAT_0079965c`: ours unless 3, a group member's at 0
+  or 2, others' at 0), anyone else's by PC Spells (`DAT_00799654`: ours always, a group member's at
+  0 or 2, another player's at 0) or an NPC's (or a corpse's) by NPC Spells (`DAT_00799658` 0).
+  The zone sends these to all but the caster, within 200 units. Checked against the live zone:
+  one character fizzling and one stepping away while casting (`--cast-move`) told the other.
+- **Our own interrupt** (`frontend/spell_cast.*`, `StopSpellCast` 1 by way of `StopSpellCast2`):
+  only msg_stat_change's SpawnAppearance 0x12 (link dead) of 0 on us (@004df6eb) calls it live; the
+  zone sends that as a charm or fear ends (`Client::AI_Stop`). A spell, not a bard's song, prints
+  "Your spell is interrupted." (439, color 0x121) and sends `OP_SpellTextMessage` (our spawn id,
+  "%1's casting is interrupted!" (12478) with our name, strlen + 6 bytes) for the zone to pass on
+  within 200; there's no `OP_ManaChange` (only how 0 sends one). A song ends "Your song ends
+  abruptly." (12686). `ApplyDamage`'s stun (type 10 or 30 from an attacker, a 2..10 roll, not
+  spells 859..1023) and `DoPassageOfTime`'s calls with 1 never run online: `ApplyDamage` is only
+  called by `TakeFallDamage`, `ProcessEnvironment` and `ProcessAirSupply` (types -4, -10, -5, no
+  attacker), and the others are in the offline cast's end. `OP_Stun` is `StunMe`, which leaves the
+  cast alone; the zone interrupts a stunned cast itself.
 - **Anyone's casts** (`frontend/spell_casting.*`): `OP_BeginCast`, `OP_Action` and `OP_Damage`.
   `CEverQuest_StartCasting` prints "%1 begins to cast a spell." (ours is 12205; a bard's is
   `other_casts`; rogue poisons are silent). `TriggerSpellEffect` plays the caster's `CastingAnim`,
@@ -2026,8 +2069,9 @@ details and the nearest spawns at the top left and the radar at the top right.
     zone's (`OP_BeginCast`).
   - **Buffs.** `CalculateSpellDuration` on us with Permanent Illusion (0x37): a beneficial illusion
     (SPA 0x3a) with a duration lasts 10000 ticks.
-  - **Not ours yet**, waiting on their systems: Channeling (0x18) and 0x43 in `CastingRequirementsMet`,
-    `SpellFizzled`'s Spell Casting Mastery (0x14), `DoMeditation`'s 0x77 and 0xe0, the archery and
+  - **The zone's:** Channeling Focus (0x18) and Elemental Pact (0x43) in `CastingRequirementsMet`
+    and Spell Casting Mastery (0x14) in `SpellFizzled`, eqgame's offline-only rolls (see Spells).
+  - **Not ours yet**, waiting on their systems: `DoMeditation`'s 0x77 and 0xe0, the archery and
     throwing rolls (0xba, 0xbb, 0x51, `CalculateArcheryBonusFromAbilities`), a bard's instrument and
     singing mastery (`CalculateBardSongMod`), Jam Fest (0x5e) in `CalcAffectChange`, Viscid Roots
     (0xbe) in `HitBySpell`, `HandleSpecialPCAffects`' 0x37, Stalwart Endurance (0xde) against

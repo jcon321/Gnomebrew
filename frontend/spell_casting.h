@@ -20,10 +20,16 @@
 //                 its first letter made upper case. Someone else's on someone else is only told
 //                 within 75 units of the target. Then the target's TargetAnim, standing (stances 100
 //                 and 102) and not a corpse; a detrimental spell's damage without one plays 13 (D02).
-// The chat filters for spells (PC spells, NPC spells, bard songs) aren't there yet: everything shows.
+//   OP_SpellTextMessage, OP_SpellTextMessageStringID  HandleWorldMessage's 0x41d3 and 0x4241: the
+//                 zone's line about someone's spell (another's fizzle, interrupt, regained
+//                 concentration), in color 0x108, only for a spawn in the zone, and as /filter's
+//                 switches say (SpellTextShown).
+// The chat filters for spells (PC spells, NPC spells, bard songs) don't touch the three above yet:
+// everything shows.
 // Not done: being hit standing us up, the hit's sounds, a tap's amount (target type 13), HitBySpell
 // (our buffs: flag 4) and the fishing line (spell 0xffff).
 
+#include "filters.h"
 #include "spell_effects.h"
 #include "zone_session.h"
 
@@ -56,6 +62,13 @@ public:
 	// by `told` (ReportDeath's distance) rather than msg_successful_hit's.
 	void DeathBlow(const ZoneCast &cast, bool told, const ZoneSession &zone, std::vector<Line> &lines,
 		std::vector<Animation> &animations) const;
+
+	// HandleWorldMessage's 0x41d3 and 0x4241: whether the zone's line about `spawn`'s spell is told.
+	// A bard's by the bard songs switch (DAT_0079965c: ours unless 3, a group member's at 0 or 2,
+	// anyone else's at 0), anyone else's by the PC spells switch (DAT_00799654: ours always, a group
+	// member's at 0 or 2, another player's at 0) or an NPC's by the NPC spells one (DAT_00799658 0).
+	static bool SpellTextShown(const ZoneSpawn &spawn, bool ours, bool group_member, const ChatFilters &filters);
+	static constexpr int SpellTextColor = 0x108;
 
 	// EQ_Character_IsRoguePoison (@004c4753): our own casting of these says nothing.
 	static bool IsRoguePoison(int spell);

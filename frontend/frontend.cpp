@@ -4137,6 +4137,29 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 		case Type::Message:
 			ChatOut(event.text, event.value);
 			break;
+		case Type::OwnLinkdeadCleared:
+			m_spell_cast.Interrupted();
+			break;
+		case Type::SpellText: {
+			// HandleWorldMessage's 0x41d3 and 0x4241: only for a spawn we have (__EQP_IDArray), as
+			// the spell filters say; pinstGroup is the group's spawns.
+			const bool ours = event.id != 0 && event.id == m_zone.MySpawnId();
+			const ZoneSpawn *spawn = ours ? &m_zone.Self() : nullptr;
+			if (!spawn && event.id != 0) {
+				auto it = m_zone.Spawns().find(static_cast<uint16_t>(event.id));
+				if (it != m_zone.Spawns().end())
+					spawn = &it->second;
+			}
+			if (!spawn)
+				break;
+			bool group_member = false;
+			for (int i = 0; i < Group::Members && !group_member; ++i)
+				if (const ZoneSpawn *member = m_group.MemberSpawn(i))
+					group_member = member->id == spawn->id;
+			if (SpellCasting::SpellTextShown(*spawn, ours, group_member, m_filters))
+				ChatOut(event.text, SpellCasting::SpellTextColor);
+			break;
+		}
 		case Type::ItemLink:
 			ShowItemDisplay(m_windows, m_game_values, m_window_state, m_zone.LinkedItem());
 			break;
