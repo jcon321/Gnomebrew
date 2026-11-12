@@ -20,13 +20,14 @@
 //                 its first letter made upper case. Someone else's on someone else is only told
 //                 within 75 units of the target. Then the target's TargetAnim, standing (stances 100
 //                 and 102) and not a corpse; a detrimental spell's damage without one plays 13 (D02).
+//                 Our own tap's answer (TapReply) has no line.
 // The begin casting line and the spell lines from the zone go by /filter's spell switches as
 // SpellTextShown says; a damage line by DamageShown's.
 //   OP_SpellTextMessage, OP_SpellTextMessageStringID  HandleWorldMessage's 0x41d3 and 0x4241: the
 //                 zone's line about someone's spell (another's fizzle, interrupt, regained
 //                 concentration), in color 0x108, only for a spawn in the zone, and as /filter's
 //                 switches say (SpellTextShown).
-// Not done: being hit standing us up, the hit's sounds, a tap's amount (target type 13), HitBySpell
+// Not done: being hit standing us up, the hit's sounds, HitBySpell
 // (our buffs: flag 4) and the fishing line (spell 0xffff).
 
 #include "filters.h"
@@ -38,6 +39,7 @@
 
 class EqStr;
 class SpellFile;
+struct SpellInfo;
 
 class SpellCasting
 {
@@ -82,6 +84,11 @@ public:
 	// caster or the victim in our group, PC Spells at 0 or 2; otherwise a player's at PC Spells 0,
 	// an NPC's (or a corpse's) at NPC Spells 0.
 	static bool DamageShown(const ZoneSpawn &who, bool ours, bool on_us, bool group_member, const ChatFilters &filters);
+
+	// ReportSuccessfulHit's tap (type 231, a spell of target type 13, from us and on us: the zone's
+	// second OP_Damage to the tapper, damage the negative of what the tap did): no damage line;
+	// the front end answers it (FrontEnd::SpellDamaged).
+	static bool TapReply(const ZoneCast &cast, uint16_t me, const SpellInfo &spell);
 
 	// EQ_Character_IsRoguePoison (@004c4753): our own casting of these says nothing.
 	static bool IsRoguePoison(int spell);

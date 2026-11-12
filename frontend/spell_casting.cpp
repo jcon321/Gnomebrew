@@ -99,6 +99,11 @@ bool SpellCasting::DamageShown(const ZoneSpawn &who, bool ours, bool on_us, bool
 	return who.npc == 0 ? filters.pc_spells == 0 : filters.npc_spells == 0;
 }
 
+bool SpellCasting::TapReply(const ZoneCast &cast, uint16_t me, const SpellInfo &spell)
+{
+	return cast.type == SpellType && spell.target_type == 13 && me != 0 && cast.caster == me && cast.target == me;
+}
+
 bool SpellCasting::InGroup(uint16_t id) const
 {
 	return id != 0 && std::find(m_group.begin(), m_group.end(), id) != m_group.end();
@@ -253,6 +258,8 @@ void SpellCasting::Damaged(const ZoneCast &cast, const ZoneSession &zone, std::v
 	}
 	else if (!spell->cast_on_other.empty())
 		text = Expand("%1" + spell->cast_on_other, victim->DisplayName());
+	if (TapReply(cast, me, *spell))
+		text.clear();
 	// The filters' spawn: the caster, or the victim without one.
 	const ZoneSpawn &who = attacker ? *attacker : *victim;
 	const uint16_t who_id = attacker ? cast.caster : cast.target;

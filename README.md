@@ -1563,6 +1563,15 @@ details and the nearest spawns at the top left and the radar at the top right.
   except for a bard without an instrument. `ReportSuccessfulHit` prints `cast_on_you`,
   "You have taken %2 points of damage." or `cast_on_other` (within 75 units of the target), and
   plays the target's `TargetAnim` (`D02` for detrimental damage).
+- **Lifetaps** (`SpellCasting::TapReply`, `FrontEnd::SpellDamaged`): after our tap (target type
+  13) lands, the zone sends us a second `OP_Damage` of type 231 from us and on us, its damage the
+  negative of the tap's (`Mob::CommonDamage`'s lifetap packet). `ReportSuccessfulHit` gives it no
+  line. With damage under 1 (a tap that took HP) and us under level 35, eqgame runs
+  `CEverQuest_send_social(0, "", "")` (/smile at our target, or alone) and `_say` "Ahhh, I feel
+  much better now..." (12117), putting back the text we last said afterwards. With 1 or more it
+  sends `OP_SpellTextMessage` (0x202 bytes: our spawn id, then "%1 groans and looks a little
+  weaker." (13301) with eqstr 12185 "You" as %1, so others read "You groans...") and prints "You
+  groan and feel a bit weaker." (12116) in 0x108.
 - **Spell filters** (`SpellCasting::SpellTextShown`, `DamageShown`): the client also hides
   lines by /filter's PC Spells (`DAT_00799654`: 0 all, 1 off, 2 the group's), NPC Spells
   (`DAT_00799658`: 0 shown) and Bard Songs (`DAT_0079965c`: 0 all, 1 ours, 2 the group's, 3 off),

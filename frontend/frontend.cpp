@@ -3899,6 +3899,24 @@ void FrontEnd::SpellDamaged(const ZoneCast &cast)
 	if (spell->good_effect == 0)
 		m_combat.SpellHurt(cast.target, cast.damage, m_zone, report);
 	ApplyCombat(report);
+	// ReportSuccessfulHit's tap (the zone's OP_Damage to the tapper, of the negative of what it did):
+	// under level 35, /smile at our target and /say (send_social 0 and _say, keeping what we last
+	// said); a tap that did nothing or gave instead (1 or more here), the groan: "%1 groans and looks
+	// a little weaker." (13301) with "You" (12185) as %1, sent to those near as OP_SpellTextMessage's
+	// 0x202 bytes, and "You groan and feel a bit weaker." (12116) for us.
+	if (SpellCasting::TapReply(cast, me, *spell)) {
+		if (cast.damage < 1) {
+			if (m_zone.Self().level < 35) {
+				InterpretCommand("/smile");
+				InterpretCommand("/say " + EqString(12117, "Ahhh, I feel much better now..."));
+			}
+		}
+		else {
+			m_zone.SendSpellText(
+				FormatEqString(m_ui.eqstr, 13301, "%1 groans and looks a little weaker.", {EqString(12185, "You")}), 0x202);
+			ChatOut(EqString(12116, "You groan and feel a bit weaker."), SpellCasting::SpellTextColor);
+		}
+	}
 }
 
 bool FrontEnd::AllowedToAttack(const ZoneSpawn &target) const

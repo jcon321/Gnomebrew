@@ -783,9 +783,9 @@ public:
 	bool ReadBook(uint8_t type, const std::string &file);
 	bool DeleteCharge(int16_t slot);
 	bool StopCasting(); // an empty OP_ManaChange: a bard's song stops (StopSpellCast)
-	// OP_SpellTextMessage from us (StopSpellCast 1): {our spawn id, text}, strlen + 6 bytes; the zone
-	// passes it to those within 200.
-	bool SendSpellText(const std::string &text);
+	// OP_SpellTextMessage from us: {our spawn id, text}, `size` bytes (0: strlen + 6, StopSpellCast's;
+	// ReportSuccessfulHit's tap sends 0x202); the zone passes it to those within 200.
+	bool SendSpellText(const std::string &text, size_t size = 0);
 	// OP_MoveCoin (MoveCoin_Struct, 20 bytes: i32 from, to, from coin, to coin, amount): coins moved
 	// between the cursor (0), our purse (1), the bank (2) and the trade window (3), the coins 0
 	// copper .. 3 platinum. The zone doesn't answer one it agrees with.

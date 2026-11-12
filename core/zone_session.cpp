@@ -772,14 +772,16 @@ bool ZoneSession::StopCasting()
 	return Send(ZoneOp::ManaChange, nullptr, 0, "OP_ManaChange (stop casting)");
 }
 
-bool ZoneSession::SendSpellText(const std::string &text)
+bool ZoneSession::SendSpellText(const std::string &text, size_t size)
 {
 	if (m_state != State::InZone)
 		return false;
 	// StopSpellCast's local_30c: the id, then the text and its NUL, sent as strlen + 6.
-	std::vector<uint8_t> body(text.size() + 6, 0);
+	if (size == 0)
+		size = text.size() + 6;
+	std::vector<uint8_t> body(std::max(size, size_t(3)), 0);
 	memcpy(body.data(), &m_my_id, 2);
-	memcpy(body.data() + 2, text.data(), text.size());
+	memcpy(body.data() + 2, text.data(), std::min(text.size(), body.size() - 3));
 	return Send(ZoneOp::SpellTextMessage, body.data(), body.size(), "OP_SpellTextMessage");
 }
 

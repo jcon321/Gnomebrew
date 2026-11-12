@@ -482,14 +482,12 @@ no rules of its own.
       as we zone, `msg_stat_change`'s anonymous state for us, the bind in `ProcessConfirmation` and
       `HitBySpell`.
     - ApplyDamage's own half for a fall: the HP taken here before the zone's update, divine aura,
-      the stun it can bring, and OP_Death (`SendDeathMessage`) in place of OP_Damage when it kills
-      (the zone's OP_Damage handler kills us too), with Stalwart Endurance (AA 0xde,
-      CalculateStalwartEnduranceChance) against its stun; and TakeFallDamage's mount under 200.
+      and OP_Death (`SendDeathMessage`) in place of OP_Damage when it kills (the zone's OP_Damage
+      handler kills us too); and TakeFallDamage's mount under 200. (Its stun, and Stalwart
+      Endurance against it, need an attacker, which no caller passes.)
     - The other environment damage the client reports: lava and the rest (`ProcessEnvironment`
       @004c0e32) and drowning (`ProcessAirSupply`, with the breath window, 34).
-    - OP_SpellTextMessage (0x41d3: a lifetap's "%1 groans and looks a little weaker." (13301) from
-      ReportSuccessfulHit's lifetap branch, which isn't ours, and StopSpellCast's from a stun), and
-      the same from others (the zone passes it on); OP_ClientError.
+    - OP_ClientError.
 26. ~~**Guilds.**~~ Done (`frontend/guild.*`, `ZoneSession`'s guild packets): ours (EQ_Character's
     GuildId and GuildStatus, the profile's @4946 and @4967) and each spawn's guild and rank;
     /guildinvite, /guildremove, /guilddelete (the confirmation dialog, 0x17), /guildstatus,
