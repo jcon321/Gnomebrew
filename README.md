@@ -333,7 +333,7 @@ eqgame's `OP_MoveItem`.
   stamina; the experience and AA gauges (EQTypes 4 and 5) are the zone's `OP_ExpUpdate` and
   `OP_AAExpUpdate` values, each 0..330 of the way through the level or AA point, times 3.03031
   (eqgame reads them from `PCData+0x94` and `+0x1528`; no experience table is needed, and the
-  profile's total experience is replaced by `OP_ExpUpdate`'s as we enter the zone); the pet gauge along the bottom of the HP bar, only while you have a pet. The target
+  profile's total experience is replaced by `OP_ExpUpdate`'s as we enter the zone); the pet gauge along the bottom of the HP bar, only while you have a pet (our ActorInfo's `PetID`, below under **Pets**). The target
   window shows the target's name, HP bar and percent. What the windows do for themselves each frame
   in eqgame is in `frontend/game_windows.cpp`: the group window's Invite, Disband, Follow and Decline buttons, the
   buff window's buttons in columns from the top right (empty slots draw nothing), and the hot
@@ -595,6 +595,8 @@ build/eqclient -u USER -p PASS [options]
                         and print our AA ranks, points and timers as they change. Repeatable, with
                         --say-more: each 3 s after the one before, in order
   --say-more TEXT       with --zone: a /say in the --aa queue (a GM's "#level 60")
+  --pet N[:TARGET]      with --zone: OP_PetCommands N (1 back off .. 17 feign) in the --aa queue;
+                        TARGET a spawn id
   --idle SECONDS        without --char, stay at character select this long (default 0)
   --record DIR          with --zone: write each zone session's packets to DIR/<char>-<time>.eqr
   --replay FILE         play a recorded zone session back (no server): stay --zone seconds (default
@@ -607,7 +609,7 @@ build/eqclient -u USER -p PASS [options]
 
 ```
 build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|train|ground|commands|group|raid|guild|skills|aa]]
-build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse]]
+build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet]]
 ```
 
 This drives the real front-end code with scripted input and writes PNG snapshots. Text is
@@ -659,7 +661,9 @@ prints each horse (its speeds, Rider, whether it's drawn), who rides what and th
 and each second where another's rider and horse are and what they play, with the old models,
 `mountsluclin` with the human Luclin models and `mountshorse` with them and the horse models; on
 a horse of ours it snapshots it, rides forward 5 s and lets go (printing the speed each half
-second), looks in first person and dismounts)
+second), looks in first person and dismounts; `pet` opens the pet window and prints its gauge and
+buttons as they change, types `/pet` lines, clicks Guard and Sit, holds Follow onto hot button 1
+and presses it there, printing what goes to the zone)
 and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,
 opens, minimizes, resizes and closes windows (the layout goes to OUTDIR), types into the chat window
 (a say, commands, /target) and prints what the chat window holds, then stands near the target to
@@ -2450,11 +2454,48 @@ details and the nearest spawns at the top left and the radar at the top right.
   group (13132) or as a trader (13133), 13134/13135 when it changes, 13136 otherwise; `OP_LFGCommand`
   0x41f0 {our name[64], u32}. Joining or forming a group calls it with "off"; `OP_SendExpZonein`
   sends "on" again into each zone while it's on. The group window's gauges: EQType 11..15 the
-  member's name and HP, -2 (no bar) while they're out of the zone; 17..21 their pet's. The raid has
+  member's name and HP, -2 (no bar) while they're out of the zone; 17..21 their pet's (the member's
+  ActorInfo `PetID`, which only `OP_Charm` sets for another, so a member's summoned pet has no
+  gauge, as in eqgame; `CGroupWnd::UpdateButtons` shows and hides the gauges by it). The raid has
   its say in three places: `CEverQuest_Invite` refuses one in a raid who isn't one of its group
   leaders (5087); `CEverQuest_doInvite` answers 4 while a raid invitation's pending and 5 in a raid
   unless the inviter's in it and we lead none of its groups; `msg_wldgroup` 7 and 9 drop a raid
   invitation (`CRaid::ResetFromDeath`).
+- **Pets** (`frontend/pet_window.*`, `ZoneSession::PetCommand`, `MyPetId`). eqgame keeps an owner's
+  pet as its ActorInfo's `PetID` (0xffff none), not by looking for `PetOwnerSpawnId`: ours is set
+  as a spawn of ours that isn't a temporary pet arrives (`EQPlayer::EQPlayer`) and cleared as it
+  goes (`~EQPlayer`); anyone's by `OP_Charm` 0x4244 {u16 owner, u16 pet, u16 command}
+  (`updatePetTargetInfo` @004e53df: both here and the pet not temporary, 1 the pet, else none).
+  The zone sends `OP_Charm` only for charm; a summoned pet is known by its spawn. SpawnAppearance
+  25 sets a spawn's `PetOwnerSpawnId` (`msg_stat_change` 0x19: a charm taken or broken) and 27
+  EQPlayer+0x120 (Spawn_Struct's `summoned_pc` at 97, which the zone never sets). `PetID` is what
+  the gauges use (EQType 16 ours, 17..21 a group member's; labels 68 its `stripName`'d name and 69
+  its HP percent, 0 without one), `setTargetBasedOnIndex`, Target party member n pressed twice,
+  and the pet window. The pet window (`CPetInfoWnd` @0042cbd6): `Update` (@0042cd31, on `Activate`
+  and every 250 ms in `OnProcessFrame`) enables its seven buttons with our pet here; an animation
+  (race 127 with +0x120 set) enables only Animation Empathy's (`GetAbility(0xc3)`: rank 1 Guard
+  and Follow, 2 Attack, 3 Back). SitButton reads eqstr 7518 "sit", or 7519 "stand" while the pet
+  sits (StandingState 'n'), first letter capitalised. A click (`WndNotification` 1) runs `/pet`
+  with eqstr 13092 "attack", 7506 "guard here", 7504 "get lost", the sit button's text, 7500 "back
+  off", 7508 "follow me" or 7502 "taunt"; held (0x16), it goes on the cursor as type 10, which a
+  hot button keeps as its type 8 with `GetButton`'s index (1 Attack, 2 Guard, 3 Lost, 4 Sit, 5
+  Back, 6 Follow, 7 Taunt), reading "Pet <its text>" (format "Pet %s"). `DoHotButton` calls the
+  window's `WndNotification` for that button directly, enabled or not. `/pet` (@004f8754)
+  compares the whole line (any case) with eqstr's words for `CEverQuest::IssuePetCommand`
+  (@00547749): 7500 and 7501 back off (1), 7502 taunt (11), 7514, 7503 and 7509 taunt off (14), 7517
+  taunt on (13), 7504 get lost (2), 7505 as you were (3), 7506 guard here (5), 7507 guard me (6),
+  7508 follow me (8), 7510 and 7518 sit (9), 7511 and 7519 stand (10), 7512, 7515 and 7516 health
+  (4), 7513 hold (12), 13103 target (15), 7521 and 7520 leader (16), 3272 feign (17). Otherwise a
+  line starting one of 13092..13101 ("attack", "kill", "kick", "maim", "slay", "murder",
+  "execute", "sack", "destroy", "whack") is attack (7): with something after the word, the spawn
+  `EQPlayer::findEntityByPartialName` (@005082a1) finds for it (spaces skipped before it and made
+  '_' in it; `EQPlayer_get_player`'s exact name first, else the nearest player or NPC, us
+  included, whose name starts with it, or does after a '#'), tried as typed, then "#", "a_" and
+  "#a_" in front; with nothing after it, our target unless that's us. Anything else, or no one
+  found, sends nothing. `IssuePetCommand` 15 targets the first spawn whose `PetOwnerSpawnId` is
+  ours (temporary or not) with eqstr 13104 "Targeting your pet.", or says 13091 "You don't have a
+  pet to command!"; the rest go to the zone as `OP_PetCommands` 0x4245 {u32 command, u16 target,
+  u16}, without our own check for a pet. The zone answers in the pet's words.
 - **Raids** (`frontend/raid.*`, `ZoneSession::RaidCommand`). eqgame's `CRaid` is one global
   (`instCRaid`): a state at +0x39b4 (1 none, 2 invited, 4 in a raid; `CRaid::IsRaidLeader`
   @0049d26c is misnamed and tests 2), 72 members of 0xd0 bytes from +0x48 (name, the level and

@@ -200,15 +200,23 @@ struct GameWindowState
 	const EqStr *eqstr = nullptr; // an AA hot button's words; null: none
 };
 
+// The button a hot button stands for: one of the Actions window's, or of the pet window's
+// (CPetInfoWnd::GetButton). Empty for none.
+struct WindowButton
+{
+	std::string window, control;
+	bool empty() const { return control.empty(); }
+};
+
 // A button clicked in one of the windows: the page arrows and the hot buttons. A hot button that
-// holds one of the Actions window's main page buttons returns that button's ScreenID, to be done
-// as if it had been clicked there; otherwise "".
-std::string GameWindowClick(WindowManager &windows, GameWindowState &state, const std::string &window, const std::string &control);
+// holds one of the Actions window's or the pet window's buttons returns that button, to be done
+// as if it had been clicked there; otherwise an empty one.
+WindowButton GameWindowClick(WindowManager &windows, GameWindowState &state, const std::string &window, const std::string &control);
 // A button held down: onto the cursor.
 void GameWindowHold(WindowManager &windows, GameWindowState &state, const std::string &window, const std::string &control);
 // CHotButtonWnd::DoHotButton from the keymap: the showing page's button `slot` (0..9) run as a
 // click on it with nothing on the cursor would; what it returns is as GameWindowClick's.
-std::string DoHotButton(WindowManager &windows, GameWindowState &state, int slot);
+WindowButton DoHotButton(WindowManager &windows, GameWindowState &state, int slot);
 // A hot button holding an AA ability: its id, for DoHotButtonRightClick's CAAWnd::Activate and
 // ShowAbility; -1 for any other control or button.
 int HotButtonAltAbility(GameWindowState &state, const std::string &window, const std::string &control);

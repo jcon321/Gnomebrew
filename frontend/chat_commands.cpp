@@ -22,7 +22,7 @@ namespace
 		UserColor, GuildInvite, GuildRemove, GuildDelete, GuildStatus, GuildLeader, GuildWar, GuildPeace, GuildMotd,
 		MakeRaidLeader, RaidInvite, RaidDecline, RaidAccept, RaidDisband, SetLootType, AddRaidLooter, RemoveRaidLooter,
 		RaidSay, RaidWindow, Channel, Loot, TargetTell, CharInfo, MoveLog, StopSong, Shield, Quit, Log, Keys, Dismount,
-		AlternateAdv,
+		AlternateAdv, Pet,
 	};
 
 	struct CommandEntry
@@ -48,7 +48,7 @@ namespace
 		{"/guildinvite", 0, Command::GuildInvite}, {"/guildremove", 0, Command::GuildRemove},
 		{"/guilddelete", 0, Command::GuildDelete}, {"/guildstatus", 0, Command::GuildStatus},
 		{"/guildleader", 0, Command::GuildLeader}, {"/guildwar", 0, Command::GuildWar},
-		{"/guildpeace", 0, Command::GuildPeace}, {"/pet", 0, Command::None}, {"/petition", 0, Command::None},
+		{"/guildpeace", 0, Command::GuildPeace}, {"/pet", 0, Command::Pet}, {"/petition", 0, Command::None},
 		{"/private", 1, Command::None}, {"/find", 1, Command::None}, {"/goto", 1, Command::None},
 		{"/becomenpc", 1, Command::None}, {"/searchcorpse", 1, Command::None}, {"/yell", 0, Command::Yell},
 		{"/motd", 0, Command::Motd}, {"/corpse", 0, Command::None}, {"/me", 0, Command::Emote},
@@ -1940,6 +1940,10 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 	}
 	case Command::GuildPeace:
 		m_guild.Peace(args);
+		break;
+	case Command::Pet:
+		// /pet (@004f8754): the words to CEverQuest::IssuePetCommand.
+		m_pet_window.Command(args);
 		break;
 	case Command::GuildMotd:
 		m_guild.Motd(args);

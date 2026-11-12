@@ -315,6 +315,11 @@ namespace ZoneOp
 	constexpr uint16_t Consider = 0x4137;
 	constexpr uint16_t ConsiderCorpse = 0x4234; // the same, about a corpse; the zone answers in text
 	constexpr uint16_t Assist = 0x4200; // EntityId_Struct {i16 id}: ours who to assist; the zone's their target
+	// Charm_Struct {u16 owner, u16 pet, u16 command}: 1 the owner has the pet now, else not
+	// (updatePetTargetInfo: the owner's ActorInfo PetID).
+	constexpr uint16_t Charm = 0x4244;
+	// PetCommand_Struct {u32 command, u16 target, u16}: CEverQuest::IssuePetCommand's.
+	constexpr uint16_t PetCommands = 0x4245;
 }
 
 struct OpcodeEntry
@@ -536,5 +541,7 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::Consider, "OP_Consider"},
 	{ZoneOp::ConsiderCorpse, "OP_ConsiderCorpse"},
 	{ZoneOp::Assist, "OP_Assist"},
+	{ZoneOp::Charm, "OP_Charm"},
+	{ZoneOp::PetCommands, "OP_PetCommands"},
 	{0, nullptr},
 };

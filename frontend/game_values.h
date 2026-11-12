@@ -58,7 +58,7 @@ public:
 
 	// Null without one. Ourselves (F1) as the target window shows us: our name, and our HP in percent.
 	const ZoneSpawn *Target() const;
-	const ZoneSpawn *Pet() const;    // our pet: a living spawn we own
+	const ZoneSpawn *Pet() const;    // our pet: our ActorInfo's PetID (ZoneSession::MyPetId), if it's here
 
 	// EQ_Character::Max_Mana (@004b9483): level and INT or WIS (EQ_Character::Int and Wis, as Stat
 	// has them), plus the worn items' mana and the buffs' (97, to 500).

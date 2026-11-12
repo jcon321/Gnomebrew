@@ -89,12 +89,11 @@ const ZoneSpawn *Group::MemberSpawn(int index) const
 
 const ZoneSpawn *Group::PetOf(const ZoneSpawn &owner) const
 {
-	if (!m_zone || owner.id == 0)
+	// The owner's ActorInfo PetID, by __EQP_IDArray.
+	if (!m_zone || owner.pet_id == 0xffff || owner.pet_id == 0)
 		return nullptr;
-	for (const auto &[id, spawn] : m_zone->Spawns())
-		if (spawn.pet_owner == owner.id && spawn.npc < 2)
-			return &spawn;
-	return nullptr;
+	auto it = m_zone->Spawns().find(owner.pet_id);
+	return it != m_zone->Spawns().end() ? &it->second : nullptr;
 }
 
 bool Group::IsAGroupMember(const std::string &name) const

@@ -925,6 +925,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		m_merchant.Frame(now_ms);
 		m_train.Frame(now_ms);
 		m_raid_window.Frame(now_ms);
+		m_pet_window.Frame(now_ms);
 		m_aa_window.Frame(now_ms);
 		m_loot.Frame(now_ms);
 		m_trade.Frame(now_ms);
@@ -2228,6 +2229,15 @@ void FrontEnd::BuildZoneWindows()
 	// closes it.
 	m_compass.Activate(m_zone.Profile().skills[40]);
 	m_color_picker.Attach(m_windows);
+	// CPetInfoWnd made; CDisplay_ActivateMainUI activates it if it was up (Update as it shows).
+	PetWindow::Host pet_host;
+	pet_host.eqstr = [this](uint32_t id, const std::string &fallback) { return EqString(id, fallback); };
+	pet_host.chat = [this](const std::string &text) { ChatOut(text, ChatType::Default); };
+	pet_host.target = [this] { return Target(); };
+	pet_host.set_target = [this](uint16_t id) { SetTarget(id); };
+	pet_host.position = [this] { return m_zone_view ? m_zone_view->Movement() : ZoneMovement{}; };
+	pet_host.ability = [this](int id) { return id >= 0 && id < static_cast<int>(std::size(m_zone.Profile().aa_ranks)) ? static_cast<int>(m_zone.Profile().aa_ranks[id]) : 0; };
+	m_pet_window.Attach(m_windows, m_zone, std::move(pet_host));
 	// CRaidWnd and CRaidOptionsWnd made; CDisplay_ActivateMainUI activates the raid window if it was
 	// up, for the raid's own (the options window only ever opens from it).
 	RaidWindow::Host raid_window_host;
@@ -2675,7 +2685,8 @@ void FrontEnd::HandleWindowClicks()
 		// A bag window's Done and Combine, the bank's Done, the merchant's Buy, Sell and Done.
 		if (m_containers.Click(click.window, click.control) || m_bank.Click(click.window, click.control) ||
 		    m_merchant.Click(click.window, click.control, click.shift, click.ctrl) || m_train.Click(click.window, click.control) ||
-		    m_raid_window.Click(click.window, click.control) || m_aa_window.Click(click.window, click.control))
+		    m_raid_window.Click(click.window, click.control) || m_aa_window.Click(click.window, click.control) ||
+		    m_pet_window.Click(click.window, click.control))
 			continue;
 		// CInventoryWnd::WndNotification: the Alt. Adv. button opens the AA window, or closes it.
 		if (click.window == "InventoryWindow" && click.control == "IW_AltAdvBtn") {
@@ -2740,10 +2751,15 @@ void FrontEnd::HandleWindowClicks()
 				m_buffs.ClickOff(std::atoi(click.control.c_str() + 4));
 			continue;
 		}
-		// A hot button holding one of the Actions window's buttons does what that button does.
-		std::string action = GameWindowClick(m_windows, m_window_state, click.window, click.control);
+		// A hot button holding one of the Actions window's buttons does what that button does; one
+		// of the pet window's, the pet window's notification for it, enabled or not.
+		WindowButton action = GameWindowClick(m_windows, m_window_state, click.window, click.control);
+		if (action.window == PetWindow::Screen) {
+			m_pet_window.Press(PetWindow::ButtonIndex(action.control));
+			continue;
+		}
 		if (!action.empty())
-			click = {"ActionsWindow", action};
+			click = {"ActionsWindow", action.control};
 		if (click.window == "SelectorWindow")
 			for (const auto &toggle : SelectorToggles)
 				if (click.control == toggle.button)
@@ -4898,9 +4914,11 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 	default:
 		if (cmd >= KeyMap::Hot1 && cmd <= KeyMap::Hot10) {
 			// CHotButtonWnd::DoHotButton: the button of the page showing.
-			std::string action = DoHotButton(m_windows, m_window_state, cmd - KeyMap::Hot1);
-			if (!action.empty())
-				ActionsClick(action);
+			WindowButton action = DoHotButton(m_windows, m_window_state, cmd - KeyMap::Hot1);
+			if (action.window == PetWindow::Screen)
+				m_pet_window.Press(PetWindow::ButtonIndex(action.control));
+			else if (!action.empty())
+				ActionsClick(action.control);
 		}
 		else if (cmd >= KeyMap::HotPage1 && cmd <= KeyMap::HotPage10)
 			m_window_state.hot_button_page = cmd - KeyMap::HotPage1; // Activate_HotkeyPage

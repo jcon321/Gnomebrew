@@ -31,6 +31,8 @@ namespace
 	constexpr uint16_t AppearanceGuildRank = 23; // msg_stat_change's GuildStatus
 	constexpr uint16_t AppearanceAutoSplit = 28; // CEverQuest_ToggleAutoSplit's 0x1c
 	constexpr uint16_t AppearanceSneak = 15;     // msg_stat_change's IsSneaking
+	constexpr uint16_t AppearancePet = 25;       // msg_stat_change's PetOwnerSpawnId
+	constexpr uint16_t AppearanceSummoned = 27;  // msg_stat_change's 0x1b (EQPlayer+0x120)
 	constexpr size_t SpawnSize = 224;            // Mac::structs::Spawn_Struct
 	constexpr size_t ProfileSize = 8460;         // Mac::structs::PlayerProfile_Struct
 	constexpr size_t ZoneEntrySize = 356;        // ServerZoneEntry_Struct
@@ -152,6 +154,7 @@ namespace
 		s.pvp = d[o + 92];
 		s.anon = d[o + 95];
 		s.afk = d[o + 96];
+		s.summoned = static_cast<int8_t>(d[o + 97]);
 		s.linkdead = d[o + 98];
 		s.gm = d[o + 99];
 		s.fly_mode = d[o + 100];
@@ -1767,6 +1770,17 @@ bool ZoneSession::Assist(uint16_t id)
 	return Send(ZoneOp::Assist, &id, sizeof(id), "OP_Assist " + std::to_string(id));
 }
 
+bool ZoneSession::PetCommand(uint32_t command, uint16_t target)
+{
+	if (m_state != State::InZone)
+		return false;
+	uint8_t body[8] = {};
+	memcpy(body, &command, 4);
+	memcpy(body + 4, &target, 2);
+	return Send(ZoneOp::PetCommands, body, sizeof(body),
+		"OP_PetCommands " + std::to_string(command) + " " + std::to_string(target));
+}
+
 void ZoneSession::SendMovement(uint64_t now_ms)
 {
 	// DoPassageOfTime flags an update every second.
@@ -2083,6 +2097,9 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 			if (MissingGuild(spawn)) // msg_eq_netplayer
 				RequestGuild(spawn.guild_id);
 			m_spawns[spawn.id] = spawn;
+			// EQPlayer::EQPlayer: our pet (not a temporary one) is our ActorInfo's PetID.
+			if (!spawn.temporary_pet && m_my_id != 0 && spawn.pet_owner == m_my_id)
+				m_self.pet_id = spawn.id;
 			Event e;
 			e.type = Event::Type::SpawnAdded;
 			e.id = spawn.id;
@@ -2098,6 +2115,8 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 	case ZoneOp::DeleteSpawn: {
 		uint16_t id = Read<uint16_t>(data, 0);
 		m_spawns.erase(id);
+		if (m_self.pet_id == id) // ~EQPlayer: our pet gone
+			m_self.pet_id = 0xffff;
 		Event e;
 		e.type = Event::Type::SpawnRemoved;
 		e.id = id;
@@ -3169,6 +3188,21 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 				events.push_back(e);
 			}
 		}
+		else if (type == AppearancePet) {
+			// msg_stat_change's 0x19: whose pet it is (0 none: a charm broke).
+			uint16_t id = Read<uint16_t>(data, 0);
+			auto it = m_spawns.find(id);
+			ZoneSpawn *spawn = it != m_spawns.end() ? &it->second : id != 0 && id == m_my_id ? &m_self : nullptr;
+			if (spawn)
+				spawn->pet_owner = static_cast<uint16_t>(Read<uint32_t>(data, 4));
+		}
+		else if (type == AppearanceSummoned) {
+			uint16_t id = Read<uint16_t>(data, 0);
+			auto it = m_spawns.find(id);
+			ZoneSpawn *spawn = it != m_spawns.end() ? &it->second : id != 0 && id == m_my_id ? &m_self : nullptr;
+			if (spawn)
+				spawn->summoned = Read<int32_t>(data, 4);
+		}
 		else if (type == AppearanceSneak) {
 			uint16_t id = Read<uint16_t>(data, 0);
 			auto it = m_spawns.find(id);
@@ -3190,6 +3224,24 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 				events.push_back(e);
 			}
 		}
+		break;
+	}
+	case ZoneOp::Charm: {
+		// updatePetTargetInfo (@004e53df): {owner, pet, command}; both here and the pet not a
+		// temporary one, the owner's PetID is the pet (command 1) or none.
+		if (data.size() < 5)
+			break;
+		auto find = [&](uint16_t id) -> ZoneSpawn * {
+			if (id != 0 && id == m_my_id)
+				return &m_self;
+			auto it = m_spawns.find(id);
+			return it != m_spawns.end() ? &it->second : nullptr;
+		};
+		ZoneSpawn *owner = find(Read<uint16_t>(data, 0));
+		uint16_t pet_id = Read<uint16_t>(data, 2);
+		ZoneSpawn *pet = find(pet_id);
+		if (owner && pet && !pet->temporary_pet)
+			owner->pet_id = data[4] == 1 ? pet_id : 0xffff;
 		break;
 	}
 	case ZoneOp::WearChange: {

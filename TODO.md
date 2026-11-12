@@ -222,10 +222,10 @@ no rules of its own.
    - Hotbuttons: the Actions window's buttons and socials go on them and come off by holding
      them, and they're kept in `<char>_<server>.ini` (`frontend/game_windows.*`). Clicked or by
      key (Hot1..10) they do what their button does: Attack, Range, the combat skills and the
-     abilities (CHotButtonWnd::DoHotButton), AA abilities (28), and they're checked while they
-     aren't ready (OnProcessFrame: Attack and Range by __RangeAttackReady, a skill by its timer, an
-     AA ability by IsAbilityReady). Still to do: items, spells and pet commands on them,
-     DoHotButton's refusal while stunned or DAT_007d0254 (string 0x2f34), and right-click on
+     abilities (CHotButtonWnd::DoHotButton), AA abilities (28) and the pet window's buttons ("Pet
+     <text>", 30), and they're checked while they aren't ready (OnProcessFrame: Attack and Range by
+     __RangeAttackReady, a skill by its timer, an AA ability by IsAbilityReady). Still to do: items
+     and spells on them, DoHotButton's refusal while stunned or DAT_007d0254 (string 0x2f34), and right-click on
      anything but a social or an AA ability.
    - Socials: done (defaults, the editor, running them with `/pause`, `[Socials]`). Still to do:
      the edit boxes take typing only at their end (no caret to move, no Tab between them), and
@@ -548,9 +548,19 @@ no rules of its own.
       (`msg_inspect` @00420efe) in the inspect window (`CInspectWnd` @00420e01:
       `CheckInspectionDistance`, `AcceptInspectText`).
     - The player notes window (`CPlayerNotesWnd` @0042e779: `SaveNotes`, `AppendText`).
-30. **Pets.** The pet window opens empty: `CPetInfoWnd` (@0042cbd6: `Update`, `WndNotification`,
-    `GetButton`), the pet's health and its command buttons; /pet and the hot buttons' pet commands
-    (`OP_PetCommands`).
+30. ~~**Pets.**~~ Done (`frontend/pet_window.*`, `ZoneSession::PetCommand`, `MyPetId`): the owner's
+    ActorInfo `PetID` (`EQPlayer::EQPlayer`, `~EQPlayer`, `OP_Charm`'s `updatePetTargetInfo`),
+    SpawnAppearance 25 and 27, the pet window (`CPetInfoWnd`: `Update`, `WndNotification`,
+    `GetButton`; Animation Empathy's buttons, Sit/Stand), /pet (@004f8754, `IssuePetCommand`,
+    `findEntityByPartialName`, `OP_PetCommands`), a pet button held onto a hot button and pressed
+    there, labels 68 and 69. Checked live (`eqclient --pet`) and on replay (`frontend_preview ...
+    pet`). Still to do:
+    - `IssuePetCommand` 15 (/pet target) and `findEntityByPartialName`'s ties take the first in
+      pinstSpawnList's order; ours the lowest id. 15 also sets `DAT_007f9574`+0xe64 to 1 (not
+      known what it is).
+    - The player window's menu toggle for its pet gauge (`CPlayerWnd::WndNotification` flips
+      +0x144, which `UpdatePlayerWindowState` needs to show it; on from the constructor). Ours
+      always shows it with a pet.
 31. **Death's dialogs and corpses.** Resurrection's question (`msg_resurrect` @004e1f5f on
     `OP_RezzRequest`, answered with `OP_RezzAnswer`; `msg_resurrect_complete` @004e212b on
     `OP_RezzComplete`); /consent (@004fb39e, `OP_Consent`; `msg_consent_verify` @004e3314 on

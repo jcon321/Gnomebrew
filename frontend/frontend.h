@@ -42,6 +42,7 @@
 #include "mounts.h"
 #include "raid.h"
 #include "raid_window.h"
+#include "pet_window.h"
 #include "aa_window.h"
 #include "guild.h"
 #include "trade_window.h"
@@ -644,6 +645,7 @@ private:
 	Mounts m_mounts;                // who's on which horse
 	Raid m_raid;
 	RaidWindow m_raid_window; // CRaidWnd and CRaidOptionsWnd
+	PetWindow m_pet_window;   // CPetInfoWnd, /pet
 	AAWindow m_aa_window;     // CAAWnd
 	bool RaidAllowed() const;  // the raid's: Planes of Power (Expansions & 8), or a test server
 	Guild m_guild;

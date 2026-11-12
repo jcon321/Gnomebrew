@@ -536,6 +536,105 @@ namespace
 
 	// A replay of a horse summoned (the zone's "<name>`s_Mount00", race 216): who's on what, which
 	// horses aren't drawn, what the chat says, then /dismount.
+	// Replay "pet": the pet window (CPetInfoWnd) through a session where a pet is made and given
+	// commands: its gauge, buttons and Sit/Stand as they change; /pet's words, its buttons clicked,
+	// and one held onto a hot button and pressed there (what's sent prints as the zone's log).
+	int PetTest(FrontEnd &frontend, Harness &h, int seconds)
+	{
+		const ZoneSession &zone = frontend.Zone();
+		WindowManager &windows = frontend.Windows();
+		size_t chat_seen = frontend.Chat().Lines().size();
+		auto chat = [&] {
+			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
+				printf("[preview] chat: %s\n", frontend.Chat().Lines()[chat_seen].text.c_str());
+		};
+		auto state = [&] {
+			std::string out = "pet " + std::to_string(zone.MyPetId());
+			std::string label;
+			int gauge = frontend.Values().Gauge(16, label);
+			out += " gauge " + std::to_string(gauge) + " '" + label + "';";
+			if (SidlWindow *wnd = windows.Find("PetInfoWindow"))
+				for (int i = 1; i <= PetWindow::Buttons; ++i)
+					if (const SidlWindow::Control *c = wnd->Find(PetWindow::ButtonId(i)))
+						out += std::string(" ") + PetWindow::ButtonId(i) + (c->enabled ? "" : "(off)") + "='" + c->text + "'";
+			return out;
+		};
+		std::string last;
+		auto watch = [&](int ms) {
+			for (int t = 0; t < ms; t += 250) {
+				h.RunUntil([] { return false; }, 250);
+				chat();
+				std::string now = state();
+				if (now != last)
+					printf("[preview] %s\n", (last = now).c_str());
+			}
+		};
+		auto type = [&](const std::string &line) {
+			printf("[preview] typing %s\n", line.c_str());
+			h.Key(InputEvent::Key::Enter);
+			h.Type(line);
+			h.Key(InputEvent::Key::Enter);
+			h.RunUntil([] { return false; }, 300);
+			chat();
+		};
+		auto center = [&](const char *window, const std::string &id, int &x, int &y) {
+			const SidlWindow *wnd = windows.Find(window);
+			const SidlWindow::Control *c = wnd ? wnd->Find(id) : nullptr;
+			if (!c || !windows.Shown(window))
+				return false;
+			Rect area = frontend.ScreenArea();
+			x = area.x + c->rect.x + c->rect.w / 2;
+			y = area.y + c->rect.y + c->rect.h / 2;
+			return true;
+		};
+		auto click = [&](const char *window, const std::string &id) {
+			int x, y;
+			if (!center(window, id, x, y)) {
+				printf("[preview] no %s in %s\n", id.c_str(), window);
+				return;
+			}
+			printf("[preview] click %s.%s\n", window, id.c_str());
+			frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+			frontend.OnEvent({InputEvent::Type::MouseDown, x, y});
+			frontend.OnEvent({InputEvent::Type::MouseUp, x, y});
+			h.RunUntil([] { return false; }, 300);
+			chat();
+		};
+		windows.Show("PetInfoWindow", true);
+		h.Key(InputEvent::Key::F11); // the debug menu out of the way
+		printf("[preview] window up: %s\n", (last = state()).c_str());
+		uint64_t start = NowMs();
+		h.RunUntil([&] { return zone.MyPetId() != 0xffff; }, seconds * 1000);
+		watch(500);
+		h.Snapshot("pet-window");
+		for (const char *line : {"/pet health", "/pet SIT DOWN", "/pet attack", "/pet kill lonab", "/pet target",
+		                         "/pet taunt off", "/pet bogus"})
+			type(line);
+		click("PetInfoWindow", "GuardButton");
+		click("PetInfoWindow", "SitButton");
+		// Held: onto the cursor, then onto hot button 1, then pressed there.
+		int x, y;
+		if (center("PetInfoWindow", "FollowButton", x, y)) {
+			frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+			frontend.OnEvent({InputEvent::Type::MouseDown, x, y});
+			h.RunUntil([] { return false; }, 900);
+			frontend.OnEvent({InputEvent::Type::MouseUp, x, y});
+			h.RunUntil([] { return false; }, 100);
+			const GameWindowState &ws = frontend.WindowState();
+			printf("[preview] held FollowButton: cursor type %d value %d '%s'\n", ws.cursor.type, ws.cursor.value, ws.cursor_text.c_str());
+			click("HotButtonWnd", "HB_Button1");
+			if (const SidlWindow *hb = windows.Find("HotButtonWnd"))
+				if (const SidlWindow::Control *b = hb->Find("HB_Button1"))
+					printf("[preview] hot button 1: '%s'\n", b->text.c_str());
+			click("HotButtonWnd", "HB_Button1");
+		}
+		h.Snapshot("pet-hotbutton");
+		int left = seconds * 1000 - static_cast<int>(NowMs() - start);
+		watch(std::max(left, 1000));
+		h.Snapshot("pet-gone");
+		return 0;
+	}
+
 	int MountsTest(FrontEnd &frontend, Harness &h, int seconds)
 	{
 		const ZoneSession &zone = frontend.Zone();
@@ -2239,6 +2338,7 @@ int main(int argc, char **argv)
 		config.luclin_models.elementals = std::string(argv[6]) == "mountshorse";
 	}
 	bool raid_test = argc == 7 && std::string(argv[6]) == "raid";
+	bool pet_test = argc == 7 && std::string(argv[6]) == "pet";
 	bool aa_test = argc == 7 && std::string(argv[6]) == "aa";
 	bool guild_test = argc == 7 && std::string(argv[6]) == "guild";
 	bool skills_test = argc == 7 && std::string(argv[6]) == "skills";
@@ -2292,6 +2392,8 @@ int main(int argc, char **argv)
 		h.RunUntil([&] { return frontend.ZoneScene() && frontend.ZoneScene()->Loaded(); }, 30000);
 		if (mounts_test)
 			return MountsTest(frontend, h, seconds);
+		if (pet_test)
+			return PetTest(frontend, h, seconds);
 		h.RunUntil([] { return false; }, 500);
 		h.Snapshot("r0-zone");
 		// Toggle UI Display (F10, ExecuteCmd 0x15): the windows and cursor gone, then back.

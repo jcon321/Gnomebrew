@@ -8,6 +8,7 @@
 #include "ini_file.h"
 #include "inventory.h"
 #include "item_display.h"
+#include "pet_window.h"
 #include "skills.h"
 #include "spell_file.h"
 #include "window_manager.h"
@@ -576,6 +577,13 @@ namespace
 	std::string HotButtonText(WindowManager &windows, const GameWindowState &state, const HotButton &button,
 		bool cursor = false)
 	{
+		// A pet window button's: "Pet <its text>" (CCursorAttachment::Activate's 10, OnProcessFrame's 8).
+		if (button.type == HotButton::PetCommand) {
+			SidlWindow *pet = windows.Find(PetWindow::Screen);
+			const char *id = PetWindow::ButtonId(button.value);
+			const SidlWindow::Control *source = pet && id ? pet->Find(id) : nullptr;
+			return source ? "Pet " + source->text : "";
+		}
 		if (button.type == HotButton::Action && button.value >= static_cast<int>(std::size(MainButtons)))
 			return button.value == 10 ? "Spells" : "Menu Button";
 		if (button.type == HotButton::Social && AltAbilityId(button.value) >= 0)
@@ -674,7 +682,7 @@ namespace
 	}
 }
 
-std::string GameWindowClick(WindowManager &windows, GameWindowState &state, const std::string &window, const std::string &control)
+WindowButton GameWindowClick(WindowManager &windows, GameWindowState &state, const std::string &window, const std::string &control)
 {
 	// The socials' label keeps the XML's text until the page first changes.
 	if (window == "ActionsWindow" && StepPage(state.social_page, control, "ASP_SocialPageLeftButton", "ASP_SocialPageRightButton")) {
@@ -702,11 +710,11 @@ std::string GameWindowClick(WindowManager &windows, GameWindowState &state, cons
 		windows.Show("SkillsWindow", true);
 	}
 	if (window != "HotButtonWnd")
-		return "";
+		return {};
 	StepPage(state.hot_button_page, control, "HB_PageLeftButton", "HB_PageRightButton");
 	int slot = HotButtonSlot(control);
 	if (slot < 0)
-		return "";
+		return {};
 	HotButton &button = PageButton(state, slot);
 	if (state.cursor.type == HotButton::Empty)
 		return DoHotButton(windows, state, slot);
@@ -717,21 +725,27 @@ std::string GameWindowClick(WindowManager &windows, GameWindowState &state, cons
 	if (was.type != HotButton::Empty)
 		Attach(windows, state, was);
 	state.hot_buttons_changed = true;
-	return "";
+	return {};
 }
 
-std::string DoHotButton(WindowManager &windows, GameWindowState &state, int slot)
+WindowButton DoHotButton(WindowManager &windows, GameWindowState &state, int slot)
 {
 	// Of what we can do so far, socials, and the Actions window buttons: the main page's, the combat
 	// page's Attack / Range (ExecuteCmd 8, DoAttack 0xb) and the combat skills and abilities
 	// (UseSkill of __DoAbilityList's or the combat list's skill), which the caller clicks.
 	if (slot < 0 || slot >= HotButtonsPerPage)
-		return "";
+		return {};
 	HotButton &button = PageButton(state, slot);
 	if (button.type == HotButton::Social && (ValidSocial(button.value) || AltAbilityId(button.value) >= 0) &&
 	    state.current_social < 0)
 		StartSocial(state, button.value);
-	return SourceButton(windows, button);
+	// A pet window button: the window's notification for it (CPetInfoWnd::GetButton).
+	if (button.type == HotButton::PetCommand) {
+		const char *id = PetWindow::ButtonId(button.value);
+		return id ? WindowButton{PetWindow::Screen, id} : WindowButton{};
+	}
+	std::string source = SourceButton(windows, button);
+	return source.empty() ? WindowButton{} : WindowButton{"ActionsWindow", source};
 }
 
 void GameWindowHold(WindowManager &windows, GameWindowState &state, const std::string &window, const std::string &control)
@@ -740,6 +754,11 @@ void GameWindowHold(WindowManager &windows, GameWindowState &state, const std::s
 		HotButton button = ActionsHotButton(state, control);
 		if (button.type != HotButton::Empty)
 			Attach(windows, state, button);
+	}
+	else if (window == PetWindow::Screen) {
+		// CPetInfoWnd::WndNotification's 0x16: the button onto the cursor (type 10).
+		if (int index = PetWindow::ButtonIndex(control))
+			Attach(windows, state, {HotButton::PetCommand, index});
 	}
 	else if (window == "HotButtonWnd" && state.cursor.type == HotButton::Empty) {
 		int slot = HotButtonSlot(control);

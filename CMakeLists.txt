@@ -133,6 +133,7 @@ add_library(eqfrontend STATIC
     frontend/mounts.cpp
     frontend/raid.cpp
     frontend/raid_window.cpp
+    frontend/pet_window.cpp
     frontend/aa_window.cpp
     frontend/guild.cpp
     frontend/ranged_attack.cpp

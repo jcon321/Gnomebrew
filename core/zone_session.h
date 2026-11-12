@@ -133,6 +133,12 @@ struct ZoneSpawn
 	uint8_t npc = 0;         // 0 player, 1 NPC, 2 player corpse, 3 NPC corpse
 	uint16_t pet_owner = 0;
 	uint8_t temporary_pet = 0; // Spawn_Struct's temporaryPet (EQPlayer+0x15c: set when it's 1)
+	// ActorInfo's PetID: its pet, 0xffff none. Set by OP_Charm (anyone's), and ours as our pet
+	// spawns (EQPlayer::EQPlayer, not a temporary one); ours cleared as it goes (~EQPlayer).
+	uint16_t pet_id = 0xffff;
+	// EQPlayer+0x120: Spawn_Struct's summoned_pc (97), SpawnAppearance 27 (msg_stat_change's 0x1b).
+	// CPetInfoWnd::Update takes a race 127 pet with it set as an animation (Animation Empathy).
+	int32_t summoned = 0;
 	int16_t hp = 0;          // percent for everything but ourselves
 	float x = 0, y = 0, z = 0;
 	float heading = 0;       // 0..512, counterclockwise from north (spawn packets send 256ths)
@@ -749,6 +755,9 @@ public:
 	bool Random(uint32_t low, uint32_t high);
 	// /assist: OP_Assist with who to assist. The zone answers with their target (Assisted).
 	bool Assist(uint16_t id);
+	// CEverQuest::IssuePetCommand: OP_PetCommands {command, target}. Commands as the zone's pets.h
+	// (1 back off .. 17 feign; 7 attack takes the target).
+	bool PetCommand(uint32_t command, uint16_t target);
 	// /camp: OP_Camp, then OP_Logout once the 30 second camp timer has run (Handle_OP_Logout expects that).
 	bool Camp();
 	// Ask to leave for another zone (a zone line): our position, then OP_ZoneChange. The answer
@@ -887,6 +896,7 @@ public:
 	bool Berserk() const { return m_berserk; }
 	ZoneSpawn &EditSelf() { return m_self; } // what the client sets of itself without telling the zone
 	uint16_t MySpawnId() const { return m_my_id; }
+	uint16_t MyPetId() const { return m_self.pet_id; } // our ActorInfo's PetID; 0xffff none
 	// CDisplay::PlayerDistance(spawn, us, 1): how far a spawn is from where we last moved, up and
 	// down too; a big negative number for a spawn that isn't there (as eqgame's -1e27).
 	float SpawnDistance(uint16_t id) const;

@@ -60,6 +60,8 @@ namespace
 			"                        \"activate 12 0\"), and print our AA ranks, points and timers as they change.\n"
 			"                        Repeatable, with --say-more: each 3 s after the one before, in order\n"
 			"  --say-more TEXT       with --zone, a /say in the --aa queue (a GM's #level 60)\n"
+			"  --pet N[:TARGET]      with --zone, OP_PetCommands N (1 back off .. 17 feign) in the --aa queue;\n"
+			"                        TARGET a spawn id\n"
 			"  --record DIR          with --zone, write each zone session's packets to DIR/<char>-<time>.eqr\n"
 			"  --replay FILE         play a recorded zone session back (no server): stay --zone seconds\n"
 			"                        (default 10), print what's around, then camp out\n"
@@ -134,7 +136,8 @@ namespace
 	}
 
 	std::string g_record_dir;
-	std::vector<std::pair<bool, std::string>> g_aa_steps; // --aa (true) and --say-more, in order
+	// --aa (1), --say-more (0) and --pet (2), in order
+	std::vector<std::pair<int, std::string>> g_aa_steps;
 	int g_click_link = -1; // --click-link
 	std::string g_replay_path;
 	std::vector<std::string> g_moves; // --move
@@ -582,10 +585,18 @@ namespace
 				zone.GroupFollow(inviter);
 			}
 			if (aa_at && NowMs() >= aa_at && next_aa < g_aa_steps.size()) {
-				const auto &[aa, text] = g_aa_steps[next_aa++];
-				if (aa) {
+				const auto &[kind, text] = g_aa_steps[next_aa++];
+				if (kind == 1) {
 					printf("[aa] sending '%s'\n", text.c_str());
 					zone.SendAltAdv(text);
+				}
+				else if (kind == 2) {
+					// N[:TARGET]: OP_PetCommands, TARGET a spawn id.
+					uint32_t command = static_cast<uint32_t>(atoi(text.c_str()));
+					size_t colon = text.find(':');
+					uint16_t target = colon != std::string::npos ? static_cast<uint16_t>(atoi(text.c_str() + colon + 1)) : 0;
+					printf("[pet] our pet %u; sending command %u target %u\n", zone.MyPetId(), command, target);
+					zone.PetCommand(command, target);
 				}
 				else
 					zone.Say(text);
@@ -654,9 +665,11 @@ int main(int argc, char **argv)
 		else if (arg == "--say")
 			say_text = next();
 		else if (arg == "--aa")
-			g_aa_steps.push_back({true, next()});
+			g_aa_steps.push_back({1, next()});
 		else if (arg == "--say-more")
-			g_aa_steps.push_back({false, next()});
+			g_aa_steps.push_back({0, next()});
+		else if (arg == "--pet")
+			g_aa_steps.push_back({2, next()});
 		else if (arg == "--click-door")
 			click_door = atoi(next().c_str());
 		else if (arg == "--cast") {

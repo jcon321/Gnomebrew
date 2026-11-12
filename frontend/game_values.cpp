@@ -10,6 +10,7 @@
 #include "zone_session.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 
 namespace
@@ -598,13 +599,12 @@ const ZoneSpawn *GameValues::Target() const
 
 const ZoneSpawn *GameValues::Pet() const
 {
-	uint16_t mine = zone ? zone->MySpawnId() : 0;
-	if (mine == 0)
+	// Our ActorInfo's PetID, by __EQP_IDArray.
+	uint16_t id = zone ? zone->MyPetId() : 0xffff;
+	if (id == 0xffff || id == 0)
 		return nullptr;
-	for (const auto &[id, spawn] : zone->Spawns())
-		if (spawn.pet_owner == mine && spawn.npc < 2)
-			return &spawn;
-	return nullptr;
+	auto it = zone->Spawns().find(id);
+	return it != zone->Spawns().end() ? &it->second : nullptr;
 }
 
 int GameValues::Gauge(int eq_type, std::string &text)
@@ -739,6 +739,22 @@ bool GameValues::Label(int eq_type, std::string &text, uint32_t &color)
 	case 29: // the target's HP percent; 0 without a living target, as eqgame prints it
 		text = std::to_string(spawn && spawn->npc < 2 ? std::clamp<int>(spawn->hp, 0, 100) : 0);
 		return true;
+	case 68: { // our pet's name (CEverQuest::stripName: up to an apostrophe)
+		text.clear();
+		if (const ZoneSpawn *pet = Pet())
+			for (char c : pet->name) {
+				if (c == '\'')
+					break;
+				if (!std::isdigit(static_cast<unsigned char>(c)) && c != '#')
+					text.push_back(c == '_' ? ' ' : c);
+			}
+		return true;
+	}
+	case 69: { // our pet's HP percent; 0 without one
+		const ZoneSpawn *pet = Pet();
+		text = std::to_string(pet ? std::clamp<int>(pet->hp, 0, 100) : 0);
+		return true;
+	}
 	default:
 		if (eq_type >= 45 && eq_type <= 59) { // the buff in that slot's spell name
 			const SpellInfo *spell = buffs ? buffs->SlotSpell(eq_type - 45) : nullptr;
