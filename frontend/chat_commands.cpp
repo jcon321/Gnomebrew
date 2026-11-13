@@ -18,7 +18,7 @@ namespace
 	{
 		None, Say, Tell, Group, Shout, Auction, Ooc, Guild, Reply, Emote, Hail, Location, Target, Camp,
 		ClearChat, ShowNames, Sit, Stand, Book, Cast, Consider, Played, Motd, Time, Afk, Anonymous, Assist,
-		Random, LootNoDrop, FastDrop, AutoSplit, Roleplay, TargetGroupBuff, Split, Yell, Consent, Corpse, HideCorpses, Social, Attack, CombatMusic, DoAbility, Filter, ServerFilter, Invite, Disband, Who, WhoTarget, Follow, MakeLeader, Lfg,
+		Random, LootNoDrop, FastDrop, AutoSplit, Roleplay, TargetGroupBuff, Split, Yell, Consent, Corpse, HideCorpses, Friends, Ignore, Social, Attack, CombatMusic, DoAbility, Filter, ServerFilter, Invite, Disband, Who, WhoTarget, Follow, MakeLeader, Lfg,
 		UserColor, GuildInvite, GuildRemove, GuildDelete, GuildStatus, GuildLeader, GuildWar, GuildPeace, GuildMotd,
 		MakeRaidLeader, RaidInvite, RaidDecline, RaidAccept, RaidDisband, SetLootType, AddRaidLooter, RemoveRaidLooter,
 		RaidSay, RaidWindow, Channel, Loot, TargetTell, CharInfo, MoveLog, StopSong, Shield, Quit, Log, Keys, Dismount,
@@ -35,11 +35,11 @@ namespace
 	// eqgame's table at 0x609afc, all 277 in order (abbreviations depend on it).
 	constexpr CommandEntry Commands[] = {
 		{"/who", 0, Command::Who}, {"/consider", 0, Command::Consider}, {"/feedback", 0, Command::None},
-		{"/consent", 0, Command::Consent}, {"/played", 0, Command::Played}, {"/ignore", 0, Command::None},
+		{"/consent", 0, Command::Consent}, {"/played", 0, Command::Played}, {"/ignore", 0, Command::Ignore},
 		{"/anonymous", 0, Command::Anonymous}, {"/afk", 0, Command::Afk}, {"/filter", 0, Command::Filter},
 		{"/assist", 0, Command::Assist}, {"/duel", 0, Command::None}, {"/decline", 0, Command::None},
 		{"/split", 0, Command::Split}, {"/autosplit", 0, Command::AutoSplit}, {"/quit", 0, Command::Quit},
-		{"/stopsong", 0, Command::StopSong}, {"/friends", 0, Command::None}, {"/shield", 0, Command::Shield},
+		{"/stopsong", 0, Command::StopSong}, {"/friends", 0, Command::Friends}, {"/shield", 0, Command::Shield},
 		{"/shownames", 0, Command::ShowNames}, {"/shownpcnames", 10, Command::None}, {"/emote", 0, Command::Emote},
 		{":", 0, Command::Emote}, {"/say", 0, Command::Say}, {"'", 0, Command::Say}, {"/tell", 0, Command::Tell},
 		{"/msg", 0, Command::Tell}, {"/send", 0, Command::Tell}, {"/ttell", 0, Command::TargetTell}, {"/gsay", 0, Command::Group},
@@ -572,8 +572,16 @@ void FrontEnd::Who(const std::string &given)
 			m_zone.WhoAll(whom, race, class_id, level_low, level_high, gm, guild);
 			return;
 		}
-		// /who all friends: OP_FriendsWho with the friends list (no /friends yet: none).
-		ChatOut(text(12308, "You have no friends, but you can add some with: /friends <name>"), 0x119);
+		// /who all friends: OP_FriendsWho with the friends list, "Friends currently on EverQuest:" and
+		// a line of dashes; none, 12308.
+		std::string friends = m_friends.FriendsWho();
+		if (friends.empty()) {
+			ChatOut(text(12308, "You have no friends, but you can add some with: /friends <name>"), 0x119);
+			return;
+		}
+		m_zone.FriendsWho(friends);
+		ChatOut(text(12307, "Friends currently on EverQuest:"), 0x119);
+		ChatOut("---------------------------", 0x119);
 		return;
 	}
 	ChatOut(guild == -3 ? text(12309, "Players Looking For Groups:") : text(12310, "Players on EverQuest:"), 0x119);
@@ -1505,6 +1513,12 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 		// /consent (@004fb39e): the rest of the line as the name, if there is any.
 		if (!args.empty())
 			m_zone.Consent(args);
+		break;
+	case Command::Friends:
+		m_friends.FriendsCommand(args); // /friends (@004f5a37)
+		break;
+	case Command::Ignore:
+		m_friends.IgnoreCommand(args); // /ignore (@004fc7d6)
 		break;
 	case Command::Corpse:
 		SummonCorpse(); // /corpse (@004f5eeb)

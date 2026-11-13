@@ -139,6 +139,7 @@ add_library(eqfrontend STATIC
     frontend/ranged_attack.cpp
     frontend/melee_attack.cpp
     frontend/death.cpp
+    frontend/friends.cpp
     frontend/ground_items.cpp
     frontend/spell_book.cpp
     frontend/spell_cast.cpp

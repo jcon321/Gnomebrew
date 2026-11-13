@@ -159,6 +159,9 @@ namespace ZoneOp
 	constexpr uint16_t DeleteCharge = 0x4147;  // {i32 slot, i32 -1, i32 -1}: a charge (or one of a stack) used up
 	// /who all: see ZoneSession::WhoAll.
 	constexpr uint16_t WhoAllRequest = 0x40f4;  // Who_All_Struct, 140 bytes
+	// The friends' names, ',' between them, and a NUL: /who all friend (CEverQuest::Who); answered
+	// as /who all is (OP_WhoAllResponse).
+	constexpr uint16_t FriendsWho = 0x41c5;
 	constexpr uint16_t WhoAllResponse = 0x200b; // WhoAllReturnStruct: a header, then variable-length WhoAllPlayers
 	// Groups: see ZoneSession::GroupInvite.
 	constexpr uint16_t GroupInvite = 0x203e;       // GroupInvite_Struct {invitee[64], inviter[64], group[64], u8 pvp}: both ways
@@ -503,6 +506,7 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::Consume, "OP_Consume"},
 	{ZoneOp::DeleteCharge, "OP_DeleteCharge"},
 	{ZoneOp::WhoAllRequest, "OP_WhoAllRequest"},
+	{ZoneOp::FriendsWho, "OP_FriendsWho"},
 	{ZoneOp::WhoAllResponse, "OP_WhoAllResponse"},
 	{ZoneOp::GroupInvite, "OP_GroupInvite"},
 	{ZoneOp::GroupInvite2, "OP_GroupInvite2"},

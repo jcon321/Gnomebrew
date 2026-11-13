@@ -512,7 +512,7 @@ public:
 			SpawnsMoved,
 			SpawnChanged, // id: stance, corpse...
 			Chat,         // chat
-			Message,      // text: system/special message; value: its color (a chat color type, Chat::*)
+			Message,      // text: system/special message; value: its color (a chat color type, Chat::*); text2: a /random's roller
 			Emote,        // text: "Name waves." (OP_Emote)
 			// OP_SpellTextMessage, OP_SpellTextMessageStringID (expanded): id the spawn whose spell
 			// it is (a fizzle, an interrupt, a regained concentration), text the line
@@ -911,6 +911,7 @@ public:
 	bool GroupInvite(const std::string &invitee, bool as_leader);
 	// /who all (CEverQuest::Who): OP_WhoAllRequest, Who_All_Struct {whom[64], race, class, level
 	// low, level high, GM, guild (-1 any, -3 LFG, -4 traders)}, -1 for each not asked about.
+	bool FriendsWho(const std::string &names); // OP_FriendsWho
 	bool WhoAll(const std::string &whom, int16_t race, int16_t class_id, int16_t level_low, int16_t level_high, int16_t gm,
 		int16_t guild);
 	bool GroupFollow(const std::string &inviter);

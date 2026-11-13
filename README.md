@@ -1912,6 +1912,11 @@ details and the nearest spawns at the top left and the radar at the top right.
   `OP_ConsentResponse` (0x40d5, {grantee[64], owner[64], u8 permission, zone[32]}):
   `msg_consent_verify` (@004e3314) says to the owner 1427 or 1428 with the grantee, to anyone else
   2080 or 2103 with the owner (not when the owner's ignored).
+- **Friends and ignore** (`frontend/friends.*`): see `frontend/friends.h` for /friends (@004f5a37),
+  /ignore (@004fc7d6), `CEverQuest_BeingIgnored`, `CFriendsWnd` and the `[Friends] Friend0..29`,
+  `[Ignored] Ignored0..29` keys (`*NULL*` empty) of `<char>_<server>.ini`
+  (`CEverQuest_ProcessLocalPCIni`). `msg_new_text` drops an ignored sender's channel message (not
+  channels 6 and 14), but takes an ignored GM in the zone off the list unsaved.
 - **/corpse** (@004f5eeb, `frontend/death.cpp`): our target if it's a corpse (Type 2 or more),
   else the last spawn but us whose `stripName` is ours, as `OP_GMSummon` (0x40c5, 152 bytes: {name,
   our name @64, zone @132, our y, x, z @136 truncated by `__ftol`}) and "Summoning %1..." (13047,

@@ -949,6 +949,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		m_train.Frame(now_ms);
 		m_raid_window.Frame(now_ms);
 		m_pet_window.Frame(now_ms);
+		m_friends.Frame();
 		m_aa_window.Frame(now_ms);
 		m_loot.Frame(now_ms);
 		m_trade.Frame(now_ms);
@@ -2240,12 +2241,33 @@ void FrontEnd::BuildZoneWindows()
 	};
 	m_abilities.Attach(m_windows, m_window_state, m_zone, m_ui.eqstr, std::move(abilities_host));
 	m_abilities.Reset();
+	// CFriendsWnd, and the friends and ignore lists (ProcessLocalPCIni) from the character's ini.
+	Friends::Host friends_host;
+	friends_host.text = [this](uint32_t id, const std::vector<std::string> &args, const std::string &fallback) {
+		return FormatEqString(m_ui.eqstr, id, fallback, args);
+	};
+	friends_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
+	friends_host.player = [this](const std::string &name) -> const ZoneSpawn * {
+		for (const auto &[id, spawn] : m_zone.Spawns())
+			if (spawn.npc == 0 && Lower(spawn.name) == Lower(name))
+				return &spawn;
+		return nullptr;
+	};
+	friends_host.save = [this] { SaveCustom(); };
+	friends_host.who = [this](const std::string &text) { Who(text); };
+	friends_host.contact = [this](const std::string &text) {
+		m_windows.Show("ChatWindow", true);
+		m_chat.Open(text);
+	};
+	m_friends.Attach(m_windows, std::move(friends_host));
+	m_friends.Load(IniFile{});
 	if (!m_hot_buttons_path.empty()) {
 		IniFile custom;
 		if (custom.Load(m_hot_buttons_path)) {
 			LoadHotButtons(custom, m_window_state);
 			LoadSocials(custom, m_window_state);
 			m_abilities.Load(custom);
+			m_friends.Load(custom);
 		}
 	}
 	// CDisplay_ActivateMainUI activates the compass if it was up; Toggle Compass (Alt+D) opens and
@@ -2454,6 +2476,7 @@ void FrontEnd::SaveCustom()
 	StoreHotButtons(ini, m_window_state);
 	StoreSocials(ini, m_window_state);
 	m_abilities.Store(ini);
+	m_friends.Store(ini);
 	if (!ini.Save(m_hot_buttons_path))
 		Log("UI: couldn't write " + m_hot_buttons_path);
 }
@@ -2709,7 +2732,7 @@ void FrontEnd::HandleWindowClicks()
 		if (m_containers.Click(click.window, click.control) || m_bank.Click(click.window, click.control) ||
 		    m_merchant.Click(click.window, click.control, click.shift, click.ctrl) || m_train.Click(click.window, click.control) ||
 		    m_raid_window.Click(click.window, click.control) || m_aa_window.Click(click.window, click.control) ||
-		    m_pet_window.Click(click.window, click.control))
+		    m_pet_window.Click(click.window, click.control) || m_friends.Click(click.window, click.control))
 			continue;
 		// CInventoryWnd::WndNotification: the Alt. Adv. button opens the AA window, or closes it.
 		if (click.window == "InventoryWindow" && click.control == "IW_AltAdvBtn") {
@@ -4432,8 +4455,10 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			break;
 		case Type::Consented: {
 			// msg_consent_verify (@004e3314): to us, given or denied the grantee; else, to them, the
-			// owner's corpse (an ignored owner's isn't said: no ignore list yet).
+			// owner's corpse, unless we ignore the owner (CEverQuest_BeingIgnored).
 			bool ours = Lower(event.text2) == Lower(m_zone.Profile().name);
+			if (!ours && m_friends.BeingIgnored(event.text2))
+				break;
 			uint32_t id = ours ? (event.value ? 1427 : 1428) : (event.value ? 2080 : 2103);
 			const char *fallback = ours ? (event.value ? "You have given %1 permission to drag your corpse."
 			                                           : "You have denied %1 permission to drag your corpse.")
@@ -4500,6 +4525,9 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			break;
 		}
 		case Type::Chat: {
+			// msg_new_text: nothing from anyone we ignore (but an ignored GM, who comes off the list).
+			if (m_friends.ChatIgnored(event.chat.sender, event.chat.channel))
+				break;
 			std::string line;
 			int type = ChatType::Default;
 			if (ChannelLine(event.chat, m_zone.Profile().name, m_zone.Profile().languages, m_ui.eqstr, line, type))
@@ -4511,7 +4539,9 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			break;
 		}
 		case Type::Message:
-			ChatOut(event.text, event.value);
+			// text2: who it's from, when that's whose we'd leave out (a /random roll's roller).
+			if (event.text2.empty() || !m_friends.BeingIgnored(event.text2))
+				ChatOut(event.text, event.value);
 			break;
 		case Type::OwnLinkdeadCleared:
 			m_spell_cast.Interrupted();
@@ -4578,9 +4608,13 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 		case Type::TradeItem:
 			m_trade.ZoneEvent(event);
 			break;
-		case Type::Emote:
-			ChatOut(event.text, ChatType::Emote);
+		case Type::Emote: {
+			// HandleWorldMessage's 0x4015: not from anyone we ignore (its first word, CopyFirstWord).
+			std::string first = event.text.substr(0, event.text.find(' '));
+			if (!m_friends.BeingIgnored(first))
+				ChatOut(event.text, ChatType::Emote);
 			break;
+		}
 		case Type::Profile:
 			m_group.ProfileArrived(); // CheckForGroupChanges
 			break;
@@ -5316,6 +5350,7 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 	SidlWindow *social_editor = m_windows.Find("SocialEditWnd");
 	SidlWindow *quantity = m_windows.Find("QuantityWnd");
 	SidlWindow *color_picker = m_windows.Find(ColorPicker::Screen);
+	SidlWindow *friends = m_windows.Find(Friends::Screen);
 	// The chat's links light under the mouse, and a click on one asks the zone about it.
 	ItemTag link;
 	if (event.IsMouse() && !m_mouse_turn && !m_mouse_pan &&
@@ -5327,15 +5362,16 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			SidlWindow *pressed_editor = pressed == "SocialEditWnd"     ? social_editor
 			                             : pressed == "QuantityWnd"       ? quantity
 			                             : pressed == ColorPicker::Screen ? color_picker
+			                             : pressed == Friends::Screen     ? friends
 			                                                              : nullptr;
 			if (pressed_editor && pressed_editor->Typing()) {
 				m_chat.Close();
-				for (SidlWindow *other : {social_editor, quantity, color_picker})
+				for (SidlWindow *other : {social_editor, quantity, color_picker, friends})
 					if (other && other != pressed_editor)
 						other->Focus("");
 			}
 			else if (pressed == "ChatWindow" && m_chat.Typing())
-				for (SidlWindow *other : {social_editor, quantity, color_picker})
+				for (SidlWindow *other : {social_editor, quantity, color_picker, friends})
 					if (other)
 						other->Focus("");
 		}
@@ -5343,6 +5379,7 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 	}
 	SidlWindow *editor = quantity && quantity->Typing()           ? quantity
 	                     : color_picker && color_picker->Typing() ? color_picker
+	                     : friends && friends->Typing()           ? friends
 	                                                              : social_editor;
 	bool editing = editor && editor->Typing();
 	switch (event.type) {
@@ -5456,6 +5493,9 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			m_sound->PlayWave(0x8a);
 		return;
 	}
+	// Into the friends window's name boxes, Enter is their Add (CFriendsWnd's notification 6).
+	if (editing && event.key == InputEvent::Key::Enter && editor == friends && m_friends.Enter())
+		return;
 	if (editing && (editor->OnKey(event) || event.key == InputEvent::Key::Enter))
 		return;
 	// ProcessKeyboardInput: with an edit box other than the chat's taking the keys, only Escape,

@@ -29,6 +29,7 @@
 
 #include "animations.h"
 #include "ini_file.h"
+#include <filesystem>
 #include "eqstr.h"
 #include "spell_file.h"
 #include "frontend.h"
@@ -621,7 +622,7 @@ namespace
 			left.key = InputEvent::Key::A;
 			left.scan = 0x1e;
 			frontend.OnEvent(left);
-			for (int i = 0; i < 4; ++i) {
+			for (int i = Friends::Slots - 4; i < Friends::Slots; ++i) {
 				h.RunUntil([] { return false; }, 500);
 				ZoneMovement boat = view->SteeredMovement();
 				printf("[preview]   boat at %.1f, %.1f heading %.0f; ", boat.y, boat.x, boat.heading);
@@ -636,6 +637,160 @@ namespace
 			h.Snapshot("b2-steered");
 		}
 		chat();
+		return 0;
+	}
+
+	// Replay "friends": /friends and /ignore typed, the lists kept in the character's ini; a tell, an
+	// emote and a /random from someone ignored left out (and heard again once they're not); /who all
+	// friend; the friends window: its lists, a name typed into the ignore page's box and Enter, a row
+	// selected and Delete, the Who and Contact buttons.
+	int FriendsTest(FrontEnd &frontend, Harness &h, const std::string &out_dir)
+	{
+		const ZoneSession &zone = frontend.Zone();
+		WindowManager &windows = frontend.Windows();
+		ZoneSession &inject_to = frontend.ZoneForTests();
+		size_t chat_seen = frontend.Chat().Lines().size();
+		auto chat = [&] {
+			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
+				printf("[preview] chat: %s\n", frontend.Chat().Lines()[chat_seen].text.c_str());
+		};
+		auto run = [&](int ms) {
+			h.RunUntil([] { return false; }, ms);
+			chat();
+		};
+		auto type = [&](const std::string &line) {
+			printf("[preview] typing %s\n", line.c_str());
+			h.Key(InputEvent::Key::Enter);
+			h.Type(line);
+			h.Key(InputEvent::Key::Enter);
+			run(300);
+		};
+		auto from_somebody = [&](const char *what) {
+			std::string me = zone.Profile().name, who = "Somebody";
+			if (std::string(what) == "tell") {
+				std::string text = "are you there?";
+				std::vector<uint8_t> body(136 + text.size() + 1, 0);
+				memcpy(&body[0], me.c_str(), me.size());
+				memcpy(&body[64], who.c_str(), who.size());
+				uint16_t channel = 7, skill = 100;
+				memcpy(&body[130], &channel, 2);
+				memcpy(&body[134], &skill, 2);
+				memcpy(&body[136], text.c_str(), text.size());
+				inject_to.InjectReplayPacket(ZoneOp::ChannelMessage, body.data(), body.size());
+			}
+			else if (std::string(what) == "emote") {
+				std::string text = who + " waves.";
+				std::vector<uint8_t> body(2 + text.size() + 1, 0);
+				memcpy(&body[2], text.c_str(), text.size());
+				inject_to.InjectReplayPacket(ZoneOp::Emote, body.data(), body.size());
+			}
+			else {
+				uint8_t body[76] = {};
+				uint32_t roll[3] = {1, 100, 42};
+				memcpy(body, roll, sizeof(roll));
+				memcpy(body + 12, who.c_str(), who.size());
+				inject_to.InjectReplayPacket(ZoneOp::RandomReply, body, sizeof(body));
+			}
+			run(300);
+		};
+		auto rows = [&](const char *list) {
+			const SidlWindow *wnd = windows.Find(Friends::Screen);
+			const SidlWindow::Control *c = wnd ? wnd->Find(list) : nullptr;
+			std::string out;
+			if (c)
+				for (const auto &row : c->rows)
+					out += (out.empty() ? "" : ", ") + (row.empty() ? std::string() : row[0]);
+			return out;
+		};
+		auto enabled = [&](const char *control) {
+			const SidlWindow *wnd = windows.Find(Friends::Screen);
+			const SidlWindow::Control *c = wnd ? wnd->Find(control) : nullptr;
+			return c ? (c->enabled ? "on" : "off") : "none";
+		};
+		auto press = [&](const char *control) {
+			const SidlWindow *wnd = windows.Find(Friends::Screen);
+			const SidlWindow::Control *c = wnd ? wnd->Find(control) : nullptr;
+			if (!c) {
+				printf("[preview] no %s\n", control);
+				return;
+			}
+			Rect area = frontend.ScreenArea();
+			int x = area.x + c->rect.x + c->rect.w / 2, y = area.y + c->rect.y + std::min(c->rect.h / 2, 30);
+			printf("[preview] click %s\n", control);
+			frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+			frontend.OnEvent({InputEvent::Type::MouseDown, x, y});
+			frontend.OnEvent({InputEvent::Type::MouseUp, x, y});
+			run(300);
+		};
+		auto state = [&] {
+			printf("[preview] window: friends [%s], ignored [%s]; Add %s, Delete %s, IgnoreAdd %s, IgnoreDelete %s\n",
+				rows("FriendsList").c_str(), rows("IgnoreList").c_str(), enabled("AddButton"), enabled("DeleteButton"),
+				enabled("IgnoreAddButton"), enabled("IgnoreDeleteButton"));
+		};
+		h.Key(InputEvent::Key::F11); // the debug menu out of the way
+		run(500);
+		for (const char *line : {"/ignore", "/ignore Somebody", "/ignore Someone_Else", "/ignore"})
+			type(line);
+		for (const char *what : {"tell", "emote", "random"})
+			from_somebody(what);
+		for (const char *line : {"/friends", "/friends Bob", "/friends Alice", "/friends ThisNameIsTooLong", "/friends BOB",
+		                         "/friends", "/who all friend"})
+			type(line);
+		// The window.
+		windows.Show(Friends::Screen, true);
+		windows.Raise(Friends::Screen);
+		run(300);
+		state();
+		h.Snapshot("friends-window");
+		if (SidlWindow *wnd = windows.Find(Friends::Screen))
+			if (SidlWindow::Control *tabs = wnd->Find("Subwindows"))
+				wnd->SelectTab(*tabs, 1);
+		press("IgnoreNameInput");
+		h.Type("Troll");
+		run(200);
+		state();
+		h.Key(InputEvent::Key::Enter);
+		run(300);
+		state();
+		h.Snapshot("friends-ignore-page");
+		// Somebody's row, then Delete: off the list, heard again.
+		if (SidlWindow *wnd = windows.Find(Friends::Screen))
+			if (SidlWindow::Control *list = wnd->Find("IgnoreList")) {
+				Rect row = wnd->ListRowRect(*list, static_cast<int>(list->rows.size()) - 1); // Somebody's, the last slot
+				Rect area = frontend.ScreenArea();
+				int x = area.x + row.x + row.w / 2, y = area.y + row.y + row.h / 2;
+				printf("[preview] click IgnoreList's last row at %d,%d (list %d,%d %dx%d, area %d,%d)\n", x, y, list->rect.x,
+					list->rect.y, list->rect.w, list->rect.h, area.x, area.y);
+				frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+				frontend.OnEvent({InputEvent::Type::MouseDown, x, y});
+				frontend.OnEvent({InputEvent::Type::MouseUp, x, y});
+				run(300);
+				printf("[preview] selected row %d\n", list->selected_row);
+				state();
+			}
+		press("IgnoreDeleteButton");
+		state();
+		from_somebody("tell");
+		if (SidlWindow *wnd = windows.Find(Friends::Screen))
+			if (SidlWindow::Control *tabs = wnd->Find("Subwindows"))
+				wnd->SelectTab(*tabs, 0);
+		if (SidlWindow *wnd = windows.Find(Friends::Screen))
+			if (SidlWindow::Control *list = wnd->Find("FriendsList"))
+				list->selected_row = 0;
+		press("WhoButton");
+		press("ContactButton");
+		printf("[preview] chat line typing: %d\n", frontend.Chat().Typing());
+		// The character's ini.
+		IniFile ini;
+		std::string path;
+		for (const auto &entry : std::filesystem::directory_iterator(out_dir))
+			if (entry.path().extension() == ".ini" && entry.path().filename().string().rfind("UI_", 0) != 0)
+				path = entry.path().string();
+		if (ini.Load(path))
+			for (int i = Friends::Slots - 4; i < Friends::Slots; ++i)
+				printf("[preview] %s: Friend%d=%s Ignored%d=%s\n", std::filesystem::path(path).filename().string().c_str(), i,
+					ini.Get("Friends", "Friend" + std::to_string(i)).c_str(), i,
+					ini.Get("Ignored", "Ignored" + std::to_string(i)).c_str());
 		return 0;
 	}
 
@@ -2614,6 +2769,7 @@ int main(int argc, char **argv)
 	bool raid_test = argc == 7 && std::string(argv[6]) == "raid";
 	bool pet_test = argc == 7 && std::string(argv[6]) == "pet";
 	bool death_test = argc == 7 && (std::string(argv[6]) == "death" || std::string(argv[6]) == "rez");
+	bool friends_test = argc == 7 && std::string(argv[6]) == "friends";
 	bool boats_test = argc == 7 && std::string(argv[6]) == "boats";
 	bool aa_test = argc == 7 && std::string(argv[6]) == "aa";
 	bool guild_test = argc == 7 && std::string(argv[6]) == "guild";
@@ -2672,6 +2828,8 @@ int main(int argc, char **argv)
 			return PetTest(frontend, h, seconds);
 		if (death_test)
 			return DeathTest(frontend, h, seconds, std::string(argv[6]) == "rez");
+		if (friends_test)
+			return FriendsTest(frontend, h, argv[2]);
 		if (boats_test)
 			return BoatsTest(frontend, h, seconds);
 		h.RunUntil([] { return false; }, 500);
@@ -2958,7 +3116,7 @@ int main(int argc, char **argv)
 		h.Snapshot("w1-inventory");
 		if (where("InventoryWindow")) {
 			SidlWindow *inventory = windows.Find("InventoryWindow");
-			for (int i = 0; i < 4; ++i)
+			for (int i = Friends::Slots - 4; i < Friends::Slots; ++i)
 				if (const SidlWindow::Control *money = inventory->Find("IW_Money" + std::to_string(i)))
 					printf("[preview] IW_Money%d: %s\n", i, money->text.c_str());
 			{

@@ -1065,6 +1065,13 @@ bool ZoneSession::GroupInvite(const std::string &invitee, bool as_leader)
 		std::string(as_leader ? "OP_GroupInvite2 " : "OP_GroupInvite ") + invitee);
 }
 
+bool ZoneSession::FriendsWho(const std::string &names)
+{
+	if (m_state != State::InZone || names.empty())
+		return false;
+	return Send(ZoneOp::FriendsWho, names.c_str(), names.size() + 1, "OP_FriendsWho " + names);
+}
+
 bool ZoneSession::WhoAll(const std::string &whom, int16_t race, int16_t class_id, int16_t level_low, int16_t level_high,
 	int16_t gm, int16_t guild)
 {
@@ -3322,8 +3329,8 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		break;
 	}
 	case ZoneOp::RandomReply: {
-		// HandleWorldMessage's 0x4016: who rolled and what (eqstr 1086, 1087), in color 0x11f.
-		// eqgame leaves out the rolls of anyone we ignore (CEverQuest_BeingIgnored; no ignore list yet).
+		// HandleWorldMessage's 0x4016: who rolled and what (eqstr 1086, 1087), in color 0x11f; text2
+		// the roller, whose rolls the front end leaves out if we ignore them (CEverQuest_BeingIgnored).
 		if (data.size() < 12)
 			break;
 		std::string name = CString(data, 12, 64);
@@ -3331,6 +3338,7 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		            result = std::to_string(Read<uint32_t>(data, 8));
 		Event e(Event::Type::Message);
 		e.value = 0x11f;
+		e.text2 = name;
 		e.text = m_eqstr ? m_eqstr->Format(1086, {name}) : "**A Magic Die is rolled by " + name + ".";
 		events.push_back(e);
 		e.text = m_eqstr ? m_eqstr->Format(1087, {low, high, result})

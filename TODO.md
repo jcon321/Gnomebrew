@@ -558,10 +558,10 @@ no rules of its own.
       Permanent Illusion in a decaying buff's value (`Buffs::Value` passes no rank);
     - not checked live: the PoP pages trainable (61 and up with the Planes of Power), a GM's "(ID#n)".
 29. **Friends, ignore, inspect and notes.**
-    - The friends window opens empty: `CFriendsWnd` (@0041c285: `UpdateFriendsList`,
-      `UpdateIgnoreList`, `AddFriend`, `AddIgnore`), /friends and /ignore, `__FriendsList` and
-      `__IgnoreList` kept in the character's ini, and `CEverQuest_BeingIgnored` leaving out tells,
-      says and /random rolls from the ignored (`zone_session.cpp`'s rolls note it).
+    - Friends and ignore: done (`frontend/friends.*`): `CFriendsWnd`, /friends, /ignore, /who all
+      friend (OP_FriendsWho), `[Friends]` and `[Ignored]` in the character's ini, and
+      `CEverQuest_BeingIgnored` on channel messages, emotes, /random rolls and /consent's answer.
+      Still to do: msg_duel's ignore check (no duels yet) and 0x4243's (EQMacEmu never sends it).
     - Inspecting: /inspect and a click with the inspect mode (`CEverQuest_doInspect` @0054390e,
       `OP_InspectRequest`), the request from another (`msg_req_inspect` @004e769d) and the answer
       (`msg_inspect` @00420efe) in the inspect window (`CInspectWnd` @00420e01:
@@ -590,7 +590,6 @@ no rules of its own.
     (@004f5eeb, `OP_GMSummon`) and /hidecorpses (@004fb5eb). Corpse notes need nothing: TAKP's
     eqgame.dll hands every `OP_LootItemPacket` item to `msg_send_corpse_eq_equip`. Checked live
     against EQMacEmu and through the replay (`frontend_preview ... rez`). Still to do:
-    - `msg_consent_verify` leaving out an ignored owner's answer (`CEverQuest_BeingIgnored`, under 29).
     - `OP_CorpseDrag` from the zone (0x4114: "%1 has permission to drag corpse %2.", eqstr 1405);
       EQMacEmu never sends it.
 32. **Duels.** /duel (@004fca55, `OP_RequestDuel`), the challenge's question and /decline (`msg_duel`
