@@ -3251,8 +3251,16 @@ int FrontEnd::TakeFallDamage(float fall)
 		damage = 0;
 	if (damage <= 0 || m_dead)
 		return 0;
-	// ApplyDamage (@004c0150): OP_EnvDamage and OP_Damage (type 0xfc), and ReportSuccessfulHit's
-	// line and sound here, as an incoming hit's. The HP drop is the zone's to send back.
+	// ApplyDamage (@004c0150): OP_EnvDamage; then, past -10 HP (1 for deity 20000), our death
+	// (SendDeathMessage, skill 0xfc, the damage) in place of OP_Damage (type 0xfc) and
+	// ReportSuccessfulHit's line and sound here, as an incoming hit's. The HP drop is the zone's to
+	// send back.
+	int least = me.deity != 20000 ? -10 : 1;
+	if (m_game_values.CurHp() - damage <= least) {
+		m_zone.ReportEnvDamage(0xfc, damage, false);
+		SendDeathMessage(0, -1, 0xfc, damage);
+		return damage;
+	}
 	m_zone.ReportEnvDamage(0xfc, damage);
 	ZoneCast hit;
 	hit.target = m_zone.MySpawnId();
@@ -3566,6 +3574,39 @@ void FrontEnd::UpdateDeath(uint64_t now_ms)
 		ChatOut(EqString(539, "Returning to home point, please wait..."), ChatType::Red);
 		m_death_ms = 1;
 	}
+}
+
+void FrontEnd::ReportDeath(const ZoneSession::Event &event)
+{
+	// CEverQuest::ReportDeath: whoever it was with goes (the trade, the merchant, the bank),
+	// our target with auto attack, then the killing blow and the death are told.
+	uint16_t victim = event.cast.target;
+	if (m_trade.Active() && m_trade.Target() == victim)
+		m_trade.Deactivate();
+	if (victim == m_merchant.Merchant())
+		m_merchant.Deactivate();
+	if (victim == m_bank.Banker())
+		m_bank.Deactivate(false);
+	if (victim != 0 && victim == m_train.Guildmaster()) // CEverQuest_LeaveGuildMaster
+		m_train.Deactivate();
+	if (victim == m_game_values.target) {
+		SetTarget(0);
+		SetAutoAttack(false);
+	}
+	if (victim == m_zone.MySpawnId())
+		IDied();
+	Combat::Report report = m_combat.Died(event, m_zone, m_game_values.target, m_game_values.CurHp());
+	if (event.cast.type == 231) {
+		std::vector<SpellCasting::Line> lines;
+		std::vector<SpellCasting::Animation> animations;
+		SpellCasting(m_ui.spells, m_ui.eqstr, &m_filters, GroupSpawns()).DeathBlow(event.cast, report.told, m_zone, lines, animations);
+		for (const SpellCasting::Line &line : lines)
+			ChatOut(line.text, line.type);
+	}
+	ApplyCombat(report);
+	// EQPlayer::IDied, after the death's told: another spawn becomes its corpse (ours is IDied()).
+	if (victim != m_zone.MySpawnId())
+		m_zone.BecomeCorpse(victim);
 }
 
 bool FrontEnd::CanSee(uint16_t spawn) const
@@ -4620,35 +4661,9 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 					m_zone_view->StartSpellEffect(effect);
 			break;
 		}
-		case Type::Died: {
-			// CEverQuest::ReportDeath: whoever it was with goes (the trade, the merchant, the bank),
-			// our target with auto attack, then the killing blow and the death are told.
-			uint16_t victim = event.cast.target;
-			if (m_trade.Active() && m_trade.Target() == victim)
-				m_trade.Deactivate();
-			if (victim == m_merchant.Merchant())
-				m_merchant.Deactivate();
-			if (victim == m_bank.Banker())
-				m_bank.Deactivate(false);
-			if (victim != 0 && victim == m_train.Guildmaster()) // CEverQuest_LeaveGuildMaster
-				m_train.Deactivate();
-			if (victim == m_game_values.target) {
-				SetTarget(0);
-				SetAutoAttack(false);
-			}
-			if (victim == m_zone.MySpawnId())
-				IDied();
-			Combat::Report report = m_combat.Died(event, m_zone, m_game_values.target, m_game_values.CurHp());
-			if (event.cast.type == 231) {
-				std::vector<SpellCasting::Line> lines;
-				std::vector<SpellCasting::Animation> animations;
-				SpellCasting(m_ui.spells, m_ui.eqstr, &m_filters, GroupSpawns()).DeathBlow(event.cast, report.told, m_zone, lines, animations);
-				for (const SpellCasting::Line &line : lines)
-					ChatOut(line.text, line.type);
-			}
-			ApplyCombat(report);
+		case Type::Died:
+			ReportDeath(event);
 			break;
-		}
 		case Type::OwnAnimation:
 			// The zone's swing of ours (Mob::DoAnim reaches us too).
 			if (m_zone_view)
@@ -4698,6 +4713,8 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			break;
 		case Type::SpawnAdded:
 			m_mounts.SpawnAdded(event.id); // EQPlayer::EQPlayer's MakeRiderMountUp
+			if (auto it = m_zone.Spawns().find(event.id); it != m_zone.Spawns().end())
+				m_group.SpawnAdded(it->second);
 			break;
 		case Type::SpawnChanged: {
 			// msg_stat_change's ChangeStance of another: lying down gets them off their horse.

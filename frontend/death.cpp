@@ -93,6 +93,7 @@ void FrontEnd::IDied()
 	// window closed (CLootWnd::DoorLoading_(1)).
 	SetAutoAttack(false);
 	m_knocked_out = false;
+	m_group.ReleaseSpawns();
 	if (m_zone_view)
 		m_zone_view->SetOverheadView();
 	if (m_zone.Self().stance != 102)
@@ -152,14 +153,28 @@ void FrontEnd::KnockoutPassageOfTime()
 		// KnockedOut: lying down (ChangeStance 0x73); stunned, that's all for now; else StunnedState
 		// 3, the overhead view and "You have been knocked unconscious!" (12877).
 		ChangeStance(115);
-		if (m_stunned)
-			return;
-		m_knocked_out = true;
-		m_autorun = false;
-		if (m_zone_view)
-			m_zone_view->SetOverheadView();
-		ChatOut(EqString(12877, "You have been knocked unconscious!"), ChatType::Yellow);
+		if (!m_stunned) {
+			m_knocked_out = true;
+			m_autorun = false;
+			if (m_zone_view)
+				m_zone_view->SetOverheadView();
+			ChatOut(EqString(12877, "You have been knocked unconscious!"), ChatType::Yellow);
+		}
 	}
+	// Further on: under -10 HP (under 1 for deity 20000) with no DeathTimer, our own death, from no
+	// one we know (the PC whose DoT ticked us down eqgame takes from its own ticks, which aren't
+	// ours), no spell, skill 0x17, damage 0. The zone sends the dying no OP_Death when a client or
+	// the victim killed it, or a DoT did (GenerateDeathPackets' skipsender).
+	int least = m_zone.Profile().deity != 20000 ? -10 : 1;
+	if (hp < least && m_death_ms == 0)
+		SendDeathMessage(0, -1, 0x17, 0);
+}
+
+void FrontEnd::SendDeathMessage(uint16_t killer, int16_t spell, uint8_t skill, int32_t damage)
+{
+	if (m_dead)
+		return; // StunnedState 4
+	ReportDeath(m_zone.SendDeath(killer, spell, skill, damage));
 }
 
 void FrontEnd::AskResurrect(const std::vector<uint8_t> &request)

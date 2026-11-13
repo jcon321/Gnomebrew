@@ -358,7 +358,7 @@ void Combat::ReportHit(const ZoneCast &hit, bool told, const ZoneSession &zone, 
 				std::string points = damage < 2 ? Text(12161, "for %1 point of damage.", {std::to_string(damage)})
 				                                 : Text(12160, "for %1 points of damage.", {std::to_string(damage)});
 				text = Text(12162, "%1 %2 %3 %4", {attacker_name, verb, victim_name, points});
-				if (attacker && attacker == victim && (victim->npc == 1 || victim->npc == 3)) // an NPC's on itself
+				if (attacker && attacker == victim && victim->npc == 1) // an NPC's on itself
 					told = false;
 			}
 		}
@@ -446,7 +446,7 @@ Combat::Report Combat::Died(const ZoneSession::Event &died, const ZoneSession &z
 		text = Text(12113, "You have slain %1!", {victim_name});
 	else if (!killer)
 		text = Text(12115, "%1 has been slain by an unseen hand!", {victim_name});
-	else if (killer == victim && (victim->npc == 1 || victim->npc == 3))
+	else if (killer == victim && victim->npc == 1)
 		return report; // an NPC that killed itself
 	else
 		text = Text(12114, "%1 has been slain by %2!", {victim_name, StripName(*killer)});

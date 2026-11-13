@@ -1280,7 +1280,10 @@ the rejection).
   looking 70° down. `CDisplay_SwitchToDefaultCameraMode` puts back `DAT_0063b8ec`, the view F9
   (`CDisplay_ToggleView`, 0..4) last chose; F9 from view 1 goes on to 2, and the wheel
   (`HandleMouseWheelZoom`) leaves view 1 alone. Ours (`ZoneView::CameraView::Overhead`) has the
-  overhead, first person and chase views.
+  overhead, first person and chase views. First person (view 0) puts the camera at the head bone
+  (`ActorInfo::DagHeadPoint`) only for a combat swing (animations 1..11), riding (`Mount`),
+  sitting (P02, 0x21) or kneeling (P05, 0x24); otherwise, dead (D05) included, at
+  `Position.z - ModelHeightOffset + CameraHeightOffset`, the standing eye.
 - **Moving** (`frontend/player_movement.cpp`), ported from `CEverQuest::ProcessControls` (@0053f337) and
   `process_physics` (@0054d964): Up/W runs (or walks: Ctrl+R, `/walk`, `/run`) at the zone entry's
   `runspeed` (0.7) or `walkspeed` (0.46), Down/S backs up at the walk speed, Left/A and Right/D turn,
@@ -2062,15 +2065,37 @@ details and the nearest spawns at the top left and the radar at the top right.
   hit's `force` (EQMacEmu: 0.05 to 2.5 by the attacker's size, 0 for none) along its `heading`
   (512ths; the X push by its sine, Y by its cosine) and up by its `pitch`'s sine, onto our motion.
 - **Our death** (`EQPlayer::IDied` @0050b637, `CEverQuest_ReportDeath_ClearOutRentables` @0052afd1,
-  `frontend/death.cpp`): auto attack off, StunnedState 4, `pinstGroup` let go, the overhead view
+  `frontend/death.cpp`): auto attack off, StunnedState 4, `pinstGroup` let go (the group window's
+  members have no spawn until one comes in, `msg_eq_netplayer`, the group changes, `msg_wldgroup`,
+  or the next zone's `CheckForGroupChanges`: ours `Group::ReleaseSpawns`), the overhead view
   (1), and (unless we died in stance 102) `ClearOutRentables` (@004ef891) on the 30 (the cursor, 21 worn, 8 general): a bag's
   items with NoRent 0 go, and a NoRent 0 bag or item goes with all in it; then the loot window's
   `DoorLoading_(1)` (OP_EndLootRequest and `fn_releaseloot`). We fall (`D05`, held), the death
   music plays (track 8), and nothing moves us (stance 120: `ProcessControls` takes the movement
   keys only standing or crouching) until the zone moves us on. `IDied`'s `KnockedOut` does nothing
-  more with StunnedState already 4. EQMacEmu sends the victim `OP_Death` only when an NPC killed
-  it (`Mob::GenerateDeathPackets`' skipsender for Killed_Client, Killed_Self and a buff's tick):
-  otherwise eqgame finds its own death at -10 HP (`SendDeathMessage`), which isn't ours.
+  more with StunnedState already 4. ReportDeath tells the death first and `IDied` comes after, so
+  the killer's and victim's Types are still the living ones while the lines are built
+  (`ReportDeath`'s "an NPC that killed itself" is Type 1); `IDied` then makes any spawn Type 2,
+  whatever it was, and names it its corpse (ours: `ZoneSession::BecomeCorpse` after
+  `FrontEnd::ReportDeath`). A spawn's Type is the spawn struct's NPC byte as it comes
+  (`EQPlayer::EQPlayer`); EQMacEmu sends a player's corpse as 3 and an NPC's as 2
+  (`Corpse::FillSpawnStruct`), so the chat's `%r` (`DoPercentConvert`: "Corpse" for 2,
+  "NPC" for 1 and 3) calls a player's corpse an NPC.
+- **Our own death** (`EQ_Character::SendDeathMessage` @004bfcfc, `frontend/death.cpp`): EQMacEmu
+  sends the victim `OP_Death` only when an NPC killed it (`Mob::GenerateDeathPackets`' skipsender
+  for Killed_Client, Killed_Self and a buff's tick); otherwise the client finds its own death.
+  `DoPassageOfTime`, after its knocked-out check: under -10 HP (under 1 for deity 20000) with no
+  DeathTimer; `ApplyDamage` (a fall): -10 or under after the damage, in place of `OP_Damage`.
+  `SendDeathMessage`, unless StunnedState is 4 already: StunnedState 4, `OP_Death` (0x404a,
+  Death_Struct 20 bytes: {u16 us, u16 killer, u16 corpse (left from the stack; ours 0), u8 our
+  level, u8, i16 spell @8, u8 attack skill @10, u8, i32 damage @12, u8 is_PC @16}) and
+  `ReportDeath` of it here. `DoPassageOfTime`'s is skill 0x17, spell 0xffff, damage 0 and the
+  killer only when its own 6 s tick found a player's DoT on us (ours none); a fall's is skill
+  0xfc with the damage. EQMacEmu's `Handle_OP_Death` runs `Client::Death` with it (Killed_Client,
+  or Killed_ENV for a skill of 246 or more), which does nothing to a client it killed already.
+  When an NPC kills us, the zone's HP update below -10 comes just before its `OP_Death` in the
+  same burst, and both are handled before the frame's check. #kill on ourselves sends us nothing
+  at all, so neither eqgame nor we die of it.
 - **Knocked out** (`EQ_Character::DoPassageOfTime` for us alive, `frontend/death.cpp`): at 0 HP or
   under with StunnedState under 3, `EQPlayer::KnockedOut` (@0050b5a7): `ChangeStance(0x73)`, and
   unless stunned already StunnedState 3, the overhead view and "You have been knocked

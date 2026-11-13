@@ -409,8 +409,13 @@ no rules of its own.
     (EQ_3DView_MouseUp). DoPassageOfTime's KnockedOut at 0 HP or under (lying down, StunnedState
     3, the overhead view, eqstr 12877) and GetConscious over 0 (12876, the default view, up as from
     kneeling); OP_GMKill naming us ("struck down by the gods", 1391: wave 0x8f, HP -10000, the
-    DeathTimer back to 0). Checked live (an NPC's Cazic Touch) and through its replay
-    (`frontend_preview ... death`).
+    DeathTimer back to 0). Our own death (SendDeathMessage, `ZoneSession::SendDeath`): under -10
+    HP with no DeathTimer (DoPassageOfTime: skill 0x17, no killer), or a fall that takes us there
+    (ApplyDamage: skill 0xfc, in place of OP_Damage), OP_Death to the zone and ReportDeath here.
+    A spawn becomes its corpse (Type 2, `ZoneSession::BecomeCorpse`) after its death is told, as
+    IDied does; our death lets go of the group's spawns until they come in again, the group
+    changes or the next zone (`Group::ReleaseSpawns`). Checked live (an NPC's Cazic Touch) and
+    through its replay (`frontend_preview ... death`).
     Our own swings (`frontend/melee_attack.cpp`): ProcessControls swings each hand while auto
     attack's on and we have control, on `__RangeAttackReady` and DAT_007cd845 (DoPassageOfTime
     readies the secondary by its weapon, hand to hand empty, else the primary's delay), through
@@ -468,18 +473,14 @@ no rules of its own.
       (`compute_tohit`: level * 2 / 5 while Drunkness / 2 is 20 or under) count. Past that,
       compute_tohit takes a value of the drunkenness the decompile loses (an `__ftol`), not ours;
     - the blood of our crushing, slashing, piercing, backstab and bash hits (SpurtBloodOnDag);
-    - ReportDeath's duel ending (eqstr 12100, 12101), a group member's HP (-11 on their death), the
-      tracking window; F9 to first person while dead keeps our standing eye height;
-    - our own death (`EQ_Character::SendDeathMessage` @004bfcfc, from DoPassageOfTime and
-      ApplyDamage at -10 HP or under: ReportDeath here and OP_Death to the zone). The zone sends
-      the dying client no OP_Death when a client or the victim killed it (`GenerateDeathPackets`'
-      skipsender for Killed_Client, Killed_Self and a buff's tick), so #kill on ourselves, a PvP
-      kill or a DoT leaves us standing at negative HP, knocked out;
-    - ReportDeath_ClearOutRentables also lets go of the group's spawns (`pinstGroup`, relinked by
-      CheckForGroupChanges in the next zone): ours keep them, so the gauges stay for the 2 s;
-    - `ZoneSpawn::npc`'s comment (2 a player's corpse, 3 an NPC's) is the reverse of what EQMacEmu
-      sends (`Corpse::FillSpawnStruct`: 3 a player's, 2 an NPC's), and `frontend/combat.cpp`'s
-      `npc == 3` "an NPC's" tests follow the comment; which eqgame Type is which isn't checked;
+    - ReportDeath's duel ending (eqstr 12100, 12101), a group member's HP (-11 on their death: their
+      gauge stays on their corpse, where ours finds no player of that name), the tracking window;
+    - SendDeathMessage's killer from DoPassageOfTime: the player whose DoT ticked us under
+      (`WhoPutThisEffectOnMe`) comes from eqgame's own 6 s ticks of our HP (regen, DoTs, the
+      bleeding of the knocked out: "You are bleeding to death!", 12685), which aren't ours; we
+      send no killer;
+    - `get_world_visible_actor_list`'s pet test (`FrontEnd`'s nearest-NPC list) takes an owner of
+      Type 1 or 3 as an NPC's, from before corpses were Type 2; not checked against eqgame;
     - MoveToZone_2's other refusals: its test before the logout reads `StunnedState == 4 ||
       param_4 || strlen(@00546057)(Name)`, which can't be right for a zone line (every refusal
       would log out); ours logs out only going home dead;
@@ -500,9 +501,8 @@ no rules of its own.
       none of it); and `SavePC`'s other callers: `MoveToZone_2`'s `SavePCForce` and OP_DeleteSpawn
       as we zone, `msg_stat_change`'s anonymous state for us, the bind in `ProcessConfirmation` and
       `HitBySpell`.
-    - ApplyDamage's own half for a fall: the HP taken here before the zone's update, divine aura,
-      and OP_Death (`SendDeathMessage`) in place of OP_Damage when it kills (the zone's OP_Damage
-      handler kills us too). (Its stun, and Stalwart
+    - ApplyDamage's own half for a fall: the HP taken here before the zone's update and divine
+      aura. (Its stun, and Stalwart
       Endurance against it, need an attacker, which no caller passes.)
     - The other environment damage the client reports: lava and the rest (`ProcessEnvironment`
       @004c0e32) and drowning (`ProcessAirSupply`, with the breath window, 34).

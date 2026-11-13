@@ -464,11 +464,17 @@ private:
 	// CEverQuest::ReportDeath of us: CEverQuest_ReportDeath_ClearOutRentables (StunnedState 4, the
 	// overhead view, our temporary items gone), the loot window closed (DoorLoading_), then IDied.
 	void IDied();
+	// CEverQuest::ReportDeath (@00528e16) of a Died event, the zone's or our own.
+	void ReportDeath(const ZoneSession::Event &event);
+	// EQ_Character::SendDeathMessage (@004bfcfc): not dead already (StunnedState 4), StunnedState 4,
+	// OP_Death to the zone and ReportDeath here.
+	void SendDeathMessage(uint16_t killer, int16_t spell, uint8_t skill, int32_t damage);
 	// ClearOutRentables (@004ef891): the items we carry (the cursor, worn, general and what's in
 	// their bags) that are temporary (NoRent 0) go; a temporary bag with what's in it.
 	void ClearOutRentables();
 	// DoPassageOfTime for us alive: at 0 HP or under, EQPlayer::KnockedOut (lying down, StunnedState
-	// 3, the overhead view, "You have been knocked unconscious!"); over 0 again, GetConscious.
+	// 3, the overhead view, "You have been knocked unconscious!"); over 0 again, GetConscious; under
+	// -10 (under 1 for deity 20000) with no DeathTimer, SendDeathMessage.
 	void KnockoutPassageOfTime();
 	// msg_resurrect (@004e1f5f): the zone's question, ours only, in the confirmation dialog
 	// (category 2) for an hour unless it's already up; the answer goes back as OP_RezzAnswer.

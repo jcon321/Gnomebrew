@@ -41,6 +41,7 @@ void Group::ClearMembers()
 	for (auto &member : m_members)
 		member.clear();
 	m_leader.clear();
+	m_unlinked.fill(false);
 }
 
 void Group::DropInvitation()
@@ -79,7 +80,7 @@ bool Group::Leading() const
 const ZoneSpawn *Group::MemberSpawn(int index) const
 {
 	// EQPlayer_get_player: the player of that name in the zone.
-	if (!m_zone || index < 0 || index >= Members || m_members[index].empty())
+	if (!m_zone || index < 0 || index >= Members || m_members[index].empty() || m_unlinked[index])
 		return nullptr;
 	for (const auto &[id, spawn] : m_zone->Spawns())
 		if (spawn.npc == 0 && Same(spawn.name, m_members[index]))
@@ -109,8 +110,18 @@ bool Group::IsAGroupMember(const std::string &name) const
 	return false;
 }
 
+void Group::SpawnAdded(const ZoneSpawn &spawn)
+{
+	if (spawn.npc != 0 || m_leader.empty())
+		return;
+	for (int i = 0; i < Members; ++i)
+		if (!m_members[i].empty() && m_members[i] == spawn.name)
+			m_unlinked[i] = false;
+}
+
 void Group::ProfileArrived()
 {
+	m_unlinked.fill(false);
 	if (!m_zone)
 		return;
 	const ZoneProfile &me = m_zone->Profile();
@@ -180,6 +191,8 @@ void Group::ZoneEvent(const ZoneSession::Event &event)
 		return;
 	const ZoneProfile &me = m_zone->Profile();
 	const ZoneGroup &g = event.group;
+	if (event.type == Type::GroupUpdated)
+		m_unlinked.fill(false); // msg_wldgroup links the members it names again
 	switch (event.type) {
 	case Type::GroupInvited: {
 		// CEverQuest_doInvite.

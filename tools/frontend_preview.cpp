@@ -643,8 +643,8 @@ namespace
 	// then to translocate us): what the chat says, the camera view, our stance, HP, buff slot 0 and
 	// place as they change, each question in the confirmation dialog answered Yes. "rez" goes on to
 	// packets of its own: a sacrifice asked (No), a translocation asked with the dialog already up
-	// (No at once), our HP at 0 and back (knocked out, conscious again), OP_GMKill naming us,
-	// /hidecorpses and /corpse.
+	// (No at once), our HP at 0 and back (knocked out, conscious again), /hidecorpses and /corpse,
+	// and last OP_GMKill naming us (our own death: SendDeathMessage).
 	int DeathTest(FrontEnd &frontend, Harness &h, int seconds, bool inject)
 	{
 		const ZoneSession &zone = frontend.Zone();
@@ -760,13 +760,6 @@ namespace
 		watch(1500, false);
 		hp(500);
 		watch(2500, false);
-		// OP_GMKill naming us (no death follows from a replay).
-		uint8_t kill[129] = {};
-		memcpy(kill, zone.Profile().name.c_str(), zone.Profile().name.size());
-		inject_to.InjectReplayPacket(ZoneOp::GMKill, kill, sizeof(kill));
-		watch(1000, false);
-		hp(500);
-		watch(1500, false);
 		// The corpses: hidden, all but the group's, shown; and /corpse.
 		// An NPC in view dies, so there's a corpse not ours.
 		if (const ZoneView *view = frontend.ZoneScene())
@@ -806,6 +799,12 @@ namespace
 			type(line);
 			drawn();
 		}
+		// OP_GMKill naming us: HP -10000 with no OP_Death from the zone (as for a DoT's or a PC's
+		// kill): knocked out, then our own death (SendDeathMessage) and the way home.
+		uint8_t kill[129] = {};
+		memcpy(kill, zone.Profile().name.c_str(), zone.Profile().name.size());
+		inject_to.InjectReplayPacket(ZoneOp::GMKill, kill, sizeof(kill));
+		watch(4000, false);
 		return 0;
 	}
 

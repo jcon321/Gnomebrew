@@ -135,7 +135,10 @@ struct ZoneSpawn
 	uint8_t class_id = 0;
 	uint16_t race = 0;
 	uint8_t gender = 0;
-	uint8_t npc = 0;         // 0 player, 1 NPC, 2 player corpse, 3 NPC corpse
+	// EQPlayer's Type, the spawn's NPC byte as it comes: 0 player, 1 NPC, 2 and 3 corpses. EQMacEmu
+	// spawns a player's corpse as 3 and an NPC's as 2 (Corpse::FillSpawnStruct, against its own
+	// struct's comment); EQPlayer::IDied makes any spawn that dies here 2 (BecomeCorpse).
+	uint8_t npc = 0;
 	uint16_t pet_owner = 0;
 	uint8_t temporary_pet = 0; // Spawn_Struct's temporaryPet (EQPlayer+0x15c: set when it's 1)
 	// ActorInfo's PetID: its pet, 0xffff none. Set by OP_Charm (anyone's), and ours as our pet
@@ -565,8 +568,8 @@ public:
 			SpellAction,    // cast: OP_Action
 			Damaged,        // cast: OP_Damage
 			// cast: OP_Death (CEverQuest::ReportDeath): target the spawn, caster the killer (0 none), type
-			// the attack skill, spell and damage the killing blow's; text: the spawn's name before it
-			// became its corpse. A SpawnChanged follows for the corpse.
+			// the attack skill, spell and damage the killing blow's; text: the spawn's name. The spawn
+			// is as it was until BecomeCorpse (ReportDeath's IDied, after the death is told).
 			Died,
 			// The zone's answers to UseSkill's: OP_Bind_Wound (value its type), OP_Begging and
 			// OP_PickPocket (id the result: 0 failed, 1..4 platinum .. copper, 5 an item; value the
@@ -753,9 +756,13 @@ public:
 	// OP_Save (CEverQuest::SavePC): the profile as the zone last sent it (eqgame sends its own
 	// current copy; EQMacEmu reads none of it and saves what it has).
 	void SavePC();
-	// Our own damage from the environment (EQ_Character::ApplyDamage): OP_EnvDamage, then OP_Damage,
-	// both on us from no one, of `type` (0xfc falling), no spell.
-	void ReportEnvDamage(uint8_t type, int32_t damage);
+	// Our own damage from the environment (EQ_Character::ApplyDamage): OP_EnvDamage, then (unless
+	// it killed us: `hit` false) OP_Damage, both on us from no one, of `type` (0xfc falling), no spell.
+	void ReportEnvDamage(uint8_t type, int32_t damage, bool hit = true);
+	// EQ_Character::SendDeathMessage (@004bfcfc): our own death as OP_Death (Death_Struct: us, the
+	// killer, no corpse, our level, the spell, the attack skill, the damage, is_PC 1), and the
+	// Died event CEverQuest::ReportDeath takes here as it would the zone's.
+	Event SendDeath(uint16_t killer, int16_t spell, uint8_t skill, int32_t damage);
 	void SafeFallSuccess(); // OP_SafeFallSuccess
 	void TargetGroupBuff(uint32_t value); // OP_TGB
 	// CEverQuest_DoSplit: OP_Split, the coins off ours.
@@ -765,6 +772,8 @@ public:
 	void Shield(uint16_t id);               // OP_Shielding (/shield)
 	void Keys();                            // OP_Key (/keys)
 	void Consent(const std::string &name);  // OP_Consent
+	// EQPlayer::IDied of another spawn: Type 2 whoever it was, still, and named as its corpse.
+	void BecomeCorpse(uint16_t id);
 	// The answers to death's questions: OP_RezzAnswer (the zone's request back, action 1 yes or 0
 	// no), OP_Sacrifice ({0, our id, 1 or 0}) and OP_Translocate (complete 1 or -1).
 	void RezzAnswer(const std::vector<uint8_t> &request, bool yes);

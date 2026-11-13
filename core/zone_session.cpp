@@ -1531,7 +1531,7 @@ void ZoneSession::SavePC()
 	Send(ZoneOp::Save, m_profile_bytes.data(), m_profile_bytes.size(), "OP_Save");
 }
 
-void ZoneSession::ReportEnvDamage(uint8_t type, int32_t damage)
+void ZoneSession::ReportEnvDamage(uint8_t type, int32_t damage, bool hit_too)
 {
 	if (m_state != State::InZone)
 		return;
@@ -1545,12 +1545,36 @@ void ZoneSession::ReportEnvDamage(uint8_t type, int32_t damage)
 	int16_t no_spell = -1;
 	memcpy(env + 0x1e, &no_spell, 2);
 	Send(ZoneOp::EnvDamage, env, sizeof(env), "OP_EnvDamage " + std::to_string(type) + " " + std::to_string(damage));
+	if (!hit_too)
+		return;
 	uint8_t hit[0x18] = {};
 	memcpy(hit, &m_my_id, 2);
 	hit[4] = type;
 	memcpy(hit + 6, &no_spell, 2);
 	memcpy(hit + 8, &damage, 4);
 	Send(ZoneOp::Damage, hit, sizeof(hit), "OP_Damage " + std::to_string(type) + " " + std::to_string(damage));
+}
+
+ZoneSession::Event ZoneSession::SendDeath(uint16_t killer, int16_t spell, uint8_t skill, int32_t damage)
+{
+	uint8_t body[20] = {};
+	memcpy(body, &m_my_id, 2);
+	memcpy(body + 2, &killer, 2);
+	body[6] = m_profile.level;
+	memcpy(body + 8, &spell, 2);
+	body[10] = skill;
+	memcpy(body + 12, &damage, 4);
+	body[16] = 1;
+	if (m_state == State::InZone)
+		Send(ZoneOp::Death, body, sizeof(body), "OP_Death (ours)");
+	Event died(Event::Type::Died);
+	died.cast.target = m_my_id;
+	died.cast.caster = killer;
+	died.cast.spell = spell;
+	died.cast.type = skill;
+	died.cast.damage = damage;
+	died.text = m_self.DisplayName();
+	return died;
 }
 
 void ZoneSession::SafeFallSuccess()
@@ -1609,6 +1633,18 @@ void ZoneSession::Consent(const std::string &name)
 {
 	if (m_state == State::InZone)
 		Send(ZoneOp::Consent, name.c_str(), name.size() + 1, "OP_Consent " + name);
+}
+
+void ZoneSession::BecomeCorpse(uint16_t id)
+{
+	auto it = m_spawns.find(id);
+	if (it == m_spawns.end() || it->second.npc >= 2)
+		return; // EQPlayer::IDied: only a spawn that isn't a corpse already (Type under 2)
+	ZoneSpawn &s = it->second;
+	s.npc = 2;
+	s.speed = s.heading_speed = s.dx = s.dy = s.dz = 0;
+	if (s.name.find("_corpse") == std::string::npos)
+		s.name += "'s_corpse";
 }
 
 void ZoneSession::RezzAnswer(const std::vector<uint8_t> &request, bool yes)
@@ -3674,17 +3710,6 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		else if (id != 0 && id == m_my_id)
 			died.text = m_self.DisplayName();
 		events.push_back(died);
-		if (it != m_spawns.end()) {
-			ZoneSpawn &s = it->second;
-			s.npc = s.npc == 0 ? 2 : 3;
-			s.speed = s.heading_speed = s.dx = s.dy = s.dz = 0;
-			if (s.name.find("_corpse") == std::string::npos)
-				s.name += "'s_corpse";
-			Event e;
-			e.type = Event::Type::SpawnChanged;
-			e.id = it->first;
-			events.push_back(e);
-		}
 		break;
 	}
 	case ZoneOp::SendExpZonein:

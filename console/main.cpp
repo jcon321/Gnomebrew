@@ -465,6 +465,7 @@ namespace
 				case ZoneSession::Event::Type::Died:
 					printf("[attack] death: %s (%u) by %u, type %u, %d\n", event.text.c_str(), event.cast.target,
 						event.cast.caster, event.cast.type, event.cast.damage);
+					zone.BecomeCorpse(event.cast.target);
 					if (event.cast.target == g_attack_id) {
 						zone.SendAutoAttack(false);
 						g_attack_id = 0;
