@@ -33,11 +33,12 @@
 //     else "You do not have a horse to dismount." 13285), EQPlayer::ChangeStance (@0050be3c: no
 //     sitting on a Mount; lying down, feign death, gets off and, for us, takes the buff off),
 //     EQPlayer::Dismount2 (@00508152, from ~EQPlayer: a spawn going takes its rider off and gets
-//     off its horse) and do_change_form (an illusion; OP_Illusion isn't handled yet).
+//     off its horse) and do_change_form (OP_Illusion: off, the new form, then the horse's
+//     MakeRiderMountUp puts it back on, which MountEQPlayer may refuse the new form).
 // Riding itself (the rider on the horse's RIDER_DAG, our horse under our controls) is ZoneView's
 // (SetMounts) and PlayerMovement's (SetMounted). Not yet: MountEQPlayer onto something not a horse
-// (its DagRightPoint), MountEQPlayer's levitation (SetNoGrav on the horse), a mount following its
-// rider's visibility, and do_change_form (OP_Illusion isn't handled).
+// (its DagRightPoint), MountEQPlayer's levitation (SetNoGrav on the horse), and a mount following
+// its rider's visibility.
 
 #include <cstdint>
 #include <functional>
@@ -74,6 +75,10 @@ public:
 	// EQPlayer::MountEQPlayer, EQPlayer::Dismount.
 	void Mount(uint16_t rider, uint16_t horse);
 	void Dismount(uint16_t rider);
+	// EQPlayer::do_change_form on a rider: off its Mount before the new form, then the horse's
+	// MakeRiderMountUp after (back on, or not when MountEQPlayer won't take the new form).
+	uint16_t ChangeFormOff(uint16_t rider);
+	void ChangeFormOn(uint16_t horse);
 	// /dismount: false when we have no Mount (eqgame's 13285).
 	bool DismountCommand();
 	// EQPlayer::ChangeStance's checks: whether `stance` may go on (not sitting on a Mount); lying down

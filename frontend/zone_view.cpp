@@ -230,8 +230,14 @@ void ZoneView::PlacePlayer()
 		m_model_dirty = false;
 		m_model.reset();
 		if (m_appearance) {
-			std::string error;
-			m_model = m_models.Build(*m_appearance, error);
+			std::string error, object;
+			if (render::IsObjectRace(m_appearance->race)) {
+				// From our Position (the server's place: our center over the feet).
+				render::Vec3 at = m_placed ? MyFeet() + render::Vec3{0, 0, m_height / 5 * 3.125f}
+				                           : render::Vec3{m_server_position.y, m_server_position.x, m_server_position.z};
+				NearestActorTagAt(at, m_appearance->race == 143 ? 8 : 7, m_appearance->race == 142, object);
+			}
+			m_model = BuildModel(*m_appearance, object, error);
 			if (!m_model)
 				fprintf(stderr, "[zone view] %s\n", error.c_str());
 		}
@@ -256,10 +262,19 @@ void ZoneView::PlacePlayer()
 		m_distance = height * 2 + 6;
 	m_movement.SetRace(m_appearance ? m_appearance->race : 1);
 	m_movement.Place(m_feet, m_heading, height, m_walk_speed, m_run_speed, m_info.gravity);
-	m_movement.SetEyeHeight(m_model ? (m_model->HeadZ() - m_model->MinZ()) * 1.05f : height * 0.9f);
+	m_movement.SetEyeHeight(MyEyeHeight());
 	m_placed = true;
 	if (m_horse)
 		ConfigureHorse(); // put somewhere else on it
+}
+
+float ZoneView::MyEyeHeight() const
+{
+	// Our eye over our feet: the model's head; for races 142 and 143 SetHeights' CameraHeightOffset 6
+	// (the object's model is no guide).
+	if (m_appearance && render::IsObjectRace(m_appearance->race))
+		return 6;
+	return m_model ? (m_model->HeadZ() - m_model->MinZ()) * 1.05f : m_height * 0.9f;
 }
 
 void ZoneView::ConfigureHorse()
@@ -268,7 +283,7 @@ void ZoneView::ConfigureHorse()
 	float walk = it != m_actors.end() ? it->second.walk_speed : 0, run = it != m_actors.end() ? it->second.run_speed : 0;
 	m_movement.SetRace(216);
 	m_movement.Place(m_feet, m_heading, m_height, walk, run, m_info.gravity);
-	m_movement.SetEyeHeight(m_model ? (m_model->HeadZ() - m_model->MinZ()) * 1.05f : m_height * 0.9f);
+	m_movement.SetEyeHeight(MyEyeHeight());
 	m_movement.SetMounted(true);
 }
 
@@ -317,7 +332,7 @@ void ZoneView::StopRiding()
 	m_movement.SetMounted(false);
 	m_movement.SetRace(m_appearance ? m_appearance->race : 1);
 	m_movement.Place(m_feet, m_heading, m_height, m_walk_speed, m_run_speed, m_info.gravity);
-	m_movement.SetEyeHeight(m_model ? (m_model->HeadZ() - m_model->MinZ()) * 1.05f : m_height * 0.9f);
+	m_movement.SetEyeHeight(MyEyeHeight());
 	m_server_position = {m_feet.y, m_feet.x, m_feet.z + m_height / 5 * 3.125f};
 }
 
@@ -1637,7 +1652,8 @@ std::string ZoneView::SpawnModelKey(const ZoneSpawn &spawn)
 	return key;
 }
 
-std::shared_ptr<render::CharacterModel> ZoneView::SpawnModel(const ZoneSpawn &spawn, const std::string &key)
+std::shared_ptr<render::CharacterModel> ZoneView::SpawnModel(const ZoneSpawn &spawn, const std::string &key,
+	const std::string &object)
 {
 	auto cached = m_model_cache.find(key);
 	if (cached != m_model_cache.end())
@@ -1662,11 +1678,72 @@ std::shared_ptr<render::CharacterModel> ZoneView::SpawnModel(const ZoneSpawn &sp
 		appearance.tint[k] = spawn.colors[k];
 	}
 	std::string error;
-	std::shared_ptr<render::CharacterModel> model = m_models.Build(appearance, error);
+	std::shared_ptr<render::CharacterModel> model = BuildModel(appearance, object, error);
 	if (!model && m_missing_models.insert(render::ActorTag(spawn.race, spawn.gender)).second)
 		fprintf(stderr, "[zone view] %s (race %u)\n", error.c_str(), spawn.race);
 	m_model_cache[key] = model;
 	return model;
+}
+
+std::unique_ptr<render::CharacterModel> ZoneView::BuildModel(const render::CharacterAppearance &appearance,
+	const std::string &object, std::string &error)
+{
+	if (!render::IsObjectRace(appearance.race))
+		return m_models.Build(appearance, error);
+	// CreatePlayerActor: the object's actor definition, or when the world hasn't it (none found:
+	// an empty tag) HUF_ACTORDEF for gender 1, else HUM_ACTORDEF.
+	if (!object.empty())
+		if (auto model = m_models.BuildObject(object, error))
+			return model;
+	render::CharacterAppearance human = appearance;
+	human.race = 1;
+	human.gender = appearance.gender == 1 ? 1 : 0;
+	return m_models.Build(human, error);
+}
+
+bool ZoneView::NearestActorTagAt(const render::Vec3 &at, int type, bool small, std::string &tag) const
+{
+	// GetNearestActorTag: s3dGetWorldVisibleActorList from the place out to the zone's fog end
+	// (instEQZoneInfo's, before the Clip Plane slider) less 100, at least 50: the actors reaching
+	// within that (their scaled bounding radius counted). Of those typed `type` (and for race 142
+	// no bigger than 20), the nearest's definition. The list is the regions the place's region
+	// can see (its PVS); we don't have those and take every region.
+	tag.clear();
+	if (!m_loaded || !m_error.empty())
+		return false;
+	float reach = std::max(m_info.fog_end - 100, 50.0f);
+	float best = 0;
+	for (const render::ZoneObject &object : m_zone.Objects()) {
+		if (object.type != type)
+			continue;
+		float radius = object.radius * object.scale; // t3dGetScaledActorBoundingRadius
+		float distance = render::Length(object.position - at);
+		if (distance >= reach + radius || (small && radius > 20))
+			continue;
+		if (tag.empty() || distance < best) {
+			best = distance;
+			tag = object.actor;
+		}
+	}
+	return !tag.empty();
+}
+
+bool ZoneView::NearestActorTag(uint16_t id, uint16_t race, std::string &tag) const
+{
+	// From the spawn's actor's place (t3dGetActorLocation): its center.
+	render::Vec3 at;
+	if (id != 0 && id == m_my_id) {
+		if (!m_placed)
+			return false;
+		at = MyFeet() + render::Vec3{0, 0, m_height / 5 * 3.125f};
+	}
+	else {
+		auto it = m_actors.find(id);
+		if (it == m_actors.end())
+			return false;
+		at = it->second.Feet() + render::Vec3{0, 0, it->second.center_height};
+	}
+	return NearestActorTagAt(at, race == 143 ? 8 : 7, race == 142, tag);
 }
 
 void ZoneView::StartSpellEffect(const SpellEffects::Request &request)
@@ -2018,8 +2095,15 @@ void ZoneView::ResolveModel(SpawnView &view, const ZoneSpawn &spawn, bool near)
 {
 	if ((near && !view.resolved) || (view.resolved && spawn.look_serial != view.look_serial)) {
 		std::string key = SpawnModelKey(spawn);
+		// Races 142 and 143: the nearest object's model where the spawn is as it's built.
+		std::string object;
+		if (render::IsObjectRace(spawn.race)) {
+			NearestActorTagAt(view.Feet() + render::Vec3{0, 0, view.center_height}, spawn.race == 143 ? 8 : 7, spawn.race == 142,
+				object);
+			key += "#" + object;
+		}
 		if (!view.resolved || key != view.model_key)
-			view.model = SpawnModel(spawn, key);
+			view.model = SpawnModel(spawn, key, object);
 		view.model_key = key;
 		view.look_serial = spawn.look_serial;
 		view.resolved = true;

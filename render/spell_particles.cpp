@@ -243,6 +243,13 @@ namespace render
 			m_emitters.end());
 	}
 
+	void SpellParticles::Rebind(uint32_t from, uint32_t to)
+	{
+		for (Emitter &e : m_emitters)
+			if (from && e.binding == from)
+				e.binding = to;
+	}
+
 	size_t SpellParticles::ParticleCount() const
 	{
 		size_t n = 0;

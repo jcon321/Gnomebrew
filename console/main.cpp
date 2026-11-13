@@ -387,6 +387,14 @@ namespace
 					printf("[zone] staying %d s, then camping\n", seconds);
 					leave_at = NowMs() + static_cast<uint64_t>(seconds) * 1000;
 					break;
+				case ZoneSession::Event::Type::Teleport:
+					// DoTeleportB to another zone (a GM's #zone, #summon...): MoveToZone with the type
+					// as the reason, as eqgame does.
+					if (event.teleport.zone != zone.Profile().zone_id) {
+						printf("[zone] the zone sends us to zone %u (type %u)\n", event.teleport.zone, event.teleport.type);
+						zone.RequestZoneChange(event.teleport.zone, static_cast<int32_t>(event.teleport.type));
+					}
+					break;
 				case ZoneSession::Event::Type::ZoneApproved:
 					printf("[zone] zone change to %d approved\n", event.value);
 					break;

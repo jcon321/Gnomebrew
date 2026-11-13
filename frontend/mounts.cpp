@@ -184,6 +184,22 @@ void Mounts::Dismount(uint16_t rider)
 	m_mount.erase(on);
 }
 
+uint16_t Mounts::ChangeFormOff(uint16_t rider)
+{
+	auto on = m_mount.find(rider);
+	if (on == m_mount.end())
+		return 0;
+	uint16_t horse = on->second;
+	Dismount(rider);
+	return horse;
+}
+
+void Mounts::ChangeFormOn(uint16_t horse)
+{
+	if (horse && Ready())
+		MakeRiderMountUp(horse);
+}
+
 bool Mounts::DismountCommand()
 {
 	if (!m_mount.count(Me()))

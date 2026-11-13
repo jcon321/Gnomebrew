@@ -95,6 +95,9 @@ namespace render
 		int Create(int def, uint32_t tag, int duration_ms, float density, float opacity, const Frame &frame, uint32_t binding);
 		void DestroyTagged(uint32_t tag);
 		void DestroyBound(uint32_t binding);
+		// t3dParticleSystemReplaceEmitterBinding (replaceParticleEmitterBinding): the emitters bound
+		// to `from` are bound to `to`.
+		void Rebind(uint32_t from, uint32_t to);
 		void Clear() { m_emitters.clear(); }
 
 		// renderParticleSystem: `camera` for the level of detail; then Draw under the renderer's camera.

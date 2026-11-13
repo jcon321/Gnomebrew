@@ -91,6 +91,14 @@ public:
 	// zone sends; PlayAnimationTrack's id), played once while we stand or move on the ground, with
 	// its sound; a jump, a fall, the water, crouching or sitting cut it short.
 	void PlayAnimation(int id, float speed = 1);
+	// CDisplay::GetNearestActorTag (@004aa727) for spawn `id` (us too) taking race 142 or 143: the
+	// nearest zone object's actor around where it is, a palm tree (type 8) for 143, a small object
+	// (type 7, its scaled bounding radius 20 or less) for 142. False when there's none, or no such
+	// spawn here.
+	bool NearestActorTag(uint16_t id, uint16_t race, std::string &tag) const;
+	// do_change_form's t3dParticleSystemReplaceEmitterBinding: spawn `id`'s spell emitters onto its
+	// new model's root.
+	void CarryParticles(uint16_t id) { m_spell_effects.MoveToRoot(id); }
 	// DoFishingEvent's hook `distance` ahead of us: the floor there (GetFloorHeight) 3 up in water
 	// (GetEnvironment not dry or lava) and its surface (FindZoneTopZ) within 30 of our height; the
 	// surface's point (WLD space) for the splash.
@@ -417,6 +425,7 @@ private:
 	// the eyes go from (under the saddle's place, standing).
 	render::Transform MyPlacement() const;
 	render::Vec3 MyFeet() const;
+	float MyEyeHeight() const; // CameraHeightOffset
 	struct SpawnView;
 	void PoseSpawn(SpawnView &view, const ZoneSpawn &spawn, uint64_t now_ms);
 	// The model built (or rebuilt) for a spawn near enough to be seen.
@@ -426,7 +435,14 @@ private:
 	// PlayAnimationTrack2's riding animation for a horse going `speed` with run speed `run`.
 	static int RidingAnimation(float speed, float run);
 	static std::string SpawnModelKey(const ZoneSpawn &spawn);
-	std::shared_ptr<render::CharacterModel> SpawnModel(const ZoneSpawn &spawn, const std::string &key);
+	std::shared_ptr<render::CharacterModel> SpawnModel(const ZoneSpawn &spawn, const std::string &key, const std::string &object);
+	// GetNearestActorTag from a place (WLD space): objects of `type` (SpriteCallBack's) within
+	// GetNearestActorTag's reach, the nearest; `small` only those of scaled radius 20 or less.
+	bool NearestActorTagAt(const render::Vec3 &at, int type, bool small, std::string &tag) const;
+	// CreatePlayerActor's model: races 142 and 143 wear the zone object `object` (GetNearestActorTag's,
+	// as the actor's made), or without one HUF_ACTORDEF for a woman and HUM_ACTORDEF for the rest.
+	std::unique_ptr<render::CharacterModel> BuildModel(const render::CharacterAppearance &appearance, const std::string &object,
+		std::string &error);
 	void DrawSpawns(uint64_t now_ms);
 	void DrawGroundItems(uint64_t now_ms);
 	// The missiles stepped (once loaded), then drawn.

@@ -246,6 +246,15 @@ int SpellEffects::Bone(const render::CharacterModel &model, int attach)
 	return bone;
 }
 
+void SpellEffects::MoveToRoot(uint16_t spawn)
+{
+	if (spawn == 0)
+		return;
+	uint32_t root = static_cast<uint32_t>(spawn) << 8 | 1;
+	for (uint32_t attach = 2; attach <= 0xff; ++attach)
+		m_particles.Rebind(static_cast<uint32_t>(spawn) << 8 | attach, root);
+}
+
 bool SpellEffects::PlaceBone(uint32_t binding, const FindActor &find, render::Transform &bone)
 {
 	Actor actor;

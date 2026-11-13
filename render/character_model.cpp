@@ -463,6 +463,10 @@ namespace render
 	{
 		// CDisplay::StartWorldDisplay loads <zone>_chr2 and <zone>_chr (and <zone>2_chr for a few zones).
 		// Zone models are searched before the global ones.
+		m_eq_dir = eq_dir;
+		m_zone = zone;
+		m_objects.reset();
+		m_objects_tried = false;
 		size_t before = m_sources.size();
 		for (const std::string &name : {zone + "_chr", zone + "_chr2", zone + "2_chr"})
 			AddSource(m_sources, eq_dir, name);
@@ -1271,6 +1275,61 @@ namespace render
 			model->m_max_z = std::max(model->m_max_z, p.z);
 		}
 		model->m_scale = 1;
+		return model;
+	}
+
+	std::unique_ptr<CharacterModel> CharacterModels::BuildObject(const std::string &actor, std::string &error)
+	{
+		if (!m_objects_tried) {
+			m_objects_tried = true;
+			std::vector<std::unique_ptr<Source>> found;
+			if (!m_zone.empty() && AddSource(found, m_eq_dir, m_zone + "_obj"))
+				m_objects = std::move(found.front());
+		}
+		std::string tag = Upper(actor);
+		if (tag.size() <= 9 || tag.compare(tag.size() - 9, 9, "_ACTORDEF") != 0)
+			tag += "_ACTORDEF";
+		int index = m_objects ? m_objects->wld.Find(tag) : -1;
+		if (index < 0 || m_objects->wld.Fragments()[index].type != 0x14) {
+			error = "no object " + tag;
+			return nullptr;
+		}
+		auto model = std::make_unique<CharacterModel>();
+		model->m_code = tag.substr(0, tag.size() - 9);
+		model->m_skeleton.bones.resize(1);
+		model->m_skeleton.bones[0].name = model->m_code + "_DAG";
+		static const auto no_animations = std::make_shared<const std::map<std::string, SkeletonAnimation>>();
+		model->m_animations = no_animations;
+		// As the zone draws its objects (ZoneScene::ObjectMeshes): the actor's meshes, and its
+		// skeleton's in their rest pose.
+		const WldFile &wld = m_objects->wld;
+		WldMesh mesh;
+		for (int part : wld.ActorMeshes(index))
+			if (wld.ReadMesh(part, mesh))
+				AppendItemMesh(*model, mesh, *m_objects, 0);
+		int skeleton_index = wld.ActorSkeleton(index);
+		WldSkeleton skeleton;
+		if (skeleton_index >= 0 && wld.ReadSkeleton(skeleton_index, skeleton)) {
+			std::vector<Transform> pose = PoseSkeleton(skeleton, nullptr, 0);
+			for (int part : skeleton.meshes)
+				if (wld.ReadMesh(part, mesh)) {
+					SkinMesh(mesh, pose);
+					AppendItemMesh(*model, mesh, *m_objects, 0);
+				}
+		}
+		if (model->m_positions.empty()) {
+			error = "object " + tag + " has no mesh";
+			return nullptr;
+		}
+		model->m_min_z = 1e30f;
+		model->m_max_z = -1e30f;
+		for (const Vec3 &p : model->m_positions) {
+			model->m_min_z = std::min(model->m_min_z, p.z);
+			model->m_max_z = std::max(model->m_max_z, p.z);
+		}
+		model->m_scale = 1;
+		model->m_head_z = model->m_max_z;
+		model->m_origin_over_feet = 0;
 		return model;
 	}
 

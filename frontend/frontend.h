@@ -430,6 +430,8 @@ private:
 	// CEverQuest::DoMainLoop zoning in with the profile's boat: onto it (ZoneView::PutOnVehicle), or
 	// if it isn't here, IFoundMyVehicle's MSG_LOCATE_VEHICLE and, unanswered after 60 s, the safe point.
 	void FindMyVehicle();
+	// EQPlayer::do_change_form after an OP_Illusion: `packet` (an IllusionObject's) applied first.
+	void ChangeForm(uint16_t id, const std::vector<uint8_t> &packet);
 	// OP_RequestClientZoneChange: CDisplay::DoTeleportB (in this zone, or MoveToZone to another).
 	void DoTeleportB(const ZoneTeleport &to);
 	int m_boat_off_ticks = 0;    // DAT_0063db20: seconds off a boat (kept from zone to zone, as eqgame's)

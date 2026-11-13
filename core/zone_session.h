@@ -527,6 +527,9 @@ public:
 			BoatControl,
 			VehicleReset, // MSG_VEHICLE_RESET
 			Illusion,     // OP_Illusion: id the spawn (us too), its look already changed in Spawns() / Self()
+			// OP_Illusion into race 142 or 143 (value): not applied yet; ApplyIllusion(data) once the
+			// zone object it takes is found.
+			IllusionObject,
 			Teleport,     // OP_RequestClientZoneChange: teleport
 			// OP_ShopEndConfirm: the zone ended the merchant session (HandleWorldMessage's 0x4146:
 			// with the new UI, CMerchantWnd::Deactivate)
@@ -665,6 +668,7 @@ public:
 		ZoneWho who;
 		ZoneGuild guild;
 		ZoneTeleport teleport;
+		std::vector<uint8_t> data; // IllusionObject's packet
 	};
 
 	ZoneSession();
@@ -797,6 +801,9 @@ public:
 	// Ask to leave for another zone (a zone line): our position, then OP_ZoneChange. The answer
 	// comes as ZoneApproved (then Departed) or ZoneDenied.
 	bool RequestZoneChange(uint32_t zone_id, int32_t reason = 0);
+	// OP_Illusion's new look onto its spawn (us too), as do_change_form takes it; false for no such
+	// spawn. IllusionObject's packet, once its object's found.
+	bool ApplyIllusion(const std::vector<uint8_t> &data);
 	// OP_SendZonepoints: the zone lines' teleport table.
 	const std::vector<ZonePoint> &ZonePoints() const { return m_zone_points; }
 	// OP_SpawnDoor's doors and switches.

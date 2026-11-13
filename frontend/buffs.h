@@ -69,7 +69,8 @@ public:
 	bool ClickOff(int slot);
 	// EQ_Character::GetPCSpellAffect then RemovePCAffect: the first buff with the effect goes (its
 	// fading text, the zone told); false for none.
-	bool RemoveAffect(int spa);
+	// `notify`: the zone told again as NotifyPCAffectChange(slot, 1) does (do_change_form's failure).
+	bool RemoveAffect(int spa, bool notify = false);
 	// EQ_Character::GetPCSpellAffect: whether a buff has the effect.
 	bool HasAffect(int spa) const;
 

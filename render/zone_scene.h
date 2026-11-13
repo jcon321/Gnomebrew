@@ -42,6 +42,18 @@ namespace render
 		bool point_lights = true; // add the lights.wld lights to the vertex colors
 	};
 
+	// A placed zone object as CDisplay's SpriteCallBack types its actor (t3dSetActorUserData, what
+	// GetNearestActorTag looks for): 6 a LADDER*, 8 an ISLANDPALM*, 7 another whose actor
+	// definition's bounding radius is 80 or less, 4 the rest.
+	struct ZoneObject
+	{
+		std::string actor; // "ISLANDPALM_ACTORDEF"
+		Vec3 position;
+		float scale = 1;
+		float radius = 0;  // the definition's bounding radius (t3dComputeActorDefinitionBoundingRadius), unscaled
+		int type = 4;
+	};
+
 	class ZoneScene
 	{
 	public:
@@ -92,6 +104,7 @@ namespace render
 		size_t TriangleCount() const;
 		const std::vector<Vec3> &SolidTriangles() const { return m_collision; } // 3 vertices each
 		size_t ObjectCount() const { return m_object_count; }
+		const std::vector<ZoneObject> &Objects() const { return m_objects; }
 		const ZoneRegions &Regions() const { return m_regions; } // water, lava, zone lines
 		// lights.wld's lights, which are baked into the zone's colors but light characters as
 		// they go (createPointLightFromFileContext gives their flag 0x100 a scene influence), and
@@ -161,6 +174,7 @@ namespace render
 		std::vector<uint32_t> m_cell_start; // per cell, into m_cell_triangles; one more at the end
 		std::vector<uint32_t> m_cell_triangles;
 		size_t m_object_count = 0;
+		std::vector<ZoneObject> m_objects;
 		std::vector<std::string> m_warnings;
 	};
 

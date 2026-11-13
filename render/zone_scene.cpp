@@ -3,6 +3,7 @@
 #include "skeleton.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <map>
 
@@ -11,6 +12,15 @@ namespace render
 	namespace
 	{
 		Vec3 ToVec(const WldVec3 &v) { return {v.x, v.y, v.z}; }
+
+		// strnicmp(name, prefix, strlen(prefix)) == 0
+		bool StartsWithNoCase(const std::string &name, const char *prefix)
+		{
+			for (size_t i = 0; prefix[i]; ++i)
+				if (i >= name.size() || std::toupper(static_cast<unsigned char>(name[i])) != std::toupper(static_cast<unsigned char>(prefix[i])))
+					return false;
+			return true;
+		}
 
 		uint32_t PackLight(float r, float g, float b)
 		{
@@ -206,6 +216,7 @@ namespace render
 		m_grid_w = m_grid_h = 0;
 		m_warnings.clear();
 		m_object_count = 0;
+		m_objects.clear();
 		m_doors.clear();
 		m_lighting = lighting;
 
@@ -255,6 +266,7 @@ namespace render
 
 		if (have_objects && m_zone_archive.Read("objects.wld", data) && objects_wld.Load(std::move(data))) {
 			std::map<std::string, int> unknown;
+			std::map<int, float> radii; // each actor definition's bounding radius
 			for (const auto &placement : objects_wld.Placements()) {
 				int actor = m_object_models.Find(placement.actor);
 				if (actor < 0) {
@@ -281,6 +293,33 @@ namespace render
 				for (const auto &m : meshes)
 					AddMesh(m, transform, true, lights, lighting, m_meshes, m_collision, m_collision_exposure);
 				++m_object_count;
+
+				// SpriteCallBack's type for it: SetActorBoundingRadius(actor, 1, 0) is the definition's
+				// bounding radius, each sprite's offset out plus its radius at the most (a mesh's
+				// center and radius, a skeleton's bounding radius).
+				auto known = radii.find(actor);
+				if (known == radii.end()) {
+					float radius = 0;
+					for (const auto &m : meshes)
+						radius = std::max(radius, Length(ToVec(m.center)) + m.radius);
+					int skeleton_index = m_object_models.ActorSkeleton(actor);
+					WldSkeleton skeleton;
+					if (skeleton_index >= 0 && m_object_models.ReadSkeleton(skeleton_index, skeleton))
+						radius = std::max(radius, skeleton.bounding_radius);
+					known = radii.emplace(actor, radius).first;
+				}
+				ZoneObject object;
+				object.actor = placement.actor;
+				object.position = transform.translation;
+				object.scale = placement.scale;
+				object.radius = known->second;
+				if (StartsWithNoCase(placement.actor, "LADDER"))
+					object.type = 6;
+				else if (StartsWithNoCase(placement.actor, "ISLANDPALM"))
+					object.type = 8;
+				else
+					object.type = object.radius <= 80 ? 7 : 4;
+				m_objects.push_back(std::move(object));
 			}
 			for (const auto &[name, count] : unknown)
 				m_warnings.push_back("object " + name + " not in " + zone + "_obj.wld (" + std::to_string(count) + "x)");

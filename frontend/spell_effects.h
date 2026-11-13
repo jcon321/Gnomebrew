@@ -119,6 +119,11 @@ public:
 	void Update(uint64_t now_ms, const render::Vec3 &camera, const FindActor &find);
 	void Draw(render::Renderer &renderer);
 	void Clear();
+	// EQPlayer::do_change_form's t3dParticleSystemReplaceEmitterBinding(old actor, new actor): a
+	// spawn's emitters stay on it as its model changes, each on the new actor's root (its dag
+	// cleared), not the bone it was on. The spells.eff clouds and sprites aren't the particle
+	// system's and stay as they are.
+	void MoveToRoot(uint16_t spawn);
 	// The options' Spell Particle Density (0, 0.25, 0.5 or 1) and Opacity (0..1).
 	void SetDetail(float density, float opacity)
 	{

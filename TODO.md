@@ -49,7 +49,8 @@ no rules of its own.
      (`InSpecialBindSpot` @004cadbc, `EQWorldData::IsNoBindZone`), the teleport checks
      (`CDisplay::IsValidTeleport` @004af646, `EQPlayer::HandoverControlToZoneserver`), `Levitate`
      (@004cac0d) and the illusion's change of form (`eqspa_change_form` @004ca8b2, through
-     `EQPlayer::do_change_form` @005074fa and `HandleSpecialPCAffects` @004c62bd). Alt+click or the right button held on a buff shows its
+     `EQPlayer::do_change_form` @005074fa and `HandleSpecialPCAffects` @004c62bd; races 142 and
+     143 failing its own `GetNearestActorTag`, `ZoneView::NearestActorTag`, land no form). Alt+click or the right button held on a buff shows its
      spell's name and icon in the item display (HandleSpellInfoDisplay), and Alt over the window
      shows every buff's tooltip (CBuffWindow::PostDraw, `FrontEnd::DrawBuffTooltips`).
    - Inventory: name, level, class (its title from 51), deity, HP, stats and resists (base, worn
@@ -628,15 +629,19 @@ no rules of its own.
     our profile's, surname or name, and the name over their head) are done; the two name changes
     also set `EQ_Main`+0xe64 (`DAT_007f9574`), not known): `OP_Charm`, `OP_Reward`, `OP_MultiLineMsg`, `OP_ResetSkill`, `OP_SetTitle`,
     `OP_FreezeClientControl`, `OP_UnfreezeClientControl` and `OP_ReturnClientControl`. The boats'
-    packets are done (39), and `OP_RequestClientZoneChange` (`DoTeleportB`) and `OP_Illusion`
-    (`do_change_form`); still to do of those:
-    - `do_change_form` to race 142 or 143 (`CDisplay::GetNearestActorTag`: the nearest zone object's
-      actor, a tree's for 143): failing, the old form back, and on us the SPA 0x3a buff off
-      (`RemovePCAffect`, `NotifyPCAffectChange`) with 1371. Ours takes the race as any other, no
-      model found (race 75's stand-in).
-    - `do_change_form`'s particles carried from the old actor to the new (`DAT_007f9c34`), and
-      `DoTeleportB`'s refusal on `EQPlayer`+0x108 (not known what it is); a dwarf's, halfling's or
-      gnome's z + 1 going to another zone isn't sent anywhere and isn't ours.
+    packets are done (39), and `OP_RequestClientZoneChange` (`DoTeleportB`, refused while stance
+    102 or linkdead) and `OP_Illusion` (`do_change_form`: races 142 and 143 the nearest zone object's
+    actor by `GetNearestActorTag`, else nothing and on us the SPA 0x3a buff off with 1371; a rider
+    off and back on; the spell emitters onto the new actor's root); still to do of those:
+    - `GetNearestActorTag`'s list is `s3dGetWorldVisibleActorList`'s, the zone regions the place's
+      region can see (its PVS); ours takes every region in reach.
+    - `SetHeights` for races 142 and 143: `ModelHeightOffset` 0 (0.1), so the server's z is the
+      object's foot; ours keeps the size's center (size / 5 * 3.125) for where we stand and what we
+      send. The eye (`CameraHeightOffset` 6) and the object's scale 1 are done.
+    - `do_change_form`'s old (`spells.eff`) clouds and sprites on the spawn: whether eqgfx keeps
+      them on the deleted actor isn't known; ours stay on the spawn.
+    - A dwarf's, halfling's or gnome's z + 1 going to another zone (`DoTeleportB`) isn't sent
+      anywhere and isn't ours.
     Also sent by EQMacEmu and dropped here:
     - `OP_SpellTextMessageStringID` (0x4241, `EntityList::SpellTextMessageClose_StringID`): others'
       spell messages by string id.
@@ -753,7 +758,9 @@ no rules of its own.
     `RIDER_DAG` playing P09 or L10, another's horse moved by its rider's updates
     (`ProcessUpdateStats`), ours by our movement (`SetAccel`'s acceleration, turns of 8, no jumps,
     snares only, the camera at 0.85), the buff off as its head changes water; `Dismount` from
-    /dismount, feign death, sitting refused, and a horse or rider going (`Dismount2`); the mount's
+    /dismount, feign death, sitting refused, a horse or rider going (`Dismount2`), and an illusion
+    (`do_change_form`: off, then the horse's `MakeRiderMountUp`, refused for a form with an old
+    model); the mount's
     hunger messages, fall damage, spell book and targeting. Checked through replays of our horse
     (each model setting) and another player's. Still to do:
     - Not checked against the real client: how high the rider sits (the rider's model root on the
@@ -761,9 +768,7 @@ no rules of its own.
     - MountEQPlayer's levitation (`SetNoGrav` on the horse of a levitating rider; no levitation
       yet), onto something not a horse (its `DagRightPoint`), and a boat's `AttachedEntity` branch.
     - `UpdatePlayerVisibility`: a ridden horse follows its rider's visibility (we draw the invisible).
-    - `do_change_form`'s `Dismount` and `MakeRiderMountUp` (an illusioned rider gets off and back
-      on: a horse that won't take the new form leaves it off), and `EQPlayer::ChangeHeight` of a
-      rider (a `/height` or size change) carrying on to its horse.
+    - `EQPlayer::ChangeHeight` of a rider (a `/height` or size change) carrying on to its horse.
     - Being hit on a horse (`ReportSuccessfulHit`'s `DeacSpellScreen` and `ChangeStance`) and the
       right button on one (24, 2), `PlayAnimationTrack2`'s horse pitch (64) and its riding-skill
       `EQ_PC_CheckSkillImprove` while the horse moves, and the horse's swim jump (the swim skill's

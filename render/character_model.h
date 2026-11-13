@@ -222,6 +222,12 @@ namespace render
 		// An item's model on its own, from its actor ("IT63_ACTORDEF" or "IT63"): one bone, scale 1,
 		// no animations (something on the ground). Null when there's no such item model.
 		std::unique_ptr<CharacterModel> BuildItem(const std::string &actor, std::string &error);
+		// A zone object's model as a spawn wears it (races 142 and 143: CreatePlayerActor's
+		// GetNearestActorTag, "ISLANDPALM_ACTORDEF"), from the <zone>_obj.s3d of the zone AddZone
+		// gave, opened the first time: its meshes in their rest pose on one bone, scale 1
+		// (SetHeights' scale factor 1.0 for those races) and its origin on the feet (their
+		// ModelHeightOffset 0). Null when the zone's objects haven't the actor.
+		std::unique_ptr<CharacterModel> BuildObject(const std::string &actor, std::string &error);
 
 		// What CFacePick asks of a race's model, as CDisplay::SetFHEB and SetFHEB_Color find it out:
 		// whether it's a Luclin one (ActorInfo's model, +0x3b0), whether it has a point bone
@@ -269,6 +275,9 @@ namespace render
 		std::vector<std::unique_ptr<Source>> m_sources;
 		std::vector<std::unique_ptr<Source>> m_items; // gequip*.s3d (lgequip*, vequip with Luclin models), searched after the models
 		std::vector<std::unique_ptr<Source>> m_armor; // global17..23_amr.s3d: materials, searched after the model's own
+		std::unique_ptr<Source> m_objects;             // <zone>_obj.s3d, once BuildObject wants it
+		std::string m_eq_dir, m_zone;                  // AddZone's, for m_objects
+		bool m_objects_tried = false;
 		bool m_velious_textures = false;
 		bool m_old_skeletons = true;
 		bool m_luclin_pc_models = false;

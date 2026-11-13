@@ -1102,7 +1102,10 @@ it; the client puts the rider on it. Ported in `frontend/mounts.*` (who's on wha
   `SetHeights`; we're where the saddle was (we put the feet on the floor under it). Its callers:
   /dismount, `EQPlayer::ChangeStance` (@0050be3c: sitting refused on a Mount; lying down, feign
   death, gets off and takes our buff off), `EQPlayer::Dismount2` (@00508152, from `~EQPlayer`: a
-  spawn going takes its rider off, and gets off what it rides) and `do_change_form`.
+  spawn going takes its rider off, and gets off what it rides) and `do_change_form` (an illusion:
+  off before the new form, then the horse's `MakeRiderMountUp` puts the rider back, which
+  `MountEQPlayer` refuses a form with an old model, with 5524 and our buff off).
+  `Mounts::ChangeFormOff` and `ChangeFormOn`.
 - **On a horse** otherwise: hunger and thirst say "You and your mount are hungry." / "thirsty."
   (12486, 12484); `TakeFallDamage` takes none under 200; the spell book opens without sitting
   (`ChangeStance` 110 refused) and scribes and memorizes from it (`CSpellBookWnd::WndNotification`),
@@ -1316,10 +1319,12 @@ the rejection).
   y, x, z, heading, u32 type}; EQMacEmu's `MovePC`, so `#goto`, `#zone`, `#summon`, a boat's
   arrival): `HandleWorldMessage` goes on only if `<short name>.s3d` is there
   (`GetZoneNameFromIndex`, `DoesFileExist`), then `CDisplay::DoTeleportB` (@004b43e1): nothing when
-  we've no control of ourselves (`StandingState` 0x66), else in this zone we're put there (999999
+  we've no control of ourselves (`StandingState` 0x66) or are linkdead (`EQPlayer`+0x108, Zeal's and
+  MQ2's `IsLinkDead`), else in this zone we're put there (999999
   and a heading of 513 keep ours), off any boat, onto the floor; another zone is `MoveToZone(zone,
   "MSG_TELEPORT_PC", 0, type)`, the type going as `OP_ZoneChange`'s reason, which EQMacEmu needs
-  non-zero to send us where it saved (zone points use 0). `FrontEnd::DoTeleportB`.
+  non-zero to send us where it saved (zone points use 0). `FrontEnd::DoTeleportB`; the console
+  client follows one to another zone the same way.
 - **Zone lines:** a feet region with `TP` at 3 (`DRNTP...`) is one; `MovePlayer` calls
   `CDisplay_DoTeleport` as the feet step into it. The type holds the zone (5 digits), then y, x, z (6
   each) and the heading (3); zone 255 makes the y an index into `OP_SendZonepoints` (Rivervale's lines
@@ -1929,9 +1934,31 @@ details and the nearest spawns at the top left and the radar at the top right.
   the race's default (`SetHeights`). The actor is made again (`CreatePlayerActor`,
   `DisplayWeaponsAndArmor`), a rider gets off and back on, ours takes back its buffs' effects
   (`HandleSpecialPCAffects`), and `PlayAnimationTrack` plays 0x47 on `pinstLocalPlayer`, whoever
-  changed. Races 142 and 143 look for the nearest object's actor (`GetNearestActorTag`) and fail
-  back with 1371. EQMacEmu sends texture 0 for our own spawn at zone entry, so our model takes the
-  texture and helm only in a race that isn't a player's. `ZoneSession`'s 0x4091, `default_features`.
+  changed. The particle system's emitters on the old actor go to the new one, on its root
+  (`t3dParticleSystemReplaceEmitterBinding`: each emitter's actor replaced and its dag cleared),
+  before the old actor's deleted. EQMacEmu sends texture 0 for our own spawn at zone entry, so our
+  model takes the texture and helm only in a race that isn't a player's. `ZoneSession::ApplyIllusion`,
+  `FrontEnd::ChangeForm`, `SpellEffects::MoveToRoot`.
+- **Minor Illusion and Tree (races 142, 143)** wear a zone object's actor. `SpriteCallBack`
+  (@0049c251) types each zone object's actor as the zone loads (`t3dSetActorUserData`): a name
+  starting `LADDER` 6, `ISLANDPALM` 8, else 7 when its definition's bounding radius
+  (`t3dComputeActorDefinitionBoundingRadius`: each sprite's offset out plus its radius, at the
+  most) is 80 or less, 4 bigger. `CDisplay::GetNearestActorTag` (@004aa727) takes the actors
+  `s3dGetWorldVisibleActorList` gives from the spawn's place (the regions its region can see, out
+  to the zone's fog end less 100, at least 50, plus each actor's scaled radius), keeps those of
+  type 8 for race 143 (the palms of oasis, nro, erudsxing and kerraridge) or type 7 for 142 with a
+  scaled radius (`t3dGetScaledActorBoundingRadius`) of 20 or less, and names the nearest's
+  definition. `do_change_form` into those races asks first: none, and nothing changes; for us the
+  SPA 0x3a buff comes off (`RemovePCAffect`, `NotifyPCAffectChange(slot, 1)`) and "You are unable
+  to change form here." (1371) prints in 0x108; the hair and beard aren't touched either way.
+  `CreatePlayerActor` asks again as the actor's made and wears that definition, or `HUF_ACTORDEF`
+  (gender 1) or `HUM_ACTORDEF` when there's none. `SetHeights` gives them `CameraHeightOffset` 6,
+  `ModelHeightOffset` 0 (0.1) and a scale factor of 1: the object at its own size, its origin on
+  the feet. Ours: `ZoneScene::Objects`, `ZoneView::NearestActorTag`, `CharacterModels::BuildObject`
+  (from `<zone>_obj.s3d`); we take every region in reach, not the PVS, and keep the size's center
+  as the server's z. Checked live: Illusion: Tree (601) in Oasis wears `ISLANDPALM1`, in South
+  Qeynos is refused; Minor Illusion (287) at Qeynos' safe point wears `LANTERN1` (the rain barrel
+  nearer is too big), in Oasis is refused (the nearest small object is 815 away, past 700).
 - **OP_ManaUpdate** (0x4219, {u16 spawn, u16 mana}) sets our mana, whoever it names. **OP_DespawnDoor**
   (0x409b, no body) deletes every door and switch. **OP_PlaySound** (0x4048, {u16 spawn, u16 sound})
   plays the wave where the spawn is, full to 100 and silent past it.

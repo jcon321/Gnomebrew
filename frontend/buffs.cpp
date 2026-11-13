@@ -332,7 +332,7 @@ bool Buffs::HasAffect(int spa) const
 	return false;
 }
 
-bool Buffs::RemoveAffect(int spa)
+bool Buffs::RemoveAffect(int spa, bool notify)
 {
 	for (int slot = 0; slot < Slots; ++slot) {
 		const ZoneBuff &b = m_slots[slot];
@@ -342,6 +342,8 @@ bool Buffs::RemoveAffect(int spa)
 		for (int i = 0; i < 12; ++i)
 			if (spell->spas[i] == spa) {
 				Remove(slot, true);
+				if (notify && m_zone)
+					m_zone->SendBuff(slot, m_slots[slot], 1);
 				return true;
 			}
 	}

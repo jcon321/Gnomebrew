@@ -4313,13 +4313,25 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			break;
 		}
 		case Type::Illusion:
-			// EQPlayer::do_change_form: the spawn's new look (ZoneSession has it; its model is built
-			// again from it, ours by UpdatePlayerAppearance's look check), and PlayAnimationTrack 0x47 on
-			// pinstLocalPlayer, whoever changed. A mount is got off and back on (Dismount,
-			// MakeRiderMountUp): ours stays as it was.
-			if (m_zone_view)
-				m_zone_view->PlayAnimation(0x47);
+			ChangeForm(event.id, {});
 			break;
+		case Type::IllusionObject: {
+			// do_change_form into race 142 or 143: GetNearestActorTag around the spawn first. None:
+			// no change at all, and for us the illusion's buff (SPA 0x3a) off, the zone told
+			// (RemovePCAffect, NotifyPCAffectChange(slot, 1)), and "You are unable to change form
+			// here." (1371, color 0x108). Without the zone drawn yet it's taken as any other.
+			std::string object;
+			if (m_zone_view && m_zone_view->Loaded() &&
+				!m_zone_view->NearestActorTag(event.id, static_cast<uint16_t>(event.value), object)) {
+				if (event.id == m_zone.MySpawnId()) {
+					m_buffs.RemoveAffect(0x3a, true);
+					ChatOut(EqString(1371, "You are unable to change form here."), ChatType::Spells);
+				}
+				break;
+			}
+			ChangeForm(event.id, event.data);
+			break;
+		}
 		case Type::Teleport:
 			DoTeleportB(event.teleport);
 			break;
@@ -4778,12 +4790,29 @@ void FrontEnd::HandleZoneLine(const std::string &type)
 	m_zone.RequestZoneChange(zone);
 }
 
+void FrontEnd::ChangeForm(uint16_t id, const std::vector<uint8_t> &packet)
+{
+	// EQPlayer::do_change_form (@005074fa) once the new look is the spawn's: off its Mount
+	// (Dismount), the model built again from the look (its view's look check, ours by
+	// UpdatePlayerAppearance's), its horse's MakeRiderMountUp (back on, or off for good when
+	// MountEQPlayer won't take the new form), PlayAnimationTrack 0x47 on pinstLocalPlayer whoever
+	// changed, and its spell emitters carried onto the new actor's root.
+	uint16_t horse = m_mounts.ChangeFormOff(id);
+	if (!packet.empty())
+		m_zone.ApplyIllusion(packet);
+	m_mounts.ChangeFormOn(horse);
+	if (m_zone_view) {
+		m_zone_view->PlayAnimation(0x47);
+		m_zone_view->CarryParticles(id);
+	}
+}
+
 void FrontEnd::DoTeleportB(const ZoneTeleport &to)
 {
 	// HandleWorldMessage's 0x414d (MSG_TELEPORT_PC): only to a zone whose <short name>.s3d we
 	// have (EQWorldData::GetZoneNameFromIndex, DoesFileExist), then CDisplay::DoTeleportB (@004b43e1):
-	// nothing while we've no control of ourselves (stance 102). In this zone: there, a coordinate of
-	// 999999 or more (a heading of 513) keeping ours, off any boat, onto the floor; another zone:
+	// nothing while we've no control of ourselves (stance 102) or are linkdead. In this zone: there,
+	// a coordinate of 999999 or more (a heading of 513) keeping ours, off any boat, onto the floor; another zone:
 	// MoveToZone(zone, "MSG_TELEPORT_PC", 0, type), the type as OP_ZoneChange's reason (the zone
 	// then sends us where it saved).
 	if (!m_zone_view || m_zone.GetState() != ZoneSession::State::InZone)
@@ -4794,7 +4823,7 @@ void FrontEnd::DoTeleportB(const ZoneTeleport &to)
 		Log("MSG_TELEPORT_PC: no " + short_name + ".s3d for zone " + std::to_string(to.zone));
 		return;
 	}
-	if (m_zone.Self().stance == 102)
+	if (m_zone.Self().stance == 102 || m_zone.Self().linkdead) // EQPlayer+0x108, IsLinkDead
 		return;
 	if (to.zone == m_zone.Profile().zone_id) {
 		ZoneMovement here = m_zone_view->Movement();
