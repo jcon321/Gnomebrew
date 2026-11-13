@@ -134,9 +134,16 @@ namespace render
 		// triangle, either side).
 		bool RayHit(const Transform &placement, uint64_t time_ms, const std::string &animation, bool loop,
 			const Vec3 &from, const Vec3 &direction, float range, float &distance) const;
+		// The model's solid triangles (its polygons without the passable flag, 3 vertices each), posed as
+		// Draw poses it, in world space: what a boat's actor gives s3dCollideSphereWithWorld.
+		void SolidTriangles(const Transform &placement, uint64_t time_ms, const std::string &animation, bool loop,
+			std::vector<Vec3> &out) const;
+		bool HasSolidTriangles() const { return !m_solid.empty(); }
 
 	private:
 		friend class CharacterModels;
+		// Every vertex where the animation at time_ms puts it, in world space.
+		std::vector<Vec3> Posed(const Transform &placement, uint64_t time_ms, const std::string &animation, bool loop) const;
 		struct Batch
 		{
 			Material material;
@@ -151,6 +158,7 @@ namespace render
 		std::vector<uint16_t> m_bones;           // per vertex
 		std::vector<float> m_uvs;
 		std::vector<Batch> m_batches;
+		std::vector<uint32_t> m_solid; // the body's solid triangles, 3 indices each
 		std::vector<Emitter> m_emitters;
 		float m_min_z = 0, m_max_z = 0, m_head_z = 0;
 		int m_head_bone = -1;
@@ -241,8 +249,14 @@ namespace render
 		// A held item's model (<tag>_HS_DEF or <tag>_DMSPRITEDEF) onto the model, on bone `point`;
 		// `it` its number for its particle clouds. False when there's none.
 		bool AppendItem(CharacterModel &model, const std::string &tag, unsigned it, uint16_t point);
+		// `solid`: its polygons without the passable flag collide too (CharacterModel::SolidTriangles).
 		static void AppendItemMesh(CharacterModel &model, const WldMesh &mesh, Source &from, uint16_t point,
-			uint32_t tint = 0xffffff);
+			uint32_t tint = 0xffffff, bool solid = false);
+		// A spawn whose <tag>_ACTORDEF is a mesh alone, not a skeleton (the boats' SHIP, LAUNCH, GSP and
+		// BOAT): r3dCreateActorEx of its <tag>_DMSPRITEDEF, on one bone, solid, scaled as a spawn is.
+		// Null when there's no such actor.
+		std::unique_ptr<CharacterModel> BuildStatic(const std::string &tag, const CharacterAppearance &appearance,
+			std::string &error);
 		// A Luclin model's item (<tag>_HS_DEF, "IT4370") hung on bone `point` of `skeleton` as
 		// CDisplay::ChangeDag hangs it: its bones join the skeleton, each playing the body bone of
 		// the same name's animation, and its meshes go on them in `tint`. Else its mesh

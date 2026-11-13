@@ -534,6 +534,110 @@ namespace
 		return 0;
 	}
 
+	// Replay "boats": standing on a boat (vehicle.h). Every half second, the boat under us
+	// (AttachedEntity), where we are and where the boats near us are; snapshots; then, on a race 141
+	// boat, its helm taken (as the zone's yes would) and the forward key held: the boat and we on it go.
+	int BoatsTest(FrontEnd &frontend, Harness &h, int seconds)
+	{
+		const ZoneSession &zone = frontend.Zone();
+		ZoneView *view = frontend.ZoneScene();
+		size_t chat_seen = 0;
+		auto chat = [&] {
+			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
+				printf("[preview] chat: %s\n", frontend.Chat().Lines()[chat_seen].text.c_str());
+		};
+		auto report = [&](const char *when) {
+			ZoneMovement me = view->Movement();
+			uint16_t on = view->Vehicle();
+			auto stats = view->Stats();
+			printf("[preview] %s: at %.1f, %.1f, %.1f heading %.0f, floor %s%.1f, on %u '%s', profile boat '%s'\n", when, me.y,
+				me.x, me.z, me.heading, stats.have_floor ? "" : "none ", stats.floor_z, on,
+				zone.Spawns().count(on) ? zone.Spawns().at(on).name.c_str() : "", zone.Profile().boat.c_str());
+			for (const auto &[id, spawn] : zone.Spawns()) {
+				if (spawn.race != 72 && spawn.race != 73 && spawn.race != 114 && spawn.race != 141)
+					continue;
+				ZoneView::SpawnDebug debug;
+				if (!view->SpawnStats(id, debug))
+					continue;
+				float dx = debug.feet.y - me.x, dy = debug.feet.x - me.y;
+				if (dx * dx + dy * dy > 300 * 300)
+					continue;
+				printf("[preview]   boat %u %s race %u model '%s' at %.1f, %.1f, %.1f\n", id, spawn.name.c_str(), spawn.race,
+					debug.model.c_str(), debug.feet.x, debug.feet.y, debug.feet.z);
+			}
+		};
+		report("in");
+		h.Snapshot("b0-in");
+		// Not on one: onto the nearest ship as DoMainLoop does zoning in with its name in the profile
+		// (our position, the world's, taken in the boat's frame misses it: then its center 25 up).
+		if (!view->Vehicle()) {
+			uint16_t nearest = 0;
+			float best = 1e30f;
+			ZoneMovement me = view->Movement();
+			for (const auto &[id, spawn] : zone.Spawns()) {
+				if (spawn.race != 72 && spawn.race != 73 && spawn.race != 114)
+					continue;
+				float d = (spawn.x - me.x) * (spawn.x - me.x) + (spawn.y - me.y) * (spawn.y - me.y);
+				if (d < best) {
+					best = d;
+					nearest = id;
+				}
+			}
+			if (nearest) {
+				printf("[preview] onto %u %s\n", nearest, zone.Spawns().at(nearest).name.c_str());
+				const ZoneProfile &p = zone.Profile();
+				view->PutOnVehicle(nearest, p.x, p.y, p.z, p.heading);
+				h.RunUntil([] { return false; }, 300);
+				report("put on");
+				h.Snapshot("b0-put-on");
+			}
+		}
+		for (int ms = 500; ms <= seconds * 1000; ms += 500) {
+			h.RunUntil([] { return false; }, 500);
+			chat();
+			if (ms % 2000 == 0)
+				report((std::to_string(ms / 1000) + " s").c_str());
+		}
+		h.Snapshot("b1-later");
+		uint16_t on = view->Vehicle();
+		if (on && zone.Spawns().count(on) && zone.Spawns().at(on).race == 141) {
+			view->SteerBoat(on); // HandleWorldMessage's 0x4126 yes
+			printf("[preview] steering %u\n", view->Steered());
+			InputEvent forward;
+			forward.type = InputEvent::Type::Key;
+			forward.key = InputEvent::Key::W;
+			forward.scan = 0x11;
+			frontend.OnEvent(forward);
+			for (int i = 0; i < 6; ++i) {
+				h.RunUntil([] { return false; }, 500);
+				ZoneMovement boat = view->SteeredMovement();
+				printf("[preview]   boat at %.1f, %.1f, %.1f speed %.2f; ", boat.y, boat.x, boat.z, boat.speed);
+				report("steering");
+			}
+			// And turning left as it goes: we turn with it.
+			InputEvent left;
+			left.type = InputEvent::Type::Key;
+			left.key = InputEvent::Key::A;
+			left.scan = 0x1e;
+			frontend.OnEvent(left);
+			for (int i = 0; i < 4; ++i) {
+				h.RunUntil([] { return false; }, 500);
+				ZoneMovement boat = view->SteeredMovement();
+				printf("[preview]   boat at %.1f, %.1f heading %.0f; ", boat.y, boat.x, boat.heading);
+				report("turning");
+			}
+			left.type = InputEvent::Type::KeyUp;
+			frontend.OnEvent(left);
+			forward.type = InputEvent::Type::KeyUp;
+			frontend.OnEvent(forward);
+			h.RunUntil([] { return false; }, 1000);
+			report("stopped");
+			h.Snapshot("b2-steered");
+		}
+		chat();
+		return 0;
+	}
+
 	// A replay of a horse summoned (the zone's "<name>`s_Mount00", race 216): who's on what, which
 	// horses aren't drawn, what the chat says, then /dismount.
 	// Replay "pet": the pet window (CPetInfoWnd) through a session where a pet is made and given
@@ -2339,6 +2443,7 @@ int main(int argc, char **argv)
 	}
 	bool raid_test = argc == 7 && std::string(argv[6]) == "raid";
 	bool pet_test = argc == 7 && std::string(argv[6]) == "pet";
+	bool boats_test = argc == 7 && std::string(argv[6]) == "boats";
 	bool aa_test = argc == 7 && std::string(argv[6]) == "aa";
 	bool guild_test = argc == 7 && std::string(argv[6]) == "guild";
 	bool skills_test = argc == 7 && std::string(argv[6]) == "skills";
@@ -2394,6 +2499,8 @@ int main(int argc, char **argv)
 			return MountsTest(frontend, h, seconds);
 		if (pet_test)
 			return PetTest(frontend, h, seconds);
+		if (boats_test)
+			return BoatsTest(frontend, h, seconds);
 		h.RunUntil([] { return false; }, 500);
 		h.Snapshot("r0-zone");
 		// Toggle UI Display (F10, ExecuteCmd 0x15): the windows and cursor gone, then back.

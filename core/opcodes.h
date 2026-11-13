@@ -260,6 +260,20 @@ namespace ZoneOp
 	constexpr uint16_t MoveLog = 0x41e4;
 	// Shielding_Struct {u16 spawn id}: a warrior's /shield of them.
 	constexpr uint16_t Shielding = 0x424b;
+	// The boats (frontend/vehicle.h). DoPassageOfTime, once a second: the name of the boat we stand on
+	// (strlen + 4 bytes) as we get on, and no body once we've been off one for two seconds.
+	constexpr uint16_t BoardBoat = 0x41bb;
+	constexpr uint16_t LeaveBoat = 0x41bc;
+	// ControlBoat_Struct {u16 boat id, u8 take, u8}: taking (1) or letting go of (0) a race 141 boat's
+	// helm (RightClickedOnPlayer, EQ_3DView_MouseUp, ProcessControls); the zone sends it back when we
+	// may (HandleWorldMessage's 0x4126: pinstCharSpawn the boat).
+	constexpr uint16_t ControlBoat = 0x4126;
+	// MSG_VEHICLE_RESET, no body: on a boat, back to the zone's safe point (msg_vehicle_reset
+	// @004de593). EQMacEmu doesn't send it.
+	constexpr uint16_t VehicleReset = 0x414a;
+	// MSG_LOCATE_VEHICLE: our boat's name, NUL included (IFoundMyVehicle @0053dcc5: zoning in with a
+	// boat that isn't in the zone). EQMacEmu has no handler.
+	constexpr uint16_t LocateVehicle = 0x200e;
 	// 4 bytes, "KEY\0" (/keys): the zone answers with our key ring's items (KeyRingList).
 	constexpr uint16_t Key = 0x425d;
 	// Guilds. GuildCommand_Struct (136 bytes) {char other[64], char me[64] @64, i16 guild @128, u16,
@@ -518,6 +532,11 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::CorpsePosition, "OP_CorpsePosition"},
 	{ZoneOp::MoveLog, "OP_MoveLog"},
 	{ZoneOp::Shielding, "OP_Shielding"},
+	{ZoneOp::BoardBoat, "OP_BoardBoat"},
+	{ZoneOp::LeaveBoat, "OP_LeaveBoat"},
+	{ZoneOp::ControlBoat, "OP_ControlBoat"},
+	{ZoneOp::VehicleReset, "MSG_VEHICLE_RESET"},
+	{ZoneOp::LocateVehicle, "MSG_LOCATE_VEHICLE"},
 	{ZoneOp::Key, "OP_Key"},
 	{ZoneOp::GuildInvite, "OP_GuildInvite"},
 	{ZoneOp::GuildRemove, "OP_GuildRemove"},

@@ -581,17 +581,20 @@ namespace render
 		return !m_occlusion_ready || m_occlusion.BoxVisible(center - r, center + r);
 	}
 
-	bool ZoneScene::FloorBelow(const Vec3 &from, float depth, float &floor_z, float *exposure) const
+	bool ZoneScene::FloorBelow(const Vec3 &from, float depth, float &floor_z, float *exposure, uint16_t *actor,
+		bool actors) const
 	{
 		thread_local std::vector<uint32_t> nearby;
 		Candidates(from.x, from.y, from.x, from.y, nearby);
 		bool found = false;
+		uint16_t on = 0, testing = 0;
 		auto test = [&](const Vec3 *triangle, float triangle_exposure) {
 			float z;
 			if (HeightAt(triangle[0], triangle[1], triangle[2], from.x, from.y, z) && z <= from.z + 0.01f &&
 				z >= from.z - depth && (!found || z > floor_z)) {
 				floor_z = z;
 				found = true;
+				on = testing;
 				if (exposure)
 					*exposure = triangle_exposure;
 			}
@@ -605,7 +608,28 @@ namespace render
 			for (size_t t = 0; t * 3 < door.placed_collision.size(); ++t)
 				test(&door.placed_collision[t * 3], t < door.exposure.size() ? door.exposure[t] : 1);
 		}
+		for (const auto &[id, shape] : m_actor_shapes) {
+			if (!actors || !BoxesMeet(low, high, shape.low, shape.high))
+				continue;
+			testing = id;
+			for (size_t t = 0; t * 3 + 2 < shape.triangles.size(); ++t)
+				test(&shape.triangles[t * 3], 1);
+		}
+		if (actor)
+			*actor = found ? on : 0;
 		return found;
+	}
+
+	void ZoneScene::SetActor(uint16_t id, std::vector<Vec3> triangles)
+	{
+		ActorShape &shape = m_actor_shapes[id];
+		shape.low = {1e30f, 1e30f, 1e30f};
+		shape.high = {-1e30f, -1e30f, -1e30f};
+		for (const Vec3 &p : triangles) {
+			shape.low = {std::min(shape.low.x, p.x), std::min(shape.low.y, p.y), std::min(shape.low.z, p.z)};
+			shape.high = {std::max(shape.high.x, p.x), std::max(shape.high.y, p.y), std::max(shape.high.z, p.z)};
+		}
+		shape.triangles = std::move(triangles);
 	}
 
 	bool ZoneScene::SegmentHit(const Vec3 &from, const Vec3 &to, float &fraction, Vec3 *normal, bool doors) const
@@ -646,8 +670,10 @@ namespace render
 		return found;
 	}
 
-	bool ZoneScene::SphereHit(const Vec3 &from, const Vec3 &to, float radius, float &fraction, Vec3 *normal, bool doors) const
+	bool ZoneScene::SphereHit(const Vec3 &from, const Vec3 &to, float radius, float &fraction, Vec3 *normal, bool doors,
+		uint16_t *actor) const
 	{
+		uint16_t touched = 0, testing = 0;
 		Vec3 d = to - from;
 		Vec3 r{radius, radius, radius};
 		Vec3 low = Vec3{std::min(from.x, to.x), std::min(from.y, to.y), std::min(from.z, to.z)} - r;
@@ -666,19 +692,30 @@ namespace render
 			if (SweepSphere(from, d, radius, a, b, c, t, n) && (!found || t < fraction)) {
 				fraction = t;
 				found = true;
+				touched = testing;
 				if (normal)
 					*normal = n;
 			}
 		};
 		for (uint32_t triangle : nearby)
 			test(&m_collision[triangle * 3]);
-		if (doors)
+		if (doors) {
 			for (const Door &door : m_doors) {
 				if (!BoxesMeet(low, high, door.low, door.high))
 					continue;
 				for (size_t t = 0; t * 3 < door.placed_collision.size(); ++t)
 					test(&door.placed_collision[t * 3]);
 			}
+			for (const auto &[id, shape] : m_actor_shapes) {
+				if (!BoxesMeet(low, high, shape.low, shape.high))
+					continue;
+				testing = id;
+				for (size_t t = 0; t * 3 + 2 < shape.triangles.size(); ++t)
+					test(&shape.triangles[t * 3]);
+			}
+		}
+		if (actor)
+			*actor = found ? touched : 0;
 		return found;
 	}
 

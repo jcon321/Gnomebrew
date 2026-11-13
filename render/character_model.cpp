@@ -502,6 +502,8 @@ namespace render
 		Source *source = nullptr;
 		int actor = -1;
 		if (!find(code, source, actor)) {
+			if (auto mesh_only = BuildStatic(code, appearance, error))
+				return mesh_only;
 			std::string fallback = ActorTag(75, appearance.gender);
 			if (!find(fallback, source, actor)) {
 				error = "model " + code + " not found";
@@ -855,6 +857,10 @@ namespace render
 			}
 			std::map<uint16_t, size_t> batch_of; // SIZE_MAX: not drawn
 			for (const auto &t : mesh.triangles) {
+				// What collides (a boat's deck and hull): the body's polygons without the passable flag,
+				// drawn or not, as the zone's.
+				if (body && !(t.flags & 0x10))
+					model->m_solid.insert(model->m_solid.end(), {base + t.v[0], base + t.v[1], base + t.v[2]});
 				if (t.material >= mesh.materials.size())
 					continue;
 				auto found = batch_of.find(t.material);
@@ -1014,8 +1020,63 @@ namespace render
 		return model;
 	}
 
+	std::unique_ptr<CharacterModel> CharacterModels::BuildStatic(const std::string &tag, const CharacterAppearance &appearance,
+		std::string &error)
+	{
+		// The first source with the actor, then its mesh there (or wherever AppendItem finds it).
+		Source *source = nullptr;
+		for (auto &candidate : m_sources) {
+			int actor = candidate->wld.Find(tag + "_ACTORDEF");
+			if (actor >= 0 && candidate->wld.Fragments()[actor].type == 0x14) {
+				source = candidate.get();
+				break;
+			}
+		}
+		if (!source) {
+			error = "model " + tag + " not found";
+			return nullptr;
+		}
+		auto model = std::make_unique<CharacterModel>();
+		model->m_code = tag;
+		model->m_skeleton.bones.resize(1);
+		model->m_skeleton.bones[0].name = tag + "_DAG";
+		static const auto no_animations = std::make_shared<const std::map<std::string, SkeletonAnimation>>();
+		model->m_animations = no_animations;
+		WldMesh mesh;
+		int index = source->wld.Find(tag + "_DMSPRITEDEF");
+		if (index >= 0 && source->wld.Fragments()[index].type == 0x36 && source->wld.ReadMesh(index, mesh))
+			AppendItemMesh(*model, mesh, *source, 0, 0xffffff, true);
+		else {
+			for (auto &from : m_sources) {
+				index = from->wld.Find(tag + "_DMSPRITEDEF");
+				if (index >= 0 && from->wld.Fragments()[index].type == 0x36 && from->wld.ReadMesh(index, mesh)) {
+					AppendItemMesh(*model, mesh, *from, 0, 0xffffff, true);
+					break;
+				}
+			}
+		}
+		if (model->m_positions.empty()) {
+			error = "model " + tag + " has no mesh";
+			return nullptr;
+		}
+		model->m_min_z = 1e30f;
+		model->m_max_z = -1e30f;
+		for (const Vec3 &p : model->m_positions) {
+			model->m_min_z = std::min(model->m_min_z, p.z);
+			model->m_max_z = std::max(model->m_max_z, p.z);
+		}
+		// EQPlayer::SetHeights: the height / 5, the origin 3.125 of that over the feet.
+		float height = appearance.height > 0 ? appearance.height : 6;
+		model->m_scale = height * 0.2f;
+		model->m_min_z *= model->m_scale;
+		model->m_max_z *= model->m_scale;
+		model->m_head_z = model->m_max_z;
+		model->m_origin_over_feet = 3.125f * model->m_scale;
+		return model;
+	}
+
 	void CharacterModels::AppendItemMesh(CharacterModel &model, const WldMesh &mesh, Source &from, uint16_t point,
-		uint32_t tint)
+		uint32_t tint, bool solid)
 	{
 		// All its vertices on the one bone it hangs from, its own materials untinted.
 		uint32_t base = static_cast<uint32_t>(model.m_positions.size());
@@ -1028,6 +1089,8 @@ namespace render
 		}
 		std::map<uint16_t, size_t> batch_of; // SIZE_MAX: not drawn
 		for (const auto &t : mesh.triangles) {
+			if (solid && !(t.flags & 0x10))
+				model.m_solid.insert(model.m_solid.end(), {base + t.v[0], base + t.v[1], base + t.v[2]});
 			if (t.material >= mesh.materials.size())
 				continue;
 			auto found = batch_of.find(t.material);
@@ -1392,8 +1455,8 @@ namespace render
 		renderer.SetVertexLight({1, 1, 1}, {0, 0, 0});
 	}
 
-	bool CharacterModel::RayHit(const Transform &placement, uint64_t time_ms, const std::string &animation, bool loop,
-		const Vec3 &from, const Vec3 &direction, float range, float &distance) const
+	std::vector<Vec3> CharacterModel::Posed(const Transform &placement, uint64_t time_ms, const std::string &animation,
+		bool loop) const
 	{
 		auto it = m_animations->find(animation);
 		if (it == m_animations->end())
@@ -1406,6 +1469,25 @@ namespace render
 		std::vector<Vec3> posed(m_positions.size());
 		for (size_t i = 0; i < m_positions.size(); ++i)
 			posed[i] = bones[m_bones[i]].Apply(m_positions[i]);
+		return posed;
+	}
+
+	void CharacterModel::SolidTriangles(const Transform &placement, uint64_t time_ms, const std::string &animation, bool loop,
+		std::vector<Vec3> &out) const
+	{
+		out.clear();
+		if (m_solid.empty())
+			return;
+		std::vector<Vec3> posed = Posed(placement, time_ms, animation, loop);
+		out.reserve(m_solid.size());
+		for (uint32_t index : m_solid)
+			out.push_back(posed[index]);
+	}
+
+	bool CharacterModel::RayHit(const Transform &placement, uint64_t time_ms, const std::string &animation, bool loop,
+		const Vec3 &from, const Vec3 &direction, float range, float &distance) const
+	{
+		std::vector<Vec3> posed = Posed(placement, time_ms, animation, loop);
 		// Möller-Trumbore on each triangle.
 		bool hit = false;
 		float best = range;

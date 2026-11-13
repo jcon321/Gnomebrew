@@ -20,6 +20,7 @@
 // World space is the WLD frame (x = the server's y, y = the server's x).
 
 #include "math3d.h"
+#include "vehicle.h"
 #include "zone_regions.h"
 #include "zone_session.h"
 
@@ -56,6 +57,12 @@ public:
 	// has it.
 	void Drive(const render::Vec3 &feet, float heading, float speed, float heading_speed, const render::Vec3 &velocity,
 		bool on_ground, render::Environment body, render::Environment feet_environment);
+
+	// Its AttachedEntity: the boat its last floor check came down on (0 none); a boat never has one.
+	uint16_t Vehicle() const { return m_vehicle; }
+	// vehicle_premove and vehicle_postmove: its boat moved, and it goes along (before its own Step).
+	void Carry(const VehicleMove &move);
+	bool Placed() const { return m_placed; }
 
 	const render::Vec3 &Feet() const { return m_feet; }
 	float Heading() const { return m_heading; }
@@ -119,6 +126,8 @@ private:
 	// MovePlayer's flags for ProcessAnimation, from the last Step.
 	bool m_stationary = true, m_turning = false;
 	int m_riding = 0; // Ride's animation; 0 not riding
+	bool m_boat = false;     // a vehicle itself (IsBoatRace): no boat floors under it
+	uint16_t m_vehicle = 0;
 
 	// Animation.
 	bool m_animated = false;

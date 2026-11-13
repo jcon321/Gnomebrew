@@ -9,6 +9,7 @@
 #include "textures.h"
 #include "zone_regions.h"
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -57,15 +58,25 @@ namespace render
 		size_t MeshesHidden() const { return m_meshes_hidden; }
 		// Highest solid surface at or below `from` (searching down to `from.z - depth`), and how
 		// exposed it is to the ambient light (its vertices' alpha, 1 without colors).
-		bool FloorBelow(const Vec3 &from, float depth, float &floor_z, float *exposure = nullptr) const;
+		// `actor`: the solid spawn (SetActor) that floor is, 0 the zone's; without `actors`, those
+		// spawns aren't looked at (a boat's own floor).
+		bool FloorBelow(const Vec3 &from, float depth, float &floor_z, float *exposure = nullptr, uint16_t *actor = nullptr,
+			bool actors = true) const;
 		// The first solid surface on the segment from `from` to `to`, as a fraction of its length,
 		// and that surface's unit normal (facing `from`). `doors`: the doors count too.
 		bool SegmentHit(const Vec3 &from, const Vec3 &to, float &fraction, Vec3 *normal = nullptr, bool doors = true) const;
 		// A sphere swept from `from` to `to` (s3dCollideSphereWithWorld): the fraction of the way it
 		// gets before it touches a solid surface, and the unit normal from the touch to its center.
-		// Touching already stops it only going further in.
+		// Touching already stops it only going further in. With `doors`, the doors and the solid spawns
+		// count too; `actor` gets the spawn touched (0 none).
 		bool SphereHit(const Vec3 &from, const Vec3 &to, float radius, float &fraction, Vec3 *normal = nullptr,
-			bool doors = true) const;
+			bool doors = true, uint16_t *actor = nullptr) const;
+
+		// Spawns that are solid (CDisplay_IsCollisionValid's boats: races 72, 73, 114 and 141): their
+		// model's solid triangles where they are now (3 vertices each), by spawn id, set each frame.
+		void SetActor(uint16_t id, std::vector<Vec3> triangles);
+		void RemoveActor(uint16_t id) { m_actor_shapes.erase(id); }
+		bool HasActor(uint16_t id) const { return m_actor_shapes.count(id) != 0; }
 
 		// Doors and other switches (CDisplay::CreateActor's "<name>_ACTORDEF" from the zone's
 		// _obj.s3d), drawn and solid where they are, lit like the zone's objects where they're
@@ -121,6 +132,12 @@ namespace render
 			float placed_radius = 0;
 		};
 		std::vector<Door> m_doors;
+		struct ActorShape
+		{
+			std::vector<Vec3> triangles;
+			Vec3 low, high;
+		};
+		std::map<uint16_t, ActorShape> m_actor_shapes;
 		TextureCache m_textures;
 		std::vector<StaticMesh> m_meshes;
 		bool m_occlusion_culling = true;

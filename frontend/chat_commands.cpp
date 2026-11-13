@@ -22,7 +22,7 @@ namespace
 		UserColor, GuildInvite, GuildRemove, GuildDelete, GuildStatus, GuildLeader, GuildWar, GuildPeace, GuildMotd,
 		MakeRaidLeader, RaidInvite, RaidDecline, RaidAccept, RaidDisband, SetLootType, AddRaidLooter, RemoveRaidLooter,
 		RaidSay, RaidWindow, Channel, Loot, TargetTell, CharInfo, MoveLog, StopSong, Shield, Quit, Log, Keys, Dismount,
-		AlternateAdv, Pet,
+		AlternateAdv, Pet, SoundDriver,
 	};
 
 	struct CommandEntry
@@ -52,7 +52,7 @@ namespace
 		{"/private", 1, Command::None}, {"/find", 1, Command::None}, {"/goto", 1, Command::None},
 		{"/becomenpc", 1, Command::None}, {"/searchcorpse", 1, Command::None}, {"/yell", 0, Command::Yell},
 		{"/motd", 0, Command::Motd}, {"/corpse", 0, Command::None}, {"/me", 0, Command::Emote},
-		{"/location", 0, Command::Location}, {"/adriver", 0, Command::None}, {"/sdriver", 0, Command::None},
+		{"/location", 0, Command::Location}, {"/adriver", 0, Command::SoundDriver}, {"/sdriver", 0, Command::SoundDriver},
 		{"/chat", 0, Command::None}, {"/join", 0, Command::None}, {"/leave", 0, Command::None},
 		{"/leaveall", 0, Command::None}, {"/list", 0, Command::None}, {"/announce", 0, Command::None},
 		{"/1", 0, Command::None}, {"/2", 0, Command::None}, {"/3", 0, Command::None}, {"/4", 0, Command::None},
@@ -1440,6 +1440,11 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 	}
 	case Command::Keys:
 		m_zone.Keys(); // /keys (@004f8ec7)
+		break;
+	case Command::SoundDriver:
+		// /adriver and /sdriver (@004f69f5, CEverQuest_GetSndDriver @0054570c): only the message, in
+		// color 4; nothing is written.
+		ChatOut(FormatEqString(m_ui.eqstr, 12379, "Sound Card Info written to 'adriver.txt' in your EQ program folder.", {}), 4);
 		break;
 	case Command::AlternateAdv: {
 		// /alternateadv (@004fed79), with Luclin (the profile's Expansions 4) and something typed:

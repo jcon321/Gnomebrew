@@ -349,7 +349,8 @@ eqgame's `OP_MoveItem`.
   /auction, /ooc, /emote (`:`, /me), /hail, /target, /assist, /consider, /location, /time,
   /played, /motd, /afk, /anonymous, /shownames, /sit, /stand, /book, /cast, /camp, /clearchat,
   /random, /lootnodrop, /fastdrop, /autosplit, /roleplay, /targetgroupbuff (/tgb), /split, /yell,
-  /consent, /loot, /ttell, /charinfo, /movelog, /stopsong, /shield, /quit (/exit), /log, /keys, /dismount, /attack, /combatmusic, /doability, the
+  /consent, /loot, /ttell, /charinfo, /movelog, /stopsong, /shield, /quit (/exit), /log, /keys, /dismount,
+  /adriver, /sdriver, /attack, /combatmusic, /doability, the
   guild commands (see Guilds under In the zone),
   the raid commands (see Raids), /filter, /serverfilter and the socials (/smile, /wave and the
   other 86).
@@ -609,7 +610,7 @@ build/eqclient -u USER -p PASS [options]
 
 ```
 build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|train|ground|commands|group|raid|guild|skills|aa]]
-build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet]]
+build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats]]
 ```
 
 This drives the real front-end code with scripted input and writes PNG snapshots. Text is
@@ -663,7 +664,10 @@ and each second where another's rider and horse are and what they play, with the
 a horse of ours it snapshots it, rides forward 5 s and lets go (printing the speed each half
 second), looks in first person and dismounts; `pet` opens the pet window and prints its gauge and
 buttons as they change, types `/pet` lines, clicks Guard and Sit, holds Follow onto hot button 1
-and presses it there, printing what goes to the zone)
+and presses it there, printing what goes to the zone; `boats` prints, every 2 s for SECONDS, the
+boat under us, where we and the boats within 300 are, and the profile's boat; off a boat, it first
+puts us on the nearest ship as zoning in with its name does, and on a race 141 boat it takes the
+helm, holds forward 3 s and turns left 2 s, printing the boat and us each half second)
 and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,
 opens, minimizes, resizes and closes windows (the layout goes to OUTDIR), types into the chat window
 (a say, commands, /target) and prints what the chat window holds, then stands near the target to
@@ -1105,6 +1109,72 @@ it; the client puts the rider on it. Ported in `frontend/mounts.*` (who's on wha
   horse with a Rider (`GetNearestPlayerInView`'s third argument) and `ExecuteCmd` 29 hands a horse's
   target to its Rider; `UseSkill` allows only its few skills (see Skills and abilities);
   `IsCharacterMeditating` is a Mount standing still and not attacking.
+
+## Boats
+
+The zone's boats are NPCs of races 72 (ship), 73 (launch), 114 (ghost ship) and 141 (a rowboat),
+`isSpecialRace_allBoatTypes` (@004f30be). Ships and launches sail their grids (the quests flip spawn
+conditions as they arrive) and `MovePC` whoever is on board to the next zone at the end; rowboats
+sit still until someone takes the helm. Ported in `frontend/vehicle.h`, `frontend/zone_view.cpp`
+(`UpdateSpawns`, `UpdateBoatShapes`, `PlaceOnVehicle`, `SteerStep`), `frontend/player_movement.*`,
+`frontend/spawn_actor.*` and `FrontEnd::VehiclePassageOfTime`; checked through replays (`boats`)
+of a Lake Rathetear rowboat and a Stormbreaker spawned with `#npctypespawn 770`.
+
+- **Models:** a boat's `<tag>_ACTORDEF` is a mesh, not a skeleton: `SHIP` and `LAUNCH` in the
+  zones' own `_chr.s3d` (butcher, erudnext, erudsxing, freporte, qeynos, oot, timorous...), `GSP`
+  (the ghost ship) in `oot_chr`, `BOAT` in `global_chr`. `CreatePlayerActor` makes any actor of it
+  (`r3dCreateActorEx`), scaled by `SetHeights` as any spawn (size / 5) with its origin at the
+  spawn's position. `EQPlayer::GetActorTag` gives race 72 no gender letter but race 73's men an
+  `M` (`LAUNCHM`, which no file has: a gender 0 launch falls back, as in eqgame). We build them in
+  `CharacterModels::BuildStatic`: the `_DMSPRITEDEF` on one bone, and its polygons without the
+  passable flag (0x10) as its solid triangles.
+- **Solid, and attached** (`CDisplay_IsCollisionValid` @004b36ba): eqgfx's collision calls it for
+  each actor met; an `EQPlayer` actor of a boat race is solid, and the one colliding takes it as
+  its ActorInfo `AttachedEntity` (+0x190). `DoFloorCheck` clears that before each floor check
+  (`GetPlayerFloorHeight`'s drop), so `AttachedEntity` is the boat under our feet. Our sweep and
+  floor drop meet the boats' triangles (`ZoneScene::SetActor`, posed each frame for the boats
+  within their bounding radius + 100 of us); a boat's own floor check leaves them out.
+- **Carried** (`vehicle_premove` @0054d664, `vehicle_postmove` @0054d7a9): around every move of a
+  boat (`process_physics`, `ProcessUpdateStats`' `unpack_physics` of its update, `MovePlayer`),
+  whatever has it as `AttachedEntity` goes into the boat's frame (minus its position, turned back
+  by its heading and pitch) and out again from where it is after: position, heading, pitch and
+  `MovementSpeedX/Y/Z` all go along. We move the boats first each frame and carry us and the
+  spawns standing on them (pitch left out: boats don't pitch here).
+- **Boarding** (`EQ_Character::DoPassageOfTime`, each 1000 ms of ActorInfo's `LastTick`): on a
+  boat, its name goes into `EQ_Character`+0xcb4 (the profile's `boat` @3256) and, the first time,
+  `OP_BoardBoat` (0x41bb) with the name, `strlen + 4` bytes (the zone takes 8 to 32: it sets
+  `BoatID` and `m_pp.boat`, and fades levitation). Off one, a counter (`DAT_0063db20`) counts the
+  seconds; at its second the name is cleared and, if we'd boarded (`DAT_0063db2c`), `OP_LeaveBoat`
+  (0x41bc, no body). Both statics outlive zoning.
+- **Zoning in on one** (`CEverQuest::DoMainLoop` @0053df6e, with the profile's boat set):
+  `CEverQuest_StripShipName` (digits and `#` out) and `EQPlayer_get_player_partial_name` find it;
+  then `ZoneEnter` (the profile's position, our center) and heading are taken in the boat's frame
+  (`vehicle_postmove`, `SavePC` keeping it so on a boat), and `GetPlayerFloorHeight` from 1 over
+  that must land on the boat; else "Bad vehicle coords: CENTER", the boat's center 25 up; else
+  "Still can't set vehicle", `MoveLocalPlayerToSafeCoords` (@004b459c: the zone's safe point, the
+  boat name cleared). EQMacEmu sends the world position `MovePC` gave, which misses, so the
+  boat's center + 25 is where we come in. No such boat: `IFoundMyVehicle` sends
+  `MSG_LOCATE_VEHICLE` (0x200e) with the name and waits up to 60 s (eqgame blocks) for 0x40a2,
+  which moves us to that zone (`vehicle_xfr`); EQMacEmu answers neither (its `SendToBoat` already
+  sends us to the safe point when the boat isn't up), and after 60 s it's the safe point.
+- **`msg_vehicle_reset`** (0x414a, `MSG_VEHICLE_RESET`, no body): on a boat, to the zone's safe
+  point on the floor there. EQMacEmu doesn't send it.
+- **The helm** of a race 141 boat that's an NPC (`CEverQuest::RightClickedOnPlayer` and
+  `EQ_3DView_MouseUp`): the right button on the boat we stand on sends `OP_ControlBoat` (0x4126,
+  {u16 boat, u8 1, u8}); on the one we steer, {boat, 0} and `pinstCharSpawn` is us again, the boat
+  stopped. The zone answers yes with the same packet (`Client::Handle_OP_ControlBoat`: the boat's
+  target is who has it; "In use" otherwise); `HandleWorldMessage`'s 0x4126 with 1 makes the boat
+  `pinstCharSpawn` and, for race 141, says 1407 ("You have the helm captain."). `ProcessControls`
+  lets go the same way once we're off the boat we steer. Steering, the keys move the boat
+  (`ProcessControls` on `pinstCharSpawn`: its run or walk speed forward, its walk speed back,
+  turning up to 12 a tick) through `process_physics` without gravity (0.625, halved moving, and
+  0.8 of the speed), and `MovePlayer`'s race 141 branch checks 6 ahead (11 behind backing up):
+  the floor there (`GetPlayerFloorHeight`, its own height with none), nothing solid on the way from
+  where it was (a sphere of 2), and `GetEnvironment` over that floor not dry; else the move and turn
+  are undone and the boat stops. `DoMainLoop` sends its `OP_ClientUpdate` with its own id (300 ms
+  apart, flagged by a turn of 2 or a speed change of 0.2 and every second); EQMacEmu moves the boat
+  when the id is the client's `BoatID`. `SetHeights` gives race 141 levitation (`SetNoGrav(2)`, a
+  bob of size 4, 0.005); the ships no gravity.
 
 ## Character creation
 
@@ -1838,7 +1908,10 @@ details and the nearest spawns at the top left and the radar at the top right.
 - **/keys** (@004f8ec7): `OP_Key` (0x425d) with "KEY\0"; EQMacEmu checks only the size and lists
   the key ring (`Client::KeyRingList`). **/dismount** (@004ff5a6): on a mount (ActorInfo's Mount),
   13284, the SPA 113 buff removed (`GetPCSpellAffect`, `RemovePCAffect`) and `EQPlayer::Dismount`;
-  else 13285, which is what an old model on its unseen horse gets (see Horses).
+  else 13285, which is what an old model on its unseen horse gets (see Horses). **/adriver** and
+  **/sdriver** (both @004f69f5, `CEverQuest_GetSndDriver` @0054570c) are the sound driver's, not
+  boats': they only print 12379 ("Sound Card Info written to 'adriver.txt'...") in color 4, and
+  nothing is written.
 - **OP_ManaUpdate** (0x4219, {u16 spawn, u16 mana}) sets our mana, whoever it names. **OP_DespawnDoor**
   (0x409b, no body) deletes every door and switch. **OP_PlaySound** (0x4048, {u16 spawn, u16 sound})
   plays the wave where the spawn is, full to 100 and silent past it.

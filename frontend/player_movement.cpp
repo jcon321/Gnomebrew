@@ -57,6 +57,31 @@ void PlayerMovement::Place(const render::Vec3 &feet, float heading, float height
 	m_feet_environment = m_body_environment = m_head_environment = render::Environment::Dry;
 	m_slippery = m_was_swimming = false;
 	m_zone_line.clear();
+	m_vehicle = 0;
+}
+
+void PlayerMovement::Carry(const VehicleMove &move)
+{
+	m_feet = move.Carry(m_feet);
+	m_heading = move.CarryHeading(m_heading);
+	m_velocity = move.Rotate(m_velocity);
+}
+
+bool PlayerMovement::MoveTo(const render::Vec3 &feet, float heading, const render::ZoneScene &scene)
+{
+	m_feet = feet;
+	m_heading = WrapHeading(heading);
+	m_speed = m_heading_speed = m_strafe = 0;
+	m_velocity = {};
+	float floor_z;
+	render::Vec3 lift{0, 0, m_height * BodyHeight + StepHeight()};
+	if (!FloorUnder(m_feet + lift, scene, floor_z, &m_vehicle)) {
+		m_vehicle = 0;
+		return false;
+	}
+	m_feet.z = floor_z;
+	m_on_ground = true;
+	return true;
 }
 
 std::string PlayerMovement::TakeZoneLine()
@@ -229,13 +254,16 @@ void PlayerMovement::Tick(float t, const render::ZoneScene &scene)
 	render::Vec3 lift{0, 0, m_height * BodyHeight + StepHeight()};
 	render::Vec3 center = Sweep(m_feet + lift, m_velocity * t, scene);
 	render::Vec3 feet = center - lift;
+	// DoFloorCheck: AttachedEntity is the boat the drop lands on, if any.
 	float floor_z;
-	if (!FloorUnder(center, scene, floor_z)) {
+	if (!FloorUnder(center, scene, floor_z, &m_vehicle)) {
 		// Nothing below at all: off the edge of the world. Stay put.
 		feet = before;
 		m_velocity.x = m_velocity.y = 0;
-		if (!FloorUnder(before + lift, scene, floor_z))
+		if (!FloorUnder(before + lift, scene, floor_z, &m_vehicle)) {
 			floor_z = -1e30f;
+			m_vehicle = 0;
+		}
 	}
 	float z = feet.z;
 	// Walking down a slope or a step keeps us on the ground instead of falling off each edge.
@@ -358,15 +386,17 @@ render::Vec3 PlayerMovement::Sweep(const render::Vec3 &start, render::Vec3 move,
 	return center;
 }
 
-bool PlayerMovement::FloorUnder(const render::Vec3 &center, const render::ZoneScene &scene, float &floor_z) const
+bool PlayerMovement::FloorUnder(const render::Vec3 &center, const render::ZoneScene &scene, float &floor_z,
+	uint16_t *vehicle) const
 {
 	// GetPlayerFloorHeight: a sphere a quarter of the ModelHeightOffset across, dropped from half a
-	// unit over the lifted center; the floor is where its bottom comes to rest.
+	// unit over the lifted center; the floor is where its bottom comes to rest (a boat's deck too:
+	// CDisplay_IsCollisionValid makes it our AttachedEntity).
 	float radius = std::max(m_height * BodyHeight * 0.25f, 0.1f);
 	render::Vec3 from = center + render::Vec3{0, 0, 0.5f};
 	render::Vec3 to = from - render::Vec3{0, 0, 1000};
 	float fraction;
-	if (!scene.SphereHit(from, to, radius, fraction))
+	if (!scene.SphereHit(from, to, radius, fraction, nullptr, true, vehicle))
 		return false;
 	floor_z = from.z - 1000 * fraction - radius + 0.001f;
 	return true;

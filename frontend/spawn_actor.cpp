@@ -45,8 +45,8 @@ void SpawnActor::Update(const ZoneSpawn &spawn, float height, float gravity, uin
 	// EQPlayer: gravity unless LevitationState says otherwise (3 turns it off in water, in Step);
 	// a few races never fall.
 	m_fly_mode = spawn.fly_mode;
-	m_gravity_on = (spawn.fly_mode == 0 || spawn.fly_mode == 3) && spawn.race != 72 && spawn.race != 73 &&
-	               spawn.race != 114 && spawn.race != 141;
+	m_boat = IsBoatRace(spawn.race);
+	m_gravity_on = (spawn.fly_mode == 0 || spawn.fly_mode == 3) && !m_boat;
 	if (m_placed && spawn.updated_ms == m_updated_ms) {
 		if (spawn.npc >= 2) // a corpse stops where it fell
 			m_speed = m_heading_speed = m_velocity.x = m_velocity.y = 0;
@@ -94,6 +94,13 @@ void SpawnActor::Step(const ZoneScene &scene, float ms, bool physics, uint64_t n
 	Vec3 moved = m_feet - before;
 	m_stationary = m_speed == 0 && std::fabs(moved.x) < 0.2f && std::fabs(moved.y) < 0.2f && std::fabs(moved.z) < 0.2f;
 	m_turning = m_heading_speed != 0 || m_heading != heading;
+}
+
+void SpawnActor::Carry(const VehicleMove &move)
+{
+	m_feet = move.Carry(m_feet);
+	m_heading = move.CarryHeading(m_heading);
+	m_velocity = move.Rotate(m_velocity);
 }
 
 void SpawnActor::Ride(const Vec3 &feet, float heading, int animation)
@@ -169,7 +176,7 @@ void SpawnActor::Physics(float t, const ZoneScene &scene, bool floor)
 	// MovePlayer keeps the feet on the floor; CheckForUnderFloor brings them back up onto it.
 	float step_up = std::max(1.0f, m_height * 0.4f);
 	float floor_z;
-	bool found = scene.FloorBelow({m_feet.x, m_feet.y, m_feet.z + step_up}, 1000, floor_z);
+	bool found = scene.FloorBelow({m_feet.x, m_feet.y, m_feet.z + step_up}, 1000, floor_z, nullptr, &m_vehicle, !m_boat);
 	if (!found) {
 		// Nothing below at all (off the zone's mesh): the server's height stands.
 		if (gravity)

@@ -345,6 +345,195 @@ void ZoneView::DriveHorse(uint64_t now_ms)
 		m_rider_placement = {dag.rotation, dag.translation, 1};
 }
 
+void ZoneView::UpdateBoatShapes(const std::map<uint16_t, ZoneSpawn> &spawns, uint16_t my_id)
+{
+	// CDisplay_IsCollisionValid: a boat's actor is solid. Those within reach of us (and of the boat
+	// we steer, which may be farther off than the camera), posed as they're drawn.
+	for (const auto &[id, spawn] : spawns) {
+		if (id == my_id || !IsBoatRace(spawn.race))
+			continue;
+		auto it = m_actors.find(id);
+		if (it == m_actors.end() || !it->second.model || !it->second.model->HasSolidTriangles()) {
+			m_zone.RemoveActor(id);
+			continue;
+		}
+		SpawnView &view = it->second;
+		const render::CharacterModel &model = *view.model;
+		float reach = model.BoundingRadius() + 100;
+		if (id != m_driven && id != m_vehicle_pending && render::Length(view.Feet() - m_feet) > reach) {
+			m_zone.RemoveActor(id);
+			continue;
+		}
+		render::Transform placement;
+		placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(view.actor.Heading()));
+		placement.translation = view.Feet() + render::Vec3{0, 0, model.OriginOverFeet()};
+		std::vector<render::Vec3> triangles;
+		model.SolidTriangles(placement, view.actor.AnimationTime(model), render::AnimationCode(view.actor.Animation()),
+			view.actor.AnimationLoops(), triangles);
+		m_zone.SetActor(id, std::move(triangles));
+	}
+}
+
+void ZoneView::PutOnVehicle(uint16_t boat, float x, float y, float z, float heading)
+{
+	m_vehicle_pending = boat;
+	m_vehicle_local = {y, x, z}; // WLD x is the server's y
+	m_vehicle_heading = heading;
+}
+
+bool ZoneView::PlaceOnVehicle()
+{
+	auto it = m_actors.find(m_vehicle_pending);
+	if (it == m_actors.end() || !it->second.actor.Placed() || !m_zone.HasActor(m_vehicle_pending))
+		return false; // its model and place aren't in yet
+	const SpawnView &boat = it->second;
+	// vehicle_postmove from the boat's position (its center), turned by its heading.
+	VehicleMove out;
+	out.to = boat.Feet() + render::Vec3{0, 0, boat.center_height};
+	out.to_heading = boat.actor.Heading();
+	float center = m_height / 5 * 3.125f; // our ModelHeightOffset
+	auto try_at = [&](const render::Vec3 &local) {
+		render::Vec3 feet = out.Carry(local) - render::Vec3{0, 0, center};
+		// GetPlayerFloorHeight from our center + 1 (MoveTo drops from the lifted center).
+		return m_movement.MoveTo(feet, out.CarryHeading(m_vehicle_heading), m_zone) && m_movement.Vehicle() == m_vehicle_pending;
+	};
+	bool on = try_at(m_vehicle_local);
+	if (!on)
+		on = try_at({0, 0, 25}); // "Bad vehicle coords: CENTER"
+	m_vehicle_pending = 0;
+	if (on) {
+		m_feet = m_movement.Feet();
+		m_heading = m_movement.Heading();
+		m_server_position = {m_feet.y, m_feet.x, m_feet.z + center};
+		m_vehicle_result = VehicleResult::Placed;
+	}
+	else {
+		MoveToSafePoint(m_info.safe_x, m_info.safe_y, m_info.safe_z);
+		m_vehicle_result = VehicleResult::Failed;
+	}
+	return true;
+}
+
+void ZoneView::MoveToSafePoint(float x, float y, float z)
+{
+	if (!m_placed) {
+		SetPlayerPosition(x, y, z, m_heading);
+		return;
+	}
+	// The safe point is our center; down onto the floor from 1 over it, with nothing attached.
+	float center = m_height / 5 * 3.125f;
+	m_movement.MoveTo({y, x, z - center + 1}, m_heading, m_zone);
+	m_movement.ClearVehicle();
+	m_feet = m_movement.Feet();
+	m_server_position = {m_feet.y, m_feet.x, m_feet.z + center};
+}
+
+void ZoneView::SteerBoat(uint16_t boat)
+{
+	auto it = m_actors.find(boat);
+	if (boat && it == m_actors.end())
+		boat = 0;
+	if (m_driven && m_driven != boat) {
+		// pinstCharSpawn us again: the boat stops where it is.
+		auto was = m_actors.find(m_driven);
+		if (was != m_actors.end())
+			was->second.actor.Drive(was->second.Feet(), was->second.actor.Heading(), 0, 0, {}, true,
+				was->second.actor.BodyEnvironment(), was->second.actor.FeetEnvironment());
+	}
+	m_driven = boat;
+	if (!boat)
+		return;
+	const SpawnView &view = it->second;
+	m_drive_feet = view.Feet();
+	m_drive_heading = view.actor.Heading();
+	m_drive_speed = m_drive_heading_speed = m_drive_turn_ramp = 0;
+	m_drive_velocity = {};
+	m_drive_center = view.center_height;
+}
+
+void ZoneView::SteerStep(const MoveControls &controls, float ms)
+{
+	auto it = m_actors.find(m_driven);
+	if (it == m_actors.end()) {
+		m_driven = 0;
+		return;
+	}
+	const SpawnView &view = it->second;
+	m_drive_center = view.center_height;
+	// ProcessControls on pinstCharSpawn: the boat's own speeds (MovementForward and
+	// MovementBackwardSpeedMultiplier), turning up to 12 a tick, one more each frame.
+	float ticks = std::min(ms * 0.02f, 3.0f);
+	m_drive_speed = 0;
+	if (controls.forward && !controls.back)
+		m_drive_speed = controls.run ? view.run_speed : view.walk_speed;
+	else if (controls.back && !controls.forward)
+		m_drive_speed = -view.walk_speed;
+	int direction = (controls.left ? 1 : 0) - (controls.right ? 1 : 0);
+	if (direction != 0) {
+		m_drive_turn_ramp = std::min(m_drive_turn_ramp + ticks * 3, 12.0f);
+		m_drive_heading_speed = direction * std::max(1.0f, std::floor(m_drive_turn_ramp));
+	}
+	else
+		m_drive_turn_ramp = m_drive_heading_speed = 0;
+
+	render::Vec3 before = m_drive_feet;
+	float before_heading = m_drive_heading;
+	// process_physics with no gravity: the push 0.8 of the speed along the heading, the velocity
+	// kept 0.625 a frame, halved for a moving NPC (no Rider). Played at 60 frames a second.
+	constexpr float FrameTicks = 1.0f / 3;
+	for (float left = ticks; left > 0; left -= FrameTicks) {
+		float t = std::min(left, FrameTicks);
+		m_drive_heading = std::fmod(m_drive_heading + t * m_drive_heading_speed + 512.0f, 512.0f);
+		float friction = 0.625f;
+		if (m_drive_velocity.x != 0 || m_drive_velocity.y != 0)
+			friction *= 0.5f;
+		float frames = t / FrameTicks;
+		float keep = std::pow(friction, frames);
+		float a = render::HeadingToRadians(m_drive_heading);
+		float push = m_drive_speed * 0.8f * (1 - keep) / (1 - friction);
+		m_drive_velocity.x = m_drive_velocity.x * keep + std::cos(a) * push;
+		m_drive_velocity.y = m_drive_velocity.y * keep + std::sin(a) * push;
+		m_drive_velocity.z = 0;
+		m_drive_feet += m_drive_velocity * t;
+	}
+	// MovePlayer's race 141 branch: 6 ahead of where it's got to (11 behind backing up), the floor
+	// there (or its own height with none), nothing solid on the way from where it was (a sphere of
+	// 2), and water just over that floor; else back where it was, stopped.
+	float a = render::HeadingToRadians(m_drive_heading);
+	float reach = m_drive_speed < 0 ? -11.0f : 6.0f;
+	render::Vec3 center = m_drive_feet + render::Vec3{0, 0, m_drive_center};
+	render::Vec3 ahead{center.x + std::cos(a) * reach, center.y + std::sin(a) * reach, center.z};
+	float floor_z = ahead.z;
+	if (!m_zone.FloorBelow(ahead, 1000, floor_z, nullptr, nullptr, false))
+		floor_z = ahead.z;
+	float fraction;
+	bool blocked = m_zone.SphereHit(before + render::Vec3{0, 0, m_drive_center}, ahead, 2, fraction, nullptr, false);
+	const render::ZoneRegions &regions = m_zone.Regions();
+	render::Vec3 below{ahead.x, ahead.y, floor_z + 0.01f};
+	bool water = !regions.Empty() && regions.RegionAt(below) >= 0 && regions.EnvironmentAt(below) != render::Environment::Dry;
+	if (blocked || !water) {
+		m_drive_feet = before;
+		m_drive_heading = before_heading;
+		m_drive_speed = m_drive_heading_speed = 0;
+		m_drive_velocity = {};
+	}
+}
+
+ZoneMovement ZoneView::SteeredMovement() const
+{
+	ZoneMovement m;
+	m.x = m_drive_feet.y; // WLD x is the server's y
+	m.y = m_drive_feet.x;
+	m.z = m_drive_feet.z + m_drive_center;
+	m.heading = m_drive_heading;
+	m.speed = m_drive_speed;
+	m.heading_speed = m_drive_heading_speed;
+	m.dy = m_drive_velocity.x;
+	m.dx = m_drive_velocity.y;
+	m.dz = 0;
+	return m;
+}
+
 render::Transform ZoneView::MyPlacement() const
 {
 	if (m_rider_attached)
@@ -404,9 +593,18 @@ bool ZoneView::Move(const MoveControls &controls, uint64_t now_ms, bool looking)
 		return false;
 
 	UpdateRiding();
+	// DoMainLoop: back onto our boat, zoning in on one.
+	if (m_vehicle_pending)
+		PlaceOnVehicle();
+	// At a boat's helm the keys steer it (pinstCharSpawn), and we stand.
+	MoveControls own = controls;
+	if (m_driven) {
+		SteerStep(controls, ms);
+		own.forward = own.back = own.left = own.right = own.strafe = own.jump = false;
+	}
 	// We swim where we look: the view's pitch from where each camera starts out.
-	MoveControls swim = controls;
-	swim.jump = std::exchange(m_jump_pressed, false);
+	MoveControls swim = own;
+	swim.jump = std::exchange(m_jump_pressed, false) && !m_driven;
 	swim.pitch = (m_pitch - (m_view == CameraView::Chase ? -12.0f : 0.0f)) * 512 / 360;
 	bool jumped = m_movement.Step(swim, ms, m_zone);
 	m_feet = m_movement.Feet();
@@ -1568,6 +1766,7 @@ void ZoneView::UpdateSpawns(const std::map<uint16_t, ZoneSpawn> &spawns, uint16_
 		}
 		if (m_sound)
 			m_sound->RemoveActorLoop(it->first);
+		m_zone.RemoveActor(it->first);
 		it = m_actors.erase(it);
 	}
 	// The horses (and everyone else) first, then the riders on them.
@@ -1576,9 +1775,10 @@ void ZoneView::UpdateSpawns(const std::map<uint16_t, ZoneSpawn> &spawns, uint16_
 		if (rider != my_id && spawns.count(rider) && spawns.count(horse))
 			riders[horse] = rider;
 	std::vector<std::pair<uint16_t, const ZoneSpawn *>> on_horses;
-	for (const auto &[id, spawn] : spawns) {
-		if (id == my_id || id == 0)
-			continue;
+	// The boats move first (process_physics' vehicle_premove and vehicle_postmove carry what's on
+	// them: us and anyone else whose floor is one), then everyone else.
+	std::map<uint16_t, VehicleMove> boat_moves;
+	auto pose = [&](uint16_t id, const ZoneSpawn &spawn) {
 		SpawnView &view = m_actors[id];
 		view.race = spawn.race;
 		view.player = spawn.npc == 0;
@@ -1589,7 +1789,7 @@ void ZoneView::UpdateSpawns(const std::map<uint16_t, ZoneSpawn> &spawns, uint16_
 		auto mount = m_mounts.find(id);
 		if (mount != m_mounts.end() && spawns.count(mount->second)) {
 			on_horses.emplace_back(id, &spawn);
-			continue;
+			return;
 		}
 		if (view.attached) { // off the horse: on its own feet from here
 			view.attached = false;
@@ -1614,10 +1814,48 @@ void ZoneView::UpdateSpawns(const std::map<uint16_t, ZoneSpawn> &spawns, uint16_
 			moved.size = by.size > 0 ? by.size : (render::IsPlayerRace(by.race) ? render::RaceHeight(by.race) : 6);
 			PoseSpawn(view, moved, now_ms);
 		}
-		else
+		else if (IsBoatRace(spawn.race)) {
+			VehicleMove move;
+			bool placed = view.actor.Placed() && view.last_ms != 0;
+			move.from = view.Feet();
+			move.from_heading = view.actor.Heading();
 			PoseSpawn(view, spawn, now_ms);
+			if (id == m_vehicle_pending) // its model now, wherever the camera is: we go onto it
+				ResolveModel(view, spawn, true);
+			// The boat we steer goes where our steering has it (ProcessControls on pinstCharSpawn);
+			// the zone doesn't send us its updates.
+			if (id == m_driven)
+				view.actor.Drive(m_drive_feet, m_drive_heading, m_drive_speed, m_drive_heading_speed, m_drive_velocity, true,
+					view.actor.BodyEnvironment(), view.actor.FeetEnvironment());
+			move.to = view.Feet();
+			move.to_heading = view.actor.Heading();
+			if (placed)
+				boat_moves[id] = move;
+		}
+		else {
+			if (uint16_t boat = view.actor.Vehicle(); boat && boat_moves.count(boat))
+				view.actor.Carry(boat_moves[boat]);
+			PoseSpawn(view, spawn, now_ms);
+		}
 		if (m_sound)
 			SpawnSounds(view, spawn, id, now_ms);
+	};
+	for (int pass = 0; pass < 2; ++pass) {
+		for (const auto &[id, spawn] : spawns)
+			if (id != my_id && id != 0 && IsBoatRace(spawn.race) == (pass == 0))
+				pose(id, spawn);
+		if (pass == 0) {
+			// Us on our boat; then the boats are solid where they are now.
+			if (m_placed && !m_horse) {
+				auto move = boat_moves.find(m_movement.Vehicle());
+				if (move != boat_moves.end()) {
+					m_movement.Carry(move->second);
+					m_feet = m_movement.Feet();
+					m_heading = m_movement.Heading();
+				}
+			}
+			UpdateBoatShapes(spawns, my_id);
+		}
 	}
 	for (const auto &[id, spawn] : on_horses) {
 		SpawnView &view = m_actors[id];

@@ -37,6 +37,7 @@
 // World space is the WLD frame (x = the server's y, y = the server's x).
 
 #include "math3d.h"
+#include "vehicle.h"
 #include "zone_regions.h"
 
 #include <string>
@@ -104,6 +105,16 @@ public:
 	// The hardest the feet met the floor going down since the last call (per tick, negative; 0 for
 	// none), and whether the body was in water (CheckForUnderFloor's landing sounds).
 	float TakeLanding(bool &in_water);
+	// ActorInfo's AttachedEntity: the boat (a solid spawn, ZoneScene::SetActor) our last floor check
+	// came down on, 0 none (DoFloorCheck clears it and GetPlayerFloorHeight's drop sets it).
+	uint16_t Vehicle() const { return m_vehicle; }
+	void ClearVehicle() { m_vehicle = 0; }
+	// vehicle_premove and vehicle_postmove: our boat moved, and we go along, turned with it (our
+	// heading and motion too).
+	void Carry(const VehicleMove &move);
+	// Put somewhere at once with no motion (msg_vehicle_reset, IFoundMyVehicle's places), the rest of
+	// what we have kept; true when there's a floor under it, which the feet are put on.
+	bool MoveTo(const render::Vec3 &feet, float heading, const render::ZoneScene &scene);
 
 private:
 	void Tick(float ticks, const render::ZoneScene &scene);
@@ -111,7 +122,8 @@ private:
 	bool CanSwimJump(const render::ZoneScene &scene) const;
 	float StepHeight() const; // how far over the body MovePlayer lifts the sphere
 	render::Vec3 Sweep(const render::Vec3 &center, render::Vec3 move, const render::ZoneScene &scene) const;
-	bool FloorUnder(const render::Vec3 &center, const render::ZoneScene &scene, float &floor_z) const;
+	// `vehicle`: the solid spawn the floor is, 0 the zone's.
+	bool FloorUnder(const render::Vec3 &center, const render::ZoneScene &scene, float &floor_z, uint16_t *vehicle = nullptr) const;
 
 	render::Vec3 m_feet;
 	float m_heading = 0;
@@ -148,4 +160,5 @@ private:
 	std::string m_zone_line;
 	float m_landing = 0;
 	bool m_landing_wet = false;
+	uint16_t m_vehicle = 0;
 };

@@ -502,6 +502,8 @@ void ZoneSession::Reset(const std::string &character)
 	m_have_profile = m_have_zone_entry = m_sent_req_new_zone = m_sent_exp_zonein = false;
 	m_movement = ZoneMovement{};
 	m_have_movement = m_movement_dirty = false;
+	m_steered_id = 0;
+	m_steered_dirty = false;
 	m_identical_updates = 0;
 	m_recent_packets.clear();
 	m_last_sent = SentPosition{};
@@ -1781,6 +1783,100 @@ bool ZoneSession::PetCommand(uint32_t command, uint16_t target)
 		"OP_PetCommands " + std::to_string(command) + " " + std::to_string(target));
 }
 
+void ZoneSession::SetSteeredMovement(uint16_t id, const ZoneMovement &movement)
+{
+	if (id != m_steered_id) {
+		m_steered_id = id;
+		m_steered_heading = movement.heading;
+		m_steered_speed = movement.speed;
+		m_steered_dirty = id != 0;
+		m_steered_tick_ms = NowMs();
+	}
+	if (!id)
+		return;
+	m_steered = movement;
+	// ProcessControls: on pinstCharSpawn when it isn't us.
+	if (std::fabs(movement.heading - m_steered_heading) >= 2) {
+		m_steered_dirty = true;
+		m_steered_heading = movement.heading;
+	}
+	if (std::fabs(movement.speed - m_steered_speed) >= 0.2f) {
+		m_steered_dirty = true;
+		m_steered_speed = movement.speed;
+	}
+}
+
+void ZoneSession::SendSteered(uint64_t now_ms)
+{
+	if (!m_steered_id)
+		return;
+	// DoPassageOfTime flags it every second; DoMainLoop sends it 300 ms after the last.
+	if (now_ms - m_steered_tick_ms >= 1000) {
+		m_steered_tick_ms = now_ms;
+		m_steered_dirty = true;
+	}
+	if (!m_steered_dirty || now_ms - m_steered_sent_ms <= 300)
+		return;
+	const ZoneMovement &m = m_steered;
+	uint8_t update[15] = {};
+	memcpy(update, &m_steered_id, 2);
+	update[2] = static_cast<uint8_t>(static_cast<int8_t>(std::clamp(m.speed, -12.8f, 12.7f) * 10));
+	float heading = std::fmod(m.heading, 512.0f);
+	if (heading < 0)
+		heading += 512;
+	update[3] = static_cast<uint8_t>(static_cast<int>(heading * 0.5f) & 0xff);
+	update[4] = static_cast<uint8_t>(static_cast<int8_t>(std::clamp(m.heading_speed, -128.0f, 127.0f)));
+	int16_t y = static_cast<int16_t>(m.y), x = static_cast<int16_t>(m.x), z = static_cast<int16_t>(m.z * 10);
+	memcpy(update + 5, &y, 2);
+	memcpy(update + 7, &x, 2);
+	memcpy(update + 9, &z, 2);
+	int32_t dy = static_cast<int32_t>(std::clamp(m.dy, -64.0f, 63.0f) * 16);
+	int32_t dx = static_cast<int32_t>(std::clamp(m.dx, -32.0f, 31.0f) * 16);
+	int32_t dz = static_cast<int32_t>(std::clamp(m.dz, -64.0f, 63.0f) * 16);
+	uint32_t deltas = (static_cast<uint32_t>(dx) & 0x3ff) << 22 | (static_cast<uint32_t>(dz) & 0x7ff) << 11 |
+	                  (static_cast<uint32_t>(dy) & 0x7ff);
+	memcpy(update + 11, &deltas, 4);
+	Send(ZoneOp::ClientUpdate, update, sizeof(update), m_verbose ? "OP_ClientUpdate (steered)" : "");
+	m_steered_dirty = false;
+	m_steered_sent_ms = now_ms;
+}
+
+void ZoneSession::BoardBoat(const std::string &name)
+{
+	if (m_state != State::InZone)
+		return;
+	// DoPassageOfTime sends strlen + 4 bytes of the name (the zone takes 8 to 32).
+	std::vector<uint8_t> body(std::min<size_t>(name.size() + 4, 32), 0);
+	memcpy(body.data(), name.data(), std::min(name.size(), body.size() - 1));
+	Send(ZoneOp::BoardBoat, body.data(), body.size(), "OP_BoardBoat " + name);
+}
+
+void ZoneSession::LeaveBoat()
+{
+	if (m_state != State::InZone)
+		return;
+	Send(ZoneOp::LeaveBoat, nullptr, 0, "OP_LeaveBoat");
+}
+
+void ZoneSession::ControlBoat(uint16_t boat, bool take)
+{
+	if (m_state != State::InZone)
+		return;
+	uint8_t body[4] = {};
+	memcpy(body, &boat, 2);
+	body[2] = take ? 1 : 0;
+	Send(ZoneOp::ControlBoat, body, sizeof(body), std::string("OP_ControlBoat ") + (take ? "take " : "let go ") + std::to_string(boat));
+}
+
+void ZoneSession::LocateVehicle(const std::string &name)
+{
+	if (m_state != State::InZone)
+		return;
+	std::vector<uint8_t> body(name.begin(), name.end());
+	body.push_back(0);
+	Send(ZoneOp::LocateVehicle, body.data(), body.size(), "MSG_LOCATE_VEHICLE " + name);
+}
+
 void ZoneSession::SendMovement(uint64_t now_ms)
 {
 	// DoPassageOfTime flags an update every second.
@@ -1966,6 +2062,10 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		p.cursor_copper = Read<int32_t>(data, 2968);
 		p.zone_id = Read<uint32_t>(data, 3444);
 		p.autosplit = Read<uint8_t>(data, 3348) != 0;
+		{
+			const char *boat = reinterpret_cast<const char *>(data.data() + 3256);
+			p.boat.assign(boat, strnlen(boat, 32));
+		}
 		p.bind_zone = Read<uint32_t>(data, 3784); // bind_point_zone[0]
 		p.deity = Read<uint16_t>(data, 4944);
 		p.guild_id = Read<int16_t>(data, 4946);
@@ -2181,6 +2281,20 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		break;
 	case ZoneOp::CancelSneakHide:
 		events.push_back({Event::Type::SneakHideCancelled});
+		break;
+	case ZoneOp::ControlBoat: {
+		// HandleWorldMessage's 0x4126: the boat's helm is ours (1), or not.
+		if (data.size() < 3)
+			break;
+		Event e(Event::Type::BoatControl);
+		e.id = Read<uint16_t>(data, 0);
+		e.value = data[2];
+		Log("[zone]    boat " + std::to_string(e.id) + (e.value ? " steered by us" : " let go"));
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::VehicleReset:
+		events.push_back({Event::Type::VehicleReset});
 		break;
 	case ZoneOp::Stun: {
 		Event e(Event::Type::Stunned);
@@ -3730,6 +3844,8 @@ void ZoneSession::Pump(int timeout_ms, std::vector<Event> &events)
 
 	if ((m_state == State::InZone || m_state == State::Camping) && m_have_movement)
 		SendMovement(NowMs());
+	if (m_state == State::InZone || m_state == State::Camping)
+		SendSteered(NowMs());
 	while (m_replay && !m_replay_later.empty() && NowMs() >= m_replay_later.front().due_ms) {
 		m_replay_answers.emplace_back(m_replay_later.front().opcode, std::move(m_replay_later.front().body));
 		m_replay_later.pop_front();

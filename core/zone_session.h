@@ -85,6 +85,10 @@ struct ZoneProfile
 	int16_t practice_points = 0; // PracticePoints (+0x98): training sessions to spend at a guildmaster
 	uint32_t expansions = 0;     // +0xd3c: the expansions the account has (bits; 0x1f the skill caps')
 	bool autosplit = false;      // IsAutoSplitEnabled: our share of a corpse's coins split with the group
+	// EQ_Character+0xcb4 (the profile @3256): the boat we're on, by its spawn name; empty none.
+	// DoPassageOfTime keeps it (the boat under us, cleared two seconds off one), and zoning in with
+	// it set DoMainLoop puts us back on that boat.
+	std::string boat;
 	// groupMembers (EQ_PC+0x1390 in eqgame): the group's names as the zone has them, ours among them.
 	std::string group_members[6];
 	// The spells scribed in the book's 256 slots (eight to a page) and memorized in the eight gems,
@@ -506,6 +510,9 @@ public:
 			Yelled,       // id: who yelled for help near us (OP_YellForHelp)
 			SneakHideCancelled, // OP_CancelSneakHide: the zone ended our hide and sneak
 			Stunned,      // OP_Stun: value the duration in ms (0 from Client::UnStun)
+			// OP_ControlBoat back from the zone: id the boat, value 1 when we have its helm (0 let go).
+			BoatControl,
+			VehicleReset, // MSG_VEHICLE_RESET
 			// OP_ShopEndConfirm: the zone ended the merchant session (HandleWorldMessage's 0x4146:
 			// with the new UI, CMerchantWnd::Deactivate)
 			MerchantEnded,
@@ -689,6 +696,17 @@ public:
 	// (DoPassageOfTime), at most every 150 ms, and not more than 6 identical updates in a row.
 	void SetMovement(const ZoneMovement &movement);
 	void Jump(); // OP_Jump
+	// A spawn we steer (pinstCharSpawn not us: a boat at its helm), every frame while we do: DoMainLoop
+	// sends its OP_ClientUpdate with its id, flagged as ProcessControls flags ours (the heading moved
+	// 2 or the speed 0.2) and every second (DoPassageOfTime), at most every 300 ms. 0 stops.
+	void SetSteeredMovement(uint16_t id, const ZoneMovement &movement);
+	// The boats: OP_BoardBoat with the boat's name and OP_LeaveBoat (DoPassageOfTime), OP_ControlBoat
+	// (taking or letting go of a boat's helm) and MSG_LOCATE_VEHICLE (IFoundMyVehicle).
+	void BoardBoat(const std::string &name);
+	void LeaveBoat();
+	void ControlBoat(uint16_t boat, bool take);
+	void LocateVehicle(const std::string &name);
+	void SetBoat(const std::string &name) { m_profile.boat = name; } // EQ_Character+0xcb4
 	// ChangeStance: OP_SpawnAppearance with our stance (100 standing, 110 sitting, 111 crouching...),
 	// kept in Self().stance.
 	void SetStance(uint8_t stance);
@@ -1038,6 +1056,13 @@ private:
 	int m_identical_updates = 0;
 	std::deque<PacketRecord> m_recent_packets;
 	SentPosition m_last_sent;
+	// SetSteeredMovement's: the spawn we steer and its update's pacing (DAT_00799774, DAT_00798688).
+	uint16_t m_steered_id = 0;
+	ZoneMovement m_steered;
+	bool m_steered_dirty = false;
+	float m_steered_heading = 0, m_steered_speed = 0;
+	uint64_t m_steered_sent_ms = 0, m_steered_tick_ms = 0;
+	void SendSteered(uint64_t now_ms);
 	std::function<void(const std::string &)> m_log;
 	bool m_verbose = false;
 	const EqStr *m_eqstr = nullptr;

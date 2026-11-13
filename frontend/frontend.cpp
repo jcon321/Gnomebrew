@@ -888,6 +888,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		m_zone_view->SetMyLight(me.light);
 		m_zone_view->SetMyLevel(m_zone.Profile().level);
 		m_zone_view->SetDebugDraw(m_debug.Drawing());
+		VehiclePassageOfTime(now_ms);
 		CameraControls(now_ms);
 		MoveControls controls = ZoneControls();
 		// Sitting (kneeling, lying...) nothing moves us, a jump included (ProcessControls takes the
@@ -901,6 +902,15 @@ void FrontEnd::Update(uint64_t now_ms)
 		bool jumped = m_zone_view->Move(controls, now_ms, m_mouse_turn || m_mouse_pan);
 		if (m_zone_view->Placed())
 			m_zone.SetMovement(m_zone_view->Movement());
+		// The boat we steer (pinstCharSpawn): its own updates, with its id.
+		m_zone.SetSteeredMovement(m_zone_view->Steered(), m_zone_view->SteeredMovement());
+		switch (m_zone_view->TakeVehicleResult()) {
+		case ZoneView::VehicleResult::Failed:
+			m_zone.SetBoat(""); // MoveLocalPlayerToSafeCoords
+			break;
+		default:
+			break;
+		}
 		if (m_zone_view->TakeHorseHeadChanged())
 			m_buffs.RemoveAffect(113); // headEnvironmentChange with a Rider
 		if (jumped)
@@ -3619,10 +3629,25 @@ void FrontEnd::RightClickedOnPlayer(uint16_t spawn)
 	if (who.npc >= 2 && m_loot.LootCorpse(spawn))
 		return;
 	constexpr int Banker = 16, Merchant = 32;
-	if (who.npc < 2 && who.class_id == Merchant && m_zone.SpawnDistance(spawn) <= 20) {
-		m_abilities.MakeMeVisible();
-		AutoAttackOff(1466); // "Auto attack off."
-		m_merchant.Request(spawn);
+	if (who.npc < 2 && who.class_id == Merchant) {
+		if (m_zone.SpawnDistance(spawn) <= 20) {
+			m_abilities.MakeMeVisible();
+			AutoAttackOff(1466); // "Auto attack off."
+			m_merchant.Request(spawn);
+			return;
+		}
+	}
+	else if (who.race == 141 && who.npc == 1) {
+		// A boat: the one we steer, we let go of (pinstCharSpawn us again, it stops); the one we
+		// stand on, we ask for its helm (the zone's answer makes it ours).
+		if (!m_zone_view)
+			return;
+		if (m_zone_view->Steered() == spawn) {
+			m_zone.ControlBoat(spawn, false);
+			m_zone_view->SteerBoat(0);
+		}
+		else if (m_zone_view->Vehicle() == spawn)
+			m_zone.ControlBoat(spawn, true);
 		return;
 	}
 	if (who.npc < 2 && who.class_id == Banker && m_zone.SpawnDistance(spawn) <= 20) {
@@ -3649,6 +3674,92 @@ void FrontEnd::RightClickedOnPlayer(uint16_t spawn)
 	}
 	// Anything else: _consider with nothing typed, which considers our target (not who was clicked).
 	InterpretCommand("/consider");
+}
+
+void FrontEnd::VehiclePassageOfTime(uint64_t now_ms)
+{
+	if (!m_zone_view || m_zone.GetState() != ZoneSession::State::InZone)
+		return;
+	// ProcessControls: steering a race 141 boat we're no longer on, we let go of it.
+	if (uint16_t steered = m_zone_view->Steered(); steered && m_zone_view->Vehicle() != steered) {
+		auto boat = m_zone.Spawns().find(steered);
+		if (boat == m_zone.Spawns().end() || boat->second.race == 141) {
+			m_zone.ControlBoat(steered, false);
+			m_zone_view->SteerBoat(0);
+		}
+	}
+	// IFoundMyVehicle gives up after 60 s: "I can't find the %s. Sending player to safe point."
+	if (m_locate_vehicle_until_ms && now_ms >= m_locate_vehicle_until_ms) {
+		m_locate_vehicle_until_ms = 0;
+		const ZoneInfo &info = m_zone.Info();
+		m_zone_view->MoveToSafePoint(info.safe_x, info.safe_y, info.safe_z);
+		m_zone.SetBoat("");
+	}
+	if (!m_zone_view->Placed() || now_ms - m_boat_tick_ms <= 1000)
+		return;
+	m_boat_tick_ms = now_ms;
+	// DoPassageOfTime: the boat's name is the profile's while we're on it; two seconds off, cleared.
+	auto boat = m_zone.Spawns().find(m_zone_view->Vehicle());
+	bool off = false;
+	if (boat == m_zone.Spawns().end()) {
+		if (++m_boat_off_ticks > 1) {
+			m_boat_off_ticks = 0;
+			m_zone.SetBoat("");
+			off = true;
+		}
+	}
+	else {
+		m_zone.SetBoat(boat->second.name);
+		m_boat_off_ticks = 0;
+	}
+	if (boat != m_zone.Spawns().end()) {
+		if (!m_boarded)
+			m_zone.BoardBoat(boat->second.name);
+		m_boarded = true;
+	}
+	else if (off) {
+		if (m_boarded)
+			m_zone.LeaveBoat();
+		m_boarded = false;
+	}
+}
+
+void FrontEnd::FindMyVehicle()
+{
+	// DoMainLoop: CEverQuest_StripShipName (digits and '#' out) and EQPlayer_get_player_partial_name
+	// (the shortest name starting so, trimName'd both ways, case aside).
+	const ZoneProfile &me = m_zone.Profile();
+	m_locate_vehicle_until_ms = 0;
+	if (me.boat.empty() || !m_zone_view)
+		return;
+	ZoneSpawn wanted_spawn;
+	wanted_spawn.name = me.boat;
+	std::string wanted = wanted_spawn.DisplayName();
+	auto starts = [&](const std::string &name) {
+		if (wanted.empty() || name.size() < wanted.size())
+			return false;
+		for (size_t i = 0; i < wanted.size(); ++i)
+			if (std::tolower(static_cast<unsigned char>(name[i])) != std::tolower(static_cast<unsigned char>(wanted[i])))
+				return false;
+		return true;
+	};
+	uint16_t found = 0;
+	size_t found_length = 0;
+	for (const auto &[id, spawn] : m_zone.Spawns()) {
+		if (!starts(spawn.DisplayName()))
+			continue;
+		if (!found || spawn.name.size() < found_length) {
+			found = id;
+			found_length = spawn.name.size();
+		}
+	}
+	if (found) {
+		m_zone_view->PutOnVehicle(found, me.x, me.y, me.z, me.heading);
+		return;
+	}
+	// IFoundMyVehicle: "SENDING OUT A MSG_LOCATE_VEHICLE", and up to 60 s for the answer.
+	m_zone.LocateVehicle(me.boat);
+	m_locate_vehicle_until_ms = m_now_ms + 60000;
 }
 
 void FrontEnd::Sit()
@@ -4180,6 +4291,24 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 		case Type::Stunned:
 			StunMe(event.value); // HandleWorldMessage's 0x415b
 			break;
+		case Type::BoatControl: {
+			// HandleWorldMessage's 0x4126: the helm is ours, pinstCharSpawn the boat (what we were
+			// steering stops); a race 141 boat says so. A no from the zone comes as its own message.
+			auto boat = m_zone.Spawns().find(static_cast<uint16_t>(event.id));
+			if (event.value != 1 || boat == m_zone.Spawns().end() || !m_zone_view)
+				break;
+			m_zone_view->SteerBoat(boat->first);
+			if (boat->second.race == 141)
+				ChatOut(EqString(1407, "You have the helm captain."), ChatType::Default);
+			break;
+		}
+		case Type::VehicleReset:
+			// msg_vehicle_reset: on a boat, to the zone's safe point.
+			if (m_zone_view && m_zone_view->Vehicle()) {
+				const ZoneInfo &info = m_zone.Info();
+				m_zone_view->MoveToSafePoint(info.safe_x, info.safe_y, info.safe_z);
+			}
+			break;
 		case Type::MerchantEnded:
 			// HandleWorldMessage's 0x4146 with the new UI: CMerchantWnd::Deactivate (its vtable's
 			// 0x88). Ours does nothing once the window's closed; eqgame's runs again when this
@@ -4205,6 +4334,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 		case Type::InZone:
 			m_zoning = false;
 			m_guild.InZone();
+			FindMyVehicle();
 			// HandleWorldMessage's OP_SendExpZonein: still looking for a group, say so here too.
 			if (m_lfg)
 				Lfg(false, "on");

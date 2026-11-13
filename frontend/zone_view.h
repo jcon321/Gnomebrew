@@ -125,8 +125,39 @@ public:
 	// EQPlayer::headEnvironmentChange on pinstCharSpawn: our horse's head going into (or out of)
 	// water takes the SPA 113 buff off (RemovePCAffect). True once for each change.
 	bool TakeHorseHeadChanged() { return std::exchange(m_horse_head_changed, false); }
-	// Everyone else, every frame: their models, carried on from their last update.
+	// Everyone else, every frame: their models, carried on from their last update. The boats go first
+	// and are solid where they are (their models' solid triangles, ZoneScene::SetActor); what stands
+	// on one (us, and the others whose floor is one) goes along with it (vehicle.h).
 	void UpdateSpawns(const std::map<uint16_t, ZoneSpawn> &spawns, uint16_t my_id, uint64_t now_ms);
+
+	// The boats (vehicle.h). Our ActorInfo AttachedEntity: the boat under our feet, 0 none (riding,
+	// none).
+	uint16_t Vehicle() const { return m_placed && !m_horse ? m_movement.Vehicle() : 0; }
+	// CEverQuest::DoMainLoop (@0053df6e) zoning in with the profile's boat: once we're placed and the
+	// boat's model is in, the profile's position (ZoneEnter: the server's x, y and z of our center,
+	// taken in the boat's own frame, as SavePC keeps it on a boat) and heading go out from the boat
+	// (vehicle_postmove), and we drop onto the floor there; if that floor isn't the boat, from its
+	// center 25 up; if that isn't either, the zone's safe point (MoveLocalPlayerToSafeCoords).
+	void PutOnVehicle(uint16_t boat, float x, float y, float z, float heading);
+	enum class VehicleResult
+	{
+		None,
+		Placed, // on the boat
+		Failed, // "Still can't set vehicle": at the safe point, the profile's boat to clear
+	};
+	VehicleResult TakeVehicleResult() { return std::exchange(m_vehicle_result, VehicleResult::None); }
+	// CDisplay_MoveLocalPlayerToSafeCoords (@004b459c), and msg_vehicle_reset: at once at the zone's
+	// safe point (the server's x, y, z), on the floor there, still and off any boat.
+	void MoveToSafePoint(float x, float y, float z);
+	// The helm of a race 141 boat (HandleWorldMessage's 0x4126: pinstCharSpawn the boat; 0 lets go,
+	// pinstCharSpawn us again). While we steer, the keys move the boat, not us (ProcessControls on
+	// pinstCharSpawn): forward at its run (or walk) speed, back at its walk speed, turning as we do,
+	// damped as a moving NPC (process_physics' 0.625 halved, 0.8); and MovePlayer's boat branch:
+	// 6 ahead (11 behind, backing up) has to be water with nothing solid on the way, or the move's
+	// undone and the boat stops. We ride along on it.
+	void SteerBoat(uint16_t boat);
+	uint16_t Steered() const { return m_driven; }
+	ZoneMovement SteeredMovement() const; // its OP_ClientUpdate (the server's terms, its center)
 	// The light we carry (our ZoneSpawn::light; we're not among the spawns).
 	void SetMyLight(uint8_t light) { m_my_light = light; }
 	void SetMyLevel(uint8_t level) { m_my_level = level; } // which of a spell effect's emitters our casts get
@@ -374,6 +405,12 @@ private:
 	void StopRiding();
 	// The horse's walk and run speeds and race on our movement.
 	void ConfigureHorse();
+	// The boats' solid triangles where they are now (near us), for the collision.
+	void UpdateBoatShapes(const std::map<uint16_t, ZoneSpawn> &spawns, uint16_t my_id);
+	// PutOnVehicle once it can be done; false while it waits.
+	bool PlaceOnVehicle();
+	// The boat we steer moved by the keys (SteerBoat).
+	void SteerStep(const MoveControls &controls, float ms);
 	// Our horse moved with us, and where that puts us on it.
 	void DriveHorse(uint64_t now_ms);
 	// Where our model is drawn: on the feet, or on the horse's saddle; and the feet the camera and
@@ -524,6 +561,16 @@ private:
 	bool m_horse_head_changed = false;
 	render::Transform m_rider_placement;
 	std::map<uint32_t, bool> m_luclin_models; // IsLuclinModel's, by race << 8 | gender
+	// PutOnVehicle's, until it's done.
+	uint16_t m_vehicle_pending = 0;
+	render::Vec3 m_vehicle_local; // our center in the boat's frame (WLD axes)
+	float m_vehicle_heading = 0;
+	VehicleResult m_vehicle_result = VehicleResult::None;
+	// The boat we steer (pinstCharSpawn), and where the keys have it.
+	uint16_t m_driven = 0;
+	render::Vec3 m_drive_feet, m_drive_velocity;
+	float m_drive_heading = 0, m_drive_speed = 0, m_drive_heading_speed = 0, m_drive_turn_ramp = 0;
+	float m_drive_center = 0; // its ModelHeightOffset
 	struct GroundItemView
 	{
 		std::string model_name;

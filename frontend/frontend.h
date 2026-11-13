@@ -423,6 +423,17 @@ private:
 	// EQ_Character::StunMe (@004c0001), from OP_Stun; and DoPassageOfTime's end of it.
 	void StunMe(int32_t duration_ms);
 	void StunPassageOfTime(uint64_t now_ms);
+	// The boats (vehicle.h). DoPassageOfTime, once a second: the boat under us is the profile's boat,
+	// and OP_BoardBoat goes as we get on; two seconds off one clears it, and OP_LeaveBoat goes.
+	// ProcessControls: off the boat we steer, we let go of its helm.
+	void VehiclePassageOfTime(uint64_t now_ms);
+	// CEverQuest::DoMainLoop zoning in with the profile's boat: onto it (ZoneView::PutOnVehicle), or
+	// if it isn't here, IFoundMyVehicle's MSG_LOCATE_VEHICLE and, unanswered after 60 s, the safe point.
+	void FindMyVehicle();
+	int m_boat_off_ticks = 0;    // DAT_0063db20: seconds off a boat (kept from zone to zone, as eqgame's)
+	bool m_boarded = false;      // DAT_0063db2c: OP_BoardBoat sent and not OP_LeaveBoat
+	uint64_t m_boat_tick_ms = 0; // ActorInfo's LastTick, for the above
+	uint64_t m_locate_vehicle_until_ms = 0; // IFoundMyVehicle waiting; 0 not
 	// DoAttack's own check (@0050a0f8): stunned, "You can't attack while stunned!" (125); true when
 	// that stops the attack.
 	bool AttackStunned();

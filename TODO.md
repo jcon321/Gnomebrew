@@ -599,7 +599,7 @@ no rules of its own.
     0x41e4, which EQMacEmu ignores), /stopsong (@004f5c74: a bard's StopSpellCast2), /shield
     (@004fd688, `OP_Shielding`), /quit and /exit (@004fa8c5: the connection closed, the game
     ended), /log (@004fbad0, `eqlog`; [Defaults] Log), /keys (@004f8ec7, `OP_Key`) and /dismount
-    (@004ff5a6, `Mounts::DismountCommand`) are done too; /ttell's `send_tell` also stops on `DAT_007985f1`, as the socials do, not
+    (@004ff5a6, `Mounts::DismountCommand`), /adriver and /sdriver (@004f69f5: eqstr 12379 only) are done too; /ttell's `send_tell` also stops on `DAT_007985f1`, as the socials do, not
     known; /quit doesn't say /safelock's 12095, there being no /safelock): /discipline (@004f4fb5,
     `OP_Discipline`; `OP_DisciplineChange` back), /surname, /language,
     /facepick, /hotbutton, /alias, /note, the chat
@@ -628,10 +628,8 @@ no rules of its own.
     our profile's, surname or name, and the name over their head) are done; the two name changes
     also set `EQ_Main`+0xe64 (`DAT_007f9574`), not known): `OP_Charm`, `OP_Reward`, `OP_MultiLineMsg`, `OP_ResetSkill`, `OP_SetTitle`,
     `OP_FreezeClientControl`, `OP_UnfreezeClientControl` and `OP_ReturnClientControl`,
-    `OP_RequestClientZoneChange` (a zone change the server asks for), and boats: boarding and
-    leaving (`OP_BoardBoat` and 0x41bc from `DoPassageOfTime` on a boat's spawn), `OP_ControlBoat`,
-    `msg_vehicle_reset` @004de593, /adriver and /sdriver (with 22's MovePlayer boat branch). Also
-    sent by EQMacEmu and dropped here:
+    `OP_RequestClientZoneChange` (a zone change the server asks for). The boats' packets are done
+    (39). Also sent by EQMacEmu and dropped here:
     - `OP_Illusion` (0x4091, `Mob::SendIllusionPacket`): any spawn's new race, gender, texture and
       face (`EQPlayer::do_change_form` @005074fa); an illusioned spawn keeps its old look now.
     - `OP_SpellTextMessageStringID` (0x4241, `EntityList::SpellTextMessageClose_StringID`): others'
@@ -726,8 +724,9 @@ no rules of its own.
     - `CanIFitHere`: the move is undone where floor to ceiling (`GetCeilingHeight`) is under twice
       the `ModelHeightOffset` + 0.5, and a duck stands back up when there's room again.
     - `DoFloorCheck` with no floor below keeps the last one and we fall; we stay put instead.
-    - MovePlayer's other branch (a horse we ride, boats and races 72/73/114/141, no lift, the
-      vehicle moves: our horse moves as we do, lifted, its sphere twice ours), and `MovementSpeedZ` held to -1 when the move didn't change our height.
+    - MovePlayer's other branch for a horse we ride (no lift; our horse moves as we do, lifted, its
+      sphere twice ours; the boats' part is 39), and `MovementSpeedZ` held to -1 when the move didn't
+      change our height.
     - Walking into a switch (`EQPlayer::TouchingSwitch` @0050b7ac, from MovePlayer; doors are only
       clicked now): type 50 a pressure plate (a PC, once, until `GetSwitchStateChangeTime` puts it
       back; `UseSwitch` with our id), 57 a teleporter (a PC, every 2 s, our cursor item, the
@@ -763,6 +762,38 @@ no rules of its own.
       `EQ_PC_CheckSkillImprove` while the horse moves, and the horse's swim jump (the swim skill's
       speed counts for it as for us).
     - `IsCharacterMeditating` for the client's own regen display (the zone's is what counts).
+39. ~~**Boats.**~~ Done (`frontend/vehicle.h`, `ZoneView::UpdateSpawns`, `UpdateBoatShapes`,
+    `PlaceOnVehicle`, `SteerBoat`, `PlayerMovement::Vehicle` and `Carry`, `SpawnActor::Carry`,
+    `ZoneScene::SetActor`, `CharacterModels::BuildStatic`, `FrontEnd::VehiclePassageOfTime` and
+    `FindMyVehicle`): the boats' mesh actors (`SHIP`, `LAUNCH`, `GSP`, `BOAT`) drawn and solid
+    (`CDisplay_IsCollisionValid`), the one under our feet our `AttachedEntity` (`DoFloorCheck`),
+    `vehicle_premove` and `vehicle_postmove` carrying us and the spawns on it, `OP_BoardBoat` and
+    `OP_LeaveBoat` and the profile's boat (`DoPassageOfTime`), zoning in onto it (`DoMainLoop`,
+    `IFoundMyVehicle`'s `MSG_LOCATE_VEHICLE`, `MoveLocalPlayerToSafeCoords`), `msg_vehicle_reset`,
+    and a race 141 boat's helm (`OP_ControlBoat` from the right button and `ProcessControls`, the
+    zone's yes and 1407, steering it with `MovePlayer`'s race 141 branch, its `OP_ClientUpdate` with
+    its id). Checked on replay (`frontend_preview ... boats`): a Lake Rathetear rowboat stood on,
+    steered and turned, and a Stormbreaker (`#npctypespawn 770`) zoned onto. Still to do:
+    - Not checked live: a ship sailing its grid with us on it (none were up on the test server),
+      the trip's `MovePC` and coming in on the next zone's boat, and the zone's answer to taking a
+      helm.
+    - The chase camera goes through a boat (`SegmentHit` leaves the solid spawns out); whether
+      `DoCamAi`'s collision meets a boat's actor isn't known.
+    - `SetHeights`' race 141 levitation (`SetNoGrav(2)`, `LevitationSize` 4, `LevitationMovementModifier`
+      0.005: a bob) and `process_physics`' levitating branch for it (sinking 0.1 a tick down to
+      0.4 over `FindZoneTopZ`); the carry leaves out a boat's pitch (`ViewActorPitch`).
+    - `SavePC` and `SavePCForce` keeping `ZoneEnter` in the boat's frame on one (`vehicle_premove`
+      around it) and the boat's name in the profile: our `OP_Save` sends the profile's bytes as the
+      zone sent them, position and boat included.
+    - `IFoundMyVehicle`'s answer 0x40a2 (`CEverQuest_IHaveTicket`, `MoveToZone` with
+      `vehicle_xfr`), and its blocking wait (ours plays on for the 60 s).
+    - `msg_vehicle_reset` and `MoveLocalPlayerToSafeCoords` also move `pinstCharSpawn` when it's
+      attached or has a Rider (the boat we steer, our horse); ours move only us.
+    - `RealRender_World` runs `pinstCharSpawn`'s `AttachedEntity` first and holds its z (all but race
+      141); the spawns on a boat out of our reach (no shape there) aren't carried.
+    - `CreatePlayerActor` falls back to `HUM_ACTORDEF` (`HUF_ACTORDEF` for a woman) when the actor
+      isn't there; ours to race 75's (a gender 0 launch, `LAUNCHM`, shows as an elemental). Check
+      where the race 75 fallback came from before changing it.
 
 ## Infrastructure / tooling
 
