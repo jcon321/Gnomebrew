@@ -42,6 +42,7 @@ void Group::ClearMembers()
 		member.clear();
 	m_leader.clear();
 	m_unlinked.fill(false);
+	m_corpse_ids.fill(0);
 }
 
 void Group::DropInvitation()
@@ -82,6 +83,10 @@ const ZoneSpawn *Group::MemberSpawn(int index) const
 	// EQPlayer_get_player: the player of that name in the zone.
 	if (!m_zone || index < 0 || index >= Members || m_members[index].empty() || m_unlinked[index])
 		return nullptr;
+	if (m_corpse_ids[index] != 0) {
+		auto it = m_zone->Spawns().find(m_corpse_ids[index]);
+		return it != m_zone->Spawns().end() ? &it->second : nullptr;
+	}
 	for (const auto &[id, spawn] : m_zone->Spawns())
 		if (spawn.npc == 0 && Same(spawn.name, m_members[index]))
 			return &spawn;
@@ -115,13 +120,16 @@ void Group::SpawnAdded(const ZoneSpawn &spawn)
 	if (spawn.npc != 0 || m_leader.empty())
 		return;
 	for (int i = 0; i < Members; ++i)
-		if (!m_members[i].empty() && m_members[i] == spawn.name)
+		if (!m_members[i].empty() && m_members[i] == spawn.name) {
 			m_unlinked[i] = false;
+			m_corpse_ids[i] = 0;
+		}
 }
 
 void Group::ProfileArrived()
 {
 	m_unlinked.fill(false);
+	m_corpse_ids.fill(0);
 	if (!m_zone)
 		return;
 	const ZoneProfile &me = m_zone->Profile();
@@ -191,8 +199,10 @@ void Group::ZoneEvent(const ZoneSession::Event &event)
 		return;
 	const ZoneProfile &me = m_zone->Profile();
 	const ZoneGroup &g = event.group;
-	if (event.type == Type::GroupUpdated)
-		m_unlinked.fill(false); // msg_wldgroup links the members it names again
+	if (event.type == Type::GroupUpdated) { // msg_wldgroup links the members it names again
+		m_unlinked.fill(false);
+		m_corpse_ids.fill(0);
+	}
 	switch (event.type) {
 	case Type::GroupInvited: {
 		// CEverQuest_doInvite.

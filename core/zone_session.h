@@ -774,6 +774,8 @@ public:
 	void Consent(const std::string &name);  // OP_Consent
 	// EQPlayer::IDied of another spawn: Type 2 whoever it was, still, and named as its corpse.
 	void BecomeCorpse(uint16_t id);
+	// CEverQuest::ReportDeath's HpCurrent -11 for a group member who died.
+	void SetSpawnHp(uint16_t id, int16_t hp);
 	// The answers to death's questions: OP_RezzAnswer (the zone's request back, action 1 yes or 0
 	// no), OP_Sacrifice ({0, our id, 1 or 0}) and OP_Translocate (complete 1 or -1).
 	void RezzAnswer(const std::vector<uint8_t> &request, bool yes);

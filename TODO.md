@@ -473,14 +473,12 @@ no rules of its own.
       (`compute_tohit`: level * 2 / 5 while Drunkness / 2 is 20 or under) count. Past that,
       compute_tohit takes a value of the drunkenness the decompile loses (an `__ftol`), not ours;
     - the blood of our crushing, slashing, piercing, backstab and bash hits (SpurtBloodOnDag);
-    - ReportDeath's duel ending (eqstr 12100, 12101), a group member's HP (-11 on their death: their
-      gauge stays on their corpse, where ours finds no player of that name), the tracking window;
-    - SendDeathMessage's killer from DoPassageOfTime: the player whose DoT ticked us under
-      (`WhoPutThisEffectOnMe`) comes from eqgame's own 6 s ticks of our HP (regen, DoTs, the
-      bleeding of the knocked out: "You are bleeding to death!", 12685), which aren't ours; we
-      send no killer;
-    - `get_world_visible_actor_list`'s pet test (`FrontEnd`'s nearest-NPC list) takes an owner of
-      Type 1 or 3 as an NPC's, from before corpses were Type 2; not checked against eqgame;
+    - ReportDeath's duel ending (eqstr 12100, 12101), the tracking window;
+    - DoPassageOfTime's HP tick (`FrontEnd::HitPointsTick`): the locale's (DAT_00799770 1) regen
+      of 6, 10 sitting, under level 21 is left out (English is 0); a monk's 2 past level 50 reads
+      ActorInfo+0x18e, which nothing in eqgame sets but to 0; the mez broken by a DoT turns the
+      stun's sound room off with `SetGenericEnvironment` (eqgame's `_StunRelated` isn't read);
+      the dead group member's gauge isn't checked against a grouped recording;
     - MoveToZone_2's other refusals: its test before the logout reads `StunnedState == 4 ||
       param_4 || strlen(@00546057)(Name)`, which can't be right for a zone line (every refusal
       would log out); ours logs out only going home dead;

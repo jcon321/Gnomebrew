@@ -131,6 +131,94 @@ void FrontEnd::ClearOutRentables()
 	}
 }
 
+void FrontEnd::AddHp(int32_t delta)
+{
+	m_zone.ModifyHp(delta);
+	int over = m_zone.BaseHp() + GameValues::WornHp(m_zone.Items()) - m_game_values.MaxHp();
+	if (delta > 0 && over > 0)
+		m_zone.ModifyHp(-over);
+}
+
+void FrontEnd::GetConscious()
+{
+	// EQPlayer::GetConscious: StunnedState 0, the default camera, "You are conscious again!"
+	// (12876), then StandingState 0x69 (kneeling) and ChangeStance(100): up as from kneeling.
+	m_knocked_out = false;
+	if (m_zone_view) {
+		m_zone_view->SwitchToDefaultCamera();
+		m_zone_view->SetStance(105);
+	}
+	ChatOut(EqString(12876, "You are conscious again!"), ChatType::Red);
+	ChangeStance(100);
+}
+
+uint16_t FrontEnd::HitPointsTick()
+{
+	const ZoneProfile &me = m_zone.Profile();
+	const uint16_t my_id = m_zone.MySpawnId();
+	bool conscious = m_game_values.CurHp() > 0;
+	uint16_t killer = 0;
+	if (int heal = m_buffs.Total(100) + m_buffs.WornTotal(100))
+		AddHp(heal);
+	int worn = m_buffs.WornTotal(0);
+	int cap = me.level > 60 ? me.level - 30 : 30;
+	int total = m_buffs.Total(0) + std::min(worn, cap);
+	if (total < 0) {
+		uint16_t caster = m_buffs.WhoPutThisEffectOnMe(0);
+		auto it = m_zone.Spawns().find(caster);
+		const ZoneSpawn *who = caster == my_id ? &m_zone.Self() : it != m_zone.Spawns().end() ? &it->second : nullptr;
+		if (caster != 0 && who && who->npc == 0) {
+			killer = caster;
+			total = total * (caster == my_id ? 75 : 70) / 100;
+			if (total >= 0)
+				total = -1;
+		}
+		// The damage breaks a mez (GetPCSpellAffect 0x1f, RemovePCAffect, the stun's room gone).
+		if (m_buffs.HasAffect(31)) {
+			m_buffs.RemoveAffect(31);
+			if (m_sound && !m_stunned)
+				m_sound->SetGenericEnvironment();
+		}
+	}
+	AddHp(total);
+	if (m_game_values.CurHp() < m_game_values.MaxHp()) {
+		const bool sitting = m_zone.Self().stance == 110;
+		const bool racial = me.race == 9 || me.race == 128 || me.race == 330; // InitInnates' 0xc84
+		const int level = me.level;
+		int regen = sitting ? 2 : 1;
+		if (me.hunger == 0 || me.thirst == 0)
+			regen = 0;
+		if ((me.expansions & 0x1f) != 0)
+			for (int over : {50, 55, 59, 60, 62, 64})
+				regen += level > over;
+		if (racial) {
+			regen += (level > 50) + (level > 55);
+			regen *= 2;
+		}
+		regen += me.aa_ranks[225]; // Innate Regeneration
+		if (me.aa_ranks[29] != 0) { // Natural Healing, and Body and Mind Rejuvenation with it
+			regen += me.aa_ranks[29];
+			if (me.aa_ranks[119] != 0)
+				regen += 1;
+		}
+		if (m_knocked_out && (m_game_values.CurHp() < -5 || regen < 1)) {
+			regen = -1;
+			ChatOut(EqString(12685, "You are bleeding to death!"), ChatType::Red);
+		}
+		if (sitting && level > 19 && m_now_ms - m_sat_ms > 60000) {
+			int more = level > 49 ? 2 : 1;
+			regen += racial ? more * 2 : more;
+		}
+		if (regen + total == 0 && m_game_values.CurHp() < 1)
+			regen -= 1;
+		if (regen != 0)
+			AddHp(regen);
+		if (m_game_values.CurHp() > 0 && m_knocked_out)
+			GetConscious();
+	}
+	return conscious ? killer : 0;
+}
+
 void FrontEnd::KnockoutPassageOfTime()
 {
 	// DoPassageOfTime for a player alive: at 0 HP or under with StunnedState under 3, KnockedOut;
@@ -138,17 +226,8 @@ void FrontEnd::KnockoutPassageOfTime()
 	if (m_dead || m_zoning || m_zone.GetState() != ZoneSession::State::InZone || m_zone.MaxHp() <= 0)
 		return;
 	int hp = m_game_values.CurHp();
-	if (hp > 0 && m_knocked_out) {
-		// GetConscious: StunnedState 0, the default camera, "You are conscious again!" (12876),
-		// then StandingState 0x69 (kneeling) and ChangeStance(100): up as from kneeling.
-		m_knocked_out = false;
-		if (m_zone_view) {
-			m_zone_view->SwitchToDefaultCamera();
-			m_zone_view->SetStance(105);
-		}
-		ChatOut(EqString(12876, "You are conscious again!"), ChatType::Red);
-		ChangeStance(100);
-	}
+	if (hp > 0 && m_knocked_out)
+		GetConscious();
 	else if (hp <= 0 && !m_knocked_out) {
 		// KnockedOut: lying down (ChangeStance 0x73); stunned, that's all for now; else StunnedState
 		// 3, the overhead view and "You have been knocked unconscious!" (12877).
@@ -161,13 +240,15 @@ void FrontEnd::KnockoutPassageOfTime()
 			ChatOut(EqString(12877, "You have been knocked unconscious!"), ChatType::Yellow);
 		}
 	}
-	// Further on: under -10 HP (under 1 for deity 20000) with no DeathTimer, our own death, from no
-	// one we know (the PC whose DoT ticked us down eqgame takes from its own ticks, which aren't
-	// ours), no spell, skill 0x17, damage 0. The zone sends the dying no OP_Death when a client or
-	// the victim killed it, or a DoT did (GenerateDeathPackets' skipsender).
+	// The 6 s tick, on the buffs' (they tick right after, ProcessAffects).
+	uint16_t killer = m_buffs.TickDue(m_now_ms) ? HitPointsTick() : 0;
+	// Further on: under -10 HP (under 1 for deity 20000) with no DeathTimer, our own death, from the
+	// player whose DoT this frame's tick took us under with (else no one), no spell, skill 0x17,
+	// damage 0. The zone sends the dying no OP_Death when a client or the victim killed it, or a DoT
+	// did (GenerateDeathPackets' skipsender).
 	int least = m_zone.Profile().deity != 20000 ? -10 : 1;
-	if (hp < least && m_death_ms == 0)
-		SendDeathMessage(0, -1, 0x17, 0);
+	if (m_game_values.CurHp() < least && m_death_ms == 0)
+		SendDeathMessage(killer, -1, 0x17, 0);
 }
 
 void FrontEnd::SendDeathMessage(uint16_t killer, int16_t spell, uint8_t skill, int32_t damage)

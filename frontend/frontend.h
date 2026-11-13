@@ -477,6 +477,18 @@ private:
 	// 3, the overhead view, "You have been knocked unconscious!"); over 0 again, GetConscious; under
 	// -10 (under 1 for deity 20000) with no DeathTimer, SendDeathMessage.
 	void KnockoutPassageOfTime();
+	// DoPassageOfTime's 6 s tick of our HP (on Buffs' tick, before ProcessAffects): heals over
+	// time (SPA 100, with the worn items'), damage over time (SPA 0, the worn items' capped at 30 or
+	// level - 30; a player's DoT on a player at 70%, 75% our own, and that player kept as the
+	// killer; a mez broken), then while hurt the regen: 1, 2 sitting, none starving or parched, the
+	// expansions' +1 at 51, 56, 60, 61, 63 and 65, a troll's, Iksar's or Froglok's +1 at 51 and 56
+	// then doubled, Innate Regeneration (AA 225), Natural Healing (29) and Body and Mind
+	// Rejuvenation (119, +1 with 29); knocked out under -5 HP or with none, -1 and "You are bleeding
+	// to death!" (12685); sitting a minute past level 19, +1 (+2 past 49), twice for those races;
+	// and coming to (GetConscious). Returns the DoT's player when we were up as it started, else 0.
+	uint16_t HitPointsTick();
+	void AddHp(int32_t delta); // EQ_Character::ModifyCurHP: no higher than our maximum
+	void GetConscious();       // EQPlayer::GetConscious
 	// msg_resurrect (@004e1f5f): the zone's question, ours only, in the confirmation dialog
 	// (category 2) for an hour unless it's already up; the answer goes back as OP_RezzAnswer.
 	void AskResurrect(const std::vector<uint8_t> &request);
@@ -682,6 +694,7 @@ private:
 	bool m_attack = false;          // auto attack (__Attack)
 	bool m_dead = false;            // we died in this zone (EQPlayer::IDied's stance 120): nothing moves us
 	bool m_knocked_out = false;     // EQ_Character's StunnedState 3 (KnockedOut, until GetConscious)
+	uint64_t m_sat_ms = 0;          // ActorInfo's UnknownTimer5: when we last sat down (ChangeStance 110)
 	std::vector<uint8_t> m_rez_request; // msg_resurrect's packet, kept in the dialog (its +0x204)
 	std::set<uint16_t> m_hidden_corpses; // /hidecorpses' (ActorInfo IsInvisible)
 	std::string m_logout_text;      // why we're going to character select, when it isn't a camp

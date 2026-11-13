@@ -1654,6 +1654,12 @@ void ZoneSession::BecomeCorpse(uint16_t id)
 		s.name += "'s_corpse";
 }
 
+void ZoneSession::SetSpawnHp(uint16_t id, int16_t hp)
+{
+	if (auto it = m_spawns.find(id); it != m_spawns.end())
+		it->second.hp = hp;
+}
+
 void ZoneSession::RezzAnswer(const std::vector<uint8_t> &request, bool yes)
 {
 	// CConfirmationDialog::ProcessYes and ProcessNo, category 2: the request kept, action @224.

@@ -98,6 +98,9 @@ public:
 	// it's linked again: its spawn coming in (msg_eq_netplayer), the group changing (msg_wldgroup)
 	// or the next zone's profile (CheckForGroupChanges).
 	void ReleaseSpawns() { m_unlinked.fill(true); }
+	// CEverQuest::ReportDeath of a member's spawn: pinstGroup keeps it as it becomes a corpse (its
+	// HP -11), until a player of that name comes in, the group changes or the next zone.
+	void MemberDied(int index, uint16_t id) { m_corpse_ids[index] = id; }
 	void SpawnAdded(const ZoneSpawn &spawn); // msg_eq_netplayer: a player of the group links again
 	const ZoneSpawn *PetOf(const ZoneSpawn &owner) const; // ActorInfo's PetID
 	bool IsAGroupMember(const std::string &name) const; // EQ_PC::IsAGroupMember: the profile's list, or us
@@ -115,6 +118,7 @@ private:
 	Host m_host;
 	std::string m_members[Members];
 	std::array<bool, Members> m_unlinked{}; // pinstGroup's entry let go (ReleaseSpawns)
+	std::array<uint16_t, Members> m_corpse_ids{}; // pinstGroup's entry a dead member's corpse (MemberDied)
 	std::string m_leader;
 	int m_selected = -1;            // ActorInfo+0x278
 	bool m_invited = false;         // DAT_007f6afa and EQPlayer::IsInvited

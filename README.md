@@ -2101,6 +2101,19 @@ details and the nearest spawns at the top left and the radar at the top right.
   When an NPC kills us, the zone's HP update below -10 comes just before its `OP_Death` in the
   same burst, and both are handled before the frame's check. #kill on ourselves sends us nothing
   at all, so neither eqgame nor we die of it.
+- **The HP tick** (`EQ_Character::DoPassageOfTime`, every 6 s with `ProcessAffects`,
+  `FrontEnd::HitPointsTick`): see `frontend/frontend.h` for the order and numbers: heals over time
+  (SPA 100) with the worn items' (`TotalSpellAffects(100, 1)`), damage over time (SPA 0) plus the
+  worn items' (`CalculateSpellEffectModifier`, capped at 30, level - 30 past 60), a player's DoT
+  at 70% (75% our own) with that player (`WhoPutThisEffectOnMe`) the killer if it takes us under
+  -10 in that frame, a mez (SPA 31) broken; then, under our maximum, the regen (GetAbility 225, 29
+  and 119 are Innate Regeneration, Natural Healing and Body and Mind Rejuvenation; `InitInnates`
+  sets +0xc84 for trolls, Iksar and Froglok; `UnknownTimer5` is when `ChangeStance(110)` sat us
+  down), "You are bleeding to death!" (12685) knocked out, and `GetConscious`. The zone's
+  `OP_HPUpdate` sets our HP over it.
+- **A group member's death** (`ReportDeath`): `pinstGroup` keeps their spawn, now a corpse, with
+  `HpCurrent` -11, so the group window shows their name over an empty gauge until a player of
+  that name comes in (`msg_eq_netplayer`), the group changes or the next zone.
 - **Knocked out** (`EQ_Character::DoPassageOfTime` for us alive, `frontend/death.cpp`): at 0 HP or
   under with StunnedState under 3, `EQPlayer::KnockedOut` (@0050b5a7): `ChangeStance(0x73)`, and
   unless stunned already StunnedState 3, the overhead view and "You have been knocked

@@ -78,6 +78,15 @@ public:
 	// IsValidAffect: a buff there of a spell we know.
 	const SpellInfo *SlotSpell(int slot) const;
 	int Total(int spa) const; // TotalSpellAffects
+	// The worn items' (slots 1..21) effect `spa` at their EffectLevel1: a common, stackable-over-1
+	// item with a worn effect (EffectType1 2) of a spell with a duration (TotalSpellAffects' items,
+	// EQ_Character::CalculateSpellEffectModifier @004c1235).
+	int WornTotal(int spa) const;
+	// EQ_Character::WhoPutThisEffectOnMe (@004c7910) with no spell: the caster (BuffCasterId) of the
+	// first buff with `spa` at a value under 0; 0 none.
+	uint16_t WhoPutThisEffectOnMe(int spa) const;
+	// The 6 s tick (ActorInfo's Last6000msTick) is due: Frame ticks on it.
+	bool TickDue(uint64_t now_ms) const;
 	// TotalSpellAffects' own branch for attack speed (SPA 11, with the worn items): the worst slow
 	// (a value under 100, the buffs' or the items') if there's one; else the best spell haste and
 	// the best worn haste (110 at most under level 26) together, less the 100 counted twice, plus

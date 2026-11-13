@@ -383,6 +383,11 @@ void Buffs::Remove(int slot, bool tell)
 	}
 }
 
+bool Buffs::TickDue(uint64_t now_ms) const
+{
+	return m_zone && now_ms - m_tick_ms > TickMs;
+}
+
 bool Buffs::Frame(uint64_t now_ms)
 {
 	if (!m_zone || now_ms - m_tick_ms <= TickMs)
@@ -451,6 +456,42 @@ int Buffs::Total(int spa) const
 	if (spa == 3)
 		return snare != 0 ? snare : speed;
 	return sum;
+}
+
+int Buffs::WornTotal(int spa) const
+{
+	int sum = 0;
+	if (!m_zone)
+		return 0;
+	for (int16_t slot = 1; slot <= 21; ++slot) {
+		auto it = m_zone->Items().find(slot);
+		if (it == m_zone->Items().end())
+			continue;
+		const ZoneItem &item = it->second;
+		if (item.item_class != 0 || item.stackable < 2 || item.effect_type != 2)
+			continue;
+		const SpellInfo *spell = Spell(item.effect1);
+		if (!spell || spell->duration_formula == 0)
+			continue;
+		for (int i = 0; i < 12; ++i)
+			if (spell->spas[i] == spa)
+				sum += static_cast<int16_t>(Value(*spell, item.effect_level, i, nullptr));
+	}
+	return sum;
+}
+
+uint16_t Buffs::WhoPutThisEffectOnMe(int spa) const
+{
+	for (int slot = 0; slot < Slots; ++slot) {
+		const ZoneBuff &b = m_slots[slot];
+		const SpellInfo *spell = b.type != 0 ? Spell(b.spell) : nullptr;
+		if (!spell)
+			continue;
+		for (int i = 0; i < 12; ++i)
+			if (spell->spas[i] == spa && Value(*spell, b.level, i, &b) < 0)
+				return m_casters[slot];
+	}
+	return 0;
 }
 
 int Buffs::AttackSpeed() const

@@ -2982,10 +2982,11 @@ void FrontEnd::CycleNearestTarget()
 		// and a line to it from our head or feet.
 		if (spawn.npc != 1 || spawn.level == 0 || seen.from_me_2d > 250 || !seen.me_clear || InvisibleToMe(spawn))
 			continue;
-		// A pet only of an NPC (or of no one we know).
+		// A pet only of an NPC or an NPC's corpse (or of no one we know): Zeal's EntityTypes NPC (1)
+		// and NPCCorpse (2), what EQMacEmu sends and IDied makes.
 		if (spawn.pet_owner) {
 			auto owner = m_zone.Spawns().find(spawn.pet_owner);
-			bool npc_owner = owner != m_zone.Spawns().end() && (owner->second.npc == 1 || owner->second.npc == 3);
+			bool npc_owner = owner != m_zone.Spawns().end() && (owner->second.npc == 1 || owner->second.npc == 2);
 			if (spawn.pet_owner == me || (owner != m_zone.Spawns().end() && !npc_owner))
 				continue;
 		}
@@ -3616,6 +3617,13 @@ void FrontEnd::ReportDeath(const ZoneSession::Event &event)
 		SetTarget(0);
 		SetAutoAttack(false);
 	}
+	// In a group, a member dying keeps their place in pinstGroup with HpCurrent -11.
+	if (m_group.InGroup())
+		for (int i = 0; i < Group::Members; ++i)
+			if (const ZoneSpawn *member = m_group.MemberSpawn(i); member && member->id == victim) {
+				m_group.MemberDied(i, victim);
+				m_zone.SetSpawnHp(victim, -11);
+			}
 	if (victim == m_zone.MySpawnId())
 		IDied();
 	Combat::Report report = m_combat.Died(event, m_zone, m_game_values.target, m_game_values.CurHp());
@@ -3652,6 +3660,8 @@ void FrontEnd::ChangeStance(uint8_t stance)
 	m_zone.SetStance(stance);
 	if (m_zone_view)
 		m_zone_view->SetStance(stance);
+	if (stance == 110)
+		m_sat_ms = m_now_ms; // UnknownTimer5
 	if (was == 110)
 		m_spell_book.StoodUp();
 }
