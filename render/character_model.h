@@ -34,6 +34,9 @@ namespace render
 		float height = 0;                // the spawn's size; 0 = the race's default
 		uint8_t texture = 0xff;          // 0xFF: dressed per slot; else an NPC's body texture (Spawn_Struct bodytexture)
 		uint8_t helm = 0;                // an NPC's head (Spawn_Struct helm)
+		// do_change_form's SetDefaultFacialFeaturesByFace(-1, 1, 0): the face's defaults on a Luclin
+		// model even with the eye colors set (CreatePlayerActor's only when the first is unset).
+		bool default_features = false;
 		uint8_t class_id = 0;            // a monk wears materials 4 and 23 as they are; anyone else as leather
 		// The Luclin models' (Spawn_Struct, CharacterSelect_Struct): hair and beard style (IT1000+ and
 		// IT2000+ models) and color (an index into the hair colors), and the eye colors. 0xFF: none.

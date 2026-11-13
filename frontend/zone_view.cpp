@@ -1629,9 +1629,9 @@ void ZoneView::DrawDebugOverlays(Canvas &canvas) const
 std::string ZoneView::SpawnModelKey(const ZoneSpawn &spawn)
 {
 	char key[512];
-	int length = snprintf(key, sizeof(key), "%u/%u/%u/%.2f/%u/%u/%u/%u.%u.%u.%u.%u.%u", spawn.race, spawn.gender, spawn.face,
+	int length = snprintf(key, sizeof(key), "%u/%u/%u/%.2f/%u/%u/%u/%u.%u.%u.%u.%u.%u/%d", spawn.race, spawn.gender, spawn.face,
 		spawn.size, spawn.body_texture, spawn.helm, spawn.class_id, spawn.hair_style, spawn.hair_color, spawn.beard,
-		spawn.beard_color, spawn.eye_color1, spawn.eye_color2);
+		spawn.beard_color, spawn.eye_color1, spawn.eye_color2, spawn.default_features ? 1 : 0);
 	for (int k = 0; k < render::EquipSlots; ++k)
 		length += snprintf(key + length, sizeof(key) - static_cast<size_t>(length), "/%u:%08x", spawn.equipment[k], spawn.colors[k]);
 	return key;
@@ -1656,6 +1656,7 @@ std::shared_ptr<render::CharacterModel> ZoneView::SpawnModel(const ZoneSpawn &sp
 	appearance.beard_color = spawn.beard_color;
 	appearance.eye_color1 = spawn.eye_color1;
 	appearance.eye_color2 = spawn.eye_color2;
+	appearance.default_features = spawn.default_features;
 	for (int k = 0; k < render::EquipSlots; ++k) {
 		appearance.equip[k] = spawn.equipment[k];
 		appearance.tint[k] = spawn.colors[k];

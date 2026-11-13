@@ -550,9 +550,10 @@ namespace
 			ZoneMovement me = view->Movement();
 			uint16_t on = view->Vehicle();
 			auto stats = view->Stats();
-			printf("[preview] %s: at %.1f, %.1f, %.1f heading %.0f, floor %s%.1f, on %u '%s', profile boat '%s'\n", when, me.y,
-				me.x, me.z, me.heading, stats.have_floor ? "" : "none ", stats.floor_z, on,
-				zone.Spawns().count(on) ? zone.Spawns().at(on).name.c_str() : "", zone.Profile().boat.c_str());
+			printf("[preview] %s: at %.1f, %.1f, %.1f heading %.0f, floor %s%.1f, on %u '%s', profile boat '%s', model '%s'\n",
+				when, me.y, me.x, me.z, me.heading, stats.have_floor ? "" : "none ", stats.floor_z, on,
+				zone.Spawns().count(on) ? zone.Spawns().at(on).name.c_str() : "", zone.Profile().boat.c_str(),
+				view->Model() ? (view->Model()->Code() + " " + std::to_string(view->Model()->MaxZ() - view->Model()->MinZ()) + " tall").c_str() : "");
 			for (const auto &[id, spawn] : zone.Spawns()) {
 				if (spawn.race != 72 && spawn.race != 73 && spawn.race != 114 && spawn.race != 141)
 					continue;

@@ -665,7 +665,8 @@ a horse of ours it snapshots it, rides forward 5 s and lets go (printing the spe
 second), looks in first person and dismounts; `pet` opens the pet window and prints its gauge and
 buttons as they change, types `/pet` lines, clicks Guard and Sit, holds Follow onto hot button 1
 and presses it there, printing what goes to the zone; `boats` prints, every 2 s for SECONDS, the
-boat under us, where we and the boats within 300 are, and the profile's boat; off a boat, it first
+boat under us, where we and the boats within 300 are, the profile's boat and our model (an
+illusion's); off a boat, it first
 puts us on the nearest ship as zoning in with its name does, and on a race 141 boat it takes the
 helm, holds forward 3 s and turns left 2 s, printing the boat and us each half second)
 and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,
@@ -1311,6 +1312,14 @@ the rejection).
   a push of 0.5) to climb out. The look pitch is the view's tilt from where each camera starts. In water
   we play `P06` swimming (at `1 + velocity / 2`) or `L09` treading water, and so do other spawns whose
   body is in water. Not yet: breath and drowning, the underwater sound, levitation.
+- **Teleports from the zone** (`OP_RequestClientZoneChange`, 0x414d, MSG_TELEPORT_PC: {u32 zone, float
+  y, x, z, heading, u32 type}; EQMacEmu's `MovePC`, so `#goto`, `#zone`, `#summon`, a boat's
+  arrival): `HandleWorldMessage` goes on only if `<short name>.s3d` is there
+  (`GetZoneNameFromIndex`, `DoesFileExist`), then `CDisplay::DoTeleportB` (@004b43e1): nothing when
+  we've no control of ourselves (`StandingState` 0x66), else in this zone we're put there (999999
+  and a heading of 513 keep ours), off any boat, onto the floor; another zone is `MoveToZone(zone,
+  "MSG_TELEPORT_PC", 0, type)`, the type going as `OP_ZoneChange`'s reason, which EQMacEmu needs
+  non-zero to send us where it saved (zone points use 0). `FrontEnd::DoTeleportB`.
 - **Zone lines:** a feet region with `TP` at 3 (`DRNTP...`) is one; `MovePlayer` calls
   `CDisplay_DoTeleport` as the feet step into it. The type holds the zone (5 digits), then y, x, z (6
   each) and the heading (3); zone 255 makes the y an index into `OP_SendZonepoints` (Rivervale's lines
@@ -1912,6 +1921,17 @@ details and the nearest spawns at the top left and the radar at the top right.
   **/sdriver** (both @004f69f5, `CEverQuest_GetSndDriver` @0054570c) are the sound driver's, not
   boats': they only print 12379 ("Sound Card Info written to 'adriver.txt'...") in color 4, and
   nothing is written.
+- **OP_Illusion** (0x4091, `Mob::SendIllusionPacket`, 20 bytes): a stub (@004e33c0) finds the spawn
+  by its id (1..4999, us too) and calls `EQPlayer::do_change_form` (@005074fa): a race of -1, a
+  gender of 0xff, a helm or face of -1 keep theirs, the texture is always taken; the hair style and
+  color and beard and its color, all 0xff, are the face's defaults whatever the eyes
+  (`SetDefaultFacialFeaturesByFace(-1, 1, 0)`), else all four are taken; a size of 0 keeps it, -1
+  the race's default (`SetHeights`). The actor is made again (`CreatePlayerActor`,
+  `DisplayWeaponsAndArmor`), a rider gets off and back on, ours takes back its buffs' effects
+  (`HandleSpecialPCAffects`), and `PlayAnimationTrack` plays 0x47 on `pinstLocalPlayer`, whoever
+  changed. Races 142 and 143 look for the nearest object's actor (`GetNearestActorTag`) and fail
+  back with 1371. EQMacEmu sends texture 0 for our own spawn at zone entry, so our model takes the
+  texture and helm only in a race that isn't a player's. `ZoneSession`'s 0x4091, `default_features`.
 - **OP_ManaUpdate** (0x4219, {u16 spawn, u16 mana}) sets our mana, whoever it names. **OP_DespawnDoor**
   (0x409b, no body) deletes every door and switch. **OP_PlaySound** (0x4048, {u16 spawn, u16 sound})
   plays the wave where the spawn is, full to 100 and silent past it.

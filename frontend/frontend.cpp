@@ -1,5 +1,6 @@
 #include "frontend.h"
 
+#include "actor_tags.h"
 #include "eqstr.h"
 #include "game_windows.h"
 #include "ini_file.h"
@@ -15,6 +16,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <cctype>
+#include <filesystem>
 #include <limits>
 
 namespace
@@ -53,6 +55,14 @@ namespace
 		appearance.beard_color = me.beard_color;
 		appearance.eye_color1 = me.eye_color1;
 		appearance.eye_color2 = me.eye_color2;
+		appearance.default_features = me.default_features;
+		// Illusioned into a race that isn't a player's (do_change_form takes the texture and helm):
+		// its body texture. Our own spawn comes in with texture 0 from EQMacEmu, so a player race
+		// keeps dressing from the slots.
+		if (!render::IsPlayerRace(appearance.race)) {
+			appearance.texture = me.body_texture;
+			appearance.helm = me.helm;
+		}
 		for (int k = 0; k < render::EquipSlots; ++k) {
 			appearance.equip[k] = me.equipment[k];
 			appearance.tint[k] = me.colors[k];
@@ -4302,6 +4312,17 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 				ChatOut(EqString(1407, "You have the helm captain."), ChatType::Default);
 			break;
 		}
+		case Type::Illusion:
+			// EQPlayer::do_change_form: the spawn's new look (ZoneSession has it; its model is built
+			// again from it, ours by UpdatePlayerAppearance's look check), and PlayAnimationTrack 0x47 on
+			// pinstLocalPlayer, whoever changed. A mount is got off and back on (Dismount,
+			// MakeRiderMountUp): ours stays as it was.
+			if (m_zone_view)
+				m_zone_view->PlayAnimation(0x47);
+			break;
+		case Type::Teleport:
+			DoTeleportB(event.teleport);
+			break;
 		case Type::VehicleReset:
 			// msg_vehicle_reset: on a boat, to the zone's safe point.
 			if (m_zone_view && m_zone_view->Vehicle()) {
@@ -4755,6 +4776,33 @@ void FrontEnd::HandleZoneLine(const std::string &type)
 		return;
 	}
 	m_zone.RequestZoneChange(zone);
+}
+
+void FrontEnd::DoTeleportB(const ZoneTeleport &to)
+{
+	// HandleWorldMessage's 0x414d (MSG_TELEPORT_PC): only to a zone whose <short name>.s3d we
+	// have (EQWorldData::GetZoneNameFromIndex, DoesFileExist), then CDisplay::DoTeleportB (@004b43e1):
+	// nothing while we've no control of ourselves (stance 102). In this zone: there, a coordinate of
+	// 999999 or more (a heading of 513) keeping ours, off any boat, onto the floor; another zone:
+	// MoveToZone(zone, "MSG_TELEPORT_PC", 0, type), the type as OP_ZoneChange's reason (the zone
+	// then sends us where it saved).
+	if (!m_zone_view || m_zone.GetState() != ZoneSession::State::InZone)
+		return;
+	std::string short_name = ShortZoneName(to.zone);
+	std::error_code ec;
+	if (short_name.empty() || !std::filesystem::exists(m_ui.eq_dir + "/" + short_name + ".s3d", ec)) {
+		Log("MSG_TELEPORT_PC: no " + short_name + ".s3d for zone " + std::to_string(to.zone));
+		return;
+	}
+	if (m_zone.Self().stance == 102)
+		return;
+	if (to.zone == m_zone.Profile().zone_id) {
+		ZoneMovement here = m_zone_view->Movement();
+		m_zone_view->SetPlayerPosition(to.x < 999999 ? to.x : here.x, to.y < 999999 ? to.y : here.y,
+			to.z < 999999 ? to.z : here.z, to.heading < 513 ? to.heading : here.heading);
+		return;
+	}
+	m_zone.RequestZoneChange(to.zone, static_cast<int32_t>(to.type));
 }
 
 uint32_t FrontEnd::KeyWithModifiers(const InputEvent &event) const

@@ -541,7 +541,7 @@ namespace render
 		// none (a Vah Shir with face 7 hair style 0); then with HasAttachedHair 1 (not an Erudite,
 		// Iksar, Vah Shir, or troll or ogre man) hair style 0 in GetAllowedHairColorIndexRange's
 		// first color, and a dwarf man beard 0 in the hair's color.
-		if (luclin && appearance.eye_color1 == 0xff &&
+		if (luclin && (appearance.eye_color1 == 0xff || appearance.default_features) &&
 			(appearance.race <= 12 || appearance.race == 128 || appearance.race == 130)) {
 			uint16_t race = appearance.race;
 			appearance.hair_style = race == 130 && appearance.face % 10 == 7 ? 0 : 0xff;

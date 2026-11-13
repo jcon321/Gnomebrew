@@ -178,7 +178,10 @@ struct ZoneSpawn
 	uint8_t fly_mode = 0;    // LevitationState: 0 on the ground, 1 flying, 2 levitating, 3 floats in water
 	uint8_t light = 0;       // LightType, the light it carries (2 a torch, 4 a lantern...); 0 none
 	int16_t body_type = 0;
-	uint32_t look_serial = 0; // counts OP_WearChanges: the look changed
+	// OP_Illusion with no hair or beard: SetDefaultFacialFeaturesByFace(-1, 1, 0), the face's
+	// defaults on a Luclin model whatever its eye colors.
+	bool default_features = false;
+	uint32_t look_serial = 0; // counts OP_WearChanges and OP_Illusions: the look changed
 	// The last OP_Animation (attacks, casting, emotes): a client animation id, played once.
 	uint32_t action_serial = 0;
 	int32_t action = 0;
@@ -354,6 +357,16 @@ struct ZoneDoor
 	int16_t param = 0;       // how far lifts move, a teleporter's destination...
 };
 
+// OP_RequestClientZoneChange (MSG_TELEPORT_PC): where the zone moves us, the server's coordinates;
+// 999999 keeps a coordinate, a heading of 513 or more ours. `type` is MoveToZone's last argument
+// (OP_ZoneChange's reason).
+struct ZoneTeleport
+{
+	uint32_t zone = 0;
+	float y = 0, x = 0, z = 0, heading = 0;
+	uint32_t type = 0;
+};
+
 // Our position and motion as pack_physics puts them in OP_ClientUpdate: the server's
 // coordinates (z is the model's center), heading 0..512, and the speeds per 50 ms tick.
 struct ZoneMovement
@@ -513,6 +526,8 @@ public:
 			// OP_ControlBoat back from the zone: id the boat, value 1 when we have its helm (0 let go).
 			BoatControl,
 			VehicleReset, // MSG_VEHICLE_RESET
+			Illusion,     // OP_Illusion: id the spawn (us too), its look already changed in Spawns() / Self()
+			Teleport,     // OP_RequestClientZoneChange: teleport
 			// OP_ShopEndConfirm: the zone ended the merchant session (HandleWorldMessage's 0x4146:
 			// with the new UI, CMerchantWnd::Deactivate)
 			MerchantEnded,
@@ -649,6 +664,7 @@ public:
 		ZoneRaid raid;
 		ZoneWho who;
 		ZoneGuild guild;
+		ZoneTeleport teleport;
 	};
 
 	ZoneSession();

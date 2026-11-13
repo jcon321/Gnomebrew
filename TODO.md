@@ -627,11 +627,17 @@ no rules of its own.
     stopped, and dropped to the floor) and `OP_GMLastName` and `OP_GMNameChange` (the spawn's, and
     our profile's, surname or name, and the name over their head) are done; the two name changes
     also set `EQ_Main`+0xe64 (`DAT_007f9574`), not known): `OP_Charm`, `OP_Reward`, `OP_MultiLineMsg`, `OP_ResetSkill`, `OP_SetTitle`,
-    `OP_FreezeClientControl`, `OP_UnfreezeClientControl` and `OP_ReturnClientControl`,
-    `OP_RequestClientZoneChange` (a zone change the server asks for). The boats' packets are done
-    (39). Also sent by EQMacEmu and dropped here:
-    - `OP_Illusion` (0x4091, `Mob::SendIllusionPacket`): any spawn's new race, gender, texture and
-      face (`EQPlayer::do_change_form` @005074fa); an illusioned spawn keeps its old look now.
+    `OP_FreezeClientControl`, `OP_UnfreezeClientControl` and `OP_ReturnClientControl`. The boats'
+    packets are done (39), and `OP_RequestClientZoneChange` (`DoTeleportB`) and `OP_Illusion`
+    (`do_change_form`); still to do of those:
+    - `do_change_form` to race 142 or 143 (`CDisplay::GetNearestActorTag`: the nearest zone object's
+      actor, a tree's for 143): failing, the old form back, and on us the SPA 0x3a buff off
+      (`RemovePCAffect`, `NotifyPCAffectChange`) with 1371. Ours takes the race as any other, no
+      model found (race 75's stand-in).
+    - `do_change_form`'s particles carried from the old actor to the new (`DAT_007f9c34`), and
+      `DoTeleportB`'s refusal on `EQPlayer`+0x108 (not known what it is); a dwarf's, halfling's or
+      gnome's z + 1 going to another zone isn't sent anywhere and isn't ours.
+    Also sent by EQMacEmu and dropped here:
     - `OP_SpellTextMessageStringID` (0x4241, `EntityList::SpellTextMessageClose_StringID`): others'
       spell messages by string id.
     - Not sent by EQMacEmu (no `OP_` name in `patch_Mac.conf`; their original names from
@@ -755,8 +761,9 @@ no rules of its own.
     - MountEQPlayer's levitation (`SetNoGrav` on the horse of a levitating rider; no levitation
       yet), onto something not a horse (its `DagRightPoint`), and a boat's `AttachedEntity` branch.
     - `UpdatePlayerVisibility`: a ridden horse follows its rider's visibility (we draw the invisible).
-    - `do_change_form` (an illusion gets off and back on; `OP_Illusion` isn't handled), and
-      `EQPlayer::ChangeHeight` of a rider (a `/height` or size change) carrying on to its horse.
+    - `do_change_form`'s `Dismount` and `MakeRiderMountUp` (an illusioned rider gets off and back
+      on: a horse that won't take the new form leaves it off), and `EQPlayer::ChangeHeight` of a
+      rider (a `/height` or size change) carrying on to its horse.
     - Being hit on a horse (`ReportSuccessfulHit`'s `DeacSpellScreen` and `ChangeStance`) and the
       right button on one (24, 2), `PlayAnimationTrack2`'s horse pitch (64) and its riding-skill
       `EQ_PC_CheckSkillImprove` while the horse moves, and the horse's swim jump (the swim skill's

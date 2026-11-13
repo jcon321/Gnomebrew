@@ -2296,6 +2296,74 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 	case ZoneOp::VehicleReset:
 		events.push_back({Event::Type::VehicleReset});
 		break;
+	case ZoneOp::Illusion: {
+		// HandleWorldMessage's 0x4091 (@004e33c0): the spawn by its id (1..4999), and
+		// EQPlayer::do_change_form: a race of -1, a gender of 0xff, a helm or face of -1 keep
+		// theirs; the texture is always taken. The hair and beard all 0xff take the face's defaults
+		// (SetDefaultFacialFeaturesByFace(-1, 1, 0)), else all four are taken. A size of 0 keeps
+		// it, -1 is the race's default (Height -1, SetHeights).
+		if (data.size() < 20)
+			break;
+		uint16_t id = Read<uint16_t>(data, 0);
+		if (id == 0 || id >= 5000)
+			break;
+		auto change = [&](ZoneSpawn &spawn) {
+			int16_t race = Read<int16_t>(data, 2);
+			if (race != -1)
+				spawn.race = static_cast<uint16_t>(race);
+			if (data[4] != 0xff)
+				spawn.gender = data[4];
+			spawn.body_texture = data[5];
+			if (static_cast<int8_t>(data[6]) != -1)
+				spawn.helm = data[6];
+			int16_t face = Read<int16_t>(data, 8);
+			if (face != -1)
+				spawn.face = static_cast<uint8_t>(face);
+			spawn.default_features = data[10] == 0xff && data[11] == 0xff && data[12] == 0xff && data[13] == 0xff;
+			if (spawn.default_features)
+				spawn.hair_style = spawn.hair_color = spawn.beard = spawn.beard_color = 0xff;
+			else {
+				spawn.hair_style = data[10];
+				spawn.hair_color = data[11];
+				spawn.beard = data[12];
+				spawn.beard_color = data[13];
+			}
+			int32_t size = Read<int32_t>(data, 16);
+			if (size == -1)
+				spawn.size = 0;
+			else if (size != 0)
+				spawn.size = static_cast<float>(size);
+			++spawn.look_serial;
+		};
+		auto it = m_spawns.find(id);
+		bool mine = m_my_id != 0 && id == m_my_id;
+		if (it == m_spawns.end() && !mine)
+			break;
+		if (it != m_spawns.end())
+			change(it->second);
+		if (mine)
+			change(m_self);
+		Log("[zone]    spawn " + std::to_string(id) + " takes race " + std::to_string(Read<int16_t>(data, 2)) +
+			" texture " + std::to_string(data[5]));
+		Event e(Event::Type::Illusion);
+		e.id = id;
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::RequestClientZoneChange: {
+		if (data.size() < 24)
+			break;
+		Event e(Event::Type::Teleport);
+		e.teleport.zone = Read<uint32_t>(data, 0);
+		e.teleport.y = Read<float>(data, 4);
+		e.teleport.x = Read<float>(data, 8);
+		e.teleport.z = Read<float>(data, 12);
+		e.teleport.heading = Read<float>(data, 16);
+		e.teleport.type = Read<uint32_t>(data, 20);
+		Log("[zone]    MSG_TELEPORT_PC zone " + std::to_string(e.teleport.zone) + " type " + std::to_string(e.teleport.type));
+		events.push_back(e);
+		break;
+	}
 	case ZoneOp::Stun: {
 		Event e(Event::Type::Stunned);
 		e.value = data.size() >= 4 ? static_cast<int32_t>(Read<uint32_t>(data, 0)) : 0;

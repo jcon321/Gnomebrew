@@ -430,6 +430,8 @@ private:
 	// CEverQuest::DoMainLoop zoning in with the profile's boat: onto it (ZoneView::PutOnVehicle), or
 	// if it isn't here, IFoundMyVehicle's MSG_LOCATE_VEHICLE and, unanswered after 60 s, the safe point.
 	void FindMyVehicle();
+	// OP_RequestClientZoneChange: CDisplay::DoTeleportB (in this zone, or MoveToZone to another).
+	void DoTeleportB(const ZoneTeleport &to);
 	int m_boat_off_ticks = 0;    // DAT_0063db20: seconds off a boat (kept from zone to zone, as eqgame's)
 	bool m_boarded = false;      // DAT_0063db2c: OP_BoardBoat sent and not OP_LeaveBoat
 	uint64_t m_boat_tick_ms = 0; // ActorInfo's LastTick, for the above
