@@ -426,6 +426,8 @@ void DebugMenu::DrawCard(Canvas &canvas, TextRenderer &text, const ZoneSession &
 	if (world && section(Camera, "CAMERA")) {
 		if (stats.view == ZoneView::CameraView::FirstPerson)
 			row(Format("First person   pitch %.0f", stats.camera_pitch));
+		else if (stats.view == ZoneView::CameraView::Overhead)
+			row("Overhead");
 		else
 			row(Format("Chase %.0f units   pitch %.0f", stats.camera_distance, stats.camera_pitch));
 	}

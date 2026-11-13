@@ -73,6 +73,7 @@ struct ZoneProfile
 	float x = 0, y = 0, z = 0, heading = 0;
 	uint32_t zone_id = 0;
 	uint32_t bind_zone = 0; // the first bind point's zone (EQ_PC's ZoneBoundId): where we go when we die
+	float bind_x = 0, bind_y = 0, bind_z = 0; // and where in it (ZoneBoundX, ZoneBoundY, ZoneBoundZ)
 	int32_t platinum = 0, gold = 0, silver = 0, copper = 0;
 	int32_t bank_platinum = 0, bank_gold = 0, bank_silver = 0, bank_copper = 0;
 	int32_t cursor_platinum = 0, cursor_gold = 0, cursor_silver = 0, cursor_copper = 0; // coins on the cursor
@@ -535,6 +536,16 @@ public:
 			// with the new UI, CMerchantWnd::Deactivate)
 			MerchantEnded,
 			Consented,    // OP_ConsentResponse: text the grantee, text2 the owner, value the permission
+			// Death's questions and answers (data the packet): OP_RezzRequest asking to resurrect us
+			// (msg_resurrect), OP_RezzComplete (msg_resurrect_complete), OP_Sacrifice asking (id the
+			// caster, value the target: msg_sacrifice), OP_Translocate asking (complete 0) or moving
+			// us (complete 1: msg_translocate), and OP_GMKill (text the name: "struck down by the gods").
+			RezzRequested,
+			RezzCompleted,
+			SacrificeAsked,
+			TranslocateAsked,
+			Translocated,
+			GMKilled,
 			SoundPlayed,  // OP_PlaySound: id the spawn, value the sound
 			DoorMoved,    // id: the door, value: its new state (OP_MoveDoor)
 			ItemLink,     // LinkedItem() is the item of a link we clicked (OP_ItemLinkResponse)
@@ -754,6 +765,16 @@ public:
 	void Shield(uint16_t id);               // OP_Shielding (/shield)
 	void Keys();                            // OP_Key (/keys)
 	void Consent(const std::string &name);  // OP_Consent
+	// The answers to death's questions: OP_RezzAnswer (the zone's request back, action 1 yes or 0
+	// no), OP_Sacrifice ({0, our id, 1 or 0}) and OP_Translocate (complete 1 or -1).
+	void RezzAnswer(const std::vector<uint8_t> &request, bool yes);
+	void SacrificeAnswer(bool yes);
+	void TranslocateAnswer(bool yes);
+	// /corpse: OP_GMSummon {the corpse, our name, our zone, where we stand truncated (y, x, z)}.
+	void SummonCorpse(const std::string &corpse, float y, float x, float z);
+	// MoveToZone_2's "Your Home Zone is unavailable": OP_Logout at once, no camp; the zone's
+	// OP_LogoutReply ends it (LoggedOut) as a camp's does.
+	void LogoutNow();
 	// Guilds (GuildCommand_Struct, GuildInviteAccept_Struct and the war and peace struct: see
 	// opcodes.h). Our name and guild in them are the profile's.
 	void GuildInvite(const std::string &other, int32_t officer);       // OP_GuildInvite

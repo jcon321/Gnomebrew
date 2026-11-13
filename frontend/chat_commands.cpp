@@ -18,7 +18,7 @@ namespace
 	{
 		None, Say, Tell, Group, Shout, Auction, Ooc, Guild, Reply, Emote, Hail, Location, Target, Camp,
 		ClearChat, ShowNames, Sit, Stand, Book, Cast, Consider, Played, Motd, Time, Afk, Anonymous, Assist,
-		Random, LootNoDrop, FastDrop, AutoSplit, Roleplay, TargetGroupBuff, Split, Yell, Consent, Social, Attack, CombatMusic, DoAbility, Filter, ServerFilter, Invite, Disband, Who, WhoTarget, Follow, MakeLeader, Lfg,
+		Random, LootNoDrop, FastDrop, AutoSplit, Roleplay, TargetGroupBuff, Split, Yell, Consent, Corpse, HideCorpses, Social, Attack, CombatMusic, DoAbility, Filter, ServerFilter, Invite, Disband, Who, WhoTarget, Follow, MakeLeader, Lfg,
 		UserColor, GuildInvite, GuildRemove, GuildDelete, GuildStatus, GuildLeader, GuildWar, GuildPeace, GuildMotd,
 		MakeRaidLeader, RaidInvite, RaidDecline, RaidAccept, RaidDisband, SetLootType, AddRaidLooter, RemoveRaidLooter,
 		RaidSay, RaidWindow, Channel, Loot, TargetTell, CharInfo, MoveLog, StopSong, Shield, Quit, Log, Keys, Dismount,
@@ -51,7 +51,7 @@ namespace
 		{"/guildpeace", 0, Command::GuildPeace}, {"/pet", 0, Command::Pet}, {"/petition", 0, Command::None},
 		{"/private", 1, Command::None}, {"/find", 1, Command::None}, {"/goto", 1, Command::None},
 		{"/becomenpc", 1, Command::None}, {"/searchcorpse", 1, Command::None}, {"/yell", 0, Command::Yell},
-		{"/motd", 0, Command::Motd}, {"/corpse", 0, Command::None}, {"/me", 0, Command::Emote},
+		{"/motd", 0, Command::Motd}, {"/corpse", 0, Command::Corpse}, {"/me", 0, Command::Emote},
 		{"/location", 0, Command::Location}, {"/adriver", 0, Command::SoundDriver}, {"/sdriver", 0, Command::SoundDriver},
 		{"/chat", 0, Command::None}, {"/join", 0, Command::None}, {"/leave", 0, Command::None},
 		{"/leaveall", 0, Command::None}, {"/list", 0, Command::None}, {"/announce", 0, Command::None},
@@ -96,7 +96,7 @@ namespace
 		{"/log", 0, Command::Log}, {"/toggletell", 3, Command::None}, {"/inquire", 3, Command::None},
 		{"/praise", 3, Command::None}, {"/warn", 3, Command::None}, {"/edit", 3, Command::None},
 		{"/voice", 0, Command::None}, {"/microphone", 0, Command::None}, {"/movelog", 0, Command::MoveLog},
-		{"/hidecorpses", 0, Command::None}, {"/vrdelay", 0, Command::None}, {"/reverb", 0, Command::None},
+		{"/hidecorpses", 0, Command::HideCorpses}, {"/vrdelay", 0, Command::None}, {"/reverb", 0, Command::None},
 		{"/fastdrop", 0, Command::FastDrop}, {"/trackplayers", 0, Command::None}, {"/help", 0, Command::None},
 		{"/lfg", 0, Command::Lfg}, {"/approval", 4, Command::None}, {"/sit", 0, Command::Sit},
 		{"/stand", 0, Command::Stand}, {"/book", 0, Command::Book}, {"/cast", 0, Command::Cast},
@@ -1505,6 +1505,12 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 		// /consent (@004fb39e): the rest of the line as the name, if there is any.
 		if (!args.empty())
 			m_zone.Consent(args);
+		break;
+	case Command::Corpse:
+		SummonCorpse(); // /corpse (@004f5eeb)
+		break;
+	case Command::HideCorpses:
+		HideCorpses(args); // /hidecorpses (@004fb5eb)
 		break;
 	case Command::TargetGroupBuff: {
 		// /targetgroupbuff (@004ff181): "off" (3 letters) or "on" (2) kept in [Defaults]

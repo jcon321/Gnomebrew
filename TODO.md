@@ -396,9 +396,21 @@ no rules of its own.
     CanIHitTarget to OP_CombatAbility (checked live: a kick), and forage, sense heading, mend, taunt,
     intimidation, disarm, disarm traps and sense traps. /filter and /serverfilter
     (`frontend/filters.*`, [Filters]) sent to the zone as OP_SetServerFilter. A melee hit on us
-    takes off our invisibility and pushes us (IWasHit); our death lays us down (D05) to the death
-    music, and nothing moves us; 2 s on, "Returning to home point, please wait..." (eqstr 539) and
-    OP_ZoneChange to the bind zone with reason 10 (RealRender_World's DeathTimer, MoveToZone).
+    takes off our invisibility and pushes us (IWasHit); our death (`frontend/death.cpp`:
+    CEverQuest_ReportDeath_ClearOutRentables, ClearOutRentables, IDied) takes our temporary items
+    (NoRent 0, a temporary bag with its contents), closes the loot window (DoorLoading_), puts the
+    camera in the overhead view (1) and lays us down (D05) to the death music, and nothing moves
+    us; 2 s on, "Returning to home point, please wait..." (eqstr 539), PrepareLocalPCForRepop (in a
+    group our invitation dropped, the raid's reset, a corpse's looting ended), OP_ZoneChange to the
+    bind zone with reason 10 and CDisplay_SwitchToDefaultCameraMode (RealRender_World's
+    DeathTimer, MoveToZone); the zone refusing that, MoveToZone_2's "Your Home Zone is unavailable,
+    going back to Character Selection Screen!" and OP_Logout at once. While the DeathTimer runs a
+    merchant, banker, our guildmaster and /consider don't answer the right button
+    (EQ_3DView_MouseUp). DoPassageOfTime's KnockedOut at 0 HP or under (lying down, StunnedState
+    3, the overhead view, eqstr 12877) and GetConscious over 0 (12876, the default view, up as from
+    kneeling); OP_GMKill naming us ("struck down by the gods", 1391: wave 0x8f, HP -10000, the
+    DeathTimer back to 0). Checked live (an NPC's Cazic Touch) and through its replay
+    (`frontend_preview ... death`).
     Our own swings (`frontend/melee_attack.cpp`): ProcessControls swings each hand while auto
     attack's on and we have control, on `__RangeAttackReady` and DAT_007cd845 (DoPassageOfTime
     readies the secondary by its weapon, hand to hand empty, else the primary's delay), through
@@ -456,15 +468,21 @@ no rules of its own.
       (`compute_tohit`: level * 2 / 5 while Drunkness / 2 is 20 or under) count. Past that,
       compute_tohit takes a value of the drunkenness the decompile loses (an `__ftol`), not ours;
     - the blood of our crushing, slashing, piercing, backstab and bash hits (SpurtBloodOnDag);
-    - ReportDeath's duel ending (eqstr 12100, 12101), a group member's HP, the tracking window; our
-      death's first person view (still standing height), KnockedOut's "You have been knocked
-      unconscious!" (12877) and ClearOutRentables' temporary items;
-    - going home dead: CDisplay_SwitchToDefaultCameraMode, PrepareLocalPCForRepop's group reset
-      (SetInvited; the raid's part, SetTargetRaidPlayer(0) and CRaid::ResetFromDeath, is done),
-      MoveToZone_2's "Your Home Zone is unavailable"
-      fallback when the zone refuses (0x4150), EQ_3DView_MouseUp's clicks while the DeathTimer runs,
-      and HandleWorldMessage's "struck down by the gods" (1391) resetting it; the return checked
-      live only through a recording's replay;
+    - ReportDeath's duel ending (eqstr 12100, 12101), a group member's HP (-11 on their death), the
+      tracking window; F9 to first person while dead keeps our standing eye height;
+    - our own death (`EQ_Character::SendDeathMessage` @004bfcfc, from DoPassageOfTime and
+      ApplyDamage at -10 HP or under: ReportDeath here and OP_Death to the zone). The zone sends
+      the dying client no OP_Death when a client or the victim killed it (`GenerateDeathPackets`'
+      skipsender for Killed_Client, Killed_Self and a buff's tick), so #kill on ourselves, a PvP
+      kill or a DoT leaves us standing at negative HP, knocked out;
+    - ReportDeath_ClearOutRentables also lets go of the group's spawns (`pinstGroup`, relinked by
+      CheckForGroupChanges in the next zone): ours keep them, so the gauges stay for the 2 s;
+    - `ZoneSpawn::npc`'s comment (2 a player's corpse, 3 an NPC's) is the reverse of what EQMacEmu
+      sends (`Corpse::FillSpawnStruct`: 3 a player's, 2 an NPC's), and `frontend/combat.cpp`'s
+      `npc == 3` "an NPC's" tests follow the comment; which eqgame Type is which isn't checked;
+    - MoveToZone_2's other refusals: its test before the logout reads `StunnedState == 4 ||
+      param_4 || strlen(@00546057)(Name)`, which can't be right for a zone line (every refusal
+      would log out); ours logs out only going home dead;
     - being hit on a mount (DeacSpellScreen, ChangeStance), and the guildmaster window turning auto
       attack off (pinstActiveGMaster) once there is one;
     - TotalSpellAffects adds the worn items' effects only for attack speed; the other SPAs
@@ -562,14 +580,19 @@ no rules of its own.
     - The player window's menu toggle for its pet gauge (`CPlayerWnd::WndNotification` flips
       +0x144, which `UpdatePlayerWindowState` needs to show it; on from the constructor). Ours
       always shows it with a pet.
-31. **Death's dialogs and corpses.** Resurrection's question (`msg_resurrect` @004e1f5f on
-    `OP_RezzRequest`, answered with `OP_RezzAnswer`; `msg_resurrect_complete` @004e212b on
-    `OP_RezzComplete`); /consent (@004fb39e, `OP_Consent`; `msg_consent_verify` @004e3314 on
-    `OP_ConsentResponse`: done, `ZoneSession::Consent`, the Consented event; an ignored owner's
-    answer isn't left out yet); /corpse dragging (`OP_CorpseDrag`) and /hidecorpses; a corpse's notes
-    (`msg_send_corpse_notes` @004df1f5); the sacrifice and translocate questions (`msg_sacrifice`
-    @004e1afe, `msg_translocate` @004e1c3e: the confirmation dialog, `OP_Sacrifice`,
-    `OP_Translocate` back from `ProcessConfirmation`).
+31. ~~**Death's dialogs and corpses.**~~ Done (`frontend/death.cpp`): `msg_resurrect` (@004e1f5f,
+    `OP_RezzRequest` to us, eqstr 10001 or 10000; unanswered with the dialog up) answered by
+    `OP_RezzAnswer`, `msg_resurrect_complete` (@004e212b: buffs cleared, under 100% no mana, a
+    third of our HP and Resurrection Effects (756, 757) in slot 0, then to the corpse or MoveToZone reason
+    9); `msg_sacrifice` and `msg_translocate` (@004e1afe, @004e1c3e: the questions, No at once
+    with the dialog up, `OP_Sacrifice` and `OP_Translocate` from ProcessYes and ProcessNo, and a
+    translocation's move, to the bind point for 1334, 1422 and 3243); /consent; /corpse
+    (@004f5eeb, `OP_GMSummon`) and /hidecorpses (@004fb5eb). Corpse notes need nothing: TAKP's
+    eqgame.dll hands every `OP_LootItemPacket` item to `msg_send_corpse_eq_equip`. Checked live
+    against EQMacEmu and through the replay (`frontend_preview ... rez`). Still to do:
+    - `msg_consent_verify` leaving out an ignored owner's answer (`CEverQuest_BeingIgnored`, under 29).
+    - `OP_CorpseDrag` from the zone (0x4114: "%1 has permission to drag corpse %2.", eqstr 1405);
+      EQMacEmu never sends it.
 32. **Duels.** /duel (@004fca55, `OP_RequestDuel`), the challenge's question and /decline (`msg_duel`
     @004e31b7, `OP_DuelResponse`); AllowedToAttack's and ReportDeath's duel branches are under 24.
 33. **The Bazaar.** Trader mode (/trader, `OP_BecomeTrader`, `OP_Trader`), a trader's shop

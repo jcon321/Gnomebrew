@@ -39,7 +39,9 @@
 class ZoneView
 {
 public:
-	enum class CameraView { FirstPerson, Chase };
+	// eqgame's camera views (Zeal_camera_view) that we have: 0 first person, 1 overhead (straight
+	// above our head, looking down: being knocked out or dying puts us there), 2 the chase camera.
+	enum class CameraView { FirstPerson, Overhead, Chase };
 	using Vision = ::Vision; // day_light.h
 	static Vision RaceVision(uint16_t race) { return ::RaceVision(race); }
 
@@ -256,6 +258,11 @@ public:
 	// 2..200).
 	void CycleCamera();
 	CameraView View() const { return m_view; }
+	// EQPlayer::KnockedOut and CEverQuest_ReportDeath_ClearOutRentables: view 1, the overhead camera
+	// (CDisplay_default_camera's: 25 above our eye, pitched -100 of 512 down, our heading), with F9's
+	// choice kept; CDisplay_SwitchToDefaultCameraMode puts F9's back (DAT_0063b8ec).
+	void SetOverheadView() { m_view = CameraView::Overhead; }
+	void SwitchToDefaultCamera() { m_view = m_default_view; }
 	void Orbit(float delta) { m_orbit += delta; }
 	void Turn(float delta);
 	void FaceCamera();
@@ -635,6 +642,7 @@ private:
 	std::function<int(float)> m_fall_damage;
 
 	CameraView m_view = CameraView::Chase;
+	CameraView m_default_view = CameraView::Chase; // DAT_0063b8ec: the view F9 last chose
 	float m_orbit = 0;      // chase camera heading relative to the character's
 	float m_pitch = -12;    // degrees, negative looks down
 	float m_distance = 0;   // chase camera distance; 0 = from the character's height

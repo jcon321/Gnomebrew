@@ -879,7 +879,9 @@ void FrontEnd::Update(uint64_t now_ms)
 		// keeps unseen.
 		m_mounts.SetView(m_zone_view.get());
 		m_mounts.Frame();
-		m_zone_view->SetHiddenSpawns(m_mounts.Hidden());
+		std::set<uint16_t> hidden = m_mounts.Hidden();
+		hidden.insert(m_hidden_corpses.begin(), m_hidden_corpses.end()); // /hidecorpses
+		m_zone_view->SetHiddenSpawns(std::move(hidden));
 		m_zone_view->SetMounts(m_mounts.Riders());
 		m_zone_view->UpdateSpawns(m_zone.Spawns(), m_zone.MySpawnId(), now_ms);
 		// What we put on or took off (UpdatePlayerAppearance), and the light we carry.
@@ -890,6 +892,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		RangedPassageOfTime(now_ms);
 		HungerAndThirst(now_ms);
 		StunPassageOfTime(now_ms);
+		KnockoutPassageOfTime();
 		if (me.look_serial != m_my_look_serial || m_ranged_look) {
 			m_my_look_serial = me.look_serial;
 			m_ranged_look = false;
@@ -3544,11 +3547,19 @@ void FrontEnd::UpdateDeath(uint64_t now_ms)
 		return;
 	}
 	if (m_death_ms == 1) {
-		// PrepareLocalPCForRepop (the options saved, EQ_PC::PrepareForRepop: what the next
-		// zone's profile gives back), then MoveToZone(ZoneBoundId, "repop_to_home_at_death", 1, 10).
+		// PrepareLocalPCForRepop (the options saved, EQ_PC::PrepareForRepop: in a group our
+		// invitation dropped (SetInvited 0), in a raid SetTargetRaidPlayer(0) and ResetFromDeath, a
+		// corpse we were looting let go (OP_EndLootRequest); the rest is what the next zone's profile
+		// gives back), then MoveToZone(ZoneBoundId, "repop_to_home_at_death", 1, 10) and
+		// CDisplay_SwitchToDefaultCameraMode.
+		if (m_group.InGroup())
+			m_group.DropInvitation();
 		m_raid.Died();
+		m_loot.Deactivate();
 		if (m_zone.RequestZoneChange(m_zone.Profile().bind_zone, 10))
 			m_death_ms = UINT64_MAX;
+		if (m_zone_view)
+			m_zone_view->SwitchToDefaultCamera();
 		return;
 	}
 	if (now_ms - m_death_ms > 2000) {
@@ -3639,8 +3650,13 @@ void FrontEnd::RightClickedOnPlayer(uint16_t spawn)
 	if (who.npc >= 2 && m_loot.LootCorpse(spawn))
 		return;
 	constexpr int Banker = 16, Merchant = 32;
+	// EQ_3DView_MouseUp: a merchant, a banker, our guildmaster and /consider do nothing while our
+	// DeathTimer runs.
+	const bool dead = DeathTimerRunning();
 	if (who.npc < 2 && who.class_id == Merchant) {
 		if (m_zone.SpawnDistance(spawn) <= 20) {
+			if (dead)
+				return;
 			m_abilities.MakeMeVisible();
 			AutoAttackOff(1466); // "Auto attack off."
 			m_merchant.Request(spawn);
@@ -3661,6 +3677,8 @@ void FrontEnd::RightClickedOnPlayer(uint16_t spawn)
 		return;
 	}
 	if (who.npc < 2 && who.class_id == Banker && m_zone.SpawnDistance(spawn) <= 20) {
+		if (dead)
+			return;
 		m_bank.Activate(spawn);
 		if (m_bank.Active()) // CBankWnd::Activate, after the banker's welcome
 			AutoAttackOff(1466);
@@ -3671,6 +3689,8 @@ void FrontEnd::RightClickedOnPlayer(uint16_t spawn)
 	if (who.npc < 2 && who.class_id >= 17 && who.class_id <= 31 && m_zone.SpawnDistance(spawn) <= 20) {
 		const ZoneProfile &me = m_zone.Profile();
 		if (me.class_id + 16 == who.class_id) {
+			if (dead)
+				return;
 			if (m_train.Guildmaster() == 0) {
 				m_abilities.MakeMeVisible();
 				AutoAttackOff(1466); // "Auto attack off."
@@ -3683,7 +3703,8 @@ void FrontEnd::RightClickedOnPlayer(uint16_t spawn)
 				10);
 	}
 	// Anything else: _consider with nothing typed, which considers our target (not who was clicked).
-	InterpretCommand("/consider");
+	if (!dead)
+		InterpretCommand("/consider");
 }
 
 void FrontEnd::VehiclePassageOfTime(uint64_t now_ms)
@@ -4254,6 +4275,8 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			m_stunned = false;
 			m_stun_until_ms = 0;
 			m_death_ms = 0;
+			m_knocked_out = false; // a new zone's StunnedState is the profile's: not knocked out
+			m_hidden_corpses.clear();
 			m_cycle_index = -1;    // Zeal's CycleTarget::on_zone
 			m_toggle_target = 0; // CEverQuest_EnterZone
 			if (!m_windows_built)
@@ -4348,6 +4371,24 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			// answers our own OP_ShopEnd (a second SavePC, our target cleared again).
 			m_merchant.Deactivate();
 			break;
+		case Type::RezzRequested:
+			AskResurrect(event.data);
+			break;
+		case Type::RezzCompleted:
+			ResurrectComplete(event.data);
+			break;
+		case Type::SacrificeAsked:
+			AskSacrifice(event.id, static_cast<uint32_t>(event.value));
+			break;
+		case Type::TranslocateAsked:
+			AskTranslocate(event.data);
+			break;
+		case Type::Translocated:
+			Translocated(event.data);
+			break;
+		case Type::GMKilled:
+			StruckDown(event.text);
+			break;
 		case Type::Consented: {
 			// msg_consent_verify (@004e3314): to us, given or denied the grantee; else, to them, the
 			// owner's corpse (an ignored owner's isn't said: no ignore list yet).
@@ -4387,6 +4428,14 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			AddZoneLog(EqString(12387, "LOADING, PLEASE WAIT..."), ZoneGrey);
 			break;
 		case Type::ZoneDenied: {
+			if (m_dead && m_death_ms == UINT64_MAX) {
+				// MoveToZone_2 going home dead (its third argument 1): "Your Home Zone is unavailable,
+				// going back to Character Selection Screen!" and OP_Logout, no camp.
+				m_logout_text = "Your Home Zone is unavailable, going back to Character Selection Screen!";
+				ChatOut(m_logout_text, ChatType::Red);
+				m_zone.LogoutNow();
+				break;
+			}
 			// MoveToZone_2: why, then back to the zone's safe point.
 			uint32_t id = event.value == -7 ? 252 : event.value == -2 ? 5049 : event.value == -3 ? 5050 : event.value == -6 ? 5052
 			            : event.value == -1                    ? 5051
@@ -4587,17 +4636,8 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 				SetTarget(0);
 				SetAutoAttack(false);
 			}
-			if (victim == m_zone.MySpawnId()) {
-				SetAutoAttack(false); // CEverQuest_ReportDeath_ClearOutRentables
-				// EQPlayer::IDied: we fall and lie there, still, to the death music.
-				m_dead = true;
-				m_death_ms = 0; // EQPlayer::IDied: MovePlayer starts the DeathTimer
-				m_autorun = false;
-				if (m_zone_view)
-					m_zone_view->SetDead(true);
-				if (m_sound)
-					m_sound->SetMusicSelection(audio::EqSound::Death, true);
-			}
+			if (victim == m_zone.MySpawnId())
+				IDied();
 			Combat::Report report = m_combat.Died(event, m_zone, m_game_values.target, m_game_values.CurHp());
 			if (event.cast.type == 231) {
 				std::vector<SpellCasting::Line> lines;
@@ -4668,6 +4708,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 		}
 		case Type::SpawnRemoved:
 			m_mounts.SpawnRemoved(event.id); // ~EQPlayer's Dismount2
+			m_hidden_corpses.erase(event.id);
 			if (event.id == m_game_values.target) {
 				SetAutoAttack(false);
 				m_game_values.target = 0;
@@ -4704,7 +4745,8 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			m_group.Clear();
 			m_raid.Clear();
 			m_zone.FinishLogout();
-			ShowMessage("You have camped.", [this](bool) { EnterStart(); });
+			ShowMessage(m_logout_text.empty() ? "You have camped." : m_logout_text, [this](bool) { EnterStart(); });
+			m_logout_text.clear();
 			break;
 		case Type::Error:
 			ShowMessage(m_strings.Get("SISATEXT_LOSTCON") + "\n\n(" + event.text + ")", [this](bool) { EnterStart(); });

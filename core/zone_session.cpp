@@ -1611,6 +1611,61 @@ void ZoneSession::Consent(const std::string &name)
 		Send(ZoneOp::Consent, name.c_str(), name.size() + 1, "OP_Consent " + name);
 }
 
+void ZoneSession::RezzAnswer(const std::vector<uint8_t> &request, bool yes)
+{
+	// CConfirmationDialog::ProcessYes and ProcessNo, category 2: the request kept, action @224.
+	if (m_state != State::InZone || request.size() < 228)
+		return;
+	std::vector<uint8_t> body(request.begin(), request.begin() + 228);
+	uint32_t action = yes ? 1 : 0;
+	memcpy(&body[224], &action, 4);
+	Send(ZoneOp::RezzAnswer, body.data(), body.size(), yes ? "OP_RezzAnswer (yes)" : "OP_RezzAnswer (no)");
+}
+
+void ZoneSession::SacrificeAnswer(bool yes)
+{
+	// Category 0x14: {0, our spawn id, 1 or 0}.
+	if (m_state != State::InZone)
+		return;
+	uint32_t body[3] = {0, m_my_id, yes ? 1u : 0u};
+	Send(ZoneOp::Sacrifice, body, sizeof(body), yes ? "OP_Sacrifice (yes)" : "OP_Sacrifice (no)");
+}
+
+void ZoneSession::TranslocateAnswer(bool yes)
+{
+	// Category 0x19: complete @88 is all the zone reads (eqgame sends the rest from its stack).
+	if (m_state != State::InZone)
+		return;
+	uint8_t body[92] = {};
+	int32_t complete = yes ? 1 : -1;
+	memcpy(body + 88, &complete, 4);
+	Send(ZoneOp::Translocate, body, sizeof(body), yes ? "OP_Translocate (yes)" : "OP_Translocate (no)");
+}
+
+void ZoneSession::SummonCorpse(const std::string &corpse, float y, float x, float z)
+{
+	if (m_state != State::InZone)
+		return;
+	uint8_t body[152] = {};
+	memcpy(body, corpse.c_str(), std::min<size_t>(corpse.size(), 63));
+	memcpy(body + 64, m_profile.name.c_str(), std::min<size_t>(m_profile.name.size(), 63));
+	uint32_t zone = m_profile.zone_id;
+	int32_t where[3] = {static_cast<int32_t>(y), static_cast<int32_t>(x), static_cast<int32_t>(z)}; // __ftol
+	memcpy(body + 132, &zone, 4);
+	memcpy(body + 136, where, sizeof(where));
+	Send(ZoneOp::GMSummon, body, sizeof(body), "OP_GMSummon " + corpse);
+}
+
+void ZoneSession::LogoutNow()
+{
+	// As a camp whose timer has run (started at 1, steady_clock's far past): the next Pump sends
+	// OP_Logout (a replay's is over at once).
+	if (m_state != State::InZone && m_state != State::ZoneRequested)
+		return;
+	m_state = State::Camping;
+	m_camp_started_ms = 1;
+}
+
 void ZoneSession::GuildInvite(const std::string &other, int32_t officer)
 {
 	if (m_state != State::InZone)
@@ -2115,6 +2170,9 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 			p.boat.assign(boat, strnlen(boat, 32));
 		}
 		p.bind_zone = Read<uint32_t>(data, 3784); // bind_point_zone[0]
+		p.bind_y = Read<float>(data, 3804);       // bind_y[0], bind_x[0], bind_z[0]
+		p.bind_x = Read<float>(data, 3824);
+		p.bind_z = Read<float>(data, 3844);
 		p.deity = Read<uint16_t>(data, 4944);
 		p.guild_id = Read<int16_t>(data, 4946);
 		p.guild_rank = data[4967];
@@ -2448,6 +2506,36 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 			e.text = CString(data, 0, 64);
 			e.text2 = CString(data, 64, 64);
 			e.value = data[128];
+			events.push_back(e);
+		}
+		break;
+	case ZoneOp::RezzRequest:
+	case ZoneOp::RezzComplete:
+		if (data.size() >= 228) {
+			Event e(opcode == ZoneOp::RezzRequest ? Event::Type::RezzRequested : Event::Type::RezzCompleted);
+			e.data.assign(data.begin(), data.begin() + 228);
+			events.push_back(e);
+		}
+		break;
+	case ZoneOp::Sacrifice:
+		if (data.size() >= 12) {
+			Event e(Event::Type::SacrificeAsked);
+			e.id = static_cast<uint16_t>(Read<uint32_t>(data, 0));
+			e.value = static_cast<int32_t>(Read<uint32_t>(data, 4));
+			events.push_back(e);
+		}
+		break;
+	case ZoneOp::Translocate:
+		if (data.size() >= 92) {
+			Event e(Read<int32_t>(data, 88) == 1 ? Event::Type::Translocated : Event::Type::TranslocateAsked);
+			e.data.assign(data.begin(), data.begin() + 92);
+			events.push_back(e);
+		}
+		break;
+	case ZoneOp::GMKill:
+		if (data.size() >= 64) {
+			Event e(Event::Type::GMKilled);
+			e.text = CString(data, 0, 64);
 			events.push_back(e);
 		}
 		break;

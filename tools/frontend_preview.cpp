@@ -639,6 +639,176 @@ namespace
 		return 0;
 	}
 
+	// Replay "death" (a recording where we die) and "rez" (one where the zone asks to resurrect us,
+	// then to translocate us): what the chat says, the camera view, our stance, HP, buff slot 0 and
+	// place as they change, each question in the confirmation dialog answered Yes. "rez" goes on to
+	// packets of its own: a sacrifice asked (No), a translocation asked with the dialog already up
+	// (No at once), our HP at 0 and back (knocked out, conscious again), OP_GMKill naming us,
+	// /hidecorpses and /corpse.
+	int DeathTest(FrontEnd &frontend, Harness &h, int seconds, bool inject)
+	{
+		const ZoneSession &zone = frontend.Zone();
+		WindowManager &windows = frontend.Windows();
+		size_t chat_seen = frontend.Chat().Lines().size();
+		auto chat = [&] {
+			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
+				printf("[preview] chat: %s\n", frontend.Chat().Lines()[chat_seen].text.c_str());
+		};
+		auto state = [&] {
+			const ZoneView *view = frontend.ZoneScene();
+			const char *camera = !view ? "none" : view->View() == ZoneView::CameraView::FirstPerson ? "first person"
+			                                    : view->View() == ZoneView::CameraView::Overhead   ? "overhead"
+			                                                                                       : "chase";
+			const ZoneBuff &buff = frontend.BuffsForTests().Slot(0);
+			char out[256];
+			ZoneMovement at = view ? view->Movement() : ZoneMovement{};
+			snprintf(out, sizeof(out), "camera %s, stance %u, hp %d/%d, mana %d, buff 0 spell %d (%d ticks, level %u), at %.0f,%.0f, zone state %d",
+				camera, zone.Self().stance, frontend.Values().CurHp(), frontend.Values().MaxHp(), zone.Profile().mana, buff.spell,
+				buff.duration, buff.level, at.x, at.y, static_cast<int>(zone.GetState()));
+			return std::string(out);
+		};
+		std::string last;
+		auto answer = [&](bool yes) {
+			const SidlWindow *dialog = windows.Find("ConfirmationDialogBox");
+			const SidlWindow::Control *button = dialog ? dialog->Find(yes ? "Yes_Button" : "No_Button") : nullptr;
+			if (!button)
+				return;
+			Rect area = frontend.ScreenArea();
+			int x = area.x + button->rect.x + button->rect.w / 2, y = area.y + button->rect.y + button->rect.h / 2;
+			printf("[preview] click %s\n", yes ? "Yes" : "No");
+			frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+			frontend.OnEvent({InputEvent::Type::MouseDown, x, y});
+			frontend.OnEvent({InputEvent::Type::MouseUp, x, y});
+		};
+		bool asked = false;
+		auto dialog_text = [&] {
+			const SidlWindow *dialog = windows.Find("ConfirmationDialogBox");
+			const SidlWindow::Control *output = dialog ? dialog->Find("TextOutput") : nullptr;
+			return output ? output->text : std::string();
+		};
+		int shot = 0;
+		auto watch = [&](int ms, bool say_yes) {
+			for (int t = 0; t < ms; t += 100) {
+				h.RunUntil([] { return false; }, 100);
+				chat();
+				std::string now = state();
+				if (now != last) {
+					printf("[preview] %s\n", (last = now).c_str());
+					if (shot < 6 && frontend.ZoneScene())
+						h.Snapshot("death-" + std::to_string(shot++));
+				}
+				bool up = windows.Shown("ConfirmationDialogBox");
+				if (up && !asked) {
+					printf("[preview] dialog: '%s'\n", dialog_text().c_str());
+					if (say_yes) {
+						h.RunUntil([] { return false; }, 500);
+						answer(true);
+					}
+				}
+				asked = up;
+			}
+		};
+		auto type = [&](const std::string &line) {
+			printf("[preview] typing %s\n", line.c_str());
+			h.Key(InputEvent::Key::Enter);
+			h.Type(line);
+			h.Key(InputEvent::Key::Enter);
+			h.RunUntil([] { return false; }, 300);
+			chat();
+		};
+		ZoneSession &inject_to = frontend.ZoneForTests();
+		h.Key(InputEvent::Key::F11); // the debug menu out of the way
+		printf("[preview] %s\n", (last = state()).c_str());
+		watch(seconds * 1000, true);
+		if (!inject)
+			return 0;
+
+		// A sacrifice asked by the nearest NPC: the dialog, then No.
+		uint16_t npc = 0;
+		for (const auto &[id, spawn] : zone.Spawns())
+			if (spawn.npc == 1 && (npc == 0 || zone.SpawnDistance(id) < zone.SpawnDistance(npc)))
+				npc = id;
+		uint32_t sacrifice[3] = {npc, zone.MySpawnId(), 0};
+		inject_to.InjectReplayPacket(ZoneOp::Sacrifice, sacrifice, sizeof(sacrifice));
+		watch(600, false);
+		answer(false);
+		watch(300, false);
+		// A translocation by Someone_Else to the Plane of Hate (76), then another while that's up.
+		uint8_t transloc[92] = {};
+		uint32_t hate = 76;
+		int32_t spell = 1325;
+		memcpy(transloc, &hate, 4);
+		memcpy(transloc + 4, &spell, 4);
+		memcpy(transloc + 12, "Someone_Else", 12);
+		inject_to.InjectReplayPacket(ZoneOp::Translocate, transloc, sizeof(transloc));
+		watch(600, false);
+		inject_to.InjectReplayPacket(ZoneOp::Translocate, transloc, sizeof(transloc));
+		watch(600, false);
+		answer(false);
+		watch(300, false);
+		// Our HP to -5, then back to 500: knocked out, then conscious again.
+		auto hp = [&](int32_t cur) {
+			uint8_t body[12] = {};
+			uint16_t me = zone.MySpawnId();
+			int32_t max = zone.MaxHp();
+			memcpy(body, &me, 2);
+			memcpy(body + 4, &cur, 4);
+			memcpy(body + 8, &max, 4);
+			inject_to.InjectReplayPacket(ZoneOp::HPUpdate, body, sizeof(body));
+		};
+		hp(-5);
+		watch(1500, false);
+		hp(500);
+		watch(2500, false);
+		// OP_GMKill naming us (no death follows from a replay).
+		uint8_t kill[129] = {};
+		memcpy(kill, zone.Profile().name.c_str(), zone.Profile().name.size());
+		inject_to.InjectReplayPacket(ZoneOp::GMKill, kill, sizeof(kill));
+		watch(1000, false);
+		hp(500);
+		watch(1500, false);
+		// The corpses: hidden, all but the group's, shown; and /corpse.
+		// An NPC in view dies, so there's a corpse not ours.
+		if (const ZoneView *view = frontend.ZoneScene())
+			for (uint16_t id : view->DrawnSpawns()) {
+				auto it = zone.Spawns().find(id);
+				if (it == zone.Spawns().end() || it->second.npc != 1)
+					continue;
+				uint8_t death[20] = {};
+				memcpy(death, &id, 2);
+				memcpy(death + 4, &id, 2);
+				printf("[preview] %s dies\n", it->second.name.c_str());
+				inject_to.InjectReplayPacket(ZoneOp::Death, death, sizeof(death));
+				watch(500, false);
+				break;
+			}
+		size_t corpses = 0;
+		for (const auto &[id, spawn] : zone.Spawns())
+			if (spawn.npc >= 2) {
+				++corpses;
+				printf("[preview] corpse %u '%s' type %u, %.0f away\n", id, spawn.name.c_str(), spawn.npc, zone.SpawnDistance(id));
+			}
+		printf("[preview] %zu corpses here\n", corpses);
+		int corpse_shot = 0;
+		auto drawn = [&] {
+			h.RunUntil([] { return false; }, 300);
+			h.Snapshot("corpses-" + std::to_string(corpse_shot++)); // DrawSpawns marks what's drawn
+			size_t n = 0;
+			if (const ZoneView *view = frontend.ZoneScene())
+				for (uint16_t id : view->DrawnSpawns()) {
+					auto it = zone.Spawns().find(id);
+					n += it != zone.Spawns().end() && it->second.npc >= 2;
+				}
+			printf("[preview] corpses drawn: %zu\n", n);
+		};
+		drawn();
+		for (const char *line : {"/hidecorpses", "/hidecorpses all", "/hidecorpses allbutgroup", "/hidecorpses none", "/corpse"}) {
+			type(line);
+			drawn();
+		}
+		return 0;
+	}
+
 	// A replay of a horse summoned (the zone's "<name>`s_Mount00", race 216): who's on what, which
 	// horses aren't drawn, what the chat says, then /dismount.
 	// Replay "pet": the pet window (CPetInfoWnd) through a session where a pet is made and given
@@ -2444,6 +2614,7 @@ int main(int argc, char **argv)
 	}
 	bool raid_test = argc == 7 && std::string(argv[6]) == "raid";
 	bool pet_test = argc == 7 && std::string(argv[6]) == "pet";
+	bool death_test = argc == 7 && (std::string(argv[6]) == "death" || std::string(argv[6]) == "rez");
 	bool boats_test = argc == 7 && std::string(argv[6]) == "boats";
 	bool aa_test = argc == 7 && std::string(argv[6]) == "aa";
 	bool guild_test = argc == 7 && std::string(argv[6]) == "guild";
@@ -2500,6 +2671,8 @@ int main(int argc, char **argv)
 			return MountsTest(frontend, h, seconds);
 		if (pet_test)
 			return PetTest(frontend, h, seconds);
+		if (death_test)
+			return DeathTest(frontend, h, seconds, std::string(argv[6]) == "rez");
 		if (boats_test)
 			return BoatsTest(frontend, h, seconds);
 		h.RunUntil([] { return false; }, 500);

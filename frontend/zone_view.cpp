@@ -165,7 +165,10 @@ void ZoneView::SetPlayerPosition(float x, float y, float z, float heading)
 
 void ZoneView::CycleCamera()
 {
-	m_view = m_view == CameraView::Chase ? CameraView::FirstPerson : CameraView::Chase;
+	// CDisplay_ToggleView: overhead goes on to the chase camera (view 2) as F9's next.
+	m_view = m_view == CameraView::FirstPerson ? CameraView::Chase : m_view == CameraView::Overhead ? CameraView::Chase
+	                                                                                               : CameraView::FirstPerson;
+	m_default_view = m_view;
 	m_orbit = 0;
 	m_pitch = m_view == CameraView::Chase ? -12.0f : 0.0f;
 }
@@ -191,8 +194,8 @@ void ZoneView::Pitch(float degrees)
 
 void ZoneView::Zoom(int notches)
 {
-	if (m_distance <= 0)
-		return; // not placed yet
+	if (m_distance <= 0 || m_view == CameraView::Overhead)
+		return; // not placed yet; HandleMouseWheelZoom leaves view 1 alone
 	// Zooming out of first person steps back into the chase camera, close behind the head;
 	// zooming in past the closest distance goes back to first person.
 	if (m_view == CameraView::FirstPerson) {
@@ -1298,6 +1301,24 @@ render::Camera ZoneView::MakeCamera(float &distance) const
 		camera.position = feet + render::Vec3{0, 0, eye - m_eye_drop * 1.05f};
 		camera.forward = look;
 	}
+	else if (m_view == CameraView::Overhead) {
+		// CDisplay::DoCamAi's view 1: 25 straight up from our eye (Position.z - ModelHeightOffset +
+		// CameraHeightOffset), as far as the ceiling lets it (s3dCollideSphereWithWorld), facing our
+		// heading and pitched -100 (of 512) down.
+		render::Vec3 from = feet + render::Vec3{0, 0, eye};
+		const float up = 25, margin = 1;
+		float fraction = 1;
+		float reach = up + margin;
+		if (m_zone.SegmentHit(from, from + render::Vec3{0, 0, reach}, fraction))
+			reach = std::max(0.5f, fraction * reach - margin);
+		else
+			reach = up;
+		float down = -100.0f * 2 * render::Pi / 512;
+		float heading = render::HeadingToRadians(m_heading);
+		camera.position = from + render::Vec3{0, 0, std::min(reach, up)};
+		camera.forward = {std::cos(heading) * std::cos(down), std::sin(heading) * std::cos(down), std::sin(down)};
+		distance = std::min(reach, up);
+	}
 	else {
 		// Behind the character and a little above, looking at their head. Like the real
 		// client's camera, it comes in closer when a wall or the floor is in the way. The
@@ -1373,7 +1394,7 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 	m_times.zone = since(start);
 	start = Clock::now();
 	// Our own model isn't drawn in first person, or with the camera pushed into our head.
-	m_model_shown = m_model && m_view == CameraView::Chase && distance >= 1.5f;
+	m_model_shown = m_model && m_view != CameraView::FirstPerson && distance >= 1.5f;
 	if (m_model) {
 		// The animation's own clock once we're moving (the preview tool never moves: real time).
 		uint64_t time = m_last_move_ms ? static_cast<uint64_t>(m_animation_ms) : now_ms;

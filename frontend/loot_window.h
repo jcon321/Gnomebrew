@@ -68,6 +68,9 @@ public:
 	bool LootCorpse(uint16_t corpse);
 	void ZoneEvent(const ZoneSession::Event &event);
 	void Deactivate(); // ask the zone to end it
+	// CEverQuest::ReportDeath of us: CLootWnd::DoorLoading_(1), the window's Deactivate (the zone
+	// asked to end it) and fn_releaseloot.
+	void Died();
 	void Frame(uint64_t now_ms);
 	// A click on a loot slot (left: onto the cursor; right: into the inventory) and on Done; the
 	// confirmation dialog while it asks about a NO DROP item. False when it isn't one of these.

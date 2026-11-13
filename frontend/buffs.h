@@ -91,6 +91,10 @@ public:
 	// the rate out each second (DoPassageOfTime) and as a buff lands or fades; this every frame.
 	float SpeedModifier(float run_speed, bool running = false) const;
 	uint32_t Serial() const { return m_serial; } // counts the changes
+	// msg_resurrect_complete and EQ_PC::PrepareForRepop: every slot emptied (spell -1), no fading
+	// text and the zone not told; and a slot set as it says (the resurrection's sickness).
+	void Clear();
+	void Put(int slot, const ZoneBuff &buff);
 
 	// EQ_Character::CalculateSpellDuration: ticks at a caster's level; -1 for ever. On us with
 	// Permanent Illusion (AA 0x37, `permanent_illusion` its rank), a beneficial illusion (SPA 0x3a)

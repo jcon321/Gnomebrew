@@ -175,6 +175,7 @@ public:
 	int FastDrop() const { return m_config.fast_drop; }                    // /fastdrop, to remember
 	const ZoneSession &Zone() const { return m_zone; }
 	ZoneSession &ZoneForTests() { return m_zone; } // the preview's injected packets
+	const Buffs &BuffsForTests() const { return m_buffs; }
 	const Group &GroupState() const { return m_group; }
 	const Mounts &MountState() const { return m_mounts; }
 	const Raid &RaidState() const { return m_raid; }
@@ -457,6 +458,39 @@ private:
 	// CDisplay::RealRender_World's DeathTimer: lying dead, 2 seconds on "Returning to home point,
 	// please wait...", and the frame after it, back to our bind point (MoveToZone).
 	void UpdateDeath(uint64_t now_ms);
+	// Death, corpses and resurrection (death.cpp):
+	// ActorInfo's DeathTimer on us: lying dead and not yet gone home (EQ_3DView_MouseUp refuses then).
+	bool DeathTimerRunning() const;
+	// CEverQuest::ReportDeath of us: CEverQuest_ReportDeath_ClearOutRentables (StunnedState 4, the
+	// overhead view, our temporary items gone), the loot window closed (DoorLoading_), then IDied.
+	void IDied();
+	// ClearOutRentables (@004ef891): the items we carry (the cursor, worn, general and what's in
+	// their bags) that are temporary (NoRent 0) go; a temporary bag with what's in it.
+	void ClearOutRentables();
+	// DoPassageOfTime for us alive: at 0 HP or under, EQPlayer::KnockedOut (lying down, StunnedState
+	// 3, the overhead view, "You have been knocked unconscious!"); over 0 again, GetConscious.
+	void KnockoutPassageOfTime();
+	// msg_resurrect (@004e1f5f): the zone's question, ours only, in the confirmation dialog
+	// (category 2) for an hour unless it's already up; the answer goes back as OP_RezzAnswer.
+	void AskResurrect(const std::vector<uint8_t> &request);
+	// msg_resurrect_complete (@004e212b): the buffs gone, under 100% no mana, a third of our HP and
+	// the resurrection's sickness in slot 0 (else all of both), then to the corpse (in this zone, or
+	// MoveToZone with reason 9); or "Resurrect failed, unable to find corpse."
+	void ResurrectComplete(const std::vector<uint8_t> &packet);
+	// msg_sacrifice (@004e1afe) and msg_translocate (@004e1c3e): their questions (categories 0x14
+	// and 0x19), each a No at once with the dialog up; a translocation's complete 1 moves us.
+	void AskSacrifice(uint16_t caster, uint32_t target);
+	void AskTranslocate(const std::vector<uint8_t> &packet);
+	void Translocated(const std::vector<uint8_t> &packet);
+	// HandleWorldMessage's 0x406c (OP_GMKill) naming us: "%1 HAS BEEN STRUCK DOWN BY THE GODS.",
+	// wave 0x8f, our HP -10000 and the DeathTimer back to 0.
+	void StruckDown(const std::string &name);
+	// /corpse (@004f5eeb): our target if it's a corpse, else the last of our own corpses here, asked
+	// to be dragged to us (OP_GMSummon).
+	void SummonCorpse();
+	// /hidecorpses (@004fb5eb): ALL, ALLBUTGROUP, else all shown again; our own never hidden, and
+	// the corpses there at the time only.
+	void HideCorpses(const std::string &how);
 	// EQPlayer::ChangeStance for us (100 standing, 110 sitting): the zone told, our model, and the
 	// spellbook closing as we get up (DeacSpellScreen).
 	void ChangeStance(uint8_t stance);
@@ -640,6 +674,10 @@ private:
 	Abilities m_abilities;          // the ability and combat skill buttons, and using skills
 	bool m_attack = false;          // auto attack (__Attack)
 	bool m_dead = false;            // we died in this zone (EQPlayer::IDied's stance 120): nothing moves us
+	bool m_knocked_out = false;     // EQ_Character's StunnedState 3 (KnockedOut, until GetConscious)
+	std::vector<uint8_t> m_rez_request; // msg_resurrect's packet, kept in the dialog (its +0x204)
+	std::set<uint16_t> m_hidden_corpses; // /hidecorpses' (ActorInfo IsInvisible)
+	std::string m_logout_text;      // why we're going to character select, when it isn't a camp
 	bool m_stunned = false;         // EQ_Character's StunnedState 1 (StunMe)
 	uint64_t m_stun_until_ms = 0;   // ActorInfo's stun timer (+0xc4): 0 not stunned
 	uint64_t m_death_ms = 0;        // ActorInfo's DeathTimer: when we lay down; 1 once told we're going home

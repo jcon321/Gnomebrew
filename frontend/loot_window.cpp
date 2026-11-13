@@ -168,6 +168,14 @@ void LootWindow::Deactivate()
 	m_zone->EndLoot(m_corpse);
 }
 
+void LootWindow::Died()
+{
+	if (m_corpse == 0)
+		return;
+	Deactivate();
+	Release();
+}
+
 void LootWindow::Release()
 {
 	if (m_host.save)

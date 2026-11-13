@@ -598,6 +598,12 @@ build/eqclient -u USER -p PASS [options]
   --say-more TEXT       with --zone: a /say in the --aa queue (a GM's "#level 60")
   --pet N[:TARGET]      with --zone: OP_PetCommands N (1 back off .. 17 feign) in the --aa queue;
                         TARGET a spawn id
+  --target-more WHO     in the --aa queue: target ourselves ("self"), the nearest NPC ("npc") or the
+                        nearest spawn whose name starts with WHO ("Replaytest's": our corpse)
+  --corpse-more         in the --aa queue: /corpse, our nearest corpse dragged to us (OP_GMSummon)
+  --home                in the --aa queue: go home dead (OP_ZoneChange to the bind zone, reason 10);
+                        the queue carries on in the next zone
+  --answer yes|no       answer the zone's resurrect, sacrifice and translocate questions 2 s on
   --idle SECONDS        without --char, stay at character select this long (default 0)
   --record DIR          with --zone: write each zone session's packets to DIR/<char>-<time>.eqr
   --replay FILE         play a recorded zone session back (no server): stay --zone seconds (default
@@ -610,7 +616,7 @@ build/eqclient -u USER -p PASS [options]
 
 ```
 build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|train|ground|commands|group|raid|guild|skills|aa]]
-build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats]]
+build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez]]
 ```
 
 This drives the real front-end code with scripted input and writes PNG snapshots. Text is
@@ -664,7 +670,11 @@ and each second where another's rider and horse are and what they play, with the
 a horse of ours it snapshots it, rides forward 5 s and lets go (printing the speed each half
 second), looks in first person and dismounts; `pet` opens the pet window and prints its gauge and
 buttons as they change, types `/pet` lines, clicks Guard and Sit, holds Follow onto hot button 1
-and presses it there, printing what goes to the zone; `boats` prints, every 2 s for SECONDS, the
+and presses it there, printing what goes to the zone; `death` and `rez` print, for SECONDS, the
+chat, the camera view, our stance, HP, mana, buff slot 0 and place as they change and answer
+each question in the confirmation dialog Yes, and `rez` goes on to packets of its own (a
+sacrifice asked and declined, a translocation asked twice, our HP to -5 and back, OP_GMKill, an
+NPC's death) and types /hidecorpses and /corpse, counting the corpses drawn; `boats` prints, every 2 s for SECONDS, the
 boat under us, where we and the boats within 300 are, the profile's boat and our model (an
 illusion's); off a boat, it first
 puts us on the nearest ship as zoning in with its name does, and on a race 141 boat it takes the
@@ -1261,7 +1271,16 @@ the rejection).
   (the character first turns to where the camera looks); holding the left button in the chase view
   circles the camera around them, and running brings it back behind. Both buttons run forward. While a
   drag holds the mouse the cursor is hidden and kept where the drag started. F9 switches between first
-  person and the chase camera; Page Up/Down tilt it.
+  person and the chase camera; Page Up/Down tilt it. Knocked out or dead, eqgame puts the camera in
+  its view 1 (`Zeal_camera_view`, `EQPlayer::KnockedOut`, `CEverQuest_ReportDeath_ClearOutRentables`):
+  `CDisplay_default_camera`'s table (7 floats a view from 0x799688: distance, heading, height,
+  bearing flag, pitch, 90, a user flag) gives it distance 0, height 25 and pitch -100 (512ths), so
+  `DoCamAi` puts it 25 straight up from the eye (`Position.z - ModelHeightOffset +
+  CameraHeightOffset`, as far as `s3dCollideSphereWithWorld` lets it), facing our heading and
+  looking 70° down. `CDisplay_SwitchToDefaultCameraMode` puts back `DAT_0063b8ec`, the view F9
+  (`CDisplay_ToggleView`, 0..4) last chose; F9 from view 1 goes on to 2, and the wheel
+  (`HandleMouseWheelZoom`) leaves view 1 alone. Ours (`ZoneView::CameraView::Overhead`) has the
+  overhead, first person and chase views.
 - **Moving** (`frontend/player_movement.cpp`), ported from `CEverQuest::ProcessControls` (@0053f337) and
   `process_physics` (@0054d964): Up/W runs (or walks: Ctrl+R, `/walk`, `/run`) at the zone entry's
   `runspeed` (0.7) or `walkspeed` (0.46), Down/S backs up at the walk speed, Left/A and Right/D turn,
@@ -1890,6 +1909,16 @@ details and the nearest spawns at the top left and the radar at the top right.
   `OP_ConsentResponse` (0x40d5, {grantee[64], owner[64], u8 permission, zone[32]}):
   `msg_consent_verify` (@004e3314) says to the owner 1427 or 1428 with the grantee, to anyone else
   2080 or 2103 with the owner (not when the owner's ignored).
+- **/corpse** (@004f5eeb, `frontend/death.cpp`): our target if it's a corpse (Type 2 or more),
+  else the last spawn but us whose `stripName` is ours, as `OP_GMSummon` (0x40c5, 152 bytes: {name,
+  our name @64, zone @132, our y, x, z @136 truncated by `__ftol`}) and "Summoning %1..." (13047,
+  `trimName`); none, 13048. EQMacEmu's `OPGMSummon` drags a corpse there (`Corpse::Summon`: our
+  own or consented, within 50, `OP_CorpseDrag` is never sent by eqgame). **/hidecorpses**
+  (@004fb5eb): nothing, the help (13202..13204); "ALL" (13205, any case) hides every corpse (Type 2
+  or 3) whose `stripName` isn't ours (13206), "ALLBUTGROUP" (13207) the same but shows those of
+  our group (`EQ_PC::IsAGroupMember`, 13208); anything else shows them all (13209). It sets the
+  actors' `IsInvisible` once, so a corpse made later shows; ours keeps a set of spawn ids
+  (`SetHiddenSpawns`, emptied in a new zone).
 - **/loot** (@004fb5ae): `CEverQuest_LootCorpse` on our target, or 13201 with none.
   **/charinfo** (@004f4a7a): 12967 with `EQWorldData::GetFullZoneName` of the profile's bind zone.
   **/movelog** (@004fba78): "yes" (13219, the whole line, any case) sends MSG_MOVELOG (0x41e4, no
@@ -2032,10 +2061,26 @@ details and the nearest spawns at the top left and the radar at the top right.
   invisibility (the first buffs with SPA 12, 28 and 29, `RemovePCAffect`) and pushes us: the
   hit's `force` (EQMacEmu: 0.05 to 2.5 by the attacker's size, 0 for none) along its `heading`
   (512ths; the X push by its sine, Y by its cosine) and up by its `pitch`'s sine, onto our motion.
-- **Our death** (`EQPlayer::IDied` @0050b637, `ReportDeath_ClearOutRentables`): auto attack off, we
-  fall (`D05`, held), the death music plays (track 8), and nothing moves us (stance 120:
-  `ProcessControls` takes the movement keys only standing or crouching) until the zone moves us
-  on.
+- **Our death** (`EQPlayer::IDied` @0050b637, `CEverQuest_ReportDeath_ClearOutRentables` @0052afd1,
+  `frontend/death.cpp`): auto attack off, StunnedState 4, `pinstGroup` let go, the overhead view
+  (1), and (unless we died in stance 102) `ClearOutRentables` (@004ef891) on the 30 (the cursor, 21 worn, 8 general): a bag's
+  items with NoRent 0 go, and a NoRent 0 bag or item goes with all in it; then the loot window's
+  `DoorLoading_(1)` (OP_EndLootRequest and `fn_releaseloot`). We fall (`D05`, held), the death
+  music plays (track 8), and nothing moves us (stance 120: `ProcessControls` takes the movement
+  keys only standing or crouching) until the zone moves us on. `IDied`'s `KnockedOut` does nothing
+  more with StunnedState already 4. EQMacEmu sends the victim `OP_Death` only when an NPC killed
+  it (`Mob::GenerateDeathPackets`' skipsender for Killed_Client, Killed_Self and a buff's tick):
+  otherwise eqgame finds its own death at -10 HP (`SendDeathMessage`), which isn't ours.
+- **Knocked out** (`EQ_Character::DoPassageOfTime` for us alive, `frontend/death.cpp`): at 0 HP or
+  under with StunnedState under 3, `EQPlayer::KnockedOut` (@0050b5a7): `ChangeStance(0x73)`, and
+  unless stunned already StunnedState 3, the overhead view and "You have been knocked
+  unconscious!" (12877, color 15). Over 0 again with it 3, `GetConscious` (@0050b52b):
+  StunnedState 0, the default view, "You are conscious again!" (12876, color 13), StandingState
+  0x69 and `ChangeStance(100)` (up as from kneeling). **OP_GMKill** (0x406c, {name[64],
+  gm_name[64], u8}) naming us: "%1 HAS BEEN STRUCK DOWN BY THE GODS." (1391, `trimName`, color
+  10), wave 0x8f, BaseHP and HP -10000, DeathTimer 0.
+- **Clicks while dead** (`EQ_3DView_MouseUp`): the right button on a merchant or banker in reach,
+  our guildmaster, or anything else (`_consider`) does nothing while our `DeathTimer` runs.
 - **Going home** (`ActorInfo`'s `DeathTimer`, `frontend/frontend.cpp` `UpdateDeath`): `IDied` leaves
   ours 0 and the next `CDisplay::MovePlayer` of us as a corpse starts it at the game time. More
   than 2 s on, `CDisplay::RealRender_World` prints eqstr 539 "Returning to home point, please
@@ -2047,7 +2092,48 @@ details and the nearest spawns at the top left and the radar at the top right.
   transfer waiting for that request (and drops a dead client that never sends it). The next zone's
   profile gives back what `PrepareForRepop` cleared, so we don't clear it ourselves. Checked with
   the sewer rat recording below through `frontend_preview`: the message 2 s after the death, then
-  `OP_ZoneChange 1`.
+  `OP_ZoneChange 1`. `PrepareForRepop` also drops our group invitation (in a group: `SetInvited(0)`,
+  `DAT_007f6afa`), resets the raid (`SetTargetRaidPlayer(0)`, `CRaid::ResetFromDeath`) and sends
+  OP_EndLootRequest (0x404f) for `pinstActiveCorpse`; `CDisplay_SwitchToDefaultCameraMode` follows
+  the `MoveToZone`. When the zone refuses it, `MoveToZone_2` (@005460b5, its third argument 1)
+  prints "Your Home Zone is unavailable, going back to Character Selection Screen!" (color 13, in
+  the exe), sends `OP_Logout` (0x4150, no body) with logout reason 8 and no camp, and
+  `DAT_00799777`; EQMacEmu's `Handle_OP_Logout` takes one without a camp timer (it logs a possible
+  hack). Ours shows the same line in place of "You have camped." on the way to character select.
+- **Death's questions** (`frontend/death.cpp`). With the new UI each goes to the confirmation
+  dialog (`CConfirmationDialog::Activate`, an hour's timeout, the timeout a No), answered by
+  `ProcessYes` and `ProcessNo` (the old UI's `ProcessConfirmation` does the same):
+  - `msg_resurrect` (@004e1f5f) on `OP_RezzRequest` (0x412a, Resurrect_Struct 228 bytes: {i16
+    corpse id, u32 zone @4, float y @8, x @12, z @16, i32 effect value @20, your_name[64] @24,
+    rezzer[64] @92, i16 spell @156, corpse[64] @158, u32 action @224}): only with your_name ours;
+    "%1 wants to cast %2 (%3 percent) upon you. Do you wish this?" (10001: `trimName` of the
+    rezzer, the spell's name and `EQ_Spell+0x2e`, its first base value), or 10000 without a valid
+    spell. The dialog up already, it isn't asked or answered. The packet is kept in the dialog
+    (+0x204); category 2's Yes and No send it back as `OP_RezzAnswer` (0x419b) with action 1 or 0.
+  - `msg_resurrect_complete` (@004e212b) on `OP_RezzComplete` (0x41ec): action 1, "You are being
+    resurrected..." (12917, color 0x108), every buff slot emptied; effect value under 100: mana 0,
+    BaseHP `Max_HP / 3` and slot 0 Resurrection Effects (756, or Resurrection Effect 757 for an ogre, troll,
+    barbarian or dwarf) as {type 2, level 0x34, 40 ticks}; else all the mana and HP. Then off any
+    boat, still, at the kept question's y, x, z: in this zone onto the floor
+    (`GetPlayerFloorHeight` from z + 1), else `MoveToZone(zone, "resurrect_player", 0, 9)`. Action
+    not 1: "Resurrect failed, unable to find corpse." (12918). EQMacEmu's `OPRezzAnswer` does the
+    same to the HP, mana and buff and arms the zone transfer for that reason 9 request.
+  - `msg_sacrifice` (@004e1afe) on `OP_Sacrifice` (0x41ea, {u32 caster, u32 target, u32 confirm}):
+    "%1 wants to SACRIFICE you. ..." (10008, the caster's spawn name or "Someone"); category 0x14.
+    Yes sends {0, our id, 1} and 10009, No {0, our id, 0} and 10010 (color 0x111). The dialog up
+    already, No at once. The old UI asks only when the target is us; the new UI doesn't look.
+  - `msg_translocate` (@004e1c3e) on `OP_Translocate` (0x4206, 92 bytes: {u32 zone, i32 spell @4,
+    i32 @8, caster[64] @12, float y @76, x @80, z @84, i32 complete @88}): complete 0 asks, 10016
+    for Translocate: Group, Translocate and Teleport (1334, 1422, 3243), else "Are you sure you
+    wish to be translocated by %1 to %2?" (10017, `trimName` of the caster and
+    `EQWorldData::GetFullZoneName`); category 0x19, No at once with the dialog up. Yes sends
+    complete 1, No -1 and 10018; the rest is the stack's (ours zeros; EQMacEmu reads only
+    complete). Complete 1 moves us: off any boat, still, at the bind point for those three spells
+    or the packet's y, x, z, wave 0x89 on us, in this zone onto the floor, else `MoveToZone(zone,
+    "zone_command", 0, 8)` (4 when the caster's empty).
+  Checked live against EQMacEmu (`eqclient --target-more ... --answer yes`: a GM's #castspell 392
+  on our corpse, an NPC's #npccast of 1422 on us) and through those recordings
+  (`frontend_preview ... rez`).
 - **Filters** (`frontend/filters.*`, `/filter` @004fbc3a): `badword`, `guildsay`, `social`, `gsay`,
   `shout`, `auction`, `ooc`, `mymisses`, `othersmisses`, `othershits` and `atkmissesme` toggle;
   `npcspells` and `dmgshield` toggle the other way (0 shown); `pcspells` steps all, off, group;

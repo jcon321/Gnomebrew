@@ -62,6 +62,13 @@ namespace
 			"  --say-more TEXT       with --zone, a /say in the --aa queue (a GM's #level 60)\n"
 			"  --pet N[:TARGET]      with --zone, OP_PetCommands N (1 back off .. 17 feign) in the --aa queue;\n"
 			"                        TARGET a spawn id\n"
+			"  --target-more WHO     in the --aa queue: target ourselves (\"self\"), the nearest NPC (\"npc\") or\n"
+			"                        the nearest spawn whose\n"
+			"                        name starts with WHO (\"Replaytest's\": our corpse)\n"
+			"  --corpse-more         in the --aa queue: /corpse, our nearest corpse dragged to us (OP_GMSummon)\n"
+			"  --home                in the --aa queue: go home dead (OP_ZoneChange to the bind zone, reason 10);\n"
+			"                        the queue carries on in the next zone\n"
+			"  --answer yes|no       answer the zone's resurrect, sacrifice and translocate questions 2 s on\n"
 			"  --record DIR          with --zone, write each zone session's packets to DIR/<char>-<time>.eqr\n"
 			"  --replay FILE         play a recorded zone session back (no server): stay --zone seconds\n"
 			"                        (default 10), print what's around, then camp out\n"
@@ -138,6 +145,8 @@ namespace
 	std::string g_record_dir;
 	// --aa (1), --say-more (0) and --pet (2), in order
 	std::vector<std::pair<int, std::string>> g_aa_steps;
+	size_t g_next_step = 0; // the queue's next step, carried into the next zone (--home)
+	std::string g_answer;   // --answer
 	int g_click_link = -1; // --click-link
 	std::string g_replay_path;
 	std::vector<std::string> g_moves; // --move
@@ -306,8 +315,10 @@ namespace
 		uint64_t raid_invite_at = 0;  // when --raid-invite goes
 		uint64_t raid_accept_at = 0;  // when --raid-accept answers
 		std::string raid_inviter;
-		size_t next_aa = 0;
+		size_t &next_aa = g_next_step;
 		uint64_t aa_at = 0; // when the next --aa step goes
+		uint64_t answer_at = 0; // when --answer answers
+		ZoneSession::Event question;
 		for (;;) {
 			std::vector<ZoneSession::Event> events;
 			zone.Pump(100, events);
@@ -322,7 +333,7 @@ namespace
 					}
 					if (!say.empty())
 						zone.Say(say);
-					if (!g_aa_steps.empty())
+					if (next_aa < g_aa_steps.size())
 						aa_at = NowMs() + 2000;
 					if (!g_attack.empty())
 						StartAttack(zone);
@@ -397,6 +408,24 @@ namespace
 					break;
 				case ZoneSession::Event::Type::ZoneApproved:
 					printf("[zone] zone change to %d approved\n", event.value);
+					break;
+				case ZoneSession::Event::Type::RezzRequested:
+				case ZoneSession::Event::Type::SacrificeAsked:
+				case ZoneSession::Event::Type::TranslocateAsked:
+					printf("[death] asked (%s)\n", event.type == ZoneSession::Event::Type::RezzRequested ? "resurrect"
+					                               : event.type == ZoneSession::Event::Type::SacrificeAsked ? "sacrifice"
+					                                                                                        : "translocate");
+					if (!g_answer.empty()) {
+						question = event;
+						answer_at = NowMs() + 2000;
+					}
+					break;
+				case ZoneSession::Event::Type::RezzCompleted:
+					printf("[death] resurrect complete: action %u, zone %u\n", event.data.size() >= 228 ? event.data[224] : 0,
+						event.data.size() >= 8 ? event.data[4] | event.data[5] << 8 : 0);
+					break;
+				case ZoneSession::Event::Type::Translocated:
+					printf("[death] translocated\n");
 					break;
 				case ZoneSession::Event::Type::ZoneDenied:
 					printf("[zone] zone change denied (%d); staying %d s, then camping\n", event.value, seconds);
@@ -592,11 +621,56 @@ namespace
 				printf("[group] accepting %s's invitation\n", inviter.c_str());
 				zone.GroupFollow(inviter);
 			}
+			if (answer_at && NowMs() >= answer_at) {
+				answer_at = 0;
+				bool yes = g_answer == "yes";
+				printf("[death] answering %s\n", yes ? "yes" : "no");
+				if (question.type == ZoneSession::Event::Type::RezzRequested)
+					zone.RezzAnswer(question.data, yes);
+				else if (question.type == ZoneSession::Event::Type::SacrificeAsked)
+					zone.SacrificeAnswer(yes);
+				else
+					zone.TranslocateAnswer(yes);
+			}
 			if (aa_at && NowMs() >= aa_at && next_aa < g_aa_steps.size()) {
 				const auto &[kind, text] = g_aa_steps[next_aa++];
 				if (kind == 1) {
 					printf("[aa] sending '%s'\n", text.c_str());
 					zone.SendAltAdv(text);
+				}
+				else if (kind == 3) {
+					uint16_t id = 0;
+					if (text == "self")
+						id = zone.MySpawnId();
+					else {
+						float best = 1e30f;
+						for (const auto &[sid, spawn] : zone.Spawns())
+							if ((text == "npc" ? spawn.npc == 1 && spawn.pet_owner == 0 : spawn.name.rfind(text, 0) == 0) &&
+								zone.SpawnDistance(sid) < best) {
+								best = zone.SpawnDistance(sid);
+								id = sid;
+							}
+					}
+					printf("[death] targeting %s: %u\n", text.c_str(), id);
+					zone.SetTarget(id, true);
+				}
+				else if (kind == 5) {
+					std::string corpse;
+					float best = 1e30f;
+					std::string mine = zone.Profile().name + "'s";
+					for (const auto &[sid, spawn] : zone.Spawns())
+						if (spawn.npc >= 2 && spawn.name.rfind(mine, 0) == 0 && zone.SpawnDistance(sid) < best) {
+							best = zone.SpawnDistance(sid);
+							corpse = spawn.name;
+						}
+					const ZoneSpawn &me = zone.Self();
+					printf("[death] /corpse %s (%.0f away)\n", corpse.c_str(), best);
+					if (!corpse.empty())
+						zone.SummonCorpse(corpse, me.y, me.x, me.z);
+				}
+				else if (kind == 4) {
+					printf("[death] going home to zone %u\n", zone.Profile().bind_zone);
+					zone.RequestZoneChange(zone.Profile().bind_zone, 10);
 				}
 				else if (kind == 2) {
 					// N[:TARGET]: OP_PetCommands, TARGET a spawn id.
@@ -608,7 +682,8 @@ namespace
 				}
 				else
 					zone.Say(text);
-				aa_at = next_aa < g_aa_steps.size() ? NowMs() + 3000 : 0;
+				// After --home the rest waits for the next zone (its InZone).
+				aa_at = next_aa < g_aa_steps.size() && kind != 4 ? NowMs() + 3000 : 0;
 			}
 			if (pickup_at && NowMs() >= pickup_at) {
 				pickup_at = 0;
@@ -678,6 +753,14 @@ int main(int argc, char **argv)
 			g_aa_steps.push_back({0, next()});
 		else if (arg == "--pet")
 			g_aa_steps.push_back({2, next()});
+		else if (arg == "--target-more")
+			g_aa_steps.push_back({3, next()});
+		else if (arg == "--corpse-more")
+			g_aa_steps.push_back({5, ""});
+		else if (arg == "--home")
+			g_aa_steps.push_back({4, ""});
+		else if (arg == "--answer")
+			g_answer = next();
 		else if (arg == "--click-door")
 			click_door = atoi(next().c_str());
 		else if (arg == "--cast") {

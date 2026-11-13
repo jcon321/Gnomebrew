@@ -233,6 +233,27 @@ namespace ZoneOp
 	// ConsentResponse_Struct {char grantee[64], char owner[64] @64, u8 permission @128, char zone[32]}:
 	// msg_consent_verify.
 	constexpr uint16_t ConsentResponse = 0x40d5;
+	// Resurrect_Struct (228 bytes): {i16 corpse id, u32 zone @4, float y @8, x @12, z @16, i32
+	// effect value @20, char your_name[64] @24, char rezzer_name[64] @92, i16 spell @156, char
+	// corpse_name[64] @158, u32 action @224}. The zone asks (msg_resurrect); our answer is the same
+	// packet back with action 1 (yes) or 0 (no); the zone's done (msg_resurrect_complete) with it
+	// again, action 1 when it worked.
+	constexpr uint16_t RezzRequest = 0x412a;
+	constexpr uint16_t RezzAnswer = 0x419b;
+	constexpr uint16_t RezzComplete = 0x41ec;
+	// Sacrifice_Struct {u32 caster id, u32 target id @4, u32 confirm @8}: the zone asks (msg_sacrifice),
+	// and we answer {0, our id, 1 yes or 0 no}.
+	constexpr uint16_t Sacrifice = 0x41ea;
+	// Translocate_Struct (92 bytes): {u32 zone, i32 spell @4, i32 response @8, char caster[64] @12,
+	// float y @76, x @80, z @84, i32 complete @88}. Complete 0 asks (msg_translocate), our answer
+	// sends 1 or -1, and the zone sends it back with 1 to move us.
+	constexpr uint16_t Translocate = 0x4206;
+	// GMSummon_Struct (152 bytes): {char name[64], char gm_name[64] @64, u32 success @128, u32 zone
+	// @132, i32 y @136, x @140, z @144, u32 @148}: /corpse asks for the corpse named to be dragged to us.
+	constexpr uint16_t GMSummon = 0x40c5;
+	// GMKill_Struct {char name[64], char gm_name[64] @64, u8}: the zone's #kill of the one named
+	// (HandleWorldMessage's 0x406c: "struck down by the gods").
+	constexpr uint16_t GMKill = 0x406c;
 	// ManaUpdate_Struct {u16 spawn id, u16 mana}: our mana (HandleWorldMessage's 0x4219).
 	constexpr uint16_t ManaUpdate = 0x4219;
 	// No body: every door and switch goes (HandleWorldMessage's 0x409b deletes the EQSwitches).
@@ -527,6 +548,13 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::YellForHelp, "OP_YellForHelp"},
 	{ZoneOp::Consent, "OP_Consent"},
 	{ZoneOp::ConsentResponse, "OP_ConsentResponse"},
+	{ZoneOp::RezzRequest, "OP_RezzRequest"},
+	{ZoneOp::RezzAnswer, "OP_RezzAnswer"},
+	{ZoneOp::RezzComplete, "OP_RezzComplete"},
+	{ZoneOp::Sacrifice, "OP_Sacrifice"},
+	{ZoneOp::Translocate, "OP_Translocate"},
+	{ZoneOp::GMSummon, "OP_GMSummon"},
+	{ZoneOp::GMKill, "OP_GMKill"},
 	{ZoneOp::ManaUpdate, "OP_ManaUpdate"},
 	{ZoneOp::DespawnDoor, "OP_DespawnDoor"},
 	{ZoneOp::PlaySound, "OP_PlaySound"},

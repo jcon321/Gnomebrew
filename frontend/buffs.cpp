@@ -61,6 +61,24 @@ void Buffs::Reset(uint64_t now_ms)
 	++m_serial;
 }
 
+void Buffs::Clear()
+{
+	for (int i = 0; i < Slots; ++i) {
+		m_slots[i] = ZoneBuff{};
+		m_casters[i] = 0;
+	}
+	++m_serial;
+}
+
+void Buffs::Put(int slot, const ZoneBuff &buff)
+{
+	if (slot < 0 || slot >= Slots)
+		return;
+	m_slots[slot] = buff;
+	m_casters[slot] = 0;
+	++m_serial;
+}
+
 const SpellInfo *Buffs::Spell(int id) const
 {
 	return m_spells ? m_spells->Find(id) : nullptr;
