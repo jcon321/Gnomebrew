@@ -83,22 +83,13 @@ namespace
 		64, 65, 66, 67, 68, 69, 70, 77};
 
 	// The horizontal field of view of SetViewAngle(90) (DoCharacterSelection, CDisplay_SetCCreateCamera(0)),
-	// `aspect` the screen's width over its height. ChangeVideoMode passes it to t3dSetCameraLens,
-	// which keeps half; eqgfx (setupCameraTransformations) takes the tangent of that in 512ths of
-	// a turn across the screen's width, the near plane at 1 (CDisplay's constructor). So 90 is
-	// 63.3 degrees.
-	// Zeal's SetCameraLens hook changes the angle in character select (GameState 1, on by default
-	// with [Zeal] MouseSmoothing): it reads it as degrees across a 4:3 screen and widens it to keep
-	// that height on a wider one, more again past 4:3. The same at 4:3; 88 degrees at 16:9.
+	// `aspect` the screen's width over its height: render::LensFov, as Zeal's SetCameraLens hook
+	// widens it in character select (GameState 1, on by default with [Zeal] MouseSmoothing).
 	// Character creation (GameState 2) keeps the lens character select left, Zeal's included; the
 	// face pick's SetCCreateCamera(100) doesn't set the angle.
 	float LensFov(float aspect)
 	{
-		constexpr float Classic = 4.0f / 3;
-		float tangent = std::tan(90.0f / 2 * render::Pi / 180) / Classic;
-		float ratio = aspect + std::max(0.0f, (aspect - Classic) * aspect);
-		float angle = 2 * std::atan(tangent * ratio) * 180 / render::Pi;
-		return angle * render::Pi / 256;
+		return render::LensFov(90, aspect);
 	}
 }
 

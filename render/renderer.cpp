@@ -5,6 +5,15 @@
 
 namespace render
 {
+	float LensFov(float view_angle, float aspect)
+	{
+		constexpr float Classic = 4.0f / 3;
+		float tangent = std::tan(view_angle / 2 * Pi / 180) / Classic;
+		float ratio = aspect + std::max(0.0f, (aspect - Classic) * aspect);
+		float angle = 2 * std::atan(tangent * ratio) * 180 / Pi;
+		return angle * Pi / 256;
+	}
+
 	void Renderer::Begin(int width, int height, const Camera &camera)
 	{
 		m_width = width;

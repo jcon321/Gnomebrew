@@ -9,6 +9,7 @@
 #include "textures.h"
 #include "zone_regions.h"
 
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
@@ -58,6 +59,8 @@ namespace render
 	{
 	public:
 		bool Load(const std::string &eq_dir, const std::string &zone, std::string &error, const ZoneLighting &lighting = ZoneLighting());
+		// Told how far Load has got, 0..1 (the loading screen's bar), from the thread that loads.
+		void SetLoadProgress(std::function<void(float fraction)> progress) { m_load_progress = std::move(progress); }
 		// `lights`: the scene lights given to the renderer (SetSceneLights), which light the meshes
 		// they reach, as the sun does when `sun`.
 		// With occlusion culling on, only what the zone's meshes don't hide (OcclusionBuffer).
@@ -154,6 +157,7 @@ namespace render
 		TextureCache m_textures;
 		std::vector<StaticMesh> m_meshes;
 		bool m_occlusion_culling = true;
+		std::function<void(float)> m_load_progress;
 		OcclusionBuffer m_occlusion;
 		bool m_occlusion_ready = false; // m_occlusion holds the last Draw's view
 		std::vector<std::pair<float, uint32_t>> m_order; // meshes in view, nearest first

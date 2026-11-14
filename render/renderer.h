@@ -80,6 +80,14 @@ namespace render
 		uint32_t fog_color = 0;
 	};
 
+	// The horizontal field of view, radians, of eqgame's lens angle `view_angle` (CDisplay::SetViewAngle,
+	// in 512ths of a turn across the screen: eqgfx's t3dSetCameraLens keeps half, and
+	// setupCameraTransformations takes the tangent of that across the width), widened for a screen
+	// wider than 4:3 as Zeal's SetCameraLens hook widens character select's: the angle read as
+	// degrees across a 4:3 screen, that height kept on a wider one and more again past 4:3. The same
+	// as eqgfx's at 4:3; 90 is 63.3 degrees there, 88 at 16:9.
+	float LensFov(float view_angle, float aspect);
+
 	// A one-pixel line clipped to a width x height surface (debug overlays).
 	void DrawLine(uint32_t *pixels, int stride, int width, int height, float x0, float y0, float x1, float y1, uint32_t color);
 

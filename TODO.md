@@ -43,7 +43,9 @@ no rules of its own.
      EQTypes 45..59) and the blink in their last ticks. Their effects count in the stats, resists,
      AC, max HP (worked out as `Max_HP` does, not the zone's), max mana and our speed (SoW,
      snares, roots). Still to do: the effects that act as a buff
-     lands or fades (levitation, invisibility, see invisible, infravision, illusions, Eye of Zomm;
+     lands or fades (levitation, invisibility, see invisible, infravision, illusions, Eye of Zomm,
+     magnification: SPA 87's lens, `SetViewAngle` from `HitBySpell`, `RemovePCAffectex` and
+     `HandleSpecialPCAffects`;
      a horse's is `frontend/mounts.*`) and a bard's instrument mastery; HitBySpell's own branches: Locate Corpse
      (`eqspa_locate_corpse` @004cac8a, eqstr 0x309d), the bind's place checks
      (`InSpecialBindSpot` @004cadbc, `EQWorldData::IsNoBindZone`), the teleport checks
@@ -294,7 +296,8 @@ no rules of its own.
    clip plane, the windows' global fades) is done; still to do there: Video Modes (CVideoModesWnd)
    and Level of Detail's effect (s3dSetDynamicLOD: models are always drawn whole); Gamma does
    nothing, as in eqgame windowed. Still to do: the Mouse page, which shows empty
-   (InitKeyboardAssignments' mouse settings); the reverb's drugged room (23) while drunk at 40 and
+   (InitKeyboardAssignments' mouse settings; its sensitivity and invert, which `procMouse` reads,
+   are fixed at 4 and off); the reverb's drugged room (23) while drunk at 40 and
    over (DoPassageOfTime's drunkenness wearing off isn't ours); the Keyboard page's
    temporary red rows (commands not yet done) go once every command is done.
    A combo box's list that's down takes any press (CXWndManager's 0x34): off it, the list goes
@@ -337,7 +340,7 @@ no rules of its own.
    - ExecuteCmd's commands not done yet (the page's "No"): Toggle mouse look, Duck, Use
      centerscreen, Center view, Toggle netstat, the clip plane, voice input, screenshots, the chat line's cursor and page up and down (CChatWindow::ScrollChatWindowUp),
      the bazaar, bazaar search and music player
-     windows, and the six camera moves (ExecuteCmd 0x6f..0x74, ProcessControls).
+     windows.
    - Send tell for a GM helping a petitioner (`/tell <petitioner> `, CPetitionQWnd), and
      ExecuteCmd 0x81 and 0x82 (`;` and `/` command modes; not on the keyboard page).
    - Target myself's pet: eqgame takes the first in pinstSpawnList's order; ours the lowest id.
@@ -353,7 +356,15 @@ no rules of its own.
      commands from the keymap (ProcessNewUICharacterSelectKeys runs ProcessMovementKeys).
 7. ~~**Map window.**~~ Not eqgame's: the in-game map is Zeal's, so it stays out of the base client
    for now.
-8. **Loading screen** while zoning, with progress.
+8. ~~**Loading screen**~~: done (`frontend/loading_screen.*`, eqgame's `EQ_LoadingS`,
+   `CEverQuest_DoLoadScreenProgressBar`): the newest expansion's picture (`eqpload.bmp`), the bar,
+   its lines ("Loading Character Equipment Files...") and the jokes, up whenever a zone loads (ours: entering the world and every
+   zone line), the bar following `InitWorld`'s steps for the global files
+   (`render::CharacterModels::Open`) and then the zone's (`ZoneScene::Load`), no input meanwhile.
+   Still to do: eqgame shows it from the moment character select ends (`DoLoadScreen(1)` before
+   `WorldAuthenticate`), ours once the world gives the zone's address; and the startup one after
+   server select (`CDisplay::InitDDraw`'s `DoLoadScreen(0)` with `InitWorld`'s global files, which
+   we load with each zone instead).
 23. ~~**Character select**~~: done (`frontend/frontend.cpp`, `frontend/charselect_view.*`, eqgame's
     CCharacterSelect and CEverQuest::DoCharacterSelection @0053b9cf): explore mode
     (`EnterExplorationMode`, `LeaveExplorationMode`, `ExploreModeWindow`, the other characters
@@ -722,8 +733,21 @@ no rules of its own.
     the server sends `IT68`), the static kind 9 missiles' checks on who walks into them (MoveMissile's
     sentinel and trap spells), our own archery and throwing making their missile (DoAttack), the chat filters for PC and NPC
     spells and bard songs, and OP 0x4265 (destroy a cast's emitters; this server never sends it).
-13. **The other camera modes F9 cycles through:** overhead and the two user-set cameras, plus zoom
-    and field of view.
+13. ~~**The other camera modes F9 cycles through**~~: done (`ZoneView::CameraSetup`, `ToggleView`,
+    `CameraKeys`, `MouseLookCamera`; `FrontEnd::LoadCameras`, `SaveCameras`): `CDisplay_ToggleView`'s
+    five views with `CDisplay_default_camera`'s table, kept from zone to zone and the user cameras in
+    `[Camera]`; `DoCamAi`'s overhead and user cameras; `ProcessControls`' zoom and six camera keys;
+    `CEverQuest_procMouse` in those views; `SetViewAngle`'s lens per view (F9, the drunk's,
+    `PrepareForRepop`), widened past 4:3 (`render::LensFov`). Still to do:
+    - Our chase camera isn't eqgame's view 2 (`DoCamAi`: the distance plus `ModelHeightOffset`
+      behind along our heading, the eye plus the height, the table's pitch; `procMouse`'s up and
+      down moving its height and looking at us; the camera keys on it; `HandleMouseWheelZoom`'s 3 a
+      notch to 100, and its 2 off view 2's bearing), and we start in it, where eqgame starts in view 0.
+    - `s3dCollideSphereWithWorld` for views 1, 3 and 4 (ours: a segment from our center, 1 short of
+      what it hits), and `DoCamAi`'s `GetEnvironment` of the camera's region (`DAT_0063b7c8`).
+    - The mouse's sensitivity and invert (`_DAT_0079858a` from `DAT_00798b0c`, `DAT_007985e8`: the
+      Mouse page) are fixed at 4 and off.
+    - SPA 87 (magnification) as it lands or fades (under 2).
 14. **Graphics options:** fullscreen or windowed, resolution changes, gamma, anisotropic filtering,
     MSAA, draw distance and level of detail.
 15. **Screenshots.**
@@ -834,8 +858,13 @@ no rules of its own.
 17. **A Linux GUI host** (SDL2 with OpenGL or Vulkan), since the front end is already portable.
 18. **Text rendering** off GDI (`win32_text`), onto a font renderer that works on both platforms
     (needed for 17).
-19. **Connection handling.** Show when the connection is lost (linkdead, timeouts) and handle
-    reconnects cleanly.
+19. ~~**Connection handling**~~: done (`FrontEnd::ShowLostConnection`; the sessions' `Error` reasons):
+    `CEverQuest_DisplayScreen`'s "YOU HAVE BEEN DISCONNECTED." (12353) for 3 s on a lost zone or
+    world connection past server select, "THE SERVER IS NOT RESPONDING." (12354) for 2 s when the
+    waits for the zone's address (180 s, 120 s zoning) or the profile and our spawn (180 s) run out,
+    then the game ends, as eqgame's does (it has no reconnect). Still to do: `ProcessGameLoop`'s
+    "Couldn't connect to network, creating dummy" when the first `WorldAuthenticate` fails (ours:
+    eqmain's dialog, then the start screen).
 20. **Speed and stability:** load zones in the background, cache assets, catch crashes and write a
     crash dump, tests for the file and data parsers.
 

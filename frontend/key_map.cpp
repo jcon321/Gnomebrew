@@ -122,12 +122,12 @@ namespace KeyMap
 			{ToggleCompassWin, 3144, "Toggle Compass", UI, true},
 			{ToggleRaidWin, 5107, "Toggle Raid Window", UI, true},
 			{ToggleMusicPlayerWin, 3150, "Toggle Music Player Window", UI, false},
-			{ForwardCam, 6692, "Raise camera", Camera, false},
-			{BackCam, 6693, "Lower camera", Camera, false},
-			{RightCam, 6694, "Tether-slide camera right", Camera, false},
-			{LeftCam, 6695, "Tether-slide camera left", Camera, false},
-			{PitchUpCam, 6696, "Pitch camera up", Camera, false},
-			{PitchDownCam, 6697, "Pitch camera down", Camera, false},
+			{ForwardCam, 6692, "Raise camera", Camera, true},
+			{BackCam, 6693, "Lower camera", Camera, true},
+			{RightCam, 6694, "Tether-slide camera right", Camera, true},
+			{LeftCam, 6695, "Tether-slide camera left", Camera, true},
+			{PitchUpCam, 6696, "Pitch camera up", Camera, true},
+			{PitchDownCam, 6697, "Pitch camera down", Camera, true},
 			{CycleNearestTarget, 0, "Cycle nearest target", Target, true},
 		};
 

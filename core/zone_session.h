@@ -1040,7 +1040,8 @@ private:
 	void TakeOne(int16_t slot); // an item's charges (or a stack) less one
 	void Reset(const std::string &character);
 	void Log(const std::string &line);
-	void Fail(std::vector<Event> &events, const std::string &text);
+	// The session is over: an Error event, value 1 when a wait ran out (Respond.bmp).
+	void Fail(std::vector<Event> &events, const std::string &text, bool not_responding = false);
 	bool Send(uint16_t opcode, const void *body, size_t size, const std::string &what, bool reliable = true);
 	bool MissingGuild(const ZoneSpawn &spawn) const; // a player's guild the list doesn't have
 	void SendPosition();

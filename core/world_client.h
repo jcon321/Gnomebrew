@@ -69,8 +69,12 @@ public:
 			CreateFailed,     // text says why; the session stays at character select
 			Error,          // the session is over
 		};
+		// Why an Error: the connection closed, a wait for the server ran out, or the server said no
+		// (and our own wait on a character being made).
+		enum class Reason { Disconnected, NotResponding, Refused };
 		Type type;
 		std::string text;
+		Reason reason = Reason::Disconnected;
 	};
 
 	WorldSession();
@@ -111,7 +115,7 @@ public:
 
 private:
 	void Log(const std::string &line);
-	void Fail(std::vector<Event> &events, const std::string &text);
+	void Fail(std::vector<Event> &events, const std::string &text, Event::Reason reason = Event::Reason::Disconnected);
 	bool Send(uint16_t opcode, const void *body, size_t size, const std::string &what);
 	void RequestGuilds();
 

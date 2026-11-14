@@ -384,7 +384,7 @@ namespace render
 	}
 
 	bool CharacterModels::Open(const std::string &eq_dir, std::string &error, bool creatures, bool velious_textures,
-		const LuclinModels &luclin)
+		const LuclinModels &luclin, const Progress &progress)
 	{
 		m_sources.clear();
 		m_items.clear();
@@ -392,19 +392,42 @@ namespace render
 		m_animation_sets.clear();
 		m_velious_textures = velious_textures;
 		m_old_skeletons = luclin.old_skeletons;
+		// InitWorld's CEverQuest_DoLoadScreenProgressBar calls, "Loading %s" of each part.
+		auto report = [&progress](int percent, const char *what) {
+			if (progress)
+				progress(percent, what);
+		};
 		// CDisplay::InitWorld's order; the first model, track or material of a name loaded is the one
 		// used. The weapons and shields first.
-		for (const char *name : {"gequip", "gequip8", "gequip2", "gequip5", "gequip4", "gequip3"})
+		const char *equipment = "Character Equipment Files";
+		const int equipment_percent[] = {2, 4, 4, 7, 10, 12};
+		int part = 0;
+		for (const char *name : {"gequip", "gequip8", "gequip2", "gequip5", "gequip4", "gequip3"}) {
+			report(equipment_percent[part++], equipment);
 			AddSource(m_items, eq_dir, name);
+		}
+		report(14, equipment); // the sky's equipment, which the zone view's sky loads
 		// The Luclin player models, each race and sex that ShouldLoad: global<tag>_chr2 (more of its
 		// animations) and global<tag>_chr. VEquip goes with the Vah Shir's (their helms), the
 		// LGEquip files (everyone else's hair, helms, robes and armor pieces) with the others'.
 		m_luclin_pc_models = false;
 		bool luclin_armor = false, vah_shir_items = false;
+		int percent = 14;
+		int luclin_count = 0;
+		for (uint16_t race : LuclinRaces)
+			for (uint8_t gender = 0; gender < 2; ++gender)
+				luclin_count += luclin.ShouldLoad(race, gender) ? 1 : 0;
+		const char *player_models = "Player Character Models";
+		if (luclin_count < 1)
+			percent = 0x22;
+		else
+			report(percent, player_models);
 		for (uint16_t race : LuclinRaces) {
 			for (uint8_t gender = 0; gender < 2; ++gender) {
 				if (!luclin.ShouldLoad(race, gender))
 					continue;
+				report(percent, player_models);
+				percent += 2;
 				std::string tag = ActorTag(race, gender);
 				for (char &c : tag)
 					c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -421,13 +444,27 @@ namespace render
 			AddSource(m_items, eq_dir, "vequip");
 		// The Luclin elementals (races 209..212), with UseLuclinElementals.
 		if (creatures && luclin.elementals) {
+			percent += 2;
+			report(percent, "Global NPC Models");
 			AddSource(m_sources, eq_dir, "global5_chr2");
 			AddSource(m_sources, eq_dir, "global5_chr");
 		}
+		const char *armor = "Armor and Equipment";
+		percent += 5;
+		report(percent, armor);
 		m_luclin_pc_models = luclin_armor;
-		if (luclin_armor)
-			for (const char *name : {"lgequip_amr2", "lgequip_amr", "lgequip2", "lgequip"})
-				AddSource(m_items, eq_dir, name);
+		if (luclin_armor) {
+			percent += 2;
+			report(percent, armor);
+			AddSource(m_items, eq_dir, "lgequip_amr2");
+			AddSource(m_items, eq_dir, "lgequip_amr");
+			percent += 2;
+			report(percent, armor);
+			AddSource(m_items, eq_dir, "lgequip2");
+			AddSource(m_items, eq_dir, "lgequip");
+		}
+		percent += 3;
+		report(percent, armor);
 		// The low-poly Vah Shir (and GEquip6, their helms) unless both of theirs are Luclin's.
 		if (!luclin.Wanted(130, 0) || !luclin.Wanted(130, 1)) {
 			AddSource(m_items, eq_dir, "gequip6");
@@ -439,23 +476,43 @@ namespace render
 			AddSource(m_sources, eq_dir, "global6_chr2");
 			AddSource(m_sources, eq_dir, "global6_chr");
 		}
+		percent += 3;
+		report(percent, armor);
 		AddSource(m_sources, eq_dir, "global4_chr");
+		percent += 3;
+		report(percent, armor);
 		if (!AddSource(m_sources, eq_dir, "global_chr")) {
 			error = "Couldn't read global_chr.s3d in " + eq_dir;
 			return false;
 		}
-		if (creatures)
-			AddSource(m_sources, eq_dir, "global2_chr");
-		AddSource(m_sources, eq_dir, "global3_chr");
 		// Global<n>_amr.s3d for each LoadArmor<n> that's on, only without Luclin models (bar the Vah
 		// Shir) or with LoadVeliousArmorsWithLuclin. Without them the materials fall back (BodyMaterial).
-		if (velious_textures && (!luclin_armor || luclin.velious_armor)) {
-			for (int n = 17; n <= 23; ++n)
-				if (!AddSource(m_armor, eq_dir, "global" + std::to_string(n) + "_amr"))
-					m_velious_textures = false;
+		if (!luclin_armor || luclin.velious_armor) {
+			const char *velious = "Velious Textures";
+			percent += 5;
+			report(percent, velious);
+			if (velious_textures) {
+				for (int n = 17; n <= 23; ++n) {
+					percent += 5;
+					report(percent, velious);
+					if (!AddSource(m_armor, eq_dir, "global" + std::to_string(n) + "_amr"))
+						m_velious_textures = false;
+				}
+			}
+			else
+				m_velious_textures = false;
 		}
 		else
 			m_velious_textures = false;
+		const char *items = "Global Items and Equipment";
+		percent += 5;
+		report(percent, items);
+		if (creatures)
+			AddSource(m_sources, eq_dir, "global2_chr");
+		percent += 2;
+		report(percent, items);
+		report(percent + 3, items);
+		AddSource(m_sources, eq_dir, "global3_chr");
 		return true;
 	}
 

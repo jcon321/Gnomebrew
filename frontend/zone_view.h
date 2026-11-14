@@ -29,6 +29,7 @@
 #include <atomic>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <utility>
 #include <vector>
@@ -39,9 +40,38 @@
 class ZoneView
 {
 public:
-	// eqgame's camera views (Zeal_camera_view) that we have: 0 first person, 1 overhead (straight
-	// above our head, looking down: being knocked out or dying puts us there), 2 the chase camera.
-	enum class CameraView { FirstPerson, Overhead, Chase };
+	// eqgame's camera views (Zeal_camera_view), F9's order: 0 first person, 1 overhead (straight
+	// above our head, looking down: being knocked out or dying puts us there), 2 the chase camera,
+	// 3 and 4 the user cameras (somewhere round us, looking at us, moved by the camera keys and the
+	// mouse).
+	enum class CameraView { FirstPerson, Overhead, Chase, User1, User2 };
+	static constexpr int CameraViews = 5;
+	// CDisplay_default_camera's table, 7 floats a view from 0x799688 (Zeal's camera info), with
+	// the view (Zeal_camera_view), F9's last (DAT_0063b8ec) and the lens (CDisplay+0x2890,
+	// SetViewAngle's). They're eqgame's globals, so the front end keeps one from zone to zone.
+	struct CameraSetup
+	{
+		struct View
+		{
+			float distance = 0; // +0: how far out (DoCamAi keeps it 2..200; 0 none)
+			float heading = 0;  // +4: where round us, 0..512 (views 3 and 4)
+			float height = 0;   // +8: over our eye (DoCamAi keeps it 0..30)
+			float bearing = 0;  // +0xc: 0 the camera faces our heading, else it looks at us (get_bearing)
+			float pitch = 0;    // +0x10: 512ths, -128..128; LookAtUs looks at us
+			float angle = 90;   // +0x14: the lens F9 gives it (SetViewAngle)
+			bool user = false;  // +0x18: the zoom, slide and mouse move it
+		};
+		static constexpr float LookAtUs = 0.001f; // a bearing or pitch that looks at us
+		View views[CameraViews];
+		CameraView view = CameraView::Chase;
+		CameraView default_view = CameraView::Chase;
+		float angle = 90; // the lens now; character select's 90 until something sets it
+		CameraSetup();    // CDisplay_default_camera (English: DAT_00799770 0)
+		View &Current() { return views[static_cast<int>(view)]; }
+		const View &Current() const { return views[static_cast<int>(view)]; }
+	};
+	// The front end's setup, kept from zone to zone; without one the view has its own.
+	void SetCameraSetup(CameraSetup *setup) { m_cam = setup ? setup : &m_own_camera; }
 	using Vision = ::Vision; // day_light.h
 	static Vision RaceVision(uint16_t race) { return ::RaceVision(race); }
 
@@ -51,6 +81,9 @@ public:
 
 	void StartLoading(const ZoneInfo &info);
 	bool Loaded() const { return m_loaded; }
+	// How far the loading's got, for the loading screen's bar: 0..100, and what's loading
+	// (InitWorld's "Loading Character Equipment Files" and the rest, then the zone's own).
+	void LoadProgress(int &percent, std::string &what) const;
 	const std::string &Error() const { return m_error; } // valid once loaded
 	const std::string &ZoneName() const { return m_info.short_name; }
 
@@ -251,25 +284,41 @@ public:
 	// This frame's ambient light, the sky's (SetAmbientLight), which lights the names too.
 	const render::Vec3 &Ambient() const { return m_daylight.ambient; }
 
-	// F9 toggles first person and the chase camera. Orbit circles the chase camera around the
-	// character (in 512ths), Turn turns the character (and the camera with them), FaceCamera
-	// turns the character to where the chase camera looks, Pitch tilts the view (degrees), Zoom
-	// moves the chase camera in or out, from first person out to 200 units (CDisplay::DoCamAi's
-	// 2..200).
-	void CycleCamera();
-	CameraView View() const { return m_view; }
+	// CDisplay_ToggleView (F9): the next view (4 back to 0) with its lens, or with Drunkness 70 and
+	// over first person, its lens widened by the drunkenness past 70. `magnification` is
+	// TotalSpellAffects(SPA 87), whose value is the lens coming round to first person. True when it
+	// left a user camera (3 or 4), whose places it saves (CEverQuest_saveOptions).
+	bool ToggleView(int drunkenness, int magnification = 0);
+	// Straight to a view with its lens, as F9 would leave it (the preview tools).
+	void SetCameraView(CameraView view);
+	CameraView View() const { return m_cam->view; }
 	// EQPlayer::KnockedOut and CEverQuest_ReportDeath_ClearOutRentables: view 1, the overhead camera
 	// (CDisplay_default_camera's: 25 above our eye, pitched -100 of 512 down, our heading), with F9's
 	// choice kept; CDisplay_SwitchToDefaultCameraMode puts F9's back (DAT_0063b8ec).
-	void SetOverheadView() { m_view = CameraView::Overhead; }
-	void SwitchToDefaultCamera() { m_view = m_default_view; }
+	void SetOverheadView() { m_cam->view = CameraView::Overhead; }
+	void SwitchToDefaultCamera() { m_cam->view = m_cam->default_view; }
+	// EQ_PC::PrepareForRepop: the lens of the view we're in.
+	void ResetViewAngle() { m_cam->angle = m_cam->Current().angle; }
+	// EQ_Character::DoPassageOfTime with Drunkness over 69: first person, its lens wider by the
+	// drunkenness past 70.
+	void DrunkView(int drunkenness);
+	// ProcessControls' camera keys, in frame units held: Raise and Lower camera (any view but first
+	// person: the height), Tether-slide right and left (a view the camera keys move: 12 a unit
+	// round us), and Pitch camera up and down (any view but first person: 8 a unit, to 128 either
+	// way). Not our chase camera, which isn't eqgame's view 2.
+	void CameraKeys(float raise, float slide, float pitch);
+	// CEverQuest_procMouse with mouse look (the right button held) in the overhead and user views:
+	// `dx`, `dy` the mouse's move. The user cameras go round us (dx) and in or out (dy, no nearer
+	// than 3); the overhead camera pitches (dy). False in a view where the mouse turns us (dx).
+	bool MouseLookCamera(float dx, float dy);
 	void Orbit(float delta) { m_orbit += delta; }
 	void Turn(float delta);
 	void FaceCamera();
 	void Pitch(float degrees);
 	void Zoom(int notches);
-	// ProcessControls' Zoom in and out keys: the chase camera (a zoomable one) delta nearer or
-	// farther, no nearer than our ModelHeightOffset and no farther than 400, then DoCamAi's 2..200.
+	// ProcessControls' Zoom in and out keys: the chase camera or a user camera (one the camera keys
+	// move) delta nearer or farther, no nearer than our ModelHeightOffset and no farther than 400,
+	// then DoCamAi's 2..200.
 	void ZoomBy(float delta);
 
 	// Norrath's time (ZoneSession::GameTime): the ambient light, the sky and the fog follow it.
@@ -497,6 +546,10 @@ private:
 	std::thread m_loader;
 	std::atomic<bool> m_loaded{false};
 	std::string m_error;
+	mutable std::mutex m_progress_mutex;
+	int m_progress_percent = 0;
+	std::string m_progress_what;
+	void SetLoadProgress(int percent, std::string what); // from the loader
 
 	render::ZoneScene m_zone;
 	render::Sky m_sky;
@@ -641,8 +694,9 @@ private:
 	int m_safe_fall = 0;
 	std::function<int(float)> m_fall_damage;
 
-	CameraView m_view = CameraView::Chase;
-	CameraView m_default_view = CameraView::Chase; // DAT_0063b8ec: the view F9 last chose
+	CameraSetup m_own_camera;
+	CameraSetup *m_cam = &m_own_camera;
+	float m_aspect = 4.0f / 3; // the last Render's width over height, for the lens
 	float m_orbit = 0;      // chase camera heading relative to the character's
 	float m_pitch = -12;    // degrees, negative looks down
 	float m_distance = 0;   // chase camera distance; 0 = from the character's height

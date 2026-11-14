@@ -23,6 +23,7 @@
 #include "game_values.h"
 #include "game_windows.h"
 #include "key_map.h"
+#include "loading_screen.h"
 #include "name_sprites.h"
 #include "login_client.h"
 #include "sidl.h"
@@ -176,6 +177,9 @@ public:
 	int FastDrop() const { return m_config.fast_drop; }                    // /fastdrop, to remember
 	const ZoneSession &Zone() const { return m_zone; }
 	ZoneSession &ZoneForTests() { return m_zone; } // the preview's injected packets
+	const LoadingScreen &Loading() const { return m_loading; }
+	bool LostConnectionShown() const { return m_lost.shown; }
+	void LoseConnectionForTests(bool not_responding) { ShowLostConnection(not_responding); }
 	const Buffs &BuffsForTests() const { return m_buffs; }
 	const Group &GroupState() const { return m_group; }
 	const Mounts &MountState() const { return m_mounts; }
@@ -650,6 +654,29 @@ private:
 	uint32_t m_my_look_serial = 0; // ZoneSpawn::look_serial our model was built for
 	bool m_zone_error_logged = false;
 	bool m_zoning = false; // through a zone line: from the zone's approval until the next zone is in
+	// The loading screen (EQ_LoadingS) while a zone loads, and the progress it was last given.
+	LoadingScreen m_loading;
+	// The camera views and their table (Zeal_camera_view, DAT_0063b8ec, CDisplay_default_camera's),
+	// eqgame's globals: kept from zone to zone, the user cameras' places in my-client.ini's [Camera]
+	// (eqgame's eqOptions1.opt).
+	ZoneView::CameraSetup m_camera;
+	void LoadCameras(const IniFile &ini); // CEverQuest_loadOptions' check: an angle out of 0..500 is the defaults
+	void SaveCameras();                   // CEverQuest_saveOptions
+	int m_loading_percent = -1;
+	std::string m_loading_what;
+	bool ZoneLoading() const; // the zone's loading screen is up (no world drawn yet)
+	void LoadingFrame(uint64_t now_ms); // its bar from the zone view's loader
+	// CEverQuest_DisplayScreen("Discon.bmp" or "Respond.bmp"): the screen blanked with eqstr 12353
+	// "YOU HAVE BEEN DISCONNECTED." or 12354 "THE SERVER IS NOT RESPONDING.", held (Sleep) 3 s or 2 s,
+	// then the game ends (ProcessGameLoop's 0xca, MainThread's WM_QUIT).
+	struct LostConnection
+	{
+		bool shown = false;
+		uint32_t eqstr = 0;
+		uint64_t until_ms = 0;
+	};
+	LostConnection m_lost;
+	void ShowLostConnection(bool not_responding);
 	DebugMenu m_debug;
 	WindowManager m_windows;
 	bool m_windows_built = false;
@@ -662,6 +689,9 @@ private:
 	{
 		bool forward = false, back = false, left = false, right = false;
 		bool zoom_in = false, zoom_out = false; // ExecuteCmd 0x12, 0x13: DAT_007ce094, DAT_007ce098
+		// ExecuteCmd 0x6f..0x74 (DAT_007ce208..DAT_007ce21c): Raise and Lower camera, Tether-slide
+		// camera right and left, Pitch camera up and down
+		bool cam_raise = false, cam_lower = false, cam_right = false, cam_left = false, cam_up = false, cam_down = false;
 		bool pitch_up = false, pitch_down = false; // ExecuteCmd 0xf, 0x10: DAT_007ce088, DAT_007ce08c
 		int pitch_up_speed = 0, pitch_down_speed = 0; // DAT_0079974c, DAT_0079974e: 1..12, up a frame
 	};

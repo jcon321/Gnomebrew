@@ -2715,6 +2715,54 @@ namespace
 	}
 }
 
+// F9 through eqgame's five views, the camera keys in a user camera, then the lost connection
+// screen and the quit after it.
+int CamerasTest(FrontEnd &frontend, Harness &h)
+{
+	ZoneView *view = frontend.ZoneScene();
+	if (!view)
+		return 1;
+	auto key = [&](uint8_t scan, bool alt, bool down) {
+		InputEvent event;
+		event.type = down ? InputEvent::Type::Key : InputEvent::Type::KeyUp;
+		event.scan = scan;
+		event.alt = alt;
+		frontend.OnEvent(event);
+	};
+	h.RunUntil([] { return false; }, 500);
+	const char *names[] = {"first-person", "overhead", "chase", "user1", "user2"};
+	printf("[preview] view %d to start\n", static_cast<int>(view->View()));
+	for (int i = 0; i < 6; ++i) {
+		int at = static_cast<int>(view->View());
+		h.Snapshot("v" + std::to_string(i) + "-" + names[at]);
+		printf("[preview] view %d (%s)\n", at, names[at]);
+		key(0x43, false, true); // F9
+		key(0x43, false, false);
+		h.RunUntil([] { return false; }, 300);
+	}
+	// To user camera 1, then Raise camera and Tether-slide right held a second.
+	while (view->View() != ZoneView::CameraView::User1) {
+		key(0x43, false, true);
+		key(0x43, false, false);
+	}
+	key(0x38, false, true); // Alt
+	key(0x48, true, true);
+	key(0x4d, true, true);
+	h.RunUntil([] { return false; }, 1000);
+	key(0x48, true, false);
+	key(0x4d, true, false);
+	key(0x38, false, false);
+	h.RunUntil([] { return false; }, 200);
+	h.Snapshot("v6-user1-raised-slid");
+	printf("[preview] user camera 1 after the keys: view %d\n", static_cast<int>(view->View()));
+	frontend.LoseConnectionForTests(false);
+	h.Snapshot("x0-disconnected");
+	h.RunUntil([&] { return frontend.QuitRequested(); }, 5000);
+	printf("[preview] lost connection: shown %d, quit %d\n", frontend.LostConnectionShown() ? 1 : 0,
+		frontend.QuitRequested() ? 1 : 0);
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
 	bool replay = argc >= 5 && std::string(argv[3]) == "--replay";
@@ -2775,6 +2823,7 @@ int main(int argc, char **argv)
 	bool guild_test = argc == 7 && std::string(argv[6]) == "guild";
 	bool skills_test = argc == 7 && std::string(argv[6]) == "skills";
 	bool train_test = argc == 7 && std::string(argv[6]) == "train";
+	bool cameras_test = argc == 7 && std::string(argv[6]) == "cameras";
 	if (argc >= 6 && !replay) {
 		std::string login = argv[3];
 		size_t colon = login.rfind(':');
@@ -2817,6 +2866,27 @@ int main(int argc, char **argv)
 			fprintf(stderr, "[preview] %s\n", replay_error.c_str());
 			return 1;
 		}
+		if (cameras_test) {
+			// The loading screen part way: its picture, bar and line.
+			auto loading = [&](int at_least) {
+				return [&frontend, at_least] {
+					const ZoneView *view = frontend.ZoneScene();
+					return frontend.Loading().Percent() >= at_least || (view && view->Loaded());
+				};
+			};
+			h.Snapshot("l0-loading-start");
+			printf("[preview] loading: picture %s, %d%% \"%s\"\n", frontend.Loading().Picture().c_str(),
+				frontend.Loading().Percent(), frontend.Loading().Text().c_str());
+			uint64_t started = NowMs();
+			for (int at : {10, 40, 50, 60, 90}) {
+				h.RunUntil(loading(at), 30000);
+				printf("[preview] loading: %d%% \"%s\" at %llu ms\n", frontend.Loading().Percent(),
+					frontend.Loading().Text().c_str(), static_cast<unsigned long long>(NowMs() - started));
+				if (frontend.ZoneScene() && frontend.ZoneScene()->Loaded())
+					break;
+				h.Snapshot("l" + std::to_string(at) + "-loading");
+			}
+		}
 		if (!h.RunUntil([&] { return frontend.Zone().GetState() == ZoneSession::State::InZone; })) {
 			fprintf(stderr, "[preview] the replay never got in the zone\n");
 			return 1;
@@ -2832,6 +2902,8 @@ int main(int argc, char **argv)
 			return FriendsTest(frontend, h, argv[2]);
 		if (boats_test)
 			return BoatsTest(frontend, h, seconds);
+		if (cameras_test)
+			return CamerasTest(frontend, h);
 		h.RunUntil([] { return false; }, 500);
 		h.Snapshot("r0-zone");
 		// Toggle UI Display (F10, ExecuteCmd 0x15): the windows and cursor gone, then back.
@@ -3589,10 +3661,12 @@ int main(int argc, char **argv)
 				h.Snapshot(names[i]);
 			}
 			frontend.ZoneScene()->SetPlayerPosition(t.x, t.y - 25, t.z, 0);
-			frontend.ZoneScene()->CycleCamera();
+			ZoneView::CameraView was = frontend.ZoneScene()->View();
+			frontend.ZoneScene()->SetCameraView(was == ZoneView::CameraView::FirstPerson ? ZoneView::CameraView::Chase
+			                                                                             : ZoneView::CameraView::FirstPerson);
 			h.RunUntil([] { return false; }, 400);
 			h.Snapshot("n3-names-chase");
-			frontend.ZoneScene()->CycleCamera();
+			frontend.ZoneScene()->SetCameraView(was);
 			for (const auto &tag : frontend.ZoneScene()->NameTags(std::numeric_limits<float>::max())) {
 				auto it = frontend.Zone().Spawns().find(tag.id);
 				const ZoneSpawn &s = tag.id == 0 || it == frontend.Zone().Spawns().end() ? frontend.Zone().Self() : it->second;
@@ -4400,8 +4474,7 @@ int main(int argc, char **argv)
 				h.RunUntil([] { return false; }, 1500);
 			}
 			sit_report("standing");
-			while (view->View() != ZoneView::CameraView::FirstPerson)
-				view->CycleCamera();
+			view->SetCameraView(ZoneView::CameraView::FirstPerson);
 			h.Key(InputEvent::Key::Enter);
 			h.Type("/sit");
 			h.Key(InputEvent::Key::Enter);
@@ -4432,7 +4505,7 @@ int main(int argc, char **argv)
 			h.RunUntil([] { return false; }, 500);
 			sit_report("W held 0.5 s more");
 			h.KeyUp(InputEvent::Key::W);
-			view->CycleCamera();
+			view->SetCameraView(ZoneView::CameraView::Chase);
 		}
 		for (const auto &line : frontend.Chat().Lines())
 			if (line.text.find("pell") != std::string::npos || line.text.find("scrib") != std::string::npos ||

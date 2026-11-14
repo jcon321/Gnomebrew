@@ -13,6 +13,7 @@
 #include "skeleton.h"
 #include "textures.h"
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -213,9 +214,12 @@ namespace render
 		// `velious_textures`, the Velious armor, materials 17..23 (global17..23_amr.s3d, as eqgame's
 		// LoadArmor17..23 load them); without, they're the leather, chain and plate they stand in for.
 		// `luclin`: the Luclin player models to load (InitWorld's order and rules); the Velious armor
-		// isn't loaded with any but the Vah Shir's unless it says so.
+		// isn't loaded with any but the Vah Shir's unless it says so. `progress` hears InitWorld's
+		// CEverQuest_DoLoadScreenProgressBar calls as their files load: the bar's percent and what's
+		// loading ("Character Equipment Files", ...), up to the last before "Finished Loading World".
+		using Progress = std::function<void(int percent, const char *what)>;
 		bool Open(const std::string &eq_dir, std::string &error, bool creatures = false, bool velious_textures = true,
-			const LuclinModels &luclin = {});
+			const LuclinModels &luclin = {}, const Progress &progress = nullptr);
 		// A zone's own models, <zone>_chr.s3d and friends, searched first.
 		bool AddZone(const std::string &eq_dir, const std::string &zone);
 		std::unique_ptr<CharacterModel> Build(const CharacterAppearance &appearance, std::string &error);

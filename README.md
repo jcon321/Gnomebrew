@@ -257,6 +257,12 @@ WeatherSounds=1
   go there as you bind them, in eqclient.ini's format (`KEYMAP_FORWARD=w`,
   `KEYMAP_FORWARD_2=SHIFT+CONTROL+UP`, `NOKEY` for none; see Keymap below), and Reload defaults
   takes them out again. A command with no key there has its default.
+- `[Camera]` isn't written until you use it: `User1` and `User2` are the user cameras' places (F9's
+  views 3 and 4), saved whenever F9 leaves one (eqgame keeps them in `eqOptions1.opt`). Each is
+  `CDisplay_default_camera`'s table entry for it, seven numbers: distance, heading (0..512),
+  height, bearing, pitch, lens angle and 1 (the keys move it); 0.001 for the bearing or pitch
+  looks at you. Both lens angles must be over 0 and under 500 (`CEverQuest_loadOptions`'s check)
+  or the defaults are used.
 
 In the zone, the game's own SIDL windows come up as eqgame's do on a first login (player, target,
 group, buffs, spell gems, hotbuttons, chat and the selector, whose buttons open and close the
@@ -519,8 +525,16 @@ additions of ours, or ones taken from TAKP's eqgame.dll or Zeal rather than stoc
   hair, beard and eyes on the model before a race or gender button switches it, by the old race's
   rules, so a Luclin model coming from one without hair (Iksar, Vah Shir, Erudite, a troll or ogre
   man) is bald. Ours rolls them for the race and gender being switched to, so nobody starts bald.
-- **Character select field of view:** widened by the aspect ratio (88 degrees at 16:9) as Zeal's
-  `SetCameraLens` hook does, rather than eqgfx's 63.3.
+- **Field of view:** eqgame's lens angles (`SetViewAngle`: character select's 90, first person's 110,
+  the other views' 90, in 512ths of a turn) widened by the aspect ratio as Zeal's `SetCameraLens`
+  hook widens character select's: the same as eqgfx's at 4:3 (63.3 and 77.3 degrees across), 88
+  and 98 at 16:9. eqgfx keeps them as they are at any aspect; in the zone Zeal's hook puts its own
+  `/fov` in their place.
+- **Loading screen on every zone:** eqgame's (`EQ_LoadingS`: the picture, its bar, its lines and
+  jokes) whenever a zone loads, entering the world and through a zone line, the bar following our
+  loader (see In the zone). eqgame shows it with the bar only as the game starts (`InitWorld`'s
+  global files), the picture alone entering the world from character select, and on a zone line
+  keeps the old zone's last frame, "LOADING, PLEASE WAIT..." in the chat.
 - **Extended nameplate distance** (`EnableExtendedNameplateDistance=1`): names show as far as the zone
   is drawn, as TAKP's eqgame.dll and Zeal do, not eqgame's 70 units.
 - **`/shownames` 5, 6 and 7:** Zeal's levels (title and first name; title, first and last; first
@@ -616,7 +630,7 @@ build/eqclient -u USER -p PASS [options]
 
 ```
 build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|train|ground|commands|group|raid|guild|skills|aa]]
-build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez]]
+build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez|cameras]]
 ```
 
 This drives the real front-end code with scripted input and writes PNG snapshots. Text is
@@ -678,7 +692,10 @@ NPC's death) and types /hidecorpses and /corpse, counting the corpses drawn; `bo
 boat under us, where we and the boats within 300 are, the profile's boat and our model (an
 illusion's); off a boat, it first
 puts us on the nearest ship as zoning in with its name does, and on a race 141 boat it takes the
-helm, holds forward 3 s and turns left 2 s, printing the boat and us each half second)
+helm, holds forward 3 s and turns left 2 s, printing the boat and us each half second; `cameras`
+snapshots the loading screen as it starts and part way (printing the bar's percent, its line and
+when), then each of F9's views in turn, user camera 1 after Raise camera and Tether-slide right
+held a second, and the lost connection's screen, printing whether the quit followed)
 and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,
 opens, minimizes, resizes and closes windows (the layout goes to OUTDIR), types into the chat window
 (a say, commands, /target) and prints what the chat window holds, then stands near the target to
@@ -1263,6 +1280,27 @@ the rejection).
   server's z is the model's center, `size / 5 * 3.125` over the feet (`Mob::CalcZOffset`). The feet go there
   and then settle onto the floor right below. Headings in the profile and `OP_ZoneEntry` are 0..512;
   spawn packets send them as a byte (0..256).
+- **Camera views:** eqgame has five (`Zeal_camera_view`), which F9 (`CDisplay_ToggleView`
+  @004adc80) steps through, 4 going back to 0: 0 first person, 1 overhead, 2 the chase camera, 3 and
+  4 the user cameras. `CDisplay_default_camera` (@004a3b4b) fills their table, 7 floats a view from
+  0x799688 (`ZoneView::CameraSetup`): distance, heading (0..512), height, bearing (0 faces our
+  heading, else looks at us), pitch (512ths; 0.001 looks at us), the lens angle F9 gives it, and a
+  user flag (the zoom, slide and mouse move it). English (`DAT_00799770` 0): view 0 {0, 0, 0, 0, 0,
+  110, 0}, 1 {0, 0, 25, 0, -100, 90, 0}, 2 {0, 0, 0, 0, 0, 90, 1}, 3 {30, 192, 15, 0.001, 0.001, 90,
+  1}, 4 {82, 277, 18, 0.001, 0.001, 90, 1}; other locales give view 2 8.44, 3.06 and -17.52.
+  `CEverQuest_loadOptions` reads views 3 and 4 from `eqOptions1.opt` (ours: `[Camera]`), and
+  `CEverQuest_saveOptions` writes them, which F9 does as it leaves either. The view, F9's last
+  (`DAT_0063b8ec`, which `CDisplay_SwitchToDefaultCameraMode` puts back) and the lens are globals,
+  kept from zone to zone (both views start at 0 in eqgame; ours at the chase camera).
+- **Field of view:** `CDisplay::SetViewAngle` sets the lens (CDisplay+0x2890), which
+  `t3dSetCameraLens` halves and eqgfx's `setupCameraTransformations` reads in 512ths of a turn, the
+  tangent across the screen's width: 90 is 63.3 degrees across, 110 is 77.3 (widened past 4:3,
+  ours, see Custom changes; `render::LensFov`). F9 sets the new view's angle from the table; coming
+  round to 0 with SPA 87 (magnification) on us, that total is the angle. With `Drunkness` 70 and
+  over, F9 and `EQ_Character::DoPassageOfTime` keep us in first person at 110 + the drunkenness -
+  70. `EQ_PC::PrepareForRepop` (going home dead) sets the angle of the view we're in, the overhead
+  one. Nothing else does: entering the world keeps character select's 90 until F9 changes it, and
+  the wheel's switches between 0 and 2 keep whatever's set.
 - **Camera:** a chase camera behind and above the character, looking at their head. It comes in when a
   wall or the floor is in the way (tested over a box around the camera, so surfaces it backs into at a
   shallow angle don't cut into the view), and hides the model once it's inside them. The wheel (ours,
@@ -1270,17 +1308,32 @@ the rejection).
   back in past 3 units. Holding the right button turns the character with the mouse and tilts the view
   (the character first turns to where the camera looks); holding the left button in the chase view
   circles the camera around them, and running brings it back behind. Both buttons run forward. While a
-  drag holds the mouse the cursor is hidden and kept where the drag started. F9 switches between first
-  person and the chase camera; Page Up/Down tilt it. Knocked out or dead, eqgame puts the camera in
-  its view 1 (`Zeal_camera_view`, `EQPlayer::KnockedOut`, `CEverQuest_ReportDeath_ClearOutRentables`):
-  `CDisplay_default_camera`'s table (7 floats a view from 0x799688: distance, heading, height,
-  bearing flag, pitch, 90, a user flag) gives it distance 0, height 25 and pitch -100 (512ths), so
-  `DoCamAi` puts it 25 straight up from the eye (`Position.z - ModelHeightOffset +
-  CameraHeightOffset`, as far as `s3dCollideSphereWithWorld` lets it), facing our heading and
-  looking 70° down. `CDisplay_SwitchToDefaultCameraMode` puts back `DAT_0063b8ec`, the view F9
-  (`CDisplay_ToggleView`, 0..4) last chose; F9 from view 1 goes on to 2, and the wheel
-  (`HandleMouseWheelZoom`) leaves view 1 alone. Ours (`ZoneView::CameraView::Overhead`) has the
-  overhead, first person and chase views. First person (view 0) puts the camera at the head bone
+  drag holds the mouse the cursor is hidden and kept where the drag started. Page Up/Down tilt it.
+  This chase camera is ours: eqgame's view 2 (`DoCamAi`) sits the distance plus `ModelHeightOffset`
+  behind us along our heading at the eye plus its height, pitched by its pitch (0, level), the
+  mouse's up and down moving its height and turning its pitch to look at us (`procMouse`).
+  Knocked out or dead, eqgame puts the camera in
+  its view 1 (`EQPlayer::KnockedOut`, `CEverQuest_ReportDeath_ClearOutRentables`), and
+  `CDisplay_SwitchToDefaultCameraMode` puts F9's view back after.
+- **Overhead and user cameras** (`CDisplay::DoCamAi_handle_mouselook` @004db384, views 1, 3 and 4):
+  in the game (GameState 5) it first keeps the view's distance 2..200 (0 stays 0) and its height
+  0..30. The camera goes the distance out from our center along the view's heading (a world heading:
+  turning doesn't move it), at our eye (`Position.z - ModelHeightOffset + CameraHeightOffset`) plus
+  the height, as far as `s3dCollideSphereWithWorld` lets it come from our center. It faces our
+  heading (bearing 0) or us (`get_bearing`), pitched by the view's pitch, or at our center for 0.001.
+  View 1, distance 0 and height 25, is 25 straight up from the eye, facing our heading and 70°
+  down. `ProcessControls` moves the view's table with the keys held, in frame units
+  (`_DAT_007d01dc`): Zoom in and out (0x12, 0x13) 2 a unit, a view with the user flag, no nearer
+  than our `ModelHeightOffset` and no farther than 400; Raise and Lower camera (0x6f, 0x70) the
+  height 1 a unit, any view but 0; Tether-slide camera right and left (0x71, 0x72) the heading 12 a
+  unit, a user-flag view; Pitch camera up and down (0x73, 0x74) the pitch 8 a unit, any view but 0,
+  to 128 either way. `CEverQuest_procMouse` with mouse look (the right button held), the sensitivity
+  `_DAT_0079858a` (4 by default): in views 3 and 4 the mouse's left and right move the heading (at
+  most twice the sensitivity a move) and don't turn us, and up and down the distance (half the
+  sensitivity, no nearer than 3; in water type 5, the pitch instead); in view 1 left and right turn
+  us and up and down the pitch (0.3 of the sensitivity). Ours leave our chase camera (view 2) out
+  of the camera keys. The wheel (`HandleMouseWheelZoom`) does nothing in views 1, 3 and 4.
+- **First person** (view 0) puts the camera at the head bone
   (`ActorInfo::DagHeadPoint`) only for a combat swing (animations 1..11), riding (`Mount`),
   sitting (P02, 0x21) or kneeling (P05, 0x24); otherwise, dead (D05) included, at
   `Position.z - ModelHeightOffset + CameraHeightOffset`, the standing eye.
@@ -1471,6 +1524,42 @@ the rejection).
   model, and they hang on `<tag>HE_DAG` (`ActorInfo`'s DagHead), not `HEAD_POINT_DAG`. A held
   item's particle clouds (a torch's flame and smoke) are kept by item and bone, so a model rebuilt
   for a look change carries them on (`CDisplay::ChangeDag` makes them for a new item alone).
+- **Loading screen** (`frontend/loading_screen.*`, `EQ_LoadingS` @00452912): a 640x480 picture,
+  the newest expansion's that `CDisplay::LoadBMPFile` found an archive for: `eqpload.bmp`
+  (`bmpwad8.s3d`), `eqlload.bmp` (`bmpwad7`, else `bmpwad6`), `eqvload.bmp` (`bmpwad5`),
+  `eqkload.bmp` (`bmpwad4`), else `logo03.bmp` (`bmpwad.s3d`), drawn in the middle of the screen
+  (`EQ_LoadingS_draw`), black round it. With progress 1..100 a bar goes under it, at (179, 465) to
+  (471, 479) on the picture: a frame lit (200, 200, 0) along the top and left and (100, 100, 0)
+  along the bottom and right, filled (50, 50, 200) from 180 for `progress * 290 / 100` with a (50,
+  50, 100) line where the fill ends, and black to 470. Over it at (210, 465), in English only,
+  Arial 14 in (240, 240, 0) over a black shadow 1 down and right (`EQ_LoadingS_WriteTextHD`'s color
+  15), the line `EQ_LoadingS::SetProgressBar` gave: `"%s..."` of what's loading, or one time in
+  twenty (no sooner than 3 s after the last) one of 56 jokes (`EQ_LoadingS_SetProgressBar2`, the
+  table at 0x005ff6a0: "Attaching Beards to Dwarves...", "Looking For Graphics <LFG>...") that
+  stays 3 s. `CDisplay::InitWorld` (@004a44f4) calls `CEverQuest_DoLoadScreenProgressBar` as the
+  global files load: "Loading Character Equipment Files" at 2, 4, 4, 7, 10, 12 and 14 (the gequip
+  files and the sky's), "Loading Player Character Models" from 14, 2 a Luclin model (34 with
+  none), "Loading Global NPC Models" +2 (the Luclin elementals), "Loading Armor and Equipment" +5
+  (+2, +2 with the Luclin armor), +3 (global6 and the low-poly Vah Shir), +3 (global4), +3
+  (global_chr), "Loading Velious Textures" +5 and +5 an armor file, "Loading Global Items and
+  Equipment" +5, +2, +3, and "Finished Loading World" at 100. Ours (`render::CharacterModels::Open`
+  with its progress, `ZoneView::LoadProgress`) runs those across the bar's first quarter, then the
+  zone's own files ("Loading <zone>", `ZoneScene::Load`'s meshes and objects) to the end, and
+  takes no input meanwhile (`DoMainLoop`'s `FlushMouse` and `FlushKey`); see Custom changes.
+- **Losing the connection** (`FrontEnd::ShowLostConnection`): eqgame checks `connection_connected`
+  on the zone and world connections wherever it waits for them (`DoMainLoop`,
+  `GetZoneInfoFromNetwork`, `initializeNetworkGame`, `DoCharacterSelection`,
+  `DoCharacterCreation`, `ProcessGameLoop`, `IsZoneAvailable`); the transport's own timeouts end a
+  silent one (rdplib's inactivity). On a disconnect it calls `CEverQuest_DisplayScreen`
+  ("Discon.bmp", @00538ce6): the screen cleared and eqstr 12353 "YOU HAVE BEEN DISCONNECTED." in
+  font 6 (Arial 24 bold) white, centered both ways (`DrawWrappedText`'s 0x30), then `Sleep(3000)`,
+  then `ProcessGameLoop` ends (0xca) and `MainThread` posts `WM_QUIT`: the game closes. A wait that
+  runs out is "Respond.bmp", eqstr 12354 "THE SERVER IS NOT RESPONDING.", and `Sleep(2000)`: 180 s
+  for the zone's address after Enter World (`initializeNetworkGame`), 120 s for it zoning
+  (`ProcessGameLoop`), 180 s for the profile and our spawn (`GetZoneInfoFromNetwork`); `DoMainLoop`'s
+  own waits have no limit. Zoning, `WorldAuthenticate` failing ("World not ready") is a disconnect.
+  Ours does the same on the zone's and the world's errors past server select (from server select
+  it's eqmain's dialog, then the start screen).
 
 The zone screen fills the window: the 3D view under the SIDL windows; with the debug menu open, our
 details and the nearest spawns at the top left and the radar at the top right.
@@ -1516,7 +1605,9 @@ details and the nearest spawns at the top left and the radar at the top right.
   as do `EQPlayer::ChangeStance` of ourselves (sitting, ducking, any stance the server gives us)
   and `EnterZone`. `ProcessControls` runs us forward while Move forward's held, autorun's on or
   both mouse buttons are down.
-  Of the 111, Gnomebrew does the movement, Autorun, Jump, Look up and down, Toggle camera view, Consider,
+  Of the 111, Gnomebrew does the movement, Autorun, Jump, Look up and down, Toggle camera view, Zoom in
+  and out, the six camera moves (Raise and Lower camera, Tether-slide camera right and left, Pitch
+  camera up and down), Consider,
   Say hail, Camp, Sit/stand, Run/walk, Target myself, Target party member 1..5, Invite/follow,
   Disband, Who, Target nearest PC and NPC, Toggle last two
   targets, Cycle reply forward and back, Send tell, Reply, Send tell to target, Command mode say

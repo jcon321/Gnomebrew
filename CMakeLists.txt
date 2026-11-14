@@ -147,6 +147,7 @@ add_library(eqfrontend STATIC
     frontend/color_picker.cpp
     frontend/book_window.cpp
     frontend/compass.cpp
+    frontend/loading_screen.cpp
     frontend/spell_casting.cpp
     frontend/combat.cpp
     frontend/abilities.cpp

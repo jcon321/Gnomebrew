@@ -83,6 +83,20 @@ void ZoneView::StartLoading(const ZoneInfo &info)
 	m_loader = std::thread([this] { Load(); });
 }
 
+void ZoneView::LoadProgress(int &percent, std::string &what) const
+{
+	std::lock_guard<std::mutex> lock(m_progress_mutex);
+	percent = m_progress_percent;
+	what = m_progress_what;
+}
+
+void ZoneView::SetLoadProgress(int percent, std::string what)
+{
+	std::lock_guard<std::mutex> lock(m_progress_mutex);
+	m_progress_percent = percent;
+	m_progress_what = std::move(what);
+}
+
 void ZoneView::Load()
 {
 	std::string error;
@@ -92,12 +106,25 @@ void ZoneView::Load()
 	lighting.point_lights = false; // already baked into the vertex colors
 	float fog_start, fog_end;
 	ZoneFog(fog_start, fog_end); // CDisplay::SetFog: no sky when the fog ends within 101
-	if (!m_zone.Load(m_eq_dir, m_info.short_name, error, lighting))
+	// The loading screen's bar (ours, see README Custom changes): InitWorld's global files with its
+	// own steps and words across the first part, then StartWorldDisplay's zone, "Loading <zone>",
+	// up to the end and "Finished Loading World".
+	constexpr int GlobalShare = 25; // about the time they take next to a zone's
+	auto global = [this](int percent, const char *what) {
+		SetLoadProgress(std::max(1, percent * GlobalShare / 100), std::string("Loading ") + what);
+	};
+	std::string zone_text = "Loading " + (m_info.long_name.empty() ? m_info.short_name : m_info.long_name);
+	m_zone.SetLoadProgress([this, &zone_text](float fraction) {
+		SetLoadProgress(GlobalShare + static_cast<int>(fraction * (98 - GlobalShare)), zone_text);
+	});
+	if (!m_models.Open(m_eq_dir, error, true, m_velious_textures, m_luclin, global))
 		m_error = error;
-	else if (!m_models.Open(m_eq_dir, error, true, m_velious_textures, m_luclin))
+	else if (!m_zone.Load(m_eq_dir, m_info.short_name, error, lighting))
 		m_error = error;
 	else if (m_info.sky != 0 && fog_end >= 101 && !m_sky.Load(m_eq_dir, m_info.sky, error))
 		fprintf(stderr, "[zone view] %s\n", error.c_str()); // the zone still draws, over the fog color
+	m_zone.SetLoadProgress(nullptr);
+	SetLoadProgress(99, zone_text);
 	if (m_error.empty())
 		m_models.AddZone(m_eq_dir, m_info.short_name);
 	std::string effects_error;
@@ -141,6 +168,7 @@ void ZoneView::Load()
 		m_rain_ring = m_effect_textures.Get("rainring.bmp", true);
 		m_snowflake = m_effect_textures.Get("snowflake.bmp", true);
 	}
+	SetLoadProgress(100, "Finished Loading World");
 	m_loaded = true;
 }
 
@@ -163,14 +191,102 @@ void ZoneView::SetPlayerPosition(float x, float y, float z, float heading)
 	m_position_dirty = true;
 }
 
-void ZoneView::CycleCamera()
+ZoneView::CameraSetup::CameraSetup()
 {
-	// CDisplay_ToggleView: overhead goes on to the chase camera (view 2) as F9's next.
-	m_view = m_view == CameraView::FirstPerson ? CameraView::Chase : m_view == CameraView::Overhead ? CameraView::Chase
-	                                                                                               : CameraView::FirstPerson;
-	m_default_view = m_view;
+	// CDisplay_default_camera, English (DAT_00799770 0): view 2's distance, height and pitch are 0
+	// there (other locales 8.44, 3.06 and -17.52).
+	views[0] = {0, 0, 0, 0, 0, 110, false};
+	views[1] = {0, 0, 25, 0, -100, 90, false};
+	views[2] = {0, 0, 0, 0, 0, 90, true};
+	views[3] = {30, 192, 15, LookAtUs, LookAtUs, 90, true};
+	views[4] = {82, 277, 18, LookAtUs, LookAtUs, 90, true};
+}
+
+namespace
+{
+	// CDisplay_FixHeading: into 0..512.
+	float FixHeading(float heading)
+	{
+		heading = std::fmod(heading, 512.0f);
+		return heading < 0 ? heading + 512 : heading;
+	}
+}
+
+bool ZoneView::ToggleView(int drunkenness, int magnification)
+{
+	// CDisplay_ToggleView: past a user camera its places are saved; then the next view, 4 going
+	// back to 0, and its lens (SetViewAngle), or SPA 87's coming back round to 0. Drunk (70 and
+	// over), first person with its lens wider by the drunkenness past 70. F9's choice is the
+	// default camera's (DAT_0063b8ec).
+	bool save = false;
+	CameraSetup &cam = *m_cam;
+	if (drunkenness < 0x46) {
+		save = cam.view == CameraView::User1 || cam.view == CameraView::User2;
+		int next = static_cast<int>(cam.view) + 1;
+		bool wrapped = next >= CameraViews;
+		cam.view = static_cast<CameraView>(wrapped ? 0 : next);
+		cam.angle = wrapped && magnification > 0 ? static_cast<float>(magnification) : cam.Current().angle;
+	}
+	else {
+		cam.view = CameraView::FirstPerson;
+		cam.angle = static_cast<float>(static_cast<int>(cam.views[0].angle) + drunkenness - 0x46);
+	}
+	cam.default_view = cam.view;
+	// Ours: our chase camera starts behind us again, and first person level.
 	m_orbit = 0;
-	m_pitch = m_view == CameraView::Chase ? -12.0f : 0.0f;
+	m_pitch = cam.view == CameraView::Chase ? -12.0f : 0.0f;
+	return save;
+}
+
+void ZoneView::SetCameraView(CameraView view)
+{
+	m_cam->view = m_cam->default_view = view;
+	m_cam->angle = m_cam->Current().angle;
+	m_orbit = 0;
+	m_pitch = view == CameraView::Chase ? -12.0f : 0.0f;
+}
+
+void ZoneView::DrunkView(int drunkenness)
+{
+	if (drunkenness <= 0x45)
+		return;
+	m_cam->view = CameraView::FirstPerson;
+	m_cam->angle = static_cast<float>(static_cast<int>(m_cam->views[0].angle) + drunkenness - 0x46);
+}
+
+void ZoneView::CameraKeys(float raise, float slide, float pitch)
+{
+	CameraView view = m_cam->view;
+	if (view == CameraView::FirstPerson || view == CameraView::Chase)
+		return;
+	CameraSetup::View &v = m_cam->Current();
+	v.height += raise;
+	if (v.user && slide != 0)
+		v.heading = FixHeading(v.heading + slide);
+	if (pitch != 0)
+		v.pitch = std::clamp(v.pitch + pitch, -128.0f, 128.0f);
+}
+
+bool ZoneView::MouseLookCamera(float dx, float dy)
+{
+	// CEverQuest_procMouse, the mouse sensitivity at its default of 4 (_DAT_0079858a).
+	constexpr float Sensitivity = 4;
+	CameraView view = m_cam->view;
+	CameraSetup::View &v = m_cam->Current();
+	bool user_view = view == CameraView::User1 || view == CameraView::User2;
+	if (user_view && v.user && dx != 0)
+		v.heading = FixHeading(v.heading + std::clamp(dx, -2 * Sensitivity, 2 * Sensitivity));
+	if (dy != 0) {
+		if (user_view && m_movement.BodyEnvironment() != render::Environment::Water) {
+			// Up and down take a user camera in and out, no nearer than 3.
+			v.distance += std::clamp(dy, -0.5f * Sensitivity, 0.5f * Sensitivity);
+			if (v.distance < 3)
+				v.distance = 3;
+		}
+		else if (view != CameraView::FirstPerson && view != CameraView::Chase) // in water (type 5), a user camera's too
+			v.pitch = std::clamp(v.pitch - std::clamp(dy, -0.3f * Sensitivity, 0.3f * Sensitivity), -128.0f, 128.0f);
+	}
+	return user_view && v.user;
 }
 
 void ZoneView::Turn(float delta)
@@ -194,20 +310,20 @@ void ZoneView::Pitch(float degrees)
 
 void ZoneView::Zoom(int notches)
 {
-	if (m_distance <= 0 || m_view == CameraView::Overhead)
-		return; // not placed yet; HandleMouseWheelZoom leaves view 1 alone
+	if (m_distance <= 0 || (m_cam->view != CameraView::FirstPerson && m_cam->view != CameraView::Chase))
+		return; // not placed yet; HandleMouseWheelZoom leaves views 1, 3 and 4 alone
 	// Zooming out of first person steps back into the chase camera, close behind the head;
 	// zooming in past the closest distance goes back to first person.
-	if (m_view == CameraView::FirstPerson) {
+	if (m_cam->view == CameraView::FirstPerson) {
 		if (notches >= 0)
 			return;
-		m_view = CameraView::Chase;
+		m_cam->view = CameraView::Chase;
 		m_distance = MinDistance;
 		++notches;
 	}
 	float distance = m_distance * std::pow(0.85f, static_cast<float>(notches));
 	if (distance < MinDistance) {
-		m_view = CameraView::FirstPerson;
+		m_cam->view = CameraView::FirstPerson;
 		m_distance = MinDistance;
 		FaceCamera(); // first person looks where the character faces
 		return;
@@ -217,7 +333,21 @@ void ZoneView::Zoom(int notches)
 
 void ZoneView::ZoomBy(float delta)
 {
-	if (m_distance <= 0 || m_view != CameraView::Chase || delta == 0)
+	if (delta == 0)
+		return;
+	if (m_cam->view != CameraView::Chase) {
+		// A user camera's own distance (its table's); the overhead and first person don't zoom.
+		CameraSetup::View &v = m_cam->Current();
+		if (!v.user)
+			return;
+		v.distance += delta;
+		if (delta < 0)
+			v.distance = std::max(v.distance, CenterHeight(m_my_id));
+		else if (v.distance > 400)
+			v.distance = 400;
+		return;
+	}
+	if (m_distance <= 0)
 		return;
 	float distance = m_distance + delta;
 	if (delta < 0)
@@ -623,7 +753,7 @@ bool ZoneView::Move(const MoveControls &controls, uint64_t now_ms, bool looking)
 	// We swim where we look: the view's pitch from where each camera starts out.
 	MoveControls swim = own;
 	swim.jump = std::exchange(m_jump_pressed, false) && !m_driven;
-	swim.pitch = (m_pitch - (m_view == CameraView::Chase ? -12.0f : 0.0f)) * 512 / 360;
+	swim.pitch = (m_pitch - (m_cam->view == CameraView::Chase ? -12.0f : 0.0f)) * 512 / 360;
 	bool jumped = m_movement.Step(swim, ms, m_zone);
 	m_feet = m_movement.Feet();
 	m_heading = m_movement.Heading();
@@ -638,7 +768,7 @@ bool ZoneView::Move(const MoveControls &controls, uint64_t now_ms, bool looking)
 		}
 	}
 	// The chase camera drifts back behind us as we move, unless the mouse is holding it.
-	if (m_movement.Speed() != 0 && !looking && m_view == CameraView::Chase) {
+	if (m_movement.Speed() != 0 && !looking && m_cam->view == CameraView::Chase) {
 		m_orbit = std::fmod(m_orbit, 512.0f);
 		if (m_orbit > 256)
 			m_orbit -= 512;
@@ -968,7 +1098,7 @@ ZoneView::DebugStats ZoneView::Stats() const
 	stats.on_ground = m_movement.OnGround();
 	stats.animation = m_animation;
 	stats.animation_rate = m_animation_rate;
-	stats.view = m_view;
+	stats.view = m_cam->view;
 	stats.camera_distance = m_distance;
 	stats.camera_pitch = m_pitch;
 	stats.feet_z = m_feet.z;
@@ -1278,7 +1408,8 @@ render::Camera ZoneView::MakeCamera(float &distance) const
 	render::Vec3 look{std::cos(yaw) * std::cos(pitch), std::sin(yaw) * std::cos(pitch), std::sin(pitch)};
 
 	render::Camera camera;
-	camera.horizontal_fov = render::Pi / 2;
+	// The lens SetViewAngle last set (F9's, the drunk's), widened for the screen (render::LensFov).
+	camera.horizontal_fov = render::LensFov(m_cam->angle, m_aspect);
 	camera.near_plane = 0.3f;
 	// CDisplay::SetFog: the yon is the fog's end; everything past it is the sky or the fog color.
 	camera.far_plane = FarPlane();
@@ -1297,27 +1428,39 @@ render::Camera ZoneView::MakeCamera(float &distance) const
 		camera.fog_color = flashed;
 	}
 	distance = 0;
-	if (m_view == CameraView::FirstPerson) {
+	if (m_cam->view == CameraView::FirstPerson) {
 		camera.position = feet + render::Vec3{0, 0, eye - m_eye_drop * 1.05f};
 		camera.forward = look;
 	}
-	else if (m_view == CameraView::Overhead) {
-		// CDisplay::DoCamAi's view 1: 25 straight up from our eye (Position.z - ModelHeightOffset +
-		// CameraHeightOffset), as far as the ceiling lets it (s3dCollideSphereWithWorld), facing our
-		// heading and pitched -100 (of 512) down.
-		render::Vec3 from = feet + render::Vec3{0, 0, eye};
-		const float up = 25, margin = 1;
+	else if (m_cam->view != CameraView::Chase) {
+		// CDisplay::DoCamAi's views 1, 3 and 4: the view's distance out from us along its heading
+		// (a world heading, not ours), its height over our eye (Position.z - ModelHeightOffset +
+		// CameraHeightOffset), as far as the world lets it come from our center
+		// (s3dCollideSphereWithWorld). It faces our heading (bearing 0) or us (get_bearing), pitched
+		// by its pitch, or at our center for LookAtUs. View 1 is 25 straight over the eye, our
+		// heading, -100 down.
+		const CameraSetup::View &v = m_cam->Current();
+		render::Vec3 center = feet + render::Vec3{0, 0, m_height / 5 * 3.125f};
+		float around = render::HeadingToRadians(v.heading);
+		render::Vec3 target{center.x + std::cos(around) * v.distance, center.y + std::sin(around) * v.distance,
+			feet.z + eye + v.height};
+		render::Vec3 offset = target - center;
+		float length = render::Length(offset);
+		const float margin = 1;
+		camera.position = target;
 		float fraction = 1;
-		float reach = up + margin;
-		if (m_zone.SegmentHit(from, from + render::Vec3{0, 0, reach}, fraction))
-			reach = std::max(0.5f, fraction * reach - margin);
-		else
-			reach = up;
-		float down = -100.0f * 2 * render::Pi / 512;
+		if (length > 0 && m_zone.SegmentHit(center, center + offset * ((length + margin) / length), fraction)) {
+			float reach = std::max(0.0f, fraction * (length + margin) - margin);
+			camera.position = center + offset * (std::min(reach, length) / length);
+		}
 		float heading = render::HeadingToRadians(m_heading);
-		camera.position = from + render::Vec3{0, 0, std::min(reach, up)};
-		camera.forward = {std::cos(heading) * std::cos(down), std::sin(heading) * std::cos(down), std::sin(down)};
-		distance = std::min(reach, up);
+		render::Vec3 to_us = center - camera.position;
+		float level = std::sqrt(to_us.x * to_us.x + to_us.y * to_us.y);
+		if (v.bearing != 0 && level > 0.001f)
+			heading = std::atan2(to_us.y, to_us.x);
+		float pitch = v.pitch == CameraSetup::LookAtUs ? std::atan2(to_us.z, level) : v.pitch * 2 * render::Pi / 512;
+		camera.forward = {std::cos(heading) * std::cos(pitch), std::sin(heading) * std::cos(pitch), std::sin(pitch)};
+		distance = render::Length(camera.position - (feet + render::Vec3{0, 0, eye}));
 	}
 	else {
 		// Behind the character and a little above, looking at their head. Like the real
@@ -1360,6 +1503,15 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 	using Clock = std::chrono::steady_clock;
 	auto since = [](Clock::time_point start) { return std::chrono::duration<double, std::milli>(Clock::now() - start).count(); };
 	Clock::time_point start = Clock::now();
+	// DoCamAi, in the game (GameState 5): a view's distance 2..200 (0 stays), its height 0..30.
+	for (CameraSetup::View &v : m_cam->views) {
+		if (v.distance != 0 && v.distance < 2)
+			v.distance = 2;
+		else if (v.distance > 200)
+			v.distance = 200;
+		v.height = std::clamp(v.height, 0.0f, 30.0f);
+	}
+	m_aspect = canvas.Height() > 0 ? static_cast<float>(canvas.Width()) / canvas.Height() : 4.0f / 3;
 	float distance;
 	render::Camera camera = MakeCamera(distance);
 	m_renderer->Begin(canvas.Width(), canvas.Height(), camera);
@@ -1394,7 +1546,7 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 	m_times.zone = since(start);
 	start = Clock::now();
 	// Our own model isn't drawn in first person, or with the camera pushed into our head.
-	m_model_shown = m_model && m_view != CameraView::FirstPerson && distance >= 1.5f;
+	m_model_shown = m_model && m_cam->view != CameraView::FirstPerson && distance >= 1.5f;
 	if (m_model) {
 		// The animation's own clock once we're moving (the preview tool never moves: real time).
 		uint64_t time = m_last_move_ms ? static_cast<uint64_t>(m_animation_ms) : now_ms;

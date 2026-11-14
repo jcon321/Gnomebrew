@@ -208,7 +208,7 @@ namespace
 			view.SetGameTime(game_hour, game_minute);
 		view.UpdateSpawns(spawns, 0, 1000);
 		if (first_person)
-			view.CycleCamera();
+			view.SetCameraView(ZoneView::CameraView::FirstPerson);
 		view.Orbit(orbit);
 		view.Pitch(pitch);
 		uint64_t now = 1000; // Move's clock

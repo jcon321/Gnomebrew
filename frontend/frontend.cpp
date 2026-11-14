@@ -105,6 +105,8 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 	}
 	if (m_ui.definitions)
 		WindowManager::AddDefinitions(*m_ui.definitions); // the context menus' screen
+	if (!m_ui.eq_dir.empty() && !m_loading.Open(m_ui.eq_dir))
+		Log("loading screen: no bmpwad*.s3d picture in " + m_ui.eq_dir);
 	m_rules.CheckInstall(m_ui.eq_dir);
 	if (m_ui.mixer && !m_ui.eq_dir.empty()) {
 		m_sound = std::make_unique<audio::EqSound>(*m_ui.mixer, m_ui.eq_dir, m_ui.sound);
@@ -117,6 +119,7 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 		IniFile ini;
 		if (ini.Load(m_config.settings_ini)) {
 			m_debug.Load(ini);
+			LoadCameras(ini);
 			m_key_bindings.Load(ini); // CEverQuest_loadOptions' readKeyMapFromIni
 			m_filters.Load(ini);
 			// The General page's settings (CEverQuest_loadOptions' eqOptions1.opt, its defaults).
@@ -477,6 +480,8 @@ namespace
 void FrontEnd::OnEvent(const InputEvent &given)
 {
 	InputEvent event = given;
+	if (m_lost.shown)
+		return; // CEverQuest_DisplayScreen, then Sleep: no input
 	if ((event.type == InputEvent::Type::Key || event.type == InputEvent::Type::KeyUp) && event.scan == 0)
 		event.scan = ScanOf(event.key);
 	// The character of a key that opened the chat line (OpenChatLine) isn't typed into it.
@@ -543,7 +548,9 @@ void FrontEnd::OnEvent(const InputEvent &given)
 		CharacterCreateEvent(local);
 		break;
 	case Screen::Zone:
-		ZoneEvent(local);
+		// Nothing takes the input until the zone's in (DoMainLoop's FlushMouse and FlushKey).
+		if (!ZoneLoading())
+			ZoneEvent(local);
 		break;
 	}
 }
@@ -848,6 +855,13 @@ void FrontEnd::HandleSessionEvents(const std::vector<LoginSession::Event> &event
 void FrontEnd::Update(uint64_t now_ms)
 {
 	m_now_ms = now_ms;
+	if (m_lost.shown) {
+		// The Sleep after CEverQuest_DisplayScreen, then ProcessGameLoop ends (0xca) and MainThread
+		// posts WM_QUIT.
+		if (now_ms >= m_lost.until_ms)
+			m_quit = true;
+		return;
+	}
 	// CConfirmationDialog's timeout: No.
 	if (m_confirm.open && m_confirm.until_ms && now_ms >= m_confirm.until_ms)
 		CloseConfirmation(false);
@@ -869,6 +883,9 @@ void FrontEnd::Update(uint64_t now_ms)
 	m_zone.Pump(0, zone_events);
 	if (!zone_events.empty())
 		HandleZoneEvents(zone_events);
+	if (m_lost.shown)
+		return;
+	LoadingFrame(now_ms);
 	if (m_zone_view && m_screen == Screen::Zone) {
 		// Our movement, then OP_ClientUpdate (ZoneSession paces it like DoMainLoop).
 		int hour;
@@ -1188,6 +1205,17 @@ void FrontEnd::RenderDialog(Canvas &canvas)
 
 void FrontEnd::Render(Canvas &canvas, uint64_t now_ms)
 {
+	if (m_lost.shown) {
+		// CEverQuest_DisplayScreen with the new UI: the screen cleared, the string in font 6 (Arial
+		// 24 bold) across the whole screen, centered both ways (DrawWrappedText's 0x30), white.
+		canvas.Fill({0, 0, canvas.Width(), canvas.Height()}, 0x000000);
+		std::string text = EqString(m_lost.eqstr, m_lost.eqstr == 12354 ? "THE SERVER IS NOT RESPONDING."
+		                                                                 : "YOU HAVE BEEN DISCONNECTED.");
+		int height = SidlFontHeight(6), weight = SidlFontWeight(6);
+		TextSize size = m_text.Measure(text, height, weight);
+		m_text.Draw(canvas, (canvas.Width() - size.w) / 2, (canvas.Height() - size.h) / 2, text, height, 0xffffff, weight);
+		return;
+	}
 	// The 640x480 screens sit in the middle of the window, black around them.
 	Rect area = ScreenArea();
 	if (area.w < canvas.Width() || area.h < canvas.Height())
@@ -1227,7 +1255,7 @@ void FrontEnd::Render(Canvas &canvas, uint64_t now_ms)
 	// drew them).
 	if (m_cursor_drawn)
 		return;
-	if (m_screen == Screen::Zone && m_ui_hidden && !m_dialog.open)
+	if (m_screen == Screen::Zone && (m_ui_hidden || ZoneLoading()) && !m_dialog.open)
 		return; // no DrawCursor either
 	if (m_cursor_visible && !m_mouse_grabbed && m_screen == Screen::Zone && !m_dialog.open)
 		DrawCursorAttachment(screen, m_text, m_windows, m_window_state, m_game_values, m_mouse_x - area.x,
@@ -1279,8 +1307,8 @@ void FrontEnd::HandleWorldEvents(const std::vector<WorldSession::Event> &events)
 				m_guild.EnteringGame(); // SetDefaultGameValues
 			m_zone.SetGuilds(m_world.Guilds());
 			if (!m_zone.Begin(m_world.ZoneAddress(), m_world.ZonePort(), m_world.EnteringCharacter())) {
-				ShowMessage(m_strings.Get("SISATEXT_CONNECT_FAILED"), [this](bool) { EnterStart(); });
-				break;
+				ShowLostConnection(false); // the zone connection never connected
+				return;
 			}
 			EnterZoneScreen(m_zoning);
 			break;
@@ -1315,8 +1343,18 @@ void FrontEnd::HandleWorldEvents(const std::vector<WorldSession::Event> &events)
 			break;
 		case Type::Error:
 			m_entering_world = false;
-			ShowMessage(m_strings.Get("SISATEXT_LOSTCON") + "\n\n(" + event.text + ")", [this](bool) { EnterStart(); });
-			break;
+			if (m_screen == Screen::ServerSelect || event.reason == WorldSession::Event::Reason::Refused) {
+				// WorldAuthenticate from server select (eqmain's side of the handoff), a refused
+				// login, or our own give-up on a character being made.
+				ShowMessage(m_strings.Get("SISATEXT_LOSTCON") + "\n\n(" + event.text + ")", [this](bool) { EnterStart(); });
+				break;
+			}
+			// Character select, creation, entering the world and zoning: DoCharacterSelection's,
+			// DoCharacterCreation's, initializeNetworkGame's and ProcessGameLoop's connection_connected
+			// going false (Discon.bmp), or their wait for the zone's address running out (Respond.bmp).
+			Log("world: " + event.text);
+			ShowLostConnection(event.reason == WorldSession::Event::Reason::NotResponding);
+			return;
 		}
 	}
 }
@@ -2085,6 +2123,8 @@ void FrontEnd::EnterZoneScreen(bool zoning)
 	m_spell_book.Deactivate(); // a new zone starts standing, the book closed
 	m_spell_cast.Reset();
 	m_zone_view.reset();
+	m_loading.Reset(); // a new EQ_LoadingS (CEverQuest_DoLoadScreen)
+	m_loading_percent = -1;
 	m_weather.Kill(m_sound.get()); // StopWorldDisplay
 	m_zone_error_logged = false;
 	m_debug.Reset();
@@ -3590,8 +3630,10 @@ void FrontEnd::UpdateDeath(uint64_t now_ms)
 		m_loot.Deactivate();
 		if (m_zone.RequestZoneChange(m_zone.Profile().bind_zone, 10))
 			m_death_ms = UINT64_MAX;
-		if (m_zone_view)
+		if (m_zone_view) {
+			m_zone_view->ResetViewAngle(); // EQ_PC::PrepareForRepop: the overhead view's lens
 			m_zone_view->SwitchToDefaultCamera();
+		}
 		return;
 	}
 	if (now_ms - m_death_ms > 2000) {
@@ -4144,6 +4186,46 @@ void FrontEnd::ApplyDisplayOptions()
 	m_zone_view->SetSpellParticles(m_spell_density, m_spell_opacity, m_spell_near_clip);
 }
 
+void FrontEnd::LoadCameras(const IniFile &ini)
+{
+	// [Camera] User1 and User2: a user camera's table entry, "distance heading height bearing pitch
+	// angle user". CEverQuest_loadOptions takes them only with both angles in (0, 500), else
+	// CDisplay_default_camera's.
+	ZoneView::CameraSetup::View loaded[2];
+	bool good = true;
+	for (int i = 0; i < 2; ++i) {
+		std::string value = ini.Get("Camera", i == 0 ? "User1" : "User2");
+		ZoneView::CameraSetup::View &v = loaded[i];
+		int user = 0;
+		if (value.empty() || std::sscanf(value.c_str(), "%f %f %f %f %f %f %d", &v.distance, &v.heading, &v.height,
+		                                 &v.bearing, &v.pitch, &v.angle, &user) != 7 ||
+		    v.angle <= 0 || v.angle >= 500)
+			good = false;
+		v.user = user != 0;
+	}
+	if (good) {
+		m_camera.views[3] = loaded[0];
+		m_camera.views[4] = loaded[1];
+	}
+}
+
+void FrontEnd::SaveCameras()
+{
+	if (m_config.settings_ini.empty())
+		return;
+	IniFile ini;
+	ini.Load(m_config.settings_ini); // keep the rest
+	for (int i = 0; i < 2; ++i) {
+		const ZoneView::CameraSetup::View &v = m_camera.views[3 + i];
+		char value[160];
+		std::snprintf(value, sizeof(value), "%.9g %.9g %.9g %.9g %.9g %.9g %d", v.distance, v.heading, v.height,
+			v.bearing, v.pitch, v.angle, v.user ? 1 : 0);
+		ini.Set("Camera", i == 0 ? "User1" : "User2", value);
+	}
+	if (!ini.Save(m_config.settings_ini))
+		Log("camera: couldn't write " + m_config.settings_ini);
+}
+
 void FrontEnd::SaveSetting(const char *section, const char *key, int value)
 {
 	SaveSetting(section, key, std::to_string(value));
@@ -4362,6 +4444,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			if (m_ui.eq_dir.empty())
 				break;
 			m_zone_view = std::make_unique<ZoneView>(m_ui.eq_dir, MakeRenderer());
+			m_zone_view->SetCameraSetup(&m_camera);
 			m_zone_view->SetVeliousTextures(m_config.velious_textures);
 			m_zone_view->SetLuclinModels(m_config.luclin_models);
 			m_zone_view->SetSpellFile(m_ui.spells);
@@ -4500,6 +4583,8 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			// MoveToZone_2: "LOADING, PLEASE WAIT...", then the zone lets us go (Departed).
 			m_zoning = true;
 			m_zone_view.reset();
+			m_loading.Reset();
+			m_loading_percent = -1;
 			m_weather.Kill(m_sound.get()); // StopWorldDisplay
 			AddZoneLog(EqString(12387, "LOADING, PLEASE WAIT..."), ZoneGrey);
 			break;
@@ -4529,8 +4614,10 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			m_zone.Close();
 			const LoginResult &result = m_session.Result();
 			if (!m_world.BeginZoning(result.world.address, m_config.world_port, result.session_name, result.world_key, character)) {
+				// ProcessGameLoop: WorldAuthenticate failing ("World not ready"), Discon.bmp.
 				m_zoning = false;
-				ShowMessage(m_strings.Get("SISATEXT_CONNECT_FAILED"), [this](bool) { EnterStart(); });
+				ShowLostConnection(false);
+				return;
 			}
 			break;
 		}
@@ -4810,12 +4897,53 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			m_logout_text.clear();
 			break;
 		case Type::Error:
-			ShowMessage(m_strings.Get("SISATEXT_LOSTCON") + "\n\n(" + event.text + ")", [this](bool) { EnterStart(); });
-			break;
+			// DoMainLoop's (and GetZoneInfoFromNetwork's) connection_connected going false, or its
+			// wait for the profile and our spawn running out.
+			Log("zone: " + event.text);
+			ShowLostConnection(event.value == 1);
+			return;
 		default:
 			break;
 		}
 	}
+}
+
+bool FrontEnd::ZoneLoading() const
+{
+	// Until the zone view's in; a zone that couldn't load leaves the black screen, the windows and
+	// the chat's word of it instead (and without an EQ folder there's never a view).
+	return m_screen == Screen::Zone && !m_ui.eq_dir.empty() && !(m_zone_view && m_zone_view->Loaded());
+}
+
+void FrontEnd::LoadingFrame(uint64_t now_ms)
+{
+	// CEverQuest_DoLoadScreenProgressBar as the loader gets on (ours: see README Custom changes).
+	if (!ZoneLoading()) {
+		m_loading_percent = -1;
+		return;
+	}
+	int percent = 0;
+	std::string what;
+	if (m_zone_view)
+		m_zone_view->LoadProgress(percent, what);
+	if (percent == m_loading_percent && what == m_loading_what)
+		return;
+	m_loading_percent = percent;
+	m_loading_what = what;
+	m_loading.SetProgress(percent, what, now_ms);
+}
+
+void FrontEnd::ShowLostConnection(bool not_responding)
+{
+	// CEverQuest_DisplayScreen: "Discon.bmp" is eqstr 12353, anything else ("Respond.bmp") 12354;
+	// Sleep(3000) after a disconnect, Sleep(2000) after a wait ran out. Then the game is over.
+	m_lost.shown = true;
+	m_lost.eqstr = not_responding ? 12354 : 12353;
+	m_lost.until_ms = m_now_ms + (not_responding ? 2000 : 3000);
+	Log(not_responding ? "the server is not responding" : "disconnected");
+	m_dialog.open = false;
+	m_zone.Close();
+	m_world.Close();
 }
 
 // RealRender_World's part of the weather: OP_Weather taken up, and the cloud's fade or the thunder
@@ -5015,6 +5143,24 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 	case KeyMap::ZoomIn:
 		m_keys.zoom_in = down;
 		break;
+	case KeyMap::ForwardCam:
+		m_keys.cam_raise = down;
+		break;
+	case KeyMap::BackCam:
+		m_keys.cam_lower = down;
+		break;
+	case KeyMap::RightCam:
+		m_keys.cam_right = down;
+		break;
+	case KeyMap::LeftCam:
+		m_keys.cam_left = down;
+		break;
+	case KeyMap::PitchUpCam:
+		m_keys.cam_up = down;
+		break;
+	case KeyMap::PitchDownCam:
+		m_keys.cam_down = down;
+		break;
 	case KeyMap::PitchUp:
 		// Down: Look down let go, and its speed back to nothing; up: this one's speed.
 		m_keys.pitch_up = down;
@@ -5038,9 +5184,9 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 			m_ui_hidden = !m_ui_hidden;
 		break;
 	case KeyMap::ToggleCam:
-		// CDisplay_ToggleView: first person and the chase camera.
-		if (down && in_zone && m_zone_view)
-			m_zone_view->CycleCamera();
+		// CDisplay_ToggleView: the next of the five views (CEverQuest_saveOptions leaving a user camera).
+		if (down && in_zone && m_zone_view && m_zone_view->ToggleView(m_zone.Profile().drunk, m_buffs.Total(87)))
+			SaveCameras();
 		else if (down && m_exploring && m_charselect_view)
 			m_charselect_view->ToggleCamera();
 		break;
@@ -5304,6 +5450,14 @@ void FrontEnd::CameraControls(uint64_t now_ms)
 		m_zone_view->ZoomBy(-2 * units);
 	if (m_keys.zoom_out)
 		m_zone_view->ZoomBy(2 * units);
+	// The camera keys: a unit a frame unit up or down, 12 round us, 8 of pitch.
+	float raise = (m_keys.cam_raise ? units : 0) - (m_keys.cam_lower ? units : 0);
+	float slide = (m_keys.cam_right ? 12 * units : 0) - (m_keys.cam_left ? 12 * units : 0);
+	float tilt = (m_keys.cam_up ? 8 * units : 0) - (m_keys.cam_down ? 8 * units : 0);
+	if (raise != 0 || slide != 0 || tilt != 0)
+		m_zone_view->CameraKeys(raise, slide, tilt);
+	// EQ_Character::DoPassageOfTime: Drunkness over 69 keeps us in first person.
+	m_zone_view->DrunkView(m_zone.Profile().drunk);
 	// Look up and down held: a speed that goes up by one a frame to 12, times the frame units, in
 	// EQ's 512ths of a turn (to 128 either way; our view's own limits are narrower).
 	constexpr float Degrees = 360.0f / 512;
@@ -5463,6 +5617,15 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			float dx = -0.6f * static_cast<float>(moved_x);
 			float dy = -0.25f * static_cast<float>(moved_y);
 			if (m_zone_view) {
+				ZoneView::CameraView view = m_zone_view->View();
+				if (turn && view != ZoneView::CameraView::FirstPerson && view != ZoneView::CameraView::Chase) {
+					// CEverQuest_procMouse in the overhead and user views: a user camera goes round us
+					// and in or out; the overhead one pitches, the mouse still turning us.
+					if (!m_zone_view->MouseLookCamera(static_cast<float>(moved_x), static_cast<float>(moved_y)) &&
+					    m_zone.Self().stance != 110)
+						m_zone_view->Turn(dx);
+					return;
+				}
 				if (!turn)
 					m_zone_view->Orbit(dx);
 				else if (m_zone.Self().stance != 110) // sitting, the mouse doesn't turn us
@@ -5641,12 +5804,11 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 		times.models = render_times.models;
 		times.submit = render_times.submit;
 	}
-	else {
+	else if (ZoneLoading())
+		m_loading.Draw(canvas, m_text); // EQ_LoadingS_draw, with nothing over it but the debug card
+	else
 		canvas.Fill({0, 0, width, height}, 0x000000);
-		std::string loading = "LOADING, PLEASE WAIT...";
-		TextSize size = m_text.Measure(loading, 20);
-		m_text.Draw(canvas, (width - size.w) / 2, height / 2 - size.h / 2, loading, 20, ZoneWhite);
-	}
+	bool loading = ZoneLoading();
 
 	Clock::time_point ui_start = Clock::now();
 	const TextStats text_before = m_text.stats;
@@ -5661,10 +5823,10 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 			m_text.Draw(c, width - size.w - 10, height - size.h - 8, help, FontSize::Small, ZoneGrey);
 		}});
 	m_chat.Layout(m_text);
-	if (!m_ui_hidden) // DrawWindows
+	if (!m_ui_hidden && !loading) // DrawWindows
 		m_windows.Pieces(m_text, now_ms, pieces);
-	pieces.push_back({AltTooltipsPiece, [this](Canvas &c) {
-		if (m_ui_hidden) // the windows' PostDraws, from DrawWindows
+	pieces.push_back({AltTooltipsPiece, [this, loading](Canvas &c) {
+		if (m_ui_hidden || loading) // the windows' PostDraws, from DrawWindows
 			return;
 		// CCastSpellWnd::DrawSpellButtonTooltips: Alt held shows each gem's tooltip, by its top right.
 		if (m_alt_down && m_windows.Shown("CastSpellWnd"))
@@ -5693,7 +5855,7 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 	}});
 	// The item or button on the cursor, and the cursor, over it all: here when the world fills the
 	// window and no dialog's over it (else Render draws them, after the dialog).
-	m_cursor_drawn = m_screen_fills_window && !m_dialog.open;
+	m_cursor_drawn = m_screen_fills_window && !m_dialog.open && !loading;
 	if (m_cursor_drawn)
 		pieces.push_back({CursorPiece, [this, now_ms](Canvas &c) {
 			if (!m_cursor_visible || m_mouse_grabbed || m_ui_hidden)

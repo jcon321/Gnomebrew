@@ -219,6 +219,10 @@ namespace render
 		m_objects.clear();
 		m_doors.clear();
 		m_lighting = lighting;
+		auto progress = [this](float fraction) {
+			if (m_load_progress)
+				m_load_progress(fraction);
+		};
 
 		std::string base = eq_dir + "/" + zone;
 		if (!m_zone_archive.Open(base + ".s3d")) {
@@ -259,15 +263,27 @@ namespace render
 		uint32_t constant = 0;
 		zone_wld.ConstantAmbient(constant);
 		m_constant_ambient = {((constant >> 16) & 0xff) / 256.0f, ((constant >> 8) & 0xff) / 256.0f, (constant & 0xff) / 256.0f};
-		for (int i = 0; i < static_cast<int>(zone_wld.Fragments().size()); ++i) {
-			if (zone_wld.Fragments()[i].type == 0x36 && zone_wld.ReadMesh(i, mesh))
+		progress(0.1f);
+		int fragments = static_cast<int>(zone_wld.Fragments().size()), meshes = 0, mesh_index = 0;
+		for (int i = 0; i < fragments; ++i)
+			meshes += zone_wld.Fragments()[i].type == 0x36 ? 1 : 0;
+		for (int i = 0; i < fragments; ++i) {
+			if (zone_wld.Fragments()[i].type != 0x36)
+				continue;
+			if (zone_wld.ReadMesh(i, mesh))
 				AddMesh(mesh, Transform{}, true, lights, lighting, m_meshes, m_collision, m_collision_exposure);
+			if (++mesh_index % 16 == 0)
+				progress(0.1f + 0.5f * mesh_index / meshes);
 		}
+		progress(0.6f);
 
 		if (have_objects && m_zone_archive.Read("objects.wld", data) && objects_wld.Load(std::move(data))) {
 			std::map<std::string, int> unknown;
 			std::map<int, float> radii; // each actor definition's bounding radius
+			size_t placed = 0, placements = objects_wld.Placements().size();
 			for (const auto &placement : objects_wld.Placements()) {
+				if (placed++ % 64 == 0)
+					progress(0.6f + 0.35f * placed / placements);
 				int actor = m_object_models.Find(placement.actor);
 				if (actor < 0) {
 					++unknown[placement.actor];
@@ -334,7 +350,9 @@ namespace render
 			m_vertices.vertices.insert(m_vertices.vertices.end(), mesh.vertices.begin(), mesh.vertices.end());
 			mesh.vertices = {};
 		}
+		progress(0.95f);
 		BuildGrid();
+		progress(1.0f);
 		return true;
 	}
 

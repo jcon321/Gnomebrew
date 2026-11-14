@@ -20,7 +20,9 @@
 
 namespace
 {
-	constexpr uint64_t HandshakeTimeoutMs = 30000;
+	// CEverQuest::GetZoneInfoFromNetwork: 180 s for the profile and our spawn, then Respond.bmp
+	// ("TIMED OUT WAITING FOR MY EQPlayer"). DoMainLoop's waits after that have no time limit.
+	constexpr uint64_t ZoneInfoTimeoutMs = 180000;
 	constexpr uint64_t CampMs = 30000;          // the client logs out after 30s; the server's timer goes stale at 35s
 	constexpr uint16_t AppearanceSpawnId = 0x10; // SpawnAppearance type that tells the client its spawn id
 	constexpr uint16_t AppearanceAnimation = 14; // SpawnAppearance: standing, sitting, lying...
@@ -414,7 +416,7 @@ void ZoneSession::Log(const std::string &line)
 		m_log(line);
 }
 
-void ZoneSession::Fail(std::vector<Event> &events, const std::string &text)
+void ZoneSession::Fail(std::vector<Event> &events, const std::string &text, bool not_responding)
 {
 	Log("[zone] " + text);
 	m_state = State::Failed;
@@ -423,6 +425,7 @@ void ZoneSession::Fail(std::vector<Event> &events, const std::string &text)
 	Event e;
 	e.type = Event::Type::Error;
 	e.text = text;
+	e.value = not_responding ? 1 : 0;
 	events.push_back(e);
 }
 
@@ -4079,8 +4082,8 @@ void ZoneSession::Pump(int timeout_ms, std::vector<Event> &events)
 		e.value = -1;
 		events.push_back(e);
 	}
-	if (m_state == State::Entering && NowMs() - m_started_ms > HandshakeTimeoutMs)
-		Fail(events, "timed out entering the zone");
+	if (m_state == State::Entering && !(m_have_profile && m_have_zone_entry) && NowMs() - m_started_ms > ZoneInfoTimeoutMs)
+		Fail(events, "timed out waiting for the profile and our spawn", true);
 	// The zone gives up on world after a while and answers "not ready"; this is in case it never answers.
 	if (m_state == State::ZoneRequested && NowMs() - m_zone_state_ms > 60000) {
 		m_state = State::InZone;

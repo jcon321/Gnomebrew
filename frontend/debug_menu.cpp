@@ -428,6 +428,8 @@ void DebugMenu::DrawCard(Canvas &canvas, TextRenderer &text, const ZoneSession &
 			row(Format("First person   pitch %.0f", stats.camera_pitch));
 		else if (stats.view == ZoneView::CameraView::Overhead)
 			row("Overhead");
+		else if (stats.view == ZoneView::CameraView::User1 || stats.view == ZoneView::CameraView::User2)
+			row(Format("User camera %d", stats.view == ZoneView::CameraView::User1 ? 1 : 2));
 		else
 			row(Format("Chase %.0f units   pitch %.0f", stats.camera_distance, stats.camera_pitch));
 	}

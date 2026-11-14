@@ -11,6 +11,9 @@
 namespace
 {
 	constexpr uint64_t ResponseTimeoutMs = 15000;
+	// The waits for the zone's address: initializeNetworkGame's 180 s after Enter World, and
+	// ProcessGameLoop's 120 s when coming back zoning; both end with Respond.bmp.
+	constexpr uint64_t EnterWorldTimeoutMs = 180000, ZoningTimeoutMs = 120000;
 
 	uint64_t NowMs()
 	{
@@ -125,13 +128,15 @@ void WorldSession::Log(const std::string &line)
 		m_log(line);
 }
 
-void WorldSession::Fail(std::vector<Event> &events, const std::string &text)
+void WorldSession::Fail(std::vector<Event> &events, const std::string &text, Event::Reason reason)
 {
 	Log("[world] " + text);
 	m_state = State::Failed;
 	if (m_session)
 		m_session->Close();
-	events.push_back({Event::Type::Error, text});
+	Event e{Event::Type::Error, text};
+	e.reason = reason;
+	events.push_back(e);
 }
 
 bool WorldSession::Send(uint16_t opcode, const void *body, size_t size, const std::string &what)
@@ -323,7 +328,7 @@ void WorldSession::Pump(int timeout_ms, std::vector<Event> &events)
 
 		switch (packet.opcode) {
 		case WorldOp::BadLogin:
-			Fail(events, "invalid login");
+			Fail(events, "invalid login", Event::Reason::Refused);
 			return;
 		case WorldOp::ApproveWorld:
 			m_approved = true;
@@ -418,9 +423,15 @@ void WorldSession::Pump(int timeout_ms, std::vector<Event> &events)
 
 	bool waiting = m_state == State::Authenticating || m_state == State::EnteringWorld || m_state == State::ApprovingName ||
 	               m_state == State::Creating;
-	if (waiting && NowMs() - m_wait_started_ms > ResponseTimeoutMs)
-		Fail(events, m_state == State::EnteringWorld ? "timed out waiting for the zone server address"
-		                                             : "timed out waiting for the world server");
+	uint64_t limit = m_state != State::EnteringWorld ? ResponseTimeoutMs : m_zoning ? ZoningTimeoutMs : EnterWorldTimeoutMs;
+	if (waiting && NowMs() - m_wait_started_ms > limit) {
+		if (m_state == State::EnteringWorld)
+			Fail(events, "timed out waiting for the zone server address", Event::Reason::NotResponding);
+		else if (m_state == State::Authenticating)
+			Fail(events, "timed out waiting for the world server"); // WorldAuthenticate giving up: Discon.bmp
+		else // the name's approval or the new character: ours, eqgame waits
+			Fail(events, "timed out waiting for the world server", Event::Reason::Refused);
+	}
 }
 
 bool RunWorld(const LoginResult &login, const WorldOptions &options, ZoneHandoff &handoff)
