@@ -65,8 +65,8 @@ public:
 	};
 
 	void Attach(WindowManager &windows, ZoneSession &zone, GameWindowState &state, const GameValues &values, Host host);
-	// .\BZR_<name>_<server>.ini and bzrlog_<server>_<name>.txt (InitializeBazaarSearchFilePath,
-	// bazaarlog), once the character's known.
+	// BZR_<name>_<server>.ini and bzrlog_<server>_<name>.txt (InitializeBazaarSearchFilePath,
+	// bazaarlog: eqgame's in its own folder; ours next to the exe), once the character's known.
 	void SetFiles(const std::string &ini_path, const std::string &log_path);
 
 	bool Active() const { return m_active; }

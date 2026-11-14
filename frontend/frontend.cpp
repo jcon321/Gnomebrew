@@ -2241,6 +2241,7 @@ void FrontEnd::BuildZoneWindows()
 		// CEverQuest::CreateIniFilenames: the character's own ini is the layout's name without UI_.
 		m_hot_buttons_path = m_config.ui_dir + "/" + suffix;
 		m_log_path = m_config.ui_dir + "/eqlog_" + name + "_" + m_config.login_host.substr(0, 7) + ".txt";
+		// Next to our exe (ui_dir), not in the EQ folder, under eqgame's names.
 		// InitializeBazaarSearchFilePath: .\BZR_<name>_<server>.ini, the server the login host's
 		// first 8 characters (or, for an eqworld host, 3 from its ninth); bazaarlog:
 		// bzrlog_<3 from the ninth, cut at a '.'>_<name>.txt.

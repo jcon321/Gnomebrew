@@ -2680,7 +2680,8 @@ details and the nearest spawns at the top left and the radar at the top right.
     /trader (@004ff4d4) or Toggle bazaar window, only in the Bazaar. Its 80 slots (`BZR_BazaarSlot0..79`,
     7000..7079) show every item in the Trader's Satchels (item 17899) in the general slots, NO
     DROP ones only under the FV rules. Prices are kept by item name under `[ItemToSell]` in
-    `.\BZR_<name>_<server>.ini` (the login host's first 8 characters; "*NULL*" missing, written 0),
+    `BZR_<name>_<server>.ini` (the login host's first 8 characters; "*NULL*" missing, written 0;
+    eqgame's in its own folder, ours next to the exe with my-client.ini and the UI layouts),
     set from the four money buttons through the quantity window (up to 1000000 platinum, 100 of the
     rest; at most 1000000000 copper). Start sends `OP_Trader` 1 (Trader_Struct, 644 bytes: u16 1,
     u16, u32 items[80], u32 costs[80]) for every priced item, only under the trader stalls
