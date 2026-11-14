@@ -53,6 +53,9 @@ namespace
 			"  --group-invite NAME   with --zone, 15 s after coming in and NAME is here, invite NAME to a group\n"
 			"  --group-accept        with --zone, accept any group invitation 2 s after it comes (OP_GroupFollow);\n"
 			"                        every group packet prints\n"
+			"  --duel NAME           with --zone, 15 s after coming in and NAME is here, challenge NAME to a duel\n"
+			"  --duel-answer HOW     with --zone, answer any duel challenge 2 s after it comes: accept or decline;\n"
+			"                        every duel packet prints\n"
 			"  --raid-invite NAME    with --zone, 15 s after coming in and NAME is here, invite NAME to a raid\n"
 			"  --raid-accept         with --zone, accept any raid invitation 2 s after it comes; every raid\n"
 			"                        packet prints\n"
@@ -161,6 +164,8 @@ namespace
 	bool g_group_accept = false;      // --group-accept
 	std::string g_raid_invite;        // --raid-invite: whom to invite
 	bool g_raid_accept = false;       // --raid-accept
+	std::string g_duel;               // --duel: whom to challenge
+	std::string g_duel_answer;        // --duel-answer: accept or decline
 	uint64_t g_skill_at = 0;          // when it's next ready
 
 	// --attack: the nearest NPC whose name starts with g_attack, targeted, auto attack on.
@@ -314,6 +319,9 @@ namespace
 		std::string inviter;
 		uint64_t raid_invite_at = 0;  // when --raid-invite goes
 		uint64_t raid_accept_at = 0;  // when --raid-accept answers
+		uint64_t duel_at = 0;         // when --duel goes
+		uint64_t duel_answer_at = 0;  // when --duel-answer answers
+		uint16_t challenger = 0;
 		std::string raid_inviter;
 		size_t &next_aa = g_next_step;
 		uint64_t aa_at = 0; // when the next --aa step goes
@@ -347,6 +355,8 @@ namespace
 						invite_at = NowMs() + 15000;
 					if (!g_raid_invite.empty())
 						raid_invite_at = NowMs() + 15000;
+					if (!g_duel.empty())
+						duel_at = NowMs() + 15000;
 					if (g_click_link >= 0) {
 						printf("[zone] clicking link %d\n", g_click_link);
 						zone.ClickItemLink(static_cast<uint16_t>(g_click_link), "link");
@@ -512,6 +522,16 @@ namespace
 						follow_at = NowMs() + 2000;
 					}
 					break;
+				case ZoneSession::Event::Type::DuelRequested:
+					printf("[duel] OP_RequestDuel from %u\n", event.id);
+					if (!g_duel_answer.empty()) {
+						challenger = event.id;
+						duel_answer_at = NowMs() + 2000;
+					}
+					break;
+				case ZoneSession::Event::Type::DuelResponded:
+					printf("[duel] OP_DuelResponse from %u: %d\n", event.id, event.value);
+					break;
 				case ZoneSession::Event::Type::GroupInviteCancelled:
 					printf("[group] invitation cancelled: %s / %s, why %d\n", event.group.names[0].c_str(), event.group.second.c_str(),
 						event.group.param);
@@ -616,6 +636,25 @@ namespace
 				raid_accept_at = 0;
 				printf("[raid] accepting %s's invitation\n", raid_inviter.c_str());
 				zone.RaidCommand(4, raid_inviter, zone.Profile().name, 0); // SendInviteResponse
+			}
+			if (duel_at && NowMs() >= duel_at) {
+				duel_at = NowMs() + 1000;
+				for (const auto &[id, spawn] : zone.Spawns())
+					if (spawn.name == g_duel) {
+						duel_at = 0;
+						printf("[duel] challenging %s (%u)\n", g_duel.c_str(), id);
+						zone.RequestDuel(id, false);
+						break;
+					}
+			}
+			if (duel_answer_at && NowMs() >= duel_answer_at) {
+				duel_answer_at = 0;
+				bool accept = g_duel_answer == "accept";
+				printf("[duel] %s %u's challenge\n", accept ? "accepting" : "declining", challenger);
+				if (accept)
+					zone.RequestDuel(challenger, true);
+				else
+					zone.DuelResponse(challenger, 0);
 			}
 			if (follow_at && NowMs() >= follow_at) {
 				follow_at = 0;
@@ -788,6 +827,10 @@ int main(int argc, char **argv)
 			g_group_invite = next();
 		else if (arg == "--group-accept")
 			g_group_accept = true;
+		else if (arg == "--duel")
+			g_duel = next();
+		else if (arg == "--duel-answer")
+			g_duel_answer = next();
 		else if (arg == "--raid-invite")
 			g_raid_invite = next();
 		else if (arg == "--raid-accept")

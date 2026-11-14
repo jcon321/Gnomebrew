@@ -355,7 +355,7 @@ eqgame's `OP_MoveItem`.
   /auction, /ooc, /emote (`:`, /me), /hail, /target, /assist, /consider, /location, /time,
   /played, /motd, /afk, /anonymous, /shownames, /sit, /stand, /book, /cast, /camp, /clearchat,
   /random, /lootnodrop, /fastdrop, /autosplit, /roleplay, /targetgroupbuff (/tgb), /split, /yell,
-  /consent, /loot, /ttell, /charinfo, /movelog, /stopsong, /shield, /quit (/exit), /log, /keys, /dismount,
+  /consent, /duel, /decline, /loot, /ttell, /charinfo, /movelog, /stopsong, /shield, /quit (/exit), /log, /keys, /dismount,
   /adriver, /sdriver, /attack, /combatmusic, /doability, the
   guild commands (see Guilds under In the zone),
   the raid commands (see Raids), /filter, /serverfilter and the socials (/smile, /wave and the
@@ -606,6 +606,11 @@ build/eqclient -u USER -p PASS [options]
                         (OP_RaidInvite 3)
   --raid-accept         with --zone: accept any raid invitation 2 s after it comes (OP_RaidInvite 4);
                         every raid packet prints
+  --duel NAME           with --zone: 15 s in, once NAME is in the zone, challenge them to a duel
+                        (OP_RequestDuel)
+  --duel-answer HOW     with --zone: answer any duel challenge 2 s after it comes, accept
+                        (OP_RequestDuel, OP_DuelAccept) or decline (OP_DuelResponse 0); every duel
+                        packet prints
   --aa TEXT             with --zone: send OP_AAAction TEXT ("buy 12", "on 50", "off", "activate 12 0")
                         and print our AA ranks, points and timers as they change. Repeatable, with
                         --say-more: each 3 s after the one before, in order
@@ -629,7 +634,7 @@ build/eqclient -u USER -p PASS [options]
 ## Preview tool (Linux)
 
 ```
-build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|train|ground|commands|group|raid|guild|skills|aa]]
+build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|train|ground|commands|group|duel|raid|guild|skills|aa]]
 build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez|cameras]]
 ```
 
@@ -648,7 +653,11 @@ print the chat, and snapshot the compass as it turns; or `group`, with Claudebot
 --group-accept`, to stand by them, follow their invitation in the group window, click their gauge,
 type the /who lines, /follow them from 70 away (printing the gap each second) until Move back ends
 it, /disband, then click them, /invite them, select them with Target party member 1 and /disband them,
-printing the group and the window's buttons at each step); or `raid`, with Claudebot in the zone
+printing the group and the window's buttons at each step); or `duel`, with Claudebot in the zone
+through `eqclient -u clauderobot -p testpass1 --char Claudebot --zone 110 --duel Replaycaster
+--duel-answer accept`, to stand by them, turn their challenge down with /decline, type /decline
+and /duel's refusals, /duel them (taken up), /duel and /decline mid-duel, auto attack them for
+6 s and wait for them to camp out (the despawn's win), printing the chat and the duel's state; or `raid`, with Claudebot in the zone
 through `eqclient -u clauderobot -p testpass1 --char Claudebot --zone 200 --raid-invite Replaycaster
 --raid-accept`, to type the raid commands out of a raid, accept their invitation with /raidaccept,
 /raidwindow, take it with the window's Accept, type them as a member, leave with Disband, then
@@ -2003,6 +2012,23 @@ details and the nearest spawns at the top left and the radar at the top right.
   `OP_ConsentResponse` (0x40d5, {grantee[64], owner[64], u8 permission, zone[32]}):
   `msg_consent_verify` (@004e3314) says to the owner 1427 or 1428 with the grantee, to anyone else
   2080 or 2103 with the owner (not when the owner's ignored).
+- **Duels** (`frontend/duel.*`; see `frontend/duel.h` for each message): eqgame keeps three
+  globals, whom we challenged or whose challenge we took up (`DAT_00798674`), who challenged us
+  (`DAT_00798676`) and the duel being on (`DAT_00798678`), cleared by `CEverQuest::CEverQuest`,
+  `SetDefaultGameValues`, `CEverQuest_EnterZone` and `EQ_PC::ResetPlayerStats`. /duel (@004fca55)
+  sends `OP_RequestDuel` (0x40cf, {u16 target, u16 us}), and when it takes up the target's
+  challenge `OP_DuelAccept` (0x415d, the same) after it. `msg_duel` (@004e31b7) tells a
+  challenge from the zone, or answers it unasked as `OP_DuelResponse` (0x40d0, {u16 to, u16 us, u8
+  type, u8}: 0 declined, an ignored challenger turned down unseen; 1 dueling another; 2
+  considering another's); /decline (@004fc966) sends 0. The zone only relays these between the two (EQMacEmu's
+  `Handle_OP_RequestDuel`, `Handle_OP_DuelResponse`) and starts the duel on `OP_DuelAccept`; it
+  hands that back too, which eqgame has no case for. `OP_DuelResponse` from the one we challenged
+  (HandleWorldMessage's 0x40d0) says 1383..1385 and ends our challenge. The one we challenged
+  despawning (0x4029) or dying (`ReportDeath`) ends it: 1409 or 12101, or our win (1408 for one who
+  fled, 12100 for our killing blow) and 0x415e ({u16 loser, u16 us}; no name in `patch_Mac.conf`,
+  ours `OP_DuelWon`; EQMacEmu has no handler). In a duel `AllowedToAttack` lets a player (or a
+  player's pet) and us fight when either is the opponent. Checked live with Claudebot
+  (`eqclient --duel`, `--duel-answer`; `frontend_preview ... duel`).
 - **Friends and ignore** (`frontend/friends.*`): see `frontend/friends.h` for /friends (@004f5a37),
   /ignore (@004fc7d6), `CEverQuest_BeingIgnored`, `CFriendsWnd` and the `[Friends] Friend0..29`,
   `[Ignored] Ignored0..29` keys (`*NULL*` empty) of `<char>_<server>.ini`
@@ -2393,7 +2419,7 @@ details and the nearest spawns at the top left and the radar at the top right.
 - **CanIHitTarget** (`EQPlayer::CanIHitTarget` @00509e09): not with divine aura (SPA 40: 12695), at
   ourselves (12696) or nobody (12697), `AllowedToAttack` (@0050996a: never at or as races 72, 141,
   73, nor as 114; an NPC or an NPC's pet yes; a player or a player's pet only both PvP, within 4
-  levels, both 6 and up), in sight (`CastRay`: else eqstr 123), from foot to foot (3D) within
+  levels, both 6 and up, or our duel's opponent), in sight (`CastRay`: else eqstr 123), from foot to foot (3D) within
   `get_melee_range` plus the weapon's extra (else 124 in color `0x12f`), and the bearing to it
   within 80 of our heading (256 between players, with eqgame's wrap at north; else 108).
   `get_melee_range` (@004f3898): both models' `t3dGetScaledActorBoundingRadius` (the skeleton's

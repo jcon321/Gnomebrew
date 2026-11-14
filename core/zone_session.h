@@ -508,7 +508,7 @@ public:
 			ZoneInfo,     // Info() is set (OP_NewZone)
 			InZone,       // handshake complete
 			SpawnAdded,   // id
-			SpawnRemoved, // id
+			SpawnRemoved, // id; text: its name (it's out of Spawns() already)
 			SpawnsMoved,
 			SpawnChanged, // id: stance, corpse...
 			Chat,         // chat
@@ -539,6 +539,10 @@ public:
 			// with the new UI, CMerchantWnd::Deactivate)
 			MerchantEnded,
 			Consented,    // OP_ConsentResponse: text the grantee, text2 the owner, value the permission
+			// Duels: id the challenger (OP_RequestDuel: msg_duel), or who answered and value how
+			// (OP_DuelResponse: 0 declined, 1 dueling another, 2 considering another's).
+			DuelRequested,
+			DuelResponded,
 			// Death's questions and answers (data the packet): OP_RezzRequest asking to resurrect us
 			// (msg_resurrect), OP_RezzComplete (msg_resurrect_complete), OP_Sacrifice asking (id the
 			// caster, value the target: msg_sacrifice), OP_Translocate asking (complete 0) or moving
@@ -772,6 +776,11 @@ public:
 	void Shield(uint16_t id);               // OP_Shielding (/shield)
 	void Keys();                            // OP_Key (/keys)
 	void Consent(const std::string &name);  // OP_Consent
+	// Duels: OP_RequestDuel {target, us} (and OP_DuelAccept after it when `accept`: /duel taking up
+	// a challenge), OP_DuelResponse {to, us, type} and OP_DuelWon {loser, us}.
+	void RequestDuel(uint16_t target, bool accept);
+	void DuelResponse(uint16_t to, uint8_t type);
+	void DuelWon(uint16_t loser);
 	// EQPlayer::IDied of another spawn: Type 2 whoever it was, still, and named as its corpse.
 	void BecomeCorpse(uint16_t id);
 	// CEverQuest::ReportDeath's HpCurrent -11 for a group member who died.

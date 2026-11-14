@@ -22,7 +22,7 @@ namespace
 		UserColor, GuildInvite, GuildRemove, GuildDelete, GuildStatus, GuildLeader, GuildWar, GuildPeace, GuildMotd,
 		MakeRaidLeader, RaidInvite, RaidDecline, RaidAccept, RaidDisband, SetLootType, AddRaidLooter, RemoveRaidLooter,
 		RaidSay, RaidWindow, Channel, Loot, TargetTell, CharInfo, MoveLog, StopSong, Shield, Quit, Log, Keys, Dismount,
-		AlternateAdv, Pet, SoundDriver,
+		AlternateAdv, Pet, SoundDriver, Duel, Decline,
 	};
 
 	struct CommandEntry
@@ -37,7 +37,7 @@ namespace
 		{"/who", 0, Command::Who}, {"/consider", 0, Command::Consider}, {"/feedback", 0, Command::None},
 		{"/consent", 0, Command::Consent}, {"/played", 0, Command::Played}, {"/ignore", 0, Command::Ignore},
 		{"/anonymous", 0, Command::Anonymous}, {"/afk", 0, Command::Afk}, {"/filter", 0, Command::Filter},
-		{"/assist", 0, Command::Assist}, {"/duel", 0, Command::None}, {"/decline", 0, Command::None},
+		{"/assist", 0, Command::Assist}, {"/duel", 0, Command::Duel}, {"/decline", 0, Command::Decline},
 		{"/split", 0, Command::Split}, {"/autosplit", 0, Command::AutoSplit}, {"/quit", 0, Command::Quit},
 		{"/stopsong", 0, Command::StopSong}, {"/friends", 0, Command::Friends}, {"/shield", 0, Command::Shield},
 		{"/shownames", 0, Command::ShowNames}, {"/shownpcnames", 10, Command::None}, {"/emote", 0, Command::Emote},
@@ -1508,6 +1508,12 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 		break;
 	case Command::StopSong:
 		m_spell_cast.StopSong(); // /stopsong (@004f5c74)
+		break;
+	case Command::Duel:
+		m_duel.DuelCommand(m_game_values.target); // /duel (@004fca55)
+		break;
+	case Command::Decline:
+		m_duel.DeclineCommand(); // /decline (@004fc966)
 		break;
 	case Command::Consent:
 		// /consent (@004fb39e): the rest of the line as the name, if there is any.

@@ -284,6 +284,17 @@ namespace ZoneOp
 	constexpr uint16_t MoveLog = 0x41e4;
 	// Shielding_Struct {u16 spawn id}: a warrior's /shield of them.
 	constexpr uint16_t Shielding = 0x424b;
+	// Duels (frontend/duel.h). DuelChallenge_Struct {u16 target, u16 challenger}: /duel's challenge
+	// (and its acceptance) both ways, msg_duel's from the zone; the zone hands it on to the other.
+	constexpr uint16_t RequestDuel = 0x40cf;
+	// DuelResponse_Struct {u16 recipient, u16 sender, u8 type, u8}: 0 declined, 1 already dueling,
+	// 2 considering another's challenge; both ways.
+	constexpr uint16_t DuelResponse = 0x40d0;
+	// DuelChallenge_Struct: /duel accepting a challenge, after OP_RequestDuel (the zone starts the duel).
+	constexpr uint16_t DuelAccept = 0x415d;
+	// {u16 loser, u16 us}: we won (ReportDeath, or the other despawned mid-duel: HandleWorldMessage's
+	// 0x4029). No name in patch_Mac.conf; EQMacEmu has no handler.
+	constexpr uint16_t DuelWon = 0x415e;
 	// The boats (frontend/vehicle.h). DoPassageOfTime, once a second: the name of the boat we stand on
 	// (strlen + 4 bytes) as we get on, and no body once we've been off one for two seconds.
 	constexpr uint16_t BoardBoat = 0x41bb;
@@ -571,6 +582,10 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::CorpsePosition, "OP_CorpsePosition"},
 	{ZoneOp::MoveLog, "OP_MoveLog"},
 	{ZoneOp::Shielding, "OP_Shielding"},
+	{ZoneOp::RequestDuel, "OP_RequestDuel"},
+	{ZoneOp::DuelResponse, "OP_DuelResponse"},
+	{ZoneOp::DuelAccept, "OP_DuelAccept"},
+	{ZoneOp::DuelWon, "OP_DuelWon"},
 	{ZoneOp::BoardBoat, "OP_BoardBoat"},
 	{ZoneOp::LeaveBoat, "OP_LeaveBoat"},
 	{ZoneOp::ControlBoat, "OP_ControlBoat"},

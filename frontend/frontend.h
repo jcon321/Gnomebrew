@@ -45,6 +45,7 @@
 #include "raid_window.h"
 #include "pet_window.h"
 #include "friends.h"
+#include "duel.h"
 #include "aa_window.h"
 #include "guild.h"
 #include "trade_window.h"
@@ -176,6 +177,7 @@ public:
 	int LootNoDrop() const { return m_config.loot_no_drop; }               // /lootnodrop, to remember
 	int FastDrop() const { return m_config.fast_drop; }                    // /fastdrop, to remember
 	const ZoneSession &Zone() const { return m_zone; }
+	const Duel &DuelState() const { return m_duel; }
 	ZoneSession &ZoneForTests() { return m_zone; } // the preview's injected packets
 	const LoadingScreen &Loading() const { return m_loading; }
 	bool LostConnectionShown() const { return m_lost.shown; }
@@ -750,6 +752,7 @@ private:
 	RaidWindow m_raid_window; // CRaidWnd and CRaidOptionsWnd
 	PetWindow m_pet_window;   // CPetInfoWnd, /pet
 	Friends m_friends;        // CFriendsWnd, /friends, /ignore, __FriendsList and __IgnoreList
+	Duel m_duel;              // /duel, /decline, msg_duel
 	AAWindow m_aa_window;     // CAAWnd
 	bool RaidAllowed() const;  // the raid's: Planes of Power (Expansions & 8), or a test server
 	Guild m_guild;

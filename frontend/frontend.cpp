@@ -2300,6 +2300,13 @@ void FrontEnd::BuildZoneWindows()
 		m_chat.Open(text);
 	};
 	m_friends.Attach(m_windows, std::move(friends_host));
+	Duel::Host duel_host;
+	duel_host.text = [this](uint32_t id, const std::vector<std::string> &args, const std::string &fallback) {
+		return FormatEqString(m_ui.eqstr, id, fallback, args);
+	};
+	duel_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
+	duel_host.ignored = [this](const std::string &name) { return m_friends.BeingIgnored(name); };
+	m_duel.Attach(m_zone, std::move(duel_host)); // CEverQuest::CEverQuest, SetDefaultGameValues
 	m_friends.Load(IniFile{});
 	if (!m_hot_buttons_path.empty()) {
 		IniFile custom;
@@ -3628,6 +3635,7 @@ void FrontEnd::UpdateDeath(uint64_t now_ms)
 			m_group.DropInvitation();
 		m_raid.Died();
 		m_loot.Deactivate();
+		m_duel.Reset(); // EQ_PC::ResetPlayerStats
 		if (m_zone.RequestZoneChange(m_zone.Profile().bind_zone, 10))
 			m_death_ms = UINT64_MAX;
 		if (m_zone_view) {
@@ -3644,9 +3652,11 @@ void FrontEnd::UpdateDeath(uint64_t now_ms)
 
 void FrontEnd::ReportDeath(const ZoneSession::Event &event)
 {
-	// CEverQuest::ReportDeath: whoever it was with goes (the trade, the merchant, the bank),
-	// our target with auto attack, then the killing blow and the death are told.
+	// CEverQuest::ReportDeath: the duel with them is over, whoever it was with goes (the trade,
+	// the merchant, the bank), our target with auto attack, then the killing blow and the death
+	// are told.
 	uint16_t victim = event.cast.target;
+	m_duel.Died(victim, event.cast.caster, event.text);
 	if (m_trade.Active() && m_trade.Target() == victim)
 		m_trade.Deactivate();
 	if (victim == m_merchant.Merchant())
@@ -4306,8 +4316,9 @@ void FrontEnd::SpellDamaged(const ZoneCast &cast)
 bool FrontEnd::AllowedToAttack(const ZoneSpawn &target) const
 {
 	// Never at (or as) these races; an NPC, or a pet of one; a player (or a player's pet) only in PvP:
-	// both PvP, within 4 levels, both level 6 and up. (Duels, the server's PvP types 2 and 4, and
-	// being in different water aren't ours yet.)
+	// both PvP, within 4 levels, both level 6 and up; or in our duel (DAT_00798678 with
+	// DAT_00798674 either side). (The server's PvP types 2 and 4, and being in different water
+	// aren't ours yet.)
 	const ZoneSpawn &me = m_zone.Self();
 	auto never = [](uint16_t race) { return race == 72 || race == 141 || race == 73; };
 	if (never(target.race) || never(me.race) || me.race == 114)
@@ -4321,6 +4332,8 @@ bool FrontEnd::AllowedToAttack(const ZoneSpawn &target) const
 			other = &me;
 	}
 	if (other->npc == 1)
+		return true;
+	if (m_duel.Dueling() && (m_duel.Opponent() == other->id || m_duel.Opponent() == m_zone.MySpawnId()))
 		return true;
 	int my_level = m_zone.Profile().level, level = other->level;
 	return other->pvp != 0 && me.pvp != 0 && std::abs(my_level - level) <= 4 && my_level >= 6 && level >= 6;
@@ -4435,6 +4448,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			m_hidden_corpses.clear();
 			m_cycle_index = -1;    // Zeal's CycleTarget::on_zone
 			m_toggle_target = 0; // CEverQuest_EnterZone
+			m_duel.Reset();      // CEverQuest_EnterZone
 			if (!m_windows_built)
 				BuildZoneWindows();
 			m_buffs.Reset(m_now_ms); // the profile's, which came first
@@ -4545,6 +4559,12 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			break;
 		case Type::GMKilled:
 			StruckDown(event.text);
+			break;
+		case Type::DuelRequested:
+			m_duel.Requested(event.id); // msg_duel
+			break;
+		case Type::DuelResponded:
+			m_duel.Responded(event.id, event.value); // HandleWorldMessage's 0x40d0
 			break;
 		case Type::Consented: {
 			// msg_consent_verify (@004e3314): to us, given or denied the grantee; else, to them, the
@@ -4855,6 +4875,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			break;
 		}
 		case Type::SpawnRemoved:
+			m_duel.Despawned(event.id, event.text); // HandleWorldMessage's 0x4029: the duel's end
 			m_mounts.SpawnRemoved(event.id); // ~EQPlayer's Dismount2
 			m_hidden_corpses.erase(event.id);
 			if (event.id == m_game_values.target) {

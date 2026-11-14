@@ -399,6 +399,78 @@ namespace
 		return 0;
 	}
 
+	// Live, as the account's first character (Replaycaster), with Claudebot through eqclient --duel
+	// Replaycaster --duel-answer accept --zone 75: their challenge (1426) turned down with /decline,
+	// /decline and /duel's refusals (no challenge, no target), our /duel of them taken up
+	// (1424), /duel and /decline mid-duel, auto attack on them for 6 s, then their camping out
+	// (OP_DeleteSpawn: 1408 and OP_DuelWon).
+	int DuelTest(FrontEnd &frontend, Harness &h)
+	{
+		const ZoneSession &zone = frontend.Zone();
+		h.Key(InputEvent::Key::F11);
+		size_t chat_seen = frontend.Chat().Lines().size();
+		auto chat = [&] {
+			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
+				printf("[preview] chat: %s\n", frontend.Chat().Lines()[chat_seen].text.c_str());
+		};
+		auto type = [&](const std::string &line) {
+			printf("[preview] > %s\n", line.c_str());
+			h.Key(InputEvent::Key::Enter);
+			h.Type(line);
+			h.Key(InputEvent::Key::Enter);
+			h.RunUntil([] { return false; }, 700);
+			chat();
+		};
+		auto state = [&](const char *when) {
+			printf("[preview] %s: dueling %d, opponent %u, challenger %u\n", when, frontend.DuelState().Dueling() ? 1 : 0,
+				frontend.DuelState().Opponent(), frontend.DuelState().Challenger());
+		};
+		auto bot = [&]() -> const ZoneSpawn * {
+			for (const auto &[id, spawn] : zone.Spawns())
+				if (spawn.name == "Claudebot")
+					return &spawn;
+			return nullptr;
+		};
+		printf("[preview] waiting for Claudebot\n");
+		h.RunUntil([&] { return bot() != nullptr; }, 60000);
+		if (const ZoneSpawn *b = bot()) {
+			frontend.ZoneScene()->SetPlayerPosition(b->x, b->y - 8, b->z, 0);
+			h.RunUntil([] { return false; }, 1500);
+		}
+		printf("[preview] waiting for a challenge\n");
+		h.RunUntil([&] { return frontend.DuelState().Challenger() != 0; }, 60000);
+		chat();
+		state("challenged");
+		type("/decline");
+		state("declined");
+		type("/decline");
+		type("/target nobody_here");
+		type("/duel");
+		type("/target Claudebot");
+		type("/duel");
+		h.RunUntil([&] { return frontend.DuelState().Dueling(); }, 10000);
+		chat();
+		state("accepted");
+		type("/duel");
+		type("/decline");
+		if (const ZoneSpawn *b = bot())
+			frontend.ZoneScene()->SetPlayerPosition(b->x, b->y - 8, b->z, 0);
+		type("/attack on");
+		h.RunUntil([] { return false; }, 6000);
+		chat();
+		type("/attack off");
+		printf("[preview] waiting for Claudebot to go\n");
+		h.RunUntil([&] { return bot() == nullptr; }, 120000);
+		h.RunUntil([] { return false; }, 500);
+		chat();
+		state("gone");
+		type("/camp");
+		h.RunUntil([&] { return zone.GetState() != ZoneSession::State::InZone && zone.GetState() != ZoneSession::State::Camping; },
+			60000);
+		printf("[preview] camped\n");
+		return 0;
+	}
+
 	// Live, as the account's first character (Replaycaster), with a second player (Claudebot through
 	// eqclient --group-invite Replaycaster --group-accept):
 	// their invitation followed through the group window, the member's gauge clicked, /disband to
@@ -2806,6 +2878,7 @@ int main(int argc, char **argv)
 	bool commands = argc == 7 && std::string(argv[6]) == "commands";
 	bool passage = argc == 7 && std::string(argv[6]) == "passage";
 	bool group_test = argc == 7 && std::string(argv[6]) == "group";
+	bool duel_test = argc == 7 && std::string(argv[6]) == "duel";
 	// mounts: a replay's horses with the old models; mountsluclin with the human Luclin models (no
 	// horse models: UseLuclinElementals off); mountshorse with both.
 	bool mounts_test = argc == 7 && std::string(argv[6]).rfind("mounts", 0) == 0;
@@ -4841,6 +4914,8 @@ int main(int argc, char **argv)
 				return PassageTest(frontend, h);
 			if (group_test)
 				return GroupTest(frontend, h);
+			if (duel_test)
+				return DuelTest(frontend, h);
 			if (raid_test)
 				return RaidTest(frontend, h);
 			if (aa_test)

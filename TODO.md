@@ -470,7 +470,7 @@ no rules of its own.
       12413), fishing's splash particles (DoParticleEffect 2) and the pole
       shown in hand as the cast starts (UpdateItemSlot), and someone picking our pockets (msg_steal
       0xff: 12897 and the answer);
-    - AllowedToAttack's duels, the server's PvP types and the water;
+    - AllowedToAttack's server PvP types and the water;
     - /filter's client side: the chat channels and the bad word filter
       (msg_new_text), and the hit modes (/hitsmode, CChatManager's MyHitsMode and the rest: eqstr
       2130's short form, the number only; /clearhits, `do_clearhits` @00500dbf, and `DrawHits`
@@ -484,7 +484,7 @@ no rules of its own.
       (`compute_tohit`: level * 2 / 5 while Drunkness / 2 is 20 or under) count. Past that,
       compute_tohit takes a value of the drunkenness the decompile loses (an `__ftol`), not ours;
     - the blood of our crushing, slashing, piercing, backstab and bash hits (SpurtBloodOnDag);
-    - ReportDeath's duel ending (eqstr 12100, 12101), the tracking window;
+    - the tracking window;
     - DoPassageOfTime's HP tick (`FrontEnd::HitPointsTick`): the locale's (DAT_00799770 1) regen
       of 6, 10 sitting, under level 21 is left out (English is 0); a monk's 2 past level 50 reads
       ActorInfo+0x18e, which nothing in eqgame sets but to 0; the mez broken by a DoT turns the
@@ -570,7 +570,7 @@ no rules of its own.
     - Friends and ignore: done (`frontend/friends.*`): `CFriendsWnd`, /friends, /ignore, /who all
       friend (OP_FriendsWho), `[Friends]` and `[Ignored]` in the character's ini, and
       `CEverQuest_BeingIgnored` on channel messages, emotes, /random rolls and /consent's answer.
-      Still to do: msg_duel's ignore check (no duels yet) and 0x4243's (EQMacEmu never sends it).
+      Still to do: 0x4243's ignore check (EQMacEmu never sends it).
     - Inspecting: /inspect and a click with the inspect mode (`CEverQuest_doInspect` @0054390e,
       `OP_InspectRequest`), the request from another (`msg_req_inspect` @004e769d) and the answer
       (`msg_inspect` @00420efe) in the inspect window (`CInspectWnd` @00420e01:
@@ -601,8 +601,12 @@ no rules of its own.
     against EQMacEmu and through the replay (`frontend_preview ... rez`). Still to do:
     - `OP_CorpseDrag` from the zone (0x4114: "%1 has permission to drag corpse %2.", eqstr 1405);
       EQMacEmu never sends it.
-32. **Duels.** /duel (@004fca55, `OP_RequestDuel`), the challenge's question and /decline (`msg_duel`
-    @004e31b7, `OP_DuelResponse`); AllowedToAttack's and ReportDeath's duel branches are under 24.
+32. ~~**Duels.**~~ Done (`frontend/duel.*`): /duel (@004fca55, `OP_RequestDuel`, `OP_DuelAccept`),
+    /decline (@004fc966), `msg_duel` (@004e31b7, `OP_DuelResponse`, the ignore check),
+    HandleWorldMessage's 0x40d0 and 0x4029 branches, ReportDeath's (12100, 12101, 0x415e) and
+    AllowedToAttack's melee duel branch. Checked live with Claudebot (`frontend_preview ... duel`).
+    Still to do: AllowedToAttack's spell branch in a duel (a detrimental spell's `field88_0x87` with
+    the two `IsPlayerKill`s differing turns it down); our spells don't ask AllowedToAttack yet.
 33. **The Bazaar.** Trader mode (/trader, `OP_BecomeTrader`, `OP_Trader`), a trader's shop
     (`OP_TraderShop`, `OP_TraderBuy`; the merchant window's trader branch under 2), the bazaar
     window (`CBazaarWnd`) and search (`CBazaarSearchWnd` @00404e21: `PerformBazaarSearch`,

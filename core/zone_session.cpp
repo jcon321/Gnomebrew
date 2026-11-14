@@ -1645,6 +1645,35 @@ void ZoneSession::Consent(const std::string &name)
 		Send(ZoneOp::Consent, name.c_str(), name.size() + 1, "OP_Consent " + name);
 }
 
+void ZoneSession::RequestDuel(uint16_t target, bool accept)
+{
+	if (m_state != State::InZone)
+		return;
+	const uint16_t body[2] = {target, m_my_id};
+	Send(ZoneOp::RequestDuel, body, sizeof(body), "OP_RequestDuel " + std::to_string(target));
+	if (accept)
+		Send(ZoneOp::DuelAccept, body, sizeof(body), "OP_DuelAccept " + std::to_string(target));
+}
+
+void ZoneSession::DuelResponse(uint16_t to, uint8_t type)
+{
+	if (m_state != State::InZone)
+		return;
+	uint8_t body[6] = {};
+	std::memcpy(body, &to, 2);
+	std::memcpy(body + 2, &m_my_id, 2);
+	body[4] = type;
+	Send(ZoneOp::DuelResponse, body, sizeof(body), "OP_DuelResponse " + std::to_string(to) + " " + std::to_string(type));
+}
+
+void ZoneSession::DuelWon(uint16_t loser)
+{
+	if (m_state != State::InZone)
+		return;
+	const uint16_t body[2] = {loser, m_my_id};
+	Send(ZoneOp::DuelWon, body, sizeof(body), "OP_DuelWon " + std::to_string(loser));
+}
+
 void ZoneSession::BecomeCorpse(uint16_t id)
 {
 	auto it = m_spawns.find(id);
@@ -2372,12 +2401,14 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 	}
 	case ZoneOp::DeleteSpawn: {
 		uint16_t id = Read<uint16_t>(data, 0);
-		m_spawns.erase(id);
-		if (m_self.pet_id == id) // ~EQPlayer: our pet gone
-			m_self.pet_id = 0xffff;
 		Event e;
 		e.type = Event::Type::SpawnRemoved;
 		e.id = id;
+		if (auto it = m_spawns.find(id); it != m_spawns.end())
+			e.text = it->second.name;
+		m_spawns.erase(id);
+		if (m_self.pet_id == id) // ~EQPlayer: our pet gone
+			m_self.pet_id = 0xffff;
 		events.push_back(e);
 		break;
 	}
@@ -2552,6 +2583,21 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		events.push_back({Event::Type::SpawnsMoved});
 		break;
 	}
+	case ZoneOp::RequestDuel: // msg_duel: DuelChallenge_Struct's challenger
+		if (data.size() >= 4) {
+			Event e(Event::Type::DuelRequested);
+			e.id = Read<uint16_t>(data, 2);
+			events.push_back(e);
+		}
+		break;
+	case ZoneOp::DuelResponse: // HandleWorldMessage's 0x40d0: the sender and the type
+		if (data.size() >= 5) {
+			Event e(Event::Type::DuelResponded);
+			e.id = Read<uint16_t>(data, 2);
+			e.value = data[4];
+			events.push_back(e);
+		}
+		break;
 	case ZoneOp::ConsentResponse:
 		if (data.size() >= 129) {
 			Event e(Event::Type::Consented);
