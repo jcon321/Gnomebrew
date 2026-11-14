@@ -141,6 +141,8 @@ add_library(eqfrontend STATIC
     frontend/death.cpp
     frontend/friends.cpp
     frontend/duel.cpp
+    frontend/bazaar_window.cpp
+    frontend/bazaar_search.cpp
     frontend/ground_items.cpp
     frontend/spell_book.cpp
     frontend/spell_cast.cpp

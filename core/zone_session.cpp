@@ -35,6 +35,7 @@ namespace
 	constexpr uint16_t AppearanceSneak = 15;     // msg_stat_change's IsSneaking
 	constexpr uint16_t AppearancePet = 25;       // msg_stat_change's PetOwnerSpawnId
 	constexpr uint16_t AppearanceSummoned = 27;  // msg_stat_change's 0x1b (EQPlayer+0x120)
+	constexpr uint16_t AppearanceTrader = 31;    // msg_stat_change's 0x1f: IsTrader (EQMacEmu's NPCName)
 	constexpr size_t SpawnSize = 224;            // Mac::structs::Spawn_Struct
 	constexpr size_t ProfileSize = 8460;         // Mac::structs::PlayerProfile_Struct
 	constexpr size_t ZoneEntrySize = 356;        // ServerZoneEntry_Struct
@@ -1303,6 +1304,16 @@ bool ZoneSession::ShopEnd(uint16_t npc)
 	return Send(ZoneOp::ShopEnd, body, sizeof(body), "OP_ShopEnd " + std::to_string(npc));
 }
 
+bool ZoneSession::TraderEnd(uint16_t trader)
+{
+	for (int16_t slot = 6000; slot < 6080; ++slot)
+		m_items.erase(slot);
+	if (m_state != State::InZone)
+		return false;
+	uint32_t body[5] = {4, trader, m_my_id, 0, 0};
+	return Send(ZoneOp::Trader, body, sizeof(body), "OP_Trader 4 (done with " + std::to_string(trader) + ")");
+}
+
 bool ZoneSession::MoveCoin(int from, int to, int from_coin, int to_coin, int32_t amount)
 {
 	if (m_state != State::InZone)
@@ -1672,6 +1683,49 @@ void ZoneSession::DuelWon(uint16_t loser)
 		return;
 	const uint16_t body[2] = {loser, m_my_id};
 	Send(ZoneOp::DuelWon, body, sizeof(body), "OP_DuelWon " + std::to_string(loser));
+}
+
+bool ZoneSession::SendTrader(const std::vector<uint8_t> &body, const std::string &what)
+{
+	return m_state == State::InZone && Send(ZoneOp::Trader, body.data(), body.size(), "OP_Trader " + what);
+}
+
+bool ZoneSession::SendBazaarSearch(const std::vector<uint8_t> &body, const std::string &what)
+{
+	return m_state == State::InZone && Send(ZoneOp::BazaarSearch, body.data(), body.size(), "OP_BazaarSearch " + what);
+}
+
+bool ZoneSession::TraderShop(uint16_t trader)
+{
+	if (m_state != State::InZone)
+		return false;
+	uint8_t body[16] = {};
+	memcpy(body, &trader, 2);
+	return Send(ZoneOp::TraderShop, body, sizeof(body), "OP_TraderShop " + std::to_string(trader));
+}
+
+bool ZoneSession::TraderBuy(uint16_t trader, int32_t item, int32_t price, uint16_t quantity, uint16_t slot)
+{
+	if (m_state != State::InZone)
+		return false;
+	uint8_t body[80] = {};
+	memcpy(body + 2, &trader, 2);
+	memcpy(body + 4, &item, 4);
+	memcpy(body + 8, &price, 4);
+	memcpy(body + 12, &quantity, 2);
+	memcpy(body + 14, &slot, 2);
+	return Send(ZoneOp::TraderBuy, body, sizeof(body),
+		"OP_TraderBuy " + std::to_string(trader) + " slot " + std::to_string(slot) + " x" + std::to_string(quantity));
+}
+
+bool ZoneSession::RequestItem(uint16_t id, const std::string &name)
+{
+	if (m_state != State::InZone)
+		return false;
+	uint8_t body[66] = {};
+	memcpy(body, &id, 2);
+	memcpy(body + 2, name.c_str(), std::min<size_t>(name.size(), 63));
+	return Send(ZoneOp::ItemLinkResponse, body, sizeof(body), "OP_ItemLinkResponse " + std::to_string(id) + " " + name);
 }
 
 void ZoneSession::BecomeCorpse(uint16_t id)
@@ -2598,6 +2652,45 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 			events.push_back(e);
 		}
 		break;
+	case ZoneOp::BecomeTrader: { // CEverQuest_HandleWorldMessage_UpdateEntityBazaarStatus
+		if (data.size() < 8)
+			break;
+		uint16_t id = Read<uint16_t>(data, 0);
+		auto it = m_spawns.find(id);
+		ZoneSpawn *spawn = it != m_spawns.end() ? &it->second : id != 0 && id == m_my_id ? &m_self : nullptr;
+		if (!spawn)
+			break;
+		spawn->trader = static_cast<uint8_t>(Read<uint32_t>(data, 4));
+		Event e(Event::Type::TraderChanged);
+		e.id = id;
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::Trader:
+	case ZoneOp::BazaarSearch: {
+		Event e(opcode == ZoneOp::Trader ? Event::Type::TraderMessage : Event::Type::BazaarMessage);
+		e.data = data;
+		events.push_back(e);
+		break;
+	}
+	case ZoneOp::TraderShop: // CMerchantWnd_Activate2
+		if (data.size() >= 16) {
+			Event e(Event::Type::TraderShopAnswered);
+			e.id = Read<uint16_t>(data, 0);
+			e.value = static_cast<int32_t>(Read<uint32_t>(data, 12));
+			events.push_back(e);
+		}
+		break;
+	case ZoneOp::TraderBuy: // CMerchantWnd_FinishBuyingItem_processMerchantPurchase: as a merchant's
+		if (data.size() >= 16) {
+			Event e(Event::Type::MerchantBought);
+			e.merchant.npc = Read<uint16_t>(data, 2);
+			e.merchant.slot = Read<int16_t>(data, 14);
+			e.merchant.quantity = Read<int16_t>(data, 12);
+			e.merchant.price = Read<int32_t>(data, 8);
+			events.push_back(e);
+		}
+		break;
 	case ZoneOp::ConsentResponse:
 		if (data.size() >= 129) {
 			Event e(Event::Type::Consented);
@@ -3520,6 +3613,19 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 			// msg_stat_change: our /filter switches, as we get our id.
 			if (!m_server_filters.empty())
 				Send(ZoneOp::SetServerFilter, m_server_filters.data(), m_server_filters.size(), "OP_SetServerFilter");
+			events.push_back(Event(Event::Type::SpawnIdAssigned));
+		}
+		else if (type == AppearanceTrader) {
+			// msg_stat_change's 0x1f: ActorInfo's IsTrader.
+			uint16_t id = Read<uint16_t>(data, 0);
+			auto it = m_spawns.find(id);
+			ZoneSpawn *spawn = it != m_spawns.end() ? &it->second : id != 0 && id == m_my_id ? &m_self : nullptr;
+			if (spawn) {
+				spawn->trader = static_cast<uint8_t>(Read<uint32_t>(data, 4));
+				Event e(Event::Type::TraderChanged);
+				e.id = id;
+				events.push_back(e);
+			}
 		}
 		else if (type == AppearanceInvis || type == AppearancePvp || type == AppearanceLinkdead || type == AppearanceGm ||
 		         type == AppearanceAnonymous || type == AppearanceAfk) {

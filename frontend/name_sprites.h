@@ -45,9 +45,10 @@ namespace NameSprite
 }
 
 // The text over a spawn's head; empty draws nothing. '\n' starts the guild line.
-// `targeted`: it's our target, whose name always shows.
+// `targeted`: it's our target, whose name always shows. `bazaar`: we're in the Bazaar (zone 151),
+// where a trader's name starts "Trader " (5503) in place of an AA title.
 std::string NameSpriteText(const ZoneSpawn &spawn, int show_names, const GuildNames &guilds, const EqStr *strings,
-	bool targeted = false);
+	bool targeted = false, bool bazaar = false);
 // Its color (0xRRGGBB). `ruleset` is the server's (OP_LogServer): 2 colors players by race team.
 uint32_t NameSpriteColor(const ZoneSpawn &spawn, uint32_t ruleset);
 // The target's color at pulse `step` (0..10).

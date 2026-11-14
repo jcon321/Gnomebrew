@@ -320,6 +320,11 @@ public:
 		// window's slots are the bag's); -1 its EQType's, as the inventory's are.
 		int item_slot = -1;
 		int ItemSlot() const { return item_slot >= 0 ? item_slot : def->eq_type; }
+		// InvSlot: its picture's tint (CInvSlotWnd's 0x128), and under the mouse (0x124); 0 none.
+		// eqgame's own are 0xc0c0c0 and white (InitializeInventorySlotWindow); ours draw untinted
+		// unless a window sets them (the Bazaar window's: ToggleBzrItemActive's green for an item
+		// on sale).
+		uint32_t slot_tint = 0, slot_hover_tint = 0;
 		// CXWnd::Move by its window: it sits at `place` in its parent's client area, not its
 		// Location (a bag window's Combine and Done under its last slot).
 		bool placed = false;
@@ -456,6 +461,11 @@ public:
 	// A control under (x, y) that takes clicks (a shown button, slot, spell gem, edit box or scrollbar): clicks
 	// there don't drag.
 	bool InteractiveAt(int x, int y) const;
+	// CListWnd's right button on a row: the row and column under it selected, as a left press
+	// selects them; the list's screen id, or "" off its rows (notification 3 follows on its release).
+	std::string RightPressList(int x, int y);
+	// A list's row and column under (x, y) selected; false off its rows.
+	bool SelectListRow(Control &control, int x, int y);
 	// (x, y) is on the control where it's drawn: inside it and its parents' client areas (the
 	// part of a control outside its parent is cut off, so it can't be clicked either).
 	bool HitTest(const Control &control, int x, int y) const;

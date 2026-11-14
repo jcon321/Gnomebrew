@@ -74,7 +74,7 @@ namespace
 }
 
 std::string NameSpriteText(const ZoneSpawn &spawn, int show_names, const GuildNames &guilds, const EqStr *strings,
-	bool targeted)
+	bool targeted, bool bazaar)
 {
 	// Ents (race 244) never show a name, as in eqgame; as Zeal has it, corpses and the target
 	// always do. (eqgame also hides skeletons', gargoyles' and mimics' names in some animations.)
@@ -88,7 +88,11 @@ std::string NameSpriteText(const ZoneSpawn &spawn, int show_names, const GuildNa
 	// Anonymous players keep their guild to themselves; roleplaying ones don't.
 	bool guild_shown = spawn.anon == 0 || spawn.anon > 1;
 	std::string text;
-	if (spawn.aa_title > 0 && spawn.gender != 2 && ShowsTitle(show_names)) {
+	if (spawn.trader == 1) {
+		if (bazaar)
+			text += String(strings, 5503, "Trader ");
+	}
+	else if (spawn.aa_title > 0 && spawn.gender != 2 && ShowsTitle(show_names)) {
 		uint32_t title = TitleString(spawn.class_id, spawn.aa_title, spawn.gender);
 		if (title != 0)
 			text += String(strings, title, "");
@@ -127,6 +131,8 @@ uint32_t NameSpriteColor(const ZoneSpawn &spawn, uint32_t ruleset)
 		return 0x17b8ad; // NPCs and corpses
 	if (spawn.pvp)
 		return roleplaying ? 0xef5d5d : 0xa61414;
+	if (spawn.trader)
+		return 0x40ffff; // a trader
 	if (roleplaying && (ruleset == 0 || ruleset == 4)) // roleplayers keep their team's color on the team servers
 		return 0x85489c;
 	if (ruleset == 2) {

@@ -22,7 +22,7 @@ namespace
 		UserColor, GuildInvite, GuildRemove, GuildDelete, GuildStatus, GuildLeader, GuildWar, GuildPeace, GuildMotd,
 		MakeRaidLeader, RaidInvite, RaidDecline, RaidAccept, RaidDisband, SetLootType, AddRaidLooter, RemoveRaidLooter,
 		RaidSay, RaidWindow, Channel, Loot, TargetTell, CharInfo, MoveLog, StopSong, Shield, Quit, Log, Keys, Dismount,
-		AlternateAdv, Pet, SoundDriver, Duel, Decline,
+		AlternateAdv, Pet, SoundDriver, Duel, Decline, Bazaar, Trader,
 	};
 
 	struct CommandEntry
@@ -116,7 +116,7 @@ namespace
 		{"/dismount", 0, Command::Dismount}, {"/rtarget", 0, Command::None}, {"/showgrass", 0, Command::None},
 		{"/alias", 0, Command::None}, {"/hitsmode", 0, Command::None}, {"/clearhits", 0, Command::None},
 		{"/dopropertinting", 0, Command::None}, {"/makeleader", 0, Command::MakeLeader}, {"/viewport", 0, Command::None},
-		{"/clearchat", 0, Command::ClearChat}, {"/bazaar", 0, Command::None}, {"/trader", 0, Command::None},
+		{"/clearchat", 0, Command::ClearChat}, {"/bazaar", 0, Command::Bazaar}, {"/trader", 0, Command::Trader},
 		{"/music", 0, Command::None}, {"/bugreport", 0, Command::None}, {"/loadskin", 0, Command::None},
 		{"/newui", 0, Command::None}, {"/webupdate", 0, Command::None}, {"/viewpetition", 0, Command::None},
 		{"/deletepetition", 0, Command::None}, {"/raidwindow", 0, Command::RaidWindow}, {"/makeraidleader", 0, Command::MakeRaidLeader},
@@ -441,7 +441,7 @@ void FrontEnd::Lfg(bool ours, const std::string &word)
 			ChatOut(text(13132, "You are already in a group!"), ChatType::Default);
 			return;
 		}
-		// (A Bazaar trader can't: 13133. We're never one.)
+		// (13133, "You can't go LFG while a TRADER!", goes by DAT_00798594, which nothing in eqgame sets.)
 		on = true;
 		if (ours && m_lfg == on)
 			return;
@@ -600,7 +600,7 @@ void FrontEnd::Who(const std::string &given)
 			ok = false;
 		if (guild == -3 && !spawn.lfg)
 			ok = false;
-		if (guild == -4) // a trader (the Bazaar's; none known here)
+		if (guild == -4 && !spawn.trader) // the Bazaar's traders (ActorInfo's IsTrader)
 			ok = false;
 		if (guild < 0) {
 			if (!whom.empty() && !SamePrefix(whom, spawn.name, whom.size()))
@@ -617,7 +617,7 @@ void FrontEnd::Who(const std::string &given)
 		std::string gm_text = spawn.gm ? text(12312, "* GM * ") : "";
 		std::string linkdead = spawn.linkdead && !spawn.pvp ? text(12313, " <LINKDEAD>") : "";
 		std::string lfg = spawn.lfg == 1 ? text(12314, " LFG") : "";
-		std::string trader; // " TRADER" (12315) for a Bazaar trader; not known here
+		std::string trader = spawn.trader == 1 ? text(12315, " TRADER") : "";
 		std::string line;
 		if (mode == 0) {
 			if (spawn.npc != 0)
@@ -1508,6 +1508,16 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 		break;
 	case Command::StopSong:
 		m_spell_cast.StopSong(); // /stopsong (@004f5c74)
+		break;
+	case Command::Bazaar:
+		// /bazaar (@004ff4b0): the search window, unless it's up.
+		if (!m_bazaar_search.Active())
+			m_bazaar_search.Activate();
+		break;
+	case Command::Trader:
+		// /trader (@004ff4d4): the bazaar window, unless it's up.
+		if (!m_bazaar.Active())
+			m_bazaar.Activate();
 		break;
 	case Command::Duel:
 		m_duel.DuelCommand(m_game_values.target); // /duel (@004fca55)

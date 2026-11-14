@@ -493,12 +493,19 @@ bool WindowManager::OnMouse(const InputEvent &event, uint64_t now_ms)
 			return true;
 		}
 		if (event.type == Type::RightDown) {
+			if (at.control.empty() && top >= 0)
+				at.control = m_windows[top]->wnd.RightPressList(event.x, event.y);
 			m_right_press = at;
 			m_right_ms = now_ms;
 			m_right_down = true;
 			m_right_held = false;
 		}
 		else {
+			// A list's release anywhere on it counts (the row pressed stays selected).
+			if (at.control.empty() && top >= 0 && at.window == m_right_press.window && !m_right_press.control.empty())
+				if (const SidlWindow::Control *list = m_windows[top]->wnd.Find(m_right_press.control);
+					list && list->def->type == "Listbox" && m_windows[top]->wnd.HitTest(*list, event.x, event.y))
+					at.control = m_right_press.control;
 			bool same = !at.control.empty() && at.window == m_right_press.window && at.control == m_right_press.control;
 			at.alt = event.alt;
 			at.shift = event.shift;

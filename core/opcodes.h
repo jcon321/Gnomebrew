@@ -295,6 +295,28 @@ namespace ZoneOp
 	// {u16 loser, u16 us}: we won (ReportDeath, or the other despawned mid-duel: HandleWorldMessage's
 	// 0x4029). No name in patch_Mac.conf; EQMacEmu has no handler.
 	constexpr uint16_t DuelWon = 0x415e;
+	// The Bazaar (frontend/bazaar_window.h, bazaar_search.h). OP_BazaarSearch both ways: {u16 action,
+	// ...}: 7 a search (BazaarSearch_Struct, 88 bytes) and each result back ({u16 7, u16 count, u16
+	// item, u16 seller, u32 cost, char name[64]}), 9 the welcome asked (20 bytes, zeros) and told
+	// ({u16 9, u16, u32 traders, u32 items}), 12 the results done.
+	constexpr uint16_t BazaarSearch = 0x4211;
+	// OP_Trader both ways, {u16 code, ...}: ours 1 start (Trader_Struct: u16 1, u16, u32 items[80],
+	// u32 costs[80]), 2 end, 3 a price (TraderPriceUpdate_Struct {u16 3, u16, i32 item, u32 price}),
+	// 4 a customer done (u32 4, u32 trader, u32 us), 11 show our list; the zone's 1 started
+	// ({u16 1, u16, u32 ok}), 2 ended, 3 a price's answer ({u16 3, u16, u32 how}), 10 a customer
+	// bought (TraderBuy_Struct), 11 our list (Trader_Struct), 13 a customer browsing ({u16 13, u16,
+	// u16 who}).
+	constexpr uint16_t Trader = 0x4212;
+	// TraderClick_Struct {u16 trader, u16, u32, u32, u32 approval @12}: a trader's shop asked
+	// (CEverQuest::RightClickedOnPlayer, 16 bytes) and the zone's answer (CMerchantWnd_Activate2).
+	constexpr uint16_t TraderShop = 0x4216;
+	// BecomeTrader_Struct {u16 spawn, u16, u32 code}: someone's trader mode on (1) or off (0)
+	// (CEverQuest_HandleWorldMessage_UpdateEntityBazaarStatus).
+	constexpr uint16_t BecomeTrader = 0x4218;
+	// TraderBuy_Struct {u16 action, u16 trader, u32 item, u32 price, u16 quantity, u16 slot, char
+	// name[64]} (80 bytes): buying from a trader (CMerchantWnd::RequestBuyItem) and the zone's
+	// answer (slot 0xffff turned down: CMerchantWnd_FinishBuyingItem_processMerchantPurchase).
+	constexpr uint16_t TraderBuy = 0x4224;
 	// The boats (frontend/vehicle.h). DoPassageOfTime, once a second: the name of the boat we stand on
 	// (strlen + 4 bytes) as we get on, and no body once we've been off one for two seconds.
 	constexpr uint16_t BoardBoat = 0x41bb;
@@ -586,6 +608,11 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::DuelResponse, "OP_DuelResponse"},
 	{ZoneOp::DuelAccept, "OP_DuelAccept"},
 	{ZoneOp::DuelWon, "OP_DuelWon"},
+	{ZoneOp::BazaarSearch, "OP_BazaarSearch"},
+	{ZoneOp::Trader, "OP_Trader"},
+	{ZoneOp::TraderShop, "OP_TraderShop"},
+	{ZoneOp::BecomeTrader, "OP_BecomeTrader"},
+	{ZoneOp::TraderBuy, "OP_TraderBuy"},
 	{ZoneOp::BoardBoat, "OP_BoardBoat"},
 	{ZoneOp::LeaveBoat, "OP_LeaveBoat"},
 	{ZoneOp::ControlBoat, "OP_ControlBoat"},

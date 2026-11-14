@@ -89,8 +89,8 @@ no rules of its own.
      opening, the prices and the welcome; buying and selling only through their refusals (the
      test character has no coins or anything worth selling). The zone ending the session
      (OP_ShopEndConfirm, HandleWorldMessage's 0x4146) runs Deactivate; eqgame's runs again when that
-     answers our own OP_ShopEnd (a second SavePC, the target cleared again), ours not. Still to do: a
-     Bazaar trader's (Type 0: OP_TraderShop, OP_TraderBuy), and the item display of a
+     answers our own OP_ShopEnd (a second SavePC, the target cleared again), ours not. A Bazaar trader's
+     shop (Type 0) is done (see 33). Still to do: the item display of a
      merchant's item (the slots' alt+click goes through the selection now). The right button makes
      us visible (MakeMeVisible) and the window plays the merchant's music (SetMusicSelection 6).
    - Loot window: done (`frontend/loot_window.*`, eqgame's CLootWnd): the right button on a corpse
@@ -123,8 +123,8 @@ no rules of its own.
    - The right button on a spawn (CEverQuest::RMouseUp within 500 ms, RightClickedOnPlayer): a
      corpse's loot, a banker's bank, a merchant's shop, else /consider of our target. A
      despawning merchant, banker or corpse closes its window. Our class's guildmaster asks the zone
-     to train us (OP_GMTraining) and another's says eqstr 1467. Still to do: a trader in the Bazaar
-     (OP_TraderShop), a horse (race 141), the inspect of a player (doInspect), and `_consider`'s
+     to train us (OP_GMTraining) and another's says eqstr 1467. A trader in the Bazaar asks for its shop
+     (OP_TraderShop, see 33). Still to do: a horse (race 141), the inspect of a player (doInspect), and `_consider`'s
      TargetType refusals (0xb, 0x3c, 0x41, 0x43) after it.
    - Guildmaster training: done (`frontend/train_window.*`, CTrainWnd): msg_req_guildmaster's
      SetGMData and Activate, UpdateSkill's rows and CostToTrain's prices, the headings' sorts,
@@ -158,8 +158,8 @@ no rules of its own.
      with the slot; not checked live, the test characters have none). Eating and drinking for us
      when low (`ProcessHungerandThirst`, `AutoEat`: every 46 s, a monk's 92 s, OP_Consume with -1,
      and the hunger, thirst and out-of-food messages, Innate Metabolism's longer wait): done,
-     checked live ("You and your mount..." on a horse). Still to do there: no eating while a
-     bazaar trader. Still to do: poisons
+     checked live ("You and your mount..." on a horse); a Bazaar trader neither eats nor is told.
+     Still to do: poisons
      (CEverQues_ApplyPoison), Alcohol Tolerance's skill-up (EQ_PC_CheckSkillImprove 66), what
      drunkenness does. Notes and books are read (EQ_Note::SendTextRequestMsg's OP_ReadBook;
      CNoteWnd's SetNote, checked live; CBookWnd's pages, buttons and keys in
@@ -248,7 +248,7 @@ no rules of its own.
    name, and our corpses; `all` through OP_WhoAllRequest and msg_who_response's lines), /whotarget,
    the Who key and button, and /follow (FollowPlayerAI's turning, running, walking and stopping,
    TurnOffAutoFollow on Move back and the turn keys) are done. Still to do: /who all friends
-   (OP_FriendsWho with a friends list; no /friends yet), traders (ActorInfo's IsTrader), the
+   (OP_FriendsWho with a friends list; no /friends yet), the
    spawn list's order (pinstSpawnList; ours by id), and /follow on a horse or of a rider
    (ProcessControls hands FollowPlayerAI's Following to pinstCharSpawn, the horse; not checked
    riding) and its line of sight from them to us (CastRay is ours,
@@ -339,8 +339,7 @@ no rules of its own.
    zone is entered; the mouse look check is our right button held (no Toggle mouse look yet). Still to do:
    - ExecuteCmd's commands not done yet (the page's "No"): Toggle mouse look, Duck, Use
      centerscreen, Center view, Toggle netstat, the clip plane, voice input, screenshots, the chat line's cursor and page up and down (CChatWindow::ScrollChatWindowUp),
-     the bazaar, bazaar search and music player
-     windows.
+     the music player window.
    - Send tell for a GM helping a petitioner (`/tell <petitioner> `, CPetitionQWnd), and
      ExecuteCmd 0x81 and 0x82 (`;` and `/` command modes; not on the keyboard page).
    - Target myself's pet: eqgame takes the first in pinstSpawnList's order; ours the lowest id.
@@ -607,11 +606,26 @@ no rules of its own.
     AllowedToAttack's melee duel branch. Checked live with Claudebot (`frontend_preview ... duel`).
     Still to do: AllowedToAttack's spell branch in a duel (a detrimental spell's `field88_0x87` with
     the two `IsPlayerKill`s differing turns it down); our spells don't ask AllowedToAttack yet.
-33. **The Bazaar.** Trader mode (/trader, `OP_BecomeTrader`, `OP_Trader`), a trader's shop
-    (`OP_TraderShop`, `OP_TraderBuy`; the merchant window's trader branch under 2), the bazaar
-    window (`CBazaarWnd`) and search (`CBazaarSearchWnd` @00404e21: `PerformBazaarSearch`,
-    `HandleBazaarMsg`, `OP_BazaarSearch`), /bazaar, and the trader tag on names (under 9);
-    `OP_MoneyUpdate` (0x4008), the coins a sale to a trader's customer brings in.
+33. ~~**The Bazaar.**~~ Done: the bazaar window (`frontend/bazaar_window.*`, eqgame's CBazaarWnd:
+    /trader, the satchels' items, prices in `BZR_<name>_<server>.ini`, Set Price, Clear, Add,
+    Remove, Start under the stalls (`IsSpecialBazaarSpot`), End, List, `OP_Trader`'s answers and
+    `bzrlog_*.txt`), the search window (`frontend/bazaar_search.*`, CBazaarSearchWnd: /bazaar, the
+    combos, Find, the results, sorting by a heading, Request Item and the right button on a
+    result, Welcome), a trader's shop in the merchant window (`OP_TraderShop`, `OP_TraderBuy`,
+    `OP_Trader` 4), `OP_BecomeTrader` and SpawnAppearance 31 (`ZoneSpawn::trader`), the trader tag
+    and color on names, /who's traders, the Bazaar's welcome on entering, the toggle keys and
+    Escape. Checked live with Claudebot (`frontend_preview ... bazaar`). EQMacEmu builds
+    `OP_MoneyUpdate` for a sale but never sends it: the trader's coins come as `OP_TradeMoneyUpdate`.
+    Still to do:
+    - RightClickedOnPlayer's "with a customer" (1468) reads an ActorInfo field nothing in eqgame
+      sets; we always ask.
+    - The search list's column widths kept in the UI ini (`LoadIniListWnd`, `StoreIniListWnd`), and
+      the price boxes taking digits only (`AlphaNumericOnly` 3).
+    - Every InvSlot's picture tinted 0xc0c0c0 (white under the mouse: `InitializeInventorySlotWindow`);
+      ours are untinted but the bazaar window's.
+    - Not checked: a trader's stack's count in the merchant window's slot (ours shows 1), and
+      Request Item and the right button on a result live.
+    - `msg_snd_trader_eq` (0x4217) is the old UI's; IsOkToTransact's deity 20000 and mount checks.
 34. **The smaller windows**, each opened by its command or key and none built yet:
     - Breath (`CBreathWnd` @00408bee, `UpdateBreathIndicator`): the air left under water
       (`EQ_PC::ProcessAirSupply` @004d0568) and drowning.
@@ -695,7 +709,8 @@ no rules of its own.
 9. ~~**Nameplates**~~: done (`frontend/name_sprites.*`, eqgame's name sprites), lit as
    renderNameTag does (the world's ambient light +0.4, `NameSpriteLit`), on the animated head point
    (DagHeadPoint, renderSceneHierarchy's lift) and depth tested pixel by pixel in the 3D pass
-   (`ZoneView::DrawNameSprites`). Still to do: the trader tag in the Bazaar,
+   (`ZoneView::DrawNameSprites`). A Bazaar trader's "Trader " (5503) in the Bazaar, in place of an
+   AA title, and its 0x40ffff (SetNameSpriteState, SetNameSpriteTint) are done. Still to do:
    the names eqgame hides in some animations (skeletons, gargoyles and mimics lying or feigning:
    animations 0x10, 0x21, 0x26), `/shownpcnames`, Zeal's raid shownames, and the guild list in packet logs (replays show "Unknown Guild"). An HP
    bar over heads isn't eqgame's; leave it to an option if ever. Character select's name is still

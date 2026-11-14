@@ -967,6 +967,8 @@ void FrontEnd::Update(uint64_t now_ms)
 		m_raid_window.Frame(now_ms);
 		m_pet_window.Frame(now_ms);
 		m_friends.Frame();
+		m_bazaar.Frame();
+		m_bazaar_search.Frame();
 		m_aa_window.Frame(now_ms);
 		m_loot.Frame(now_ms);
 		m_trade.Frame(now_ms);
@@ -1998,7 +2000,8 @@ void FrontEnd::BuildNameSprites(uint64_t now_ms)
 		// SetNameSpriteState's state: players' (us too) with Show PC Names, the rest with Show NPC Names.
 		if (spawn->npc == 0 ? !m_pc_names : !m_npc_names)
 			continue;
-		std::string text = NameSpriteText(*spawn, m_config.show_names, m_zone.Guilds(), m_ui.eqstr, targeted);
+		std::string text = NameSpriteText(*spawn, m_config.show_names, m_zone.Guilds(), m_ui.eqstr, targeted,
+			m_zone.Profile().zone_id == 151);
 		if (text.empty())
 			continue;
 		ZoneView::NameSprite sprite;
@@ -2174,6 +2177,7 @@ namespace
 		{"MerchantWnd", false}, {"LootWnd", false}, {"TradeWnd", false}, {"GiveWnd", false},
 		{"SkillsSelectWindow", false}, {"NoteWindow", false}, {"BookWindow", false}, {"TrainWindow", false},
 		{RaidWindow::Screen, false}, {RaidWindow::OptionsScreen, false}, {AAWindow::Screen, false},
+		{BazaarWindow::Screen, false}, {BazaarSearch::Screen, false},
 	};
 
 	// The selector's buttons (EQUI_SelectorWnd.xml) and the windows they open and close.
@@ -2237,6 +2241,19 @@ void FrontEnd::BuildZoneWindows()
 		// CEverQuest::CreateIniFilenames: the character's own ini is the layout's name without UI_.
 		m_hot_buttons_path = m_config.ui_dir + "/" + suffix;
 		m_log_path = m_config.ui_dir + "/eqlog_" + name + "_" + m_config.login_host.substr(0, 7) + ".txt";
+		// InitializeBazaarSearchFilePath: .\BZR_<name>_<server>.ini, the server the login host's
+		// first 8 characters (or, for an eqworld host, 3 from its ninth); bazaarlog:
+		// bzrlog_<3 from the ninth, cut at a '.'>_<name>.txt.
+		const std::string &host = m_config.login_host;
+		auto from_ninth = [&] {
+			std::string s = host.size() > 8 ? host.substr(8, 3) : "";
+			if (s.size() > 2 && s[2] == '.')
+				s.resize(2);
+			return s;
+		};
+		bool eqworld = host.size() >= 7 && Lower(host.substr(0, 7)) == "eqworld";
+		m_bazaar.SetFiles(m_config.ui_dir + "/BZR_" + name + "_" + (eqworld ? from_ninth() : host.substr(0, 8)) + ".ini",
+			m_config.ui_dir + "/bzrlog_" + from_ninth() + "_" + name + ".txt");
 	}
 	Abilities::Host abilities_host;
 	abilities_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
@@ -2300,6 +2317,15 @@ void FrontEnd::BuildZoneWindows()
 		m_chat.Open(text);
 	};
 	m_friends.Attach(m_windows, std::move(friends_host));
+	BazaarWindow::Host bazaar_host;
+	bazaar_host.color = [this](int type) { return m_chat_colors.Get(type); };
+	bazaar_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
+	bazaar_host.ok_to_transact = [this] { return IsOkToTransact(); };
+	m_bazaar.Attach(m_windows, m_zone, m_window_state, m_game_values, std::move(bazaar_host));
+	BazaarSearch::Host search_host;
+	search_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
+	search_host.face = [this](uint16_t id) { FaceSpawn(id); };
+	m_bazaar_search.Attach(m_windows, m_zone, std::move(search_host));
 	Duel::Host duel_host;
 	duel_host.text = [this](uint32_t id, const std::vector<std::string> &args, const std::string &fallback) {
 		return FormatEqString(m_ui.eqstr, id, fallback, args);
@@ -2679,6 +2705,8 @@ void FrontEnd::HandleWindowClicks()
 	for (const auto &click : m_windows.TakeRightClicks()) {
 		if (m_spell_book.RightClick(click.window, click.control))
 			continue;
+		if (m_bazaar_search.RightClick(click.window, click.control)) // CListWnd's 3 on a result
+			continue;
 		if (m_abilities.RightClick(click.window, click.control)) // the skill select window
 			continue;
 		// A corpse's slot: into the inventory (RequestLootSlot's auto loot).
@@ -2786,6 +2814,12 @@ void FrontEnd::HandleWindowClicks()
 			m_aa_window.Toggle();
 			continue;
 		}
+		// The bazaar window's slots (7000..7079: ProcessBazaarItemSelection), its buttons, and the
+		// search window's.
+		if (m_bazaar.SlotClick(click.window, click.control) ||
+		    m_bazaar.Click(click.window, click.control, click.shift, click.ctrl) ||
+		    m_bazaar_search.Click(click.window, click.control))
+			continue;
 		// While a merchant's up, a slot anywhere is picked to buy or sell (CInvSlot::HandleLButtonUp).
 		if (m_merchant.SlotClick(click.window, click.control))
 			continue;
@@ -3399,6 +3433,9 @@ void FrontEnd::HungerAndThirst(uint64_t now_ms)
 		me.hunger = std::max(me.hunger, 3500);
 		me.thirst = std::max(me.thirst, 3500);
 	}
+	// A Bazaar trader (ActorInfo's IsTrader) neither eats nor is told.
+	if (m_zone.Self().trader)
+		return;
 	// 46 s (a monk's 92 s) since the last time; it starts at zero, so the first is as we come in.
 	// Innate Metabolism (GetAbility 0xf) stretches it 110, 125 or 150% more.
 	uint64_t every = me.class_id == 7 ? 92000 : 46000;
@@ -3752,12 +3789,26 @@ void FrontEnd::WorldClick(int x, int y)
 	}
 }
 
+void FrontEnd::FaceSpawn(uint16_t id)
+{
+	// EQPlayer::FacePlayer: our heading turned to get_bearing's to them.
+	auto it = m_zone.Spawns().find(id);
+	if (!m_zone_view || it == m_zone.Spawns().end())
+		return;
+	ZoneMovement me = m_zone_view->Movement();
+	float degrees = std::atan2(it->second.x - me.x, it->second.y - me.y) * 180.0f / 3.14159265f;
+	if (degrees < 0)
+		degrees += 360;
+	m_zone_view->Turn(degrees * 511.5f / 360.0f - me.heading);
+}
+
 bool FrontEnd::IsOkToTransact() const
 {
 	// Not camping, no combine, buy or sell waiting (DAT_007d0254), no merchant asked
 	// (DAT_007d0258, a guildmaster's too), no world container (pWorldItems), spellbook, bank,
-	// merchant, trainer, corpse or trade (the bazaar window when we have it).
+	// merchant, trainer, corpse, trade or bazaar window.
 	return m_zone.CampRemainingMs() == 0 && !m_containers.Combining() && !m_spell_book.Activated() && !m_bank.Active() &&
+	       !m_bazaar.Active() &&
 	       !m_merchant.Active() && !m_merchant.Waiting() && !m_merchant.Busy() && !m_train.Active() &&
 	       !m_train.Waiting() && !m_loot.Active() &&
 	       !m_loot.Waiting() && !m_loot.Busy() && !m_trade.Active() && !m_ground.Busy() && !m_ground.Waiting() &&
@@ -3808,6 +3859,18 @@ void FrontEnd::RightClickedOnPlayer(uint16_t spawn)
 		m_bank.Activate(spawn);
 		if (m_bank.Active()) // CBankWnd::Activate, after the banker's welcome
 			AutoAttackOff(1466);
+		return;
+	}
+	// A Bazaar trader (ActorInfo's IsTrader; not a banker or guildmaster) within 20: its shop asked
+	// (OP_TraderShop), waiting as for a merchant. eqgame says 1468 instead for one with a customer,
+	// by an ActorInfo field nothing in eqgame sets.
+	if (who.npc < 2 && (who.class_id < 17 || who.class_id > 31) && who.trader && m_merchant.Merchant() == 0 &&
+		m_zone.SpawnDistance(spawn) <= 20) {
+		if (dead)
+			return;
+		m_abilities.MakeMeVisible();
+		AutoAttackOff(1466); // "Auto attack off."
+		m_merchant.RequestTrader(spawn);
 		return;
 	}
 	// A guildmaster (17..31): our class's (ours + 16) is asked to train us, with none training us
@@ -4560,6 +4623,23 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 		case Type::GMKilled:
 			StruckDown(event.text);
 			break;
+		case Type::TraderChanged:
+			m_bazaar_search.TraderChanged(); // UpdatePlayerUpdateButton(1)
+			break;
+		case Type::TraderMessage:
+			m_bazaar.TraderMessage(event.data);
+			break;
+		case Type::BazaarMessage:
+			m_bazaar_search.BazaarMessage(event.data);
+			break;
+		case Type::SpawnIdAssigned:
+			// msg_stat_change's 0x10: in the Bazaar, its welcome asked (OP_BazaarSearch 9).
+			if (m_zone.Profile().zone_id == 151) {
+				std::vector<uint8_t> body(20, 0);
+				body[0] = 9;
+				m_zone.SendBazaarSearch(body, "9 (welcome)");
+			}
+			break;
 		case Type::DuelRequested:
 			m_duel.Requested(event.id); // msg_duel
 			break;
@@ -4606,6 +4686,10 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			m_loading.Reset();
 			m_loading_percent = -1;
 			m_weather.Kill(m_sound.get()); // StopWorldDisplay
+			// ProcessGameLoop's CDisplay_DeactivateMainUI: the Bazaar's windows down (trader mode
+			// ends with the bazaar window's).
+			m_bazaar.Deactivate();
+			m_bazaar_search.Deactivate();
 			AddZoneLog(EqString(12387, "LOADING, PLEASE WAIT..."), ZoneGrey);
 			break;
 		case Type::ZoneDenied: {
@@ -4688,6 +4772,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			m_containers.CombineAnswered();
 			break;
 		case Type::MerchantOpened:
+		case Type::TraderShopAnswered:
 		case Type::MerchantBought:
 		case Type::MerchantSold:
 		case Type::MerchantItemGone:
@@ -5373,6 +5458,15 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 	case KeyMap::ToggleHotboxWin: toggle("HotButtonWnd"); break;
 	case KeyMap::ToggleMainMenuWin: toggle("ActionsWindow"); break;
 	case KeyMap::ToggleFriendsWin: toggle("FriendsWindow"); break;
+	case KeyMap::ToggleBazaarWin:
+		// ExecuteCmd: CBazaarWnd::Activate, or down.
+		if (down && in_zone)
+			m_bazaar.Toggle();
+		break;
+	case KeyMap::ToggleBazaarSearchWin:
+		if (down && in_zone)
+			m_bazaar_search.Toggle(); // InitializeBazaarSearchWindow, or down
+		break;
 	case KeyMap::TogglePetInfoWin: toggle("PetInfoWindow"); break;
 	case KeyMap::ToggleOptionsWin: toggle("OptionsWindow"); break;
 	case KeyMap::ToggleSelectorWin: toggle("SelectorWindow"); break;
@@ -5687,8 +5781,11 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			m_sound->PlayWave(0x8a);
 		return;
 	}
-	// Into the friends window's name boxes, Enter is their Add (CFriendsWnd's notification 6).
+	// Into the friends window's name boxes, Enter is their Add (CFriendsWnd's notification 6); into
+	// the bazaar search's name box, a search.
 	if (editing && event.key == InputEvent::Key::Enter && editor == friends && m_friends.Enter())
+		return;
+	if (editing && event.key == InputEvent::Key::Enter && m_bazaar_search.Enter())
 		return;
 	if (editing && (editor->OnKey(event) || event.key == InputEvent::Key::Enter))
 		return;
@@ -5740,7 +5837,7 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 		for (const char *screen :
 			{"ItemDisplayWindow", "QuantityWnd", "BankWnd", "MerchantWnd", "LootWnd", "TradeWnd", "BookWindow",
 			 "NoteWindow", "HelpWindow", "AAWindow", "SkillsWindow", "", "OptionsWindow", "SpellBookWnd", "TrainWindow", "SocialEditWnd",
-			 "InventoryWindow"}) {
+			 "InventoryWindow", BazaarSearch::Screen, BazaarWindow::Screen}) {
 			if (!*screen) {
 				if (m_containers.CloseAll())
 					break;
@@ -5756,6 +5853,20 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			if (std::string(screen) == "TrainWindow") {
 				if (m_train.Active()) {
 					m_train.Deactivate();
+					break;
+				}
+				continue;
+			}
+			if (std::string(screen) == BazaarSearch::Screen) {
+				if (m_bazaar_search.Active()) {
+					m_bazaar_search.Deactivate();
+					break;
+				}
+				continue;
+			}
+			if (std::string(screen) == BazaarWindow::Screen) {
+				if (m_bazaar.Active()) {
+					m_bazaar.Deactivate();
 					break;
 				}
 				continue;

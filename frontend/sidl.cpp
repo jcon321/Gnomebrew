@@ -820,6 +820,41 @@ bool SidlWindow::HitTest(const Control &control, int x, int y) const
 	return true;
 }
 
+bool SidlWindow::SelectListRow(Control &control, int x, int y)
+{
+	Rect content = ContentRect(control);
+	int top = content.y + ListHeaderHeight(control);
+	if (x < content.x || x >= content.Right() || y < top || y >= content.Bottom())
+		return false;
+	int row = std::max(control.scroll_pos, 0) + (y - top) / ListRowHeight(control);
+	if (row >= static_cast<int>(control.rows.size()))
+		return false;
+	control.selected_row = row;
+	// CListWnd::GetCurCol: the column under the click, by the columns' widths.
+	control.selected_column = -1;
+	int left = content.x;
+	for (size_t c = 0; c < control.columns.size(); ++c) {
+		if (x >= left && x < left + control.columns[c].width) {
+			control.selected_column = static_cast<int>(c);
+			break;
+		}
+		left += control.columns[c].width;
+	}
+	return true;
+}
+
+std::string SidlWindow::RightPressList(int x, int y)
+{
+	if (m_minimized)
+		return "";
+	for (int i = static_cast<int>(m_controls.size()) - 1; i >= 0; --i) {
+		Control &control = m_controls[i];
+		if (control.def->type == "Listbox" && control.enabled && Shown(control) && HitTest(control, x, y))
+			return SelectListRow(control, x, y) ? control.def->screen_id : "";
+	}
+	return "";
+}
+
 bool SidlWindow::InteractiveAt(int x, int y) const
 {
 	if (m_minimized)
@@ -1342,8 +1377,12 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 		canvas.SetAlpha(window_alpha);
 	}
 	else if (def.type == "InvSlot") {
-		// CInvSlotWnd: the slot's own picture, and what's in it over that.
-		DrawAnimation(canvas, textures, def.slot_background, control.rect, now_ms);
+		// CInvSlotWnd: the slot's own picture (tinted by 0x128, or 0x124 under the mouse, when its
+		// window sets them), and what's in it over that.
+		if (uint32_t tint = control.hover && control.slot_hover_tint ? control.slot_hover_tint : control.slot_tint)
+			DrawAnimation(canvas, textures, def.slot_background, control.rect, now_ms, tint);
+		else
+			DrawAnimation(canvas, textures, def.slot_background, control.rect, now_ms);
 		if (control.cell >= 0)
 			DrawCell(canvas, textures, control.cell_animation, control.cell, control.rect);
 		// A stack's count in its bottom right corner: a dark box 12 by 10, a pixel in from the
@@ -1633,23 +1672,7 @@ std::string SidlWindow::Press(const InputEvent &event)
 				}
 				return "";
 			}
-			if (event.x < content.x || event.x >= content.Right() || event.y < top || event.y >= content.Bottom())
-				return "";
-			int row = std::max(control.scroll_pos, 0) + (event.y - top) / ListRowHeight(control);
-			if (row >= static_cast<int>(control.rows.size()))
-				return "";
-			control.selected_row = row;
-			// CListWnd::GetCurCol: the column under the click, by the columns' widths.
-			control.selected_column = -1;
-			int x = content.x;
-			for (size_t c = 0; c < control.columns.size(); ++c) {
-				if (event.x >= x && event.x < x + control.columns[c].width) {
-					control.selected_column = static_cast<int>(c);
-					break;
-				}
-				x += control.columns[c].width;
-			}
-			return control.def->screen_id;
+			return SelectListRow(control, event.x, event.y) ? control.def->screen_id : "";
 		}
 
 	std::string clicked;

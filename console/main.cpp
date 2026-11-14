@@ -56,6 +56,11 @@ namespace
 			"  --duel NAME           with --zone, 15 s after coming in and NAME is here, challenge NAME to a duel\n"
 			"  --duel-answer HOW     with --zone, answer any duel challenge 2 s after it comes: accept or decline;\n"
 			"                        every duel packet prints\n"
+			"  --buy-from NAME       with --zone, once NAME is a Bazaar trader here, open their shop\n"
+			"                        (OP_TraderShop), buy one of the first item (OP_TraderBuy) and leave (OP_Trader 4)\n"
+			"  --trader ID:PRICE,... with --zone, 15 s in (after --buy-from's purchase, with it), start Bazaar\n"
+			"                        trader mode selling those items at those prices (OP_Trader 1); every bazaar\n"
+			"                        packet prints\n"
 			"  --raid-invite NAME    with --zone, 15 s after coming in and NAME is here, invite NAME to a raid\n"
 			"  --raid-accept         with --zone, accept any raid invitation 2 s after it comes; every raid\n"
 			"                        packet prints\n"
@@ -166,6 +171,8 @@ namespace
 	bool g_raid_accept = false;       // --raid-accept
 	std::string g_duel;               // --duel: whom to challenge
 	std::string g_duel_answer;        // --duel-answer: accept or decline
+	std::string g_buy_from;           // --buy-from: a trader to buy from
+	std::vector<std::pair<int32_t, int32_t>> g_trader_items; // --trader: item ids and prices
 	uint64_t g_skill_at = 0;          // when it's next ready
 
 	// --attack: the nearest NPC whose name starts with g_attack, targeted, auto attack on.
@@ -322,6 +329,10 @@ namespace
 		uint64_t duel_at = 0;         // when --duel goes
 		uint64_t duel_answer_at = 0;  // when --duel-answer answers
 		uint16_t challenger = 0;
+		uint64_t trader_at = 0;       // when --trader goes
+		uint16_t shop_trader = 0;     // --buy-from: the trader whose shop we asked
+		uint64_t buy_at = 0;          // when --buy-from buys
+		bool bought = false;
 		std::string raid_inviter;
 		size_t &next_aa = g_next_step;
 		uint64_t aa_at = 0; // when the next --aa step goes
@@ -357,6 +368,8 @@ namespace
 						raid_invite_at = NowMs() + 15000;
 					if (!g_duel.empty())
 						duel_at = NowMs() + 15000;
+					if (!g_trader_items.empty() && g_buy_from.empty())
+						trader_at = NowMs() + 15000;
 					if (g_click_link >= 0) {
 						printf("[zone] clicking link %d\n", g_click_link);
 						zone.ClickItemLink(static_cast<uint16_t>(g_click_link), "link");
@@ -522,6 +535,42 @@ namespace
 						follow_at = NowMs() + 2000;
 					}
 					break;
+				case ZoneSession::Event::Type::TraderChanged: {
+					auto it = zone.Spawns().find(event.id);
+					std::string who = it != zone.Spawns().end() ? it->second.name : zone.Self().name;
+					printf("[bazaar] %s's trader mode %d\n", who.c_str(),
+						it != zone.Spawns().end() ? it->second.trader : zone.Self().trader);
+					if (!g_buy_from.empty() && !bought && shop_trader == 0 && it != zone.Spawns().end() &&
+						it->second.name == g_buy_from && it->second.trader) {
+						shop_trader = event.id;
+						printf("[bazaar] asking %s's shop\n", who.c_str());
+						zone.TraderShop(event.id);
+					}
+					break;
+				}
+				case ZoneSession::Event::Type::TraderMessage:
+				case ZoneSession::Event::Type::BazaarMessage: {
+					uint16_t code = event.data.size() >= 2 ? static_cast<uint16_t>(event.data[0] | event.data[1] << 8) : 0;
+					printf("[bazaar] %s %u, %zu bytes\n",
+						event.type == ZoneSession::Event::Type::TraderMessage ? "OP_Trader" : "OP_BazaarSearch", code,
+						event.data.size());
+					break;
+				}
+				case ZoneSession::Event::Type::TraderShopAnswered:
+					printf("[bazaar] OP_TraderShop answer: trader %u approval %d\n", event.id, event.value);
+					if (event.value != 0 && event.id == shop_trader)
+						buy_at = NowMs() + 2000; // its items come meanwhile
+					break;
+				case ZoneSession::Event::Type::MerchantBought:
+					printf("[bazaar] bought: trader %u slot %d x%d for %d\n", event.merchant.npc, event.merchant.slot,
+						event.merchant.quantity, event.merchant.price);
+					if (shop_trader != 0) {
+						zone.TraderEnd(shop_trader);
+						shop_trader = 0;
+						if (!g_trader_items.empty())
+							trader_at = NowMs() + 3000;
+					}
+					break;
 				case ZoneSession::Event::Type::DuelRequested:
 					printf("[duel] OP_RequestDuel from %u\n", event.id);
 					if (!g_duel_answer.empty()) {
@@ -636,6 +685,28 @@ namespace
 				raid_accept_at = 0;
 				printf("[raid] accepting %s's invitation\n", raid_inviter.c_str());
 				zone.RaidCommand(4, raid_inviter, zone.Profile().name, 0); // SendInviteResponse
+			}
+			if (buy_at && NowMs() >= buy_at) {
+				buy_at = 0;
+				bought = true;
+				auto it = zone.Items().find(6000);
+				if (it == zone.Items().end())
+					printf("[bazaar] the shop has nothing in slot 0\n");
+				else {
+					printf("[bazaar] buying %s (%u) for %d\n", it->second.name.c_str(), it->second.id, it->second.price);
+					zone.TraderBuy(shop_trader, it->second.id, it->second.price, 1, 0);
+				}
+			}
+			if (trader_at && NowMs() >= trader_at) {
+				trader_at = 0;
+				std::vector<uint8_t> body(644, 0);
+				body[0] = 1;
+				for (size_t i = 0; i < g_trader_items.size() && i < 80; ++i) {
+					memcpy(&body[4 + i * 4], &g_trader_items[i].first, 4);
+					memcpy(&body[324 + i * 4], &g_trader_items[i].second, 4);
+				}
+				printf("[bazaar] starting trader mode with %zu items\n", g_trader_items.size());
+				zone.SendTrader(body, "1 (start)");
 			}
 			if (duel_at && NowMs() >= duel_at) {
 				duel_at = NowMs() + 1000;
@@ -827,6 +898,19 @@ int main(int argc, char **argv)
 			g_group_invite = next();
 		else if (arg == "--group-accept")
 			g_group_accept = true;
+		else if (arg == "--buy-from")
+			g_buy_from = next();
+		else if (arg == "--trader") {
+			std::string list = next();
+			for (size_t at = 0; at < list.size();) {
+				size_t comma = list.find(',', at);
+				std::string pair = list.substr(at, comma == std::string::npos ? std::string::npos : comma - at);
+				size_t colon = pair.find(':');
+				if (colon != std::string::npos)
+					g_trader_items.push_back({atoi(pair.c_str()), atoi(pair.c_str() + colon + 1)});
+				at = comma == std::string::npos ? list.size() : comma + 1;
+			}
+		}
 		else if (arg == "--duel")
 			g_duel = next();
 		else if (arg == "--duel-answer")

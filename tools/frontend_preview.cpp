@@ -399,6 +399,221 @@ namespace
 		return 0;
 	}
 
+	// Live in the Bazaar, as the account's first character (Replaycaster, a Trader's Satchel with a
+	// Cloth Cap and Peridots in it), with Claudebot through eqclient --buy-from Replaycaster --trader
+	// 10028:50 --zone 200: /trader, the cap priced 1p and Set Price, Start under the trader stalls,
+	// Claudebot buying it, the Peridots priced and Add, /bazaar and a search for "Peri", End; then
+	// Claudebot's own shop by the right button, a Peridot bought (Ctrl: one) and Done. Prints the bazaar
+	// window's text, the chat and what the windows hold at each step.
+	int BazaarTest(FrontEnd &frontend, Harness &h)
+	{
+		const ZoneSession &zone = frontend.Zone();
+		WindowManager &windows = frontend.Windows();
+		h.Key(InputEvent::Key::F11);
+		size_t chat_seen = frontend.Chat().Lines().size();
+		auto chat = [&] {
+			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
+				printf("[preview] chat: %s\n", frontend.Chat().Lines()[chat_seen].text.c_str());
+		};
+		size_t text_seen = 0;
+		auto bazaar_text = [&] {
+			const SidlWindow *wnd = windows.Find(BazaarWindow::Screen);
+			const SidlWindow::Control *box = wnd ? wnd->Find("BZW_BazaarText") : nullptr;
+			if (!box)
+				return;
+			if (box->text.size() < text_seen)
+				text_seen = 0;
+			std::string fresh = box->text.substr(text_seen);
+			text_seen = box->text.size();
+			for (size_t at = 0; (at = fresh.find("\">", at)) != std::string::npos;) {
+				size_t end = fresh.find("</c>", at);
+				printf("[preview] bazaar text: %s\n", fresh.substr(at + 2, end - at - 2).c_str());
+				at = end;
+			}
+		};
+		auto run = [&](int ms) {
+			h.RunUntil([] { return false; }, ms);
+			chat();
+			bazaar_text();
+		};
+		auto type = [&](const std::string &line) {
+			printf("[preview] > %s\n", line.c_str());
+			h.Key(InputEvent::Key::Enter);
+			h.Type(line);
+			h.Key(InputEvent::Key::Enter);
+			run(700);
+		};
+		auto click = [&](const char *window, const std::string &id, bool shift = false, bool ctrl = false) {
+			const SidlWindow *wnd = windows.Find(window);
+			const SidlWindow::Control *c = wnd ? wnd->Find(id) : nullptr;
+			if (!c || !windows.Shown(window)) {
+				printf("[preview] no %s in %s\n", id.c_str(), window);
+				return;
+			}
+			Rect area = frontend.ScreenArea();
+			int x = area.x + c->rect.x + c->rect.w / 2, y = area.y + c->rect.y + c->rect.h / 2;
+			printf("[preview] click %s.%s%s (%s, %s on top there)\n", window, id.c_str(), shift ? " with Shift" : "",
+				c->enabled ? "enabled" : "disabled", windows.ScreenAt(x, y).c_str());
+			InputEvent move{InputEvent::Type::MouseMove, x, y}, down{InputEvent::Type::MouseDown, x, y},
+				up{InputEvent::Type::MouseUp, x, y};
+			down.shift = up.shift = shift;
+			down.ctrl = up.ctrl = ctrl;
+			frontend.OnEvent(move);
+			frontend.OnEvent(down);
+			frontend.OnEvent(up);
+			run(500);
+		};
+		auto buttons = [&] {
+			const SidlWindow *wnd = windows.Find(BazaarWindow::Screen);
+			if (!wnd)
+				return;
+			std::string out;
+			for (const char *id : {"BZW_Start_Button", "BZW_End_Button", "BZW_SetPrice_Button", "BZW_Clear_Button",
+			                       "BZW_Add_Button", "BZW_Remove_Button", "BZW_List_Button"})
+				if (const SidlWindow::Control *c = wnd->Find(id))
+					out += std::string(" ") + (id + 4) + (c->visible ? c->enabled ? "+" : "-" : "(hidden)");
+			std::string money;
+			for (const char *id : {"BZW_Money0", "BZW_Money1", "BZW_Money2", "BZW_Money3"})
+				if (const SidlWindow::Control *c = wnd->Find(id))
+					money += " " + c->text;
+			printf("[preview] bazaar buttons:%s; money%s; trader mode %d\n", out.c_str(), money.c_str(),
+				frontend.BazaarForTests().TraderMode() ? 1 : 0);
+		};
+		auto slots = [&] {
+			const SidlWindow *wnd = windows.Find(BazaarWindow::Screen);
+			for (int i = 0; i < 4 && wnd; ++i)
+				if (const SidlWindow::Control *c = wnd->Find("BZR_BazaarSlot" + std::to_string(i)))
+					printf("[preview]   slot %d: %s, cell %d, tint %06x\n", i, c->tooltip.c_str(), c->cell, c->slot_tint);
+		};
+		auto bot = [&]() -> const ZoneSpawn * {
+			for (const auto &[id, spawn] : zone.Spawns())
+				if (spawn.name == "Claudebot")
+					return &spawn;
+			return nullptr;
+		};
+		run(1500);
+		printf("[preview] zone %u, coins %dp %dg %ds %dc\n", zone.Profile().zone_id, zone.Profile().platinum,
+			zone.Profile().gold, zone.Profile().silver, zone.Profile().copper);
+		// Under the first row of trader stalls (IsSpecialBazaarSpot: y -764..-601, x -126..-83).
+		frontend.ZoneScene()->SetPlayerPosition(-100, -680, zone.Profile().z + 2, 0);
+		run(3000);
+		printf("[preview] at %.0f, %.0f, %.0f: special spot %d\n", zone.Profile().x, zone.Profile().y, zone.Profile().z,
+			BazaarWindow::IsSpecialBazaarSpot(zone.Profile().zone_id, zone.Profile().y, zone.Profile().x) ? 1 : 0);
+		type("/trader");
+		h.Snapshot("bz1-window");
+		slots();
+		buttons();
+		click(BazaarWindow::Screen, "BZR_BazaarSlot0");
+		buttons();
+		click(BazaarWindow::Screen, "BZW_Money0"); // the quantity window
+		printf("[preview] quantity window %s\n", windows.Shown("QuantityWnd") ? "up" : "down");
+		windows.Show("QuantityWnd", false);
+		click(BazaarWindow::Screen, "BZW_Money3", true); // 100 copper at once
+		buttons();
+		click(BazaarWindow::Screen, "BZW_SetPrice_Button");
+		click(BazaarWindow::Screen, "BZW_Start_Button");
+		run(2000);
+		buttons();
+		slots();
+		h.Snapshot("bz2-trader");
+		printf("[preview] waiting for Claudebot to buy\n");
+		h.RunUntil([&] { return bot() != nullptr; }, 60000);
+		uint64_t until = NowMs() + 60000;
+		while (NowMs() < until) {
+			run(1000);
+			const SidlWindow *wnd = windows.Find(BazaarWindow::Screen);
+			const SidlWindow::Control *box = wnd ? wnd->Find("BZW_BazaarText") : nullptr;
+			if (box && box->text.find("purchased") != std::string::npos)
+				break;
+		}
+		printf("[preview] coins %dp %dg %ds %dc\n", zone.Profile().platinum, zone.Profile().gold, zone.Profile().silver,
+			zone.Profile().copper);
+		slots();
+		// The Peridots: priced 1p (Shift on silver: 100 of them) and Add.
+		click(BazaarWindow::Screen, "BZR_BazaarSlot0");
+		buttons();
+		click(BazaarWindow::Screen, "BZW_Money2", true);
+		buttons();
+		click(BazaarWindow::Screen, "BZW_Add_Button");
+		run(1500);
+		buttons();
+		slots();
+		// The search.
+		type("/bazaar");
+		// Apart: the search window at the left, the bazaar window at the right edge.
+		if (const SidlWindow *bazaar = windows.Find(BazaarWindow::Screen)) {
+			windows.MoveTo(BazaarSearch::Screen, 0, 40);
+			// The default skin's Find (y 345) and Request Item sit under its 347 high client area: taller.
+			if (const SidlWindow *search = windows.Find(BazaarSearch::Screen))
+				windows.Resize(BazaarSearch::Screen, search->Bounds().w, search->Bounds().h + 60);
+			windows.MoveTo(BazaarWindow::Screen, frontend.ScreenWidth() - bazaar->Bounds().w, 300);
+			const SidlWindow *search = windows.Find(BazaarSearch::Screen);
+			printf("[preview] screen %d wide; search %dx%d, bazaar %dx%d\n", frontend.ScreenWidth(),
+				search ? search->Bounds().w : 0, search ? search->Bounds().h : 0, bazaar->Bounds().w, bazaar->Bounds().h);
+		}
+		if (SidlWindow *search = windows.Find(BazaarSearch::Screen))
+			if (SidlWindow::Control *name = search->Find("BZR_ItemNameInput"))
+				name->text = "Peri";
+		run(500);
+		click(BazaarSearch::Screen, "BZR_QueryButton");
+		run(2000);
+		for (const BazaarSearch::Result &r : frontend.BazaarSearchForTests().Results())
+			printf("[preview] result: '%s' %d copper from %s (item int %d, stat %d)\n", r.name.c_str(), r.cost,
+				r.seller.c_str(), r.item, r.stat);
+		if (const SidlWindow *search = windows.Find(BazaarSearch::Screen))
+			if (const SidlWindow::Control *list = search->Find("BZR_ItemList"))
+				for (const auto &row : list->rows)
+					printf("[preview] row: %s | %s | %s | %s\n", row[0].c_str(), row[1].c_str(), row[2].c_str(),
+						row[3].c_str());
+		h.Snapshot("bz3-search");
+		click(BazaarSearch::Screen, "BZR_WelcomeButton");
+		run(1000);
+		click(BazaarWindow::Screen, "BZW_End_Button");
+		run(1500);
+		buttons();
+		type("/trader"); // up already: nothing
+		h.Key(InputEvent::Key::Escape); // the search window
+		h.Key(InputEvent::Key::Escape); // the bazaar window
+		run(1000);
+		printf("[preview] search %s, bazaar %s\n", windows.Shown(BazaarSearch::Screen) ? "up" : "down",
+			windows.Shown(BazaarWindow::Screen) ? "up" : "down");
+		// Claudebot's own shop.
+		printf("[preview] waiting for Claudebot's trader mode\n");
+		h.RunUntil([&] { return bot() && bot()->trader; }, 60000);
+		run(500);
+		if (const ZoneSpawn *b = bot()) {
+			uint16_t id = b->id;
+			frontend.ZoneScene()->SetPlayerPosition(b->x, b->y - 10, b->z, 0);
+			run(2000);
+			int x = 0, y = 0;
+			if (FindOnScreen(frontend, h, id, x, y)) {
+				frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+				frontend.OnEvent({InputEvent::Type::RightDown, x, y});
+				frontend.OnEvent({InputEvent::Type::RightUp, x, y});
+			}
+			else
+				printf("[preview] Claudebot isn't on the screen\n");
+			h.RunUntil([&] { return windows.Shown("MerchantWnd"); }, 5000);
+			run(1500);
+			for (const auto &[slot, item] : zone.Items())
+				if (slot >= Inventory::FirstMerchant && slot <= Inventory::LastMerchant)
+					printf("[preview]   trader slot %d: %s, %d copper, count %d\n", slot - Inventory::FirstMerchant,
+						item.name.c_str(), item.price, Inventory::Count(item));
+			h.Snapshot("bz4-shop");
+			click("MerchantWnd", "MW_MerchantSlot0");
+			click("MerchantWnd", "MW_Buy_Button", false, true); // Ctrl: one
+			run(2000);
+			printf("[preview] coins %dp %dg %ds %dc\n", zone.Profile().platinum, zone.Profile().gold,
+				zone.Profile().silver, zone.Profile().copper);
+			click("MerchantWnd", "DoneButton");
+		}
+		type("/camp");
+		h.RunUntil([&] { return zone.GetState() != ZoneSession::State::InZone && zone.GetState() != ZoneSession::State::Camping; },
+			60000);
+		printf("[preview] camped\n");
+		return 0;
+	}
+
 	// Live, as the account's first character (Replaycaster), with Claudebot through eqclient --duel
 	// Replaycaster --duel-answer accept --zone 75: their challenge (1426) turned down with /decline,
 	// /decline and /duel's refusals (no challenge, no target), our /duel of them taken up
@@ -2879,6 +3094,7 @@ int main(int argc, char **argv)
 	bool passage = argc == 7 && std::string(argv[6]) == "passage";
 	bool group_test = argc == 7 && std::string(argv[6]) == "group";
 	bool duel_test = argc == 7 && std::string(argv[6]) == "duel";
+	bool bazaar_test = argc == 7 && std::string(argv[6]) == "bazaar";
 	// mounts: a replay's horses with the old models; mountsluclin with the human Luclin models (no
 	// horse models: UseLuclinElementals off); mountshorse with both.
 	bool mounts_test = argc == 7 && std::string(argv[6]).rfind("mounts", 0) == 0;
@@ -4916,6 +5132,8 @@ int main(int argc, char **argv)
 				return GroupTest(frontend, h);
 			if (duel_test)
 				return DuelTest(frontend, h);
+			if (bazaar_test)
+				return BazaarTest(frontend, h);
 			if (raid_test)
 				return RaidTest(frontend, h);
 			if (aa_test)

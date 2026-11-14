@@ -36,6 +36,12 @@
 //   - Deactivate (@00426faf), from Done, the close box, Escape and walking away: the window down,
 //     its items forgotten, the music off, OP_ShopEnd, our target cleared, the inventory down if it put it up;
 //   - PostDraw (@004270dc): with Alt down, every merchant slot's tooltip that's in view.
+//   - A Bazaar trader (pinstActiveMerchant's Type 0): the right button asks OP_TraderShop
+//     (RightClickedOnPlayer), whose answer opens the window at a rate of 1 (CMerchantWnd_Activate2;
+//     approval 0 just stops waiting); its items come as a merchant's; our own slots aren't
+//     selected (SelectBuySellSlot), so nothing's sold; RequestBuyItem sends OP_TraderBuy (the item,
+//     ValueBuy's price, the count, its slot) and the answer finishes as a merchant's does
+//     (FinishBuyingItem); Deactivate sends OP_Trader 4 in place of OP_ShopEnd.
 
 #include "zone_session.h"
 
@@ -70,6 +76,8 @@ public:
 	bool Busy() const { return m_busy > 0; }        // DAT_007d0254: a buy or sell the zone hasn't answered
 	uint16_t Merchant() const { return m_merchant; } // pinstActiveMerchant; 0 none
 	void Request(uint16_t merchant);                // OP_ShopRequest
+	void RequestTrader(uint16_t trader);            // OP_TraderShop
+	bool Trader() const { return m_trader; }        // pinstActiveMerchant's Type 0
 	void ZoneEvent(const ZoneSession::Event &event);
 	void Deactivate();
 	void Frame(uint64_t now_ms);
@@ -98,6 +106,7 @@ private:
 	const GameValues *m_values = nullptr;
 	Host m_host;
 	uint16_t m_merchant = 0;   // pinstActiveMerchant
+	bool m_trader = false;     // a Bazaar trader's (Type 0)
 	bool m_active = false;
 	float m_greed = 1;         // MerchantGreed: the rate OP_ShopRequest sent
 	int m_selected = -1;       // InventoryItemSlot: a merchant's 6000.., or ours; -1 none

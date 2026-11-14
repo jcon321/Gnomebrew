@@ -46,6 +46,8 @@
 #include "pet_window.h"
 #include "friends.h"
 #include "duel.h"
+#include "bazaar_search.h"
+#include "bazaar_window.h"
 #include "aa_window.h"
 #include "guild.h"
 #include "trade_window.h"
@@ -178,6 +180,8 @@ public:
 	int FastDrop() const { return m_config.fast_drop; }                    // /fastdrop, to remember
 	const ZoneSession &Zone() const { return m_zone; }
 	const Duel &DuelState() const { return m_duel; }
+	BazaarWindow &BazaarForTests() { return m_bazaar; }
+	BazaarSearch &BazaarSearchForTests() { return m_bazaar_search; }
 	ZoneSession &ZoneForTests() { return m_zone; } // the preview's injected packets
 	const LoadingScreen &Loading() const { return m_loading; }
 	bool LostConnectionShown() const { return m_lost.shown; }
@@ -336,6 +340,7 @@ private:
 	// /consider (of our target).
 	void RightClickedOnPlayer(uint16_t spawn);
 	bool IsOkToTransact() const;
+	void FaceSpawn(uint16_t id); // EQPlayer::FacePlayer
 	void WorldClick(int x, int y); // CEverQuest_LMouseUp on the world (window pixels) // CEverQuest_IsOkToTransact: no window that deals with someone up
 	void AddZoneLog(const std::string &text, uint32_t color); // a line of chat in this color
 	void ChatOut(const std::string &text, int type);          // in a chat color type (ChatType)
@@ -753,6 +758,8 @@ private:
 	PetWindow m_pet_window;   // CPetInfoWnd, /pet
 	Friends m_friends;        // CFriendsWnd, /friends, /ignore, __FriendsList and __IgnoreList
 	Duel m_duel;              // /duel, /decline, msg_duel
+	BazaarWindow m_bazaar;    // CBazaarWnd: /trader
+	BazaarSearch m_bazaar_search; // CBazaarSearchWnd: /bazaar
 	AAWindow m_aa_window;     // CAAWnd
 	bool RaidAllowed() const;  // the raid's: Planes of Power (Expansions & 8), or a test server
 	Guild m_guild;

@@ -355,7 +355,7 @@ eqgame's `OP_MoveItem`.
   /auction, /ooc, /emote (`:`, /me), /hail, /target, /assist, /consider, /location, /time,
   /played, /motd, /afk, /anonymous, /shownames, /sit, /stand, /book, /cast, /camp, /clearchat,
   /random, /lootnodrop, /fastdrop, /autosplit, /roleplay, /targetgroupbuff (/tgb), /split, /yell,
-  /consent, /duel, /decline, /loot, /ttell, /charinfo, /movelog, /stopsong, /shield, /quit (/exit), /log, /keys, /dismount,
+  /consent, /duel, /decline, /trader, /bazaar, /loot, /ttell, /charinfo, /movelog, /stopsong, /shield, /quit (/exit), /log, /keys, /dismount,
   /adriver, /sdriver, /attack, /combatmusic, /doability, the
   guild commands (see Guilds under In the zone),
   the raid commands (see Raids), /filter, /serverfilter and the socials (/smile, /wave and the
@@ -606,6 +606,11 @@ build/eqclient -u USER -p PASS [options]
                         (OP_RaidInvite 3)
   --raid-accept         with --zone: accept any raid invitation 2 s after it comes (OP_RaidInvite 4);
                         every raid packet prints
+  --buy-from NAME       with --zone: once NAME is a Bazaar trader here, open their shop
+                        (OP_TraderShop), buy one of the first item (OP_TraderBuy) and leave (OP_Trader 4)
+  --trader ID:PRICE,... with --zone: 15 s in (after --buy-from's purchase, with it), start Bazaar
+                        trader mode selling those items at those prices (OP_Trader 1); every bazaar
+                        packet prints
   --duel NAME           with --zone: 15 s in, once NAME is in the zone, challenge them to a duel
                         (OP_RequestDuel)
   --duel-answer HOW     with --zone: answer any duel challenge 2 s after it comes, accept
@@ -634,7 +639,7 @@ build/eqclient -u USER -p PASS [options]
 ## Preview tool (Linux)
 
 ```
-build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|train|ground|commands|group|duel|raid|guild|skills|aa]]
+build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|train|ground|commands|group|duel|bazaar|raid|guild|skills|aa]]
 build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez|cameras]]
 ```
 
@@ -657,7 +662,13 @@ printing the group and the window's buttons at each step); or `duel`, with Claud
 through `eqclient -u clauderobot -p testpass1 --char Claudebot --zone 110 --duel Replaycaster
 --duel-answer accept`, to stand by them, turn their challenge down with /decline, type /decline
 and /duel's refusals, /duel them (taken up), /duel and /decline mid-duel, auto attack them for
-6 s and wait for them to camp out (the despawn's win), printing the chat and the duel's state; or `raid`, with Claudebot in the zone
+6 s and wait for them to camp out (the despawn's win), printing the chat and the duel's state; or `bazaar`, in the Bazaar as Replaycaster (a Trader's
+Satchel with a Cloth Cap and Peridots in it), with Claudebot there through `eqclient -u clauderobot
+-p testpass1 --char Claudebot --zone 200 --buy-from Replaycaster --trader 10028:50`, to open
+/trader, price the cap and Set Price, Start under the trader stalls, watch Claudebot buy it, price
+the Peridots and Add, /bazaar and Find "Peri", Welcome, End, Escape both windows, then open
+Claudebot's shop with the right button, buy a Peridot (Ctrl: one) and Done, printing the bazaar
+window's text, its buttons, slots and the chat at each step; or `raid`, with Claudebot in the zone
 through `eqclient -u clauderobot -p testpass1 --char Claudebot --zone 200 --raid-invite Replaycaster
 --raid-accept`, to type the raid commands out of a raid, accept their invitation with /raidaccept,
 /raidwindow, take it with the window's Accept, type them as a member, leave with Disband, then
@@ -2655,6 +2666,58 @@ details and the nearest spawns at the top left and the radar at the top right.
   Escape and walking more than 20 away across the ground (every 500 ms) send `OP_ShopEnd`
   (0x4037: merchant, us) and clear our target. The slots scroll in `MW_MerchantSlotsWnd`, a
   `Style_VScroll` screen; our step is 10 pixels.
+- **The Bazaar** (zone 151). See `frontend/bazaar_window.h` and `frontend/bazaar_search.h` for each
+  message and button.
+  - **Traders.** ActorInfo's `IsTrader` (`ZoneSpawn::trader`) comes from `OP_BecomeTrader` (0x4218,
+    {u16 spawn, u16, u32 code}) and SpawnAppearance 31 (EQMacEmu's `NPCName`). In the Bazaar a
+    trader's name starts "Trader " (5503) in place of an AA title; anywhere it's 0x40ffff (unless
+    PvP). /who's `trader` keeps only traders, and each line starts " TRADER" (12315). A trader
+    skips `ProcessHungerandThirst` (no eating, no hunger messages). SpawnAppearance 0x10 in the
+    Bazaar asks for its welcome (`OP_BazaarSearch` 9), whose answer prints "Welcome to The
+    Bazaar!" and the counts in color 10.
+  - **The bazaar window** (`CBazaarWnd`; the decompile names its constructor
+    `CBazaarSearchWnd::InitializeBazaarWindow` @004068b8, and several methods `CBazaarSearchWnd`'s):
+    /trader (@004ff4d4) or Toggle bazaar window, only in the Bazaar. Its 80 slots (`BZR_BazaarSlot0..79`,
+    7000..7079) show every item in the Trader's Satchels (item 17899) in the general slots, NO
+    DROP ones only under the FV rules. Prices are kept by item name under `[ItemToSell]` in
+    `.\BZR_<name>_<server>.ini` (the login host's first 8 characters; "*NULL*" missing, written 0),
+    set from the four money buttons through the quantity window (up to 1000000 platinum, 100 of the
+    rest; at most 1000000000 copper). Start sends `OP_Trader` 1 (Trader_Struct, 644 bytes: u16 1,
+    u16, u32 items[80], u32 costs[80]) for every priced item, only under the trader stalls
+    (`EQ_Character::IsSpecialBazaarSpot` @004bd927: six boxes of Y (EQPlayer+0x48) and X (+0x4c));
+    End and closing the window send `OP_Trader` 2, List 11, and a price change 3
+    ({u16 3, u16, i32 item, u32 price}; 0 takes it off sale). The zone's `OP_Trader` (`HandleTraderMsg`
+    @00406f95): 1 on (then 11 asked; u32 @4 0: not in a merchant area), 2 off, 3 a price's
+    answer (0..3), 10 a customer's purchase (TraderBuy_Struct: name @16, price @8, count @12; the
+    list rebuilt keeping prices), 11 the list (each id found in the satchels), 13 a customer
+    browsing (spawn @4). Each line goes into `BZW_BazaarText` as `<c "#RRGGBB">` in a chat color and
+    into `bzrlog_<host's 9th..11th>_<name>.txt` as "[ctime] line" (`bazaarlog` @00524219). An item
+    on sale tints its slot's picture 0x00df00 (0x40ff40 under the mouse; `CInvSlotWnd` draws its
+    picture in 0x128's color, 0x124's under the mouse), else chat colors 12 and 10. The bazaar
+    window being up fails `IsOkToTransact`.
+  - **A trader's shop.** The right button on a trader within 20 (not a banker or guildmaster
+    class) sends `OP_TraderShop` (0x4216, 16 bytes: the trader), waiting as for a merchant; the
+    answer (approval @12; `CMerchantWnd_Activate2`) opens the merchant window at a rate of 1, and
+    the items come as a merchant's. Our own slots aren't selected (nothing's sold to a trader).
+    Buying sends `OP_TraderBuy` (0x4224, 80 bytes: u16, trader, u32 item, u32 `ValueBuy`'s price,
+    u16 count, u16 slot) and the answer (the same; slot 0xffff refused) finishes as a merchant's
+    (`FinishBuyingItem`). Done sends `OP_Trader` 4 (u32 4, u32 trader, u32 us) in place of
+    `OP_ShopEnd`. EQMacEmu builds `OP_MoneyUpdate` (0x4008) for the trader but never sends it;
+    their coins come as `OP_TradeMoneyUpdate`.
+  - **The search window** (`CBazaarSearchWnd` @00404e21): /bazaar (@004ff4b0) or the toggle, only in
+    the Bazaar. Its combos come from eqgame's tables (@005e3844 on: each a string id, -1, and the
+    value sent), and All Traders plus the traders here by name. Find, or Enter in the name box,
+    sends `OP_BazaarSearch` 7 (BazaarSearch_Struct, 88 bytes: trader id or 0, class, race, stat,
+    slot, type, -1 for any, name @14, min @80, max @84). Each result (7: count @2, item @4,
+    seller @6, cost @8, name @12 with the count appended by the zone) goes onto the list; 12 ends
+    them (sorted by the last heading clicked). eqgame takes the int at 16 as the stat for a fourth
+    column, which with EQMacEmu's struct is four letters of the name, but the default skin's list
+    has three columns. Request Item, or the right button on a result's name, sends
+    `OP_ItemLinkResponse` (0x4264, {u16 the item, its name up to the last '('}); the right button
+    on its seller turns us to them (`EQPlayer::FacePlayer`). The default skin's Find (y 345) sits
+    under the window's 347 high client area until it's made taller. Escape closes the search
+    window, then the bazaar window, after the inventory.
+  Checked live with Claudebot (`eqclient --buy-from`, `--trader`; `frontend_preview ... bazaar`).
 - **Guildmasters** (`frontend/train_window.*`, `CTrainWnd`, TrainWindow): the right button on a
   guildmaster (class 17..31) within 20 trains with our own class's (our class + 16), when none is
   training us already: `EQ_Character::MakeMeVisible`, auto attack off (1466), and `OP_GMTraining`

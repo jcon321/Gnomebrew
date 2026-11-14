@@ -99,20 +99,49 @@ void MerchantWindow::Request(uint16_t merchant)
 	if (m_merchant != 0 || !m_zone)
 		return;
 	m_merchant = merchant;
+	m_trader = false;
 	m_active = false;
 	m_zone->ShopRequest(merchant);
+}
+
+void MerchantWindow::RequestTrader(uint16_t trader)
+{
+	if (m_merchant != 0 || !m_zone)
+		return;
+	m_merchant = trader;
+	m_trader = true;
+	m_active = false;
+	m_zone->TraderShop(trader);
 }
 
 void MerchantWindow::ZoneEvent(const ZoneSession::Event &event)
 {
 	using Type = ZoneSession::Event::Type;
 	switch (event.type) {
+	case Type::TraderShopAnswered:
+		// CMerchantWnd_Activate2: a trader's go-ahead opens the window as a merchant's at 1.0.
+		if (m_active || !m_trader || event.id != m_merchant)
+			break;
+		if (event.value == 0) {
+			m_merchant = 0;
+			m_trader = false;
+			break;
+		}
+		{
+			ZoneSession::Event open(Type::MerchantOpened);
+			open.merchant.npc = m_merchant;
+			open.merchant.command = 1;
+			open.merchant.rate = 1;
+			ZoneEvent(open);
+		}
+		break;
 	case Type::MerchantOpened:
 		// msg_req_merchantitems: for the merchant we asked, the window up, or (0) not.
 		if (m_active || event.merchant.npc != m_merchant)
 			break;
 		if (event.merchant.command == 0) {
 			m_merchant = 0;
+			m_trader = false;
 			break;
 		}
 		m_active = true;
@@ -162,8 +191,12 @@ void MerchantWindow::Deactivate()
 	m_windows->Show("MerchantWnd", false);
 	if (was_active && m_host.save)
 		m_host.save(); // CMerchantWnd::Deactivate's SavePC, before the shop's end
-	m_zone->ShopEnd(m_merchant); // its items go
+	if (m_trader)
+		m_zone->TraderEnd(m_merchant); // OP_Trader 4
+	else
+		m_zone->ShopEnd(m_merchant); // its items go
 	m_merchant = 0;
+	m_trader = false;
 	m_busy = 0;
 	Select(-1);
 	if (!was_active)
@@ -218,6 +251,8 @@ void MerchantWindow::Select(int slot)
 	if (!item)
 		return;
 	bool buying = IsMerchantSlot(slot);
+	if (!buying && m_trader)
+		return; // SelectBuySellSlot: nothing of ours is sold to a trader
 	// A bag's contents are priced first.
 	if (!buying && item->item_class == 1)
 		for (int n = 0; n < item->bag_slots; ++n)
@@ -367,7 +402,12 @@ void MerchantWindow::HandleBuy(int count)
 			m_host.chat(said, SaidColor);
 		return;
 	}
-	if (m_zone->ShopBuy(m_merchant, static_cast<int16_t>(m_selected - Inventory::FirstMerchant), count))
+	if (m_trader) {
+		if (m_zone->TraderBuy(m_merchant, item->id, cost, static_cast<uint16_t>(count),
+				static_cast<uint16_t>(m_selected - Inventory::FirstMerchant)))
+			++m_busy;
+	}
+	else if (m_zone->ShopBuy(m_merchant, static_cast<int16_t>(m_selected - Inventory::FirstMerchant), count))
 		++m_busy;
 }
 

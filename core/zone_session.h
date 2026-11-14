@@ -155,6 +155,7 @@ struct ZoneSpawn
 	uint8_t afk = 0;
 	uint8_t linkdead = 0;
 	uint8_t lfg = 0;         // OP_LFGCommand only; the spawn packets don't carry it
+	uint8_t trader = 0;      // ActorInfo's IsTrader: OP_BecomeTrader's code, or SpawnAppearance 31
 	uint8_t pvp = 0;
 	uint8_t invis = 0;       // VisibilityState (SpawnAppearance 3): 1 invisible or hidden, 2 to the undead, 3 to animals
 	uint8_t sneaking = 0;    // IsSneaking (SpawnAppearance 15)
@@ -543,6 +544,17 @@ public:
 			// (OP_DuelResponse: 0 declined, 1 dueling another, 2 considering another's).
 			DuelRequested,
 			DuelResponded,
+			// The Bazaar: someone's trader mode changed (id; OP_BecomeTrader or SpawnAppearance 31, in
+			// Spawns() already), OP_Trader and OP_BazaarSearch as they came (data), a trader's shop
+			// answered (OP_TraderShop: id the trader, value the approval). A trader's sale to us
+			// (OP_TraderBuy) comes as MerchantBought.
+			TraderChanged,
+			TraderMessage,
+			BazaarMessage,
+			TraderShopAnswered,
+			// SpawnAppearance 0x10: our spawn id (msg_stat_change's 0x10, which asks for the Bazaar's
+			// welcome there).
+			SpawnIdAssigned,
 			// Death's questions and answers (data the packet): OP_RezzRequest asking to resurrect us
 			// (msg_resurrect), OP_RezzComplete (msg_resurrect_complete), OP_Sacrifice asking (id the
 			// caster, value the target: msg_sacrifice), OP_Translocate asking (complete 0) or moving
@@ -781,6 +793,14 @@ public:
 	void RequestDuel(uint16_t target, bool accept);
 	void DuelResponse(uint16_t to, uint8_t type);
 	void DuelWon(uint16_t loser);
+	// The Bazaar: OP_Trader and OP_BazaarSearch as given (body: the whole struct), OP_TraderShop
+	// {trader} (16 bytes), OP_TraderBuy (80 bytes: {0, trader, item, price, quantity, slot}), and
+	// OP_ItemLinkResponse {id, name} with the whole name (CBazaarSearchWnd's item request).
+	bool SendTrader(const std::vector<uint8_t> &body, const std::string &what);
+	bool SendBazaarSearch(const std::vector<uint8_t> &body, const std::string &what);
+	bool TraderShop(uint16_t trader);
+	bool TraderBuy(uint16_t trader, int32_t item, int32_t price, uint16_t quantity, uint16_t slot);
+	bool RequestItem(uint16_t id, const std::string &name);
 	// EQPlayer::IDied of another spawn: Type 2 whoever it was, still, and named as its corpse.
 	void BecomeCorpse(uint16_t id);
 	// CEverQuest::ReportDeath's HpCurrent -11 for a group member who died.
@@ -896,6 +916,8 @@ public:
 	bool ShopBuy(uint16_t npc, int16_t slot, int32_t quantity);
 	bool ShopSell(uint16_t npc, int16_t slot, int32_t quantity);
 	bool ShopEnd(uint16_t npc);
+	// CMerchantWnd::Deactivate with a trader: OP_Trader {u32 4, u32 trader, u32 us}; its items go.
+	bool TraderEnd(uint16_t trader);
 	// Looting (CEverQuest_LootCorpse, CLootWnd): OP_LootRequest (the corpse's id), OP_LootItem
 	// for what's in a loot slot (0..29; `auto_loot` the right button's, into the inventory), and
 	// OP_EndLootRequest when we're done (the zone answers with its own, LootEnded).
