@@ -7,13 +7,35 @@ no rules of its own.
 
 1. ~~**In-game SIDL windows.**~~ Done: `frontend/window_manager.*` (drag, resize, close, minimize,
    focus order, fading, `UI_<char>_<server>.ini`, BGTint and BGType drawn, the window menu and
-   the color picker: `CContextMenuManager`, `CColorPickerWnd`). Still to do: the windows' own
-   menus over the default one (`CPlayerWnd::CreateLocalMenu`, `CGroupWnd`'s, the chat window's
-   `CChatManager::InitContextMenu`), Lock for windows that can't be locked (CXWnd 0x13, always
-   allowed here), and only the chat window's, the social editor's, the quantity window's and the
-   color picker's edit boxes take typing. The
-   resize and drag cursors are the SIDL ones; the usual cursor is still eqmain's `cursor.bmp`
-   rather than `A_DefaultCursor`.
+   the color picker: `CContextMenuManager`, `CColorPickerWnd`). Still to do:
+   - The windows' own menus over the default one: `CPlayerWnd::CreateLocalMenu` (@0042ef32) and
+     `CGroupWnd::CreateLocalMenu` (@0041f30d) put a checked "Pet Display" (eqstr 3126) and a
+     separator (`CContextMenu::AddSeparator`, `CheckMenuItem`) over "Window" (6643); the chat
+     window's is `CChatManager::InitContextMenu` (@0041179c, see 3).
+   - Lock for windows that can't be locked (CXWnd 0x13, always allowed here).
+   - Edit boxes (`CEditWnd`, @005a1ed0 on): the keys go to one of five (the chat window's, the
+     social editor's, the quantity window's, the color picker's and the friends window's:
+     `FrontEnd`'s focus group), and text goes in only at the end. Not ours: the caret moved by the
+     keys and the mouse (`HandleKeyboardMsg` @005a3010, `HandleLButtonDown`, `GetCaretPt`,
+     `EnsureCaretVisible`), a selection (`SetSel`, `ReplaceSelection`), the clipboard
+     (`processClipboardText` @005583fe from `EverQuest_wndproc`), `FilterInputStr` and
+     `AlphaNumericOnly`, masked text (`GetMaskedText`), item links typed as tags (`AddItemTag`,
+     `ProcessEditWindowTags`), a multi-line box's scrolling, and the IME.
+   - STML boxes (`CStmlWnd`; ours take `<BR>`, `<P>`, `<c "#RRGGBB">`, `&lt;` and `&gt;`): tables
+     (`ParseHtmlTable` @00584540), links and their pages (`HandleMouseClickOnText` @00587540,
+     `LoadPage` @005889b0, the history and `NavigateBackInBrowserHistory`), the named colors and
+     alignment of `ParseColorValue` (@00581650) and `ParseAlignmentValue`, the other entities
+     (`InitializeHtmlEntityMappings` @00581b20). Nothing we show needs them until the help window
+     (34) does.
+   - Lists (`CListWnd`): a column's separator dragged (`ShiftColumnSeparator` @00579170,
+     `SetColumnWidth`), its widths kept (`LoadIniListWnd`, `StoreIniListWnd`), `Sort` and `Compare`
+     as the list's own (ours sort in each window), `ToggleSel` and `ExtendSel`, and editing a cell
+     in place (`CloseAndUpdateEditWindow` @0057c530).
+   - `CDisplay::ReloadUI` (@004a1465, from `ProcessGameLoop` and `DoPassageOfTime`): the whole UI
+     taken down and built again from another skin, with eqstr 3146 when its XML doesn't fit
+     (`CXWndManager::IsAllValid`); waits on /loadskin (34).
+   - The resize and drag cursors are the SIDL ones; the usual cursor is still eqmain's
+     `cursor.bmp` rather than `A_DefaultCursor` (`CXWndManager::GetCursorToDisplay` @005a0690).
 2. **Display-only windows**, showing what the server already sends:
    - ~~Player window~~ and ~~target window~~: done (`frontend/game_values.*`, gauges in `sidl.cpp`).
      Targeting ourselves: F1 and clicking our model in the chase view. The XP and AA gauges
@@ -43,10 +65,15 @@ no rules of its own.
      EQTypes 45..59) and the blink in their last ticks. Their effects count in the stats, resists,
      AC, max HP (worked out as `Max_HP` does, not the zone's), max mana and our speed (SoW,
      snares, roots). Still to do: the effects that act as a buff
-     lands or fades (levitation, invisibility, see invisible, infravision, illusions, Eye of Zomm,
+     lands or fades (levitation, invisibility, see invisible, infravision and
+     `CDisplay::TurnInfravisionEffectOff` @004b1559, illusions, Eye of Zomm,
      magnification: SPA 87's lens, `SetViewAngle` from `HitBySpell`, `RemovePCAffectex` and
      `HandleSpecialPCAffects`;
-     a horse's is `frontend/mounts.*`) and a bard's instrument mastery; HitBySpell's own branches: Locate Corpse
+     a horse's is `frontend/mounts.*`) and a bard's instrument mastery; Bind Sight (SPA 73:
+     `HitBySpell` hands the target's name to `CDisplay::SetViewActorByName` @004b3527, which says
+     eqstr 1277 "Successful change to %1's perspective." or 1276 for nobody of that name and makes
+     them the view actor; `RemovePCAffectex` gives it our own name as it fades, eqstr 1275;
+     `ProcessAffects` and `do_change_form` call it too); HitBySpell's own branches: Locate Corpse
      (`eqspa_locate_corpse` @004cac8a, eqstr 0x309d), the bind's place checks
      (`InSpecialBindSpot` @004cadbc, `EQWorldData::IsNoBindZone`), the teleport checks
      (`CDisplay::IsValidTeleport` @004af646, `EQPlayer::HandoverControlToZoneserver`), `Levitate`
@@ -69,8 +96,9 @@ no rules of its own.
      (A_DragItem's cell 143 + CursorMoneyType, the count across its bottom), with coins on it takes
      them onto its pile, as the character view does; changed into other coins only at the bank.
      Escape leaves them on the cursor, as it does an item (RemoveAttachment takes off only a
-     button or a spell). Still to do: coins clicked onto the world or a spawn
-     (DropItemOrMoneyOnPlayer: given to the target, or a trade).
+     button or a spell). Clicked onto a spawn they ask for a trade (below), and the inventory's
+     Destroy takes them (`CInventoryWnd_DestroyHeld`, `EQ_PC::DestroyHeldItemOrMoney`). Still to
+     do: coins clicked onto the ground (11), and the coins a quest gives (`OP_Reward`, under 37).
    - Bank window: done (`frontend/bank_window.*`, eqgame's CBankWnd): the right button on a banker
      within 20 (RightClickedOnPlayer, IsOkToTransact) opens it with the banker's welcome, the bank
      slots (2000..2007, their bags as BagBank1..8), the bank's coins on its money buttons (coins
@@ -102,10 +130,15 @@ no rules of its own.
      (OP_EndLootRequest), and the zone's answer, or the corpse gone, closes it. Not checked
      against a server yet (the test character hasn't killed anything of its own to loot). /loot
      (@004fb5ae) loots our target (eqstr 13201 with none). /lootnodrop sets whether a
-     NO DROP item asks first (`LootNoDrop`). Still to do: the
-     items in a corpse's bags (shown only to GMs and on player corpses past the eighth), the
-     PvP item (Loot_Request_Type 5) and the mounted check (ActorInfo's AttachedEntity; nothing
-     sets it yet: our horses are Mount and Rider). Dead (DeathTimer) and deity 20000 don't ask; asking makes us visible (MakeMeVisible).
+     NO DROP item asks first (`LootNoDrop`). Dead (DeathTimer), camping and deity 20000 don't ask;
+     asking makes us visible (MakeMeVisible). Still to do: the
+     items in a corpse's bags (shown only to GMs and on player corpses past the eighth:
+     `msg_send_corpse_con` @004df3ab and `CLootWnd::ProcessLootContainer` @00426a15, with
+     `msg_send_corpse_notes` @004df1f5 and `processLootNotes` @004268e3), the
+     PvP item (Loot_Request_Type 5), and `CEverQuest_LootCorpse`'s (@00547808) other refusals: with
+     an `AttachedEntity` (standing on a boat, which 39 knows as `ZoneView::Vehicle`) and while the
+     zone's answer to something else is waited on (`DAT_007d0258`, `DAT_007d0254`; ours checks only
+     its own request).
    - Trade and give windows: done (`frontend/trade_window.*`, eqgame's CTradeWnd and CGiveWnd): an
      item or coins on the cursor clicked onto a player or NPC in reach asks to trade
      (DropItemOrMoneyOnPlayer, OP_TradeRequest), the go-ahead opens the trade window with it in
@@ -124,8 +157,10 @@ no rules of its own.
      corpse's loot, a banker's bank, a merchant's shop, else /consider of our target. A
      despawning merchant, banker or corpse closes its window. Our class's guildmaster asks the zone
      to train us (OP_GMTraining) and another's says eqstr 1467. A trader in the Bazaar asks for its shop
-     (OP_TraderShop, see 33). Still to do: a horse (race 141), the inspect of a player (doInspect), and `_consider`'s
-     TargetType refusals (0xb, 0x3c, 0x41, 0x43) after it.
+     (OP_TraderShop, see 33), and a race 141 boat for its helm (39). A merchant, banker, trader
+     and our guildmaster turn auto attack off (1466). Still to do: the inspect of a player
+     after the /consider (`CEverQuest_doInspect`, see 29), `_consider`'s TargetType refusals
+     (0xb, 0x3c, 0x41, 0x43) after it, and Use centerscreen doing the same from the keyboard (6).
    - Guildmaster training: done (`frontend/train_window.*`, CTrainWnd): msg_req_guildmaster's
      SetGMData and Activate, UpdateSkill's rows and CostToTrain's prices, the headings' sorts,
      Train through BitchCanTrain (`frontend/skills.*`: setskill with New Tanaan Crafting Mastery,
@@ -160,10 +195,14 @@ no rules of its own.
      and the hunger, thirst and out-of-food messages, Innate Metabolism's longer wait): done,
      checked live ("You and your mount..." on a horse); a Bazaar trader neither eats nor is told.
      Still to do: poisons
-     (CEverQues_ApplyPoison), Alcohol Tolerance's skill-up (EQ_PC_CheckSkillImprove 66), what
-     drunkenness does. Notes and books are read (EQ_Note::SendTextRequestMsg's OP_ReadBook;
-     CNoteWnd's SetNote, checked live; CBookWnd's pages, buttons and keys in
-     `frontend/book_window.*`, checked through the preview with a zone's book text). Still to do
+     (`CEverQues_ApplyPoison` @00545c08, item type 42: ours returns at once; the zone's answer is
+     `OP_ApplyPoison`, 0x41ba, handled @004e1778: the wait let go, eqstr 12905 "You successfully
+     applied the poison." or 12906 by its success at +4, color 270), Alcohol Tolerance's skill-up
+     (EQ_PC_CheckSkillImprove 66), what drunkenness does, and a charge or stack count the zone
+     takes (`OP_DeleteCharge` from the zone, under 37). Notes and books are read
+     (EQ_Note::SendTextRequestMsg's OP_ReadBook; CNoteWnd's SetNote, checked live; CBookWnd's
+     pages, buttons and keys in `frontend/book_window.*`, checked through the preview with a
+     zone's book text). Still to do
      for books: check the lines' fit against the TAKP client on Windows (the preview's box font is
      wider than Arial), DrawFormattedText's own wrapping in place of measuring the line whole, and
      keyboard focus (the window takes Left and Right while it's on top, not while it has the focus).
@@ -220,8 +259,13 @@ no rules of its own.
      the book) and we move off at once, getting up playing out all the same. In first person the
      view goes down and up with our head. Kneeling (105: P05, up by P05 backwards) and lying (115,
      feign death: D05 held, up by P02 backwards) are ChangeStance's too, and nothing but standing
-     or crouching moves us. Still to do: sitting's idle and fidgets (P07, the sitting fidget),
-     meditating's regen, and the zone putting us in a stance (stunned, knocked out).
+     or crouching moves us. Being stunned (`OP_Stun`) and knocked out are done (24). Still to do:
+     sitting's idle and fidgets (P07, the sitting fidget), meditating's regen
+     (`EQ_Character::DoMeditation` @004c3def, `IsCharacterMeditating` @004c36a1), Duck (ExecuteCmd
+     10, see 6) with `CDisplay::CanIFitHere` standing us back up (22), the body's tilt
+     (`CDisplay_SetPlayerPitchType` @004a2cdd, from `CreatePlayerActor` and `ChangeStance`), and the
+     zone freezing us: `OP_FreezeClientControl` (0x406a, stance 102), `OP_UnfreezeClientControl`
+     and `OP_ReturnClientControl` (under 37).
    - Hotbuttons: the Actions window's buttons and socials go on them and come off by holding
      them, and they're kept in `<char>_<server>.ini` (`frontend/game_windows.*`). Clicked or by
      key (Hot1..10) they do what their button does: Attack, Range, the combat skills and the
@@ -240,15 +284,39 @@ no rules of its own.
    - ~~Selector bar~~: done (`SelectorToggles` in `frontend/frontend.cpp`): its buttons open and
      close their windows.
 3. ~~**A real chat window**~~: done (`frontend/chat_window.*`, `chat_text.*`, `chat_commands.cpp`).
-   Still to do: more windows and the channel map (eqgame's `CChatManager`: which window each
-   channel goes to, set from the right-click menu; there were no tabs in this era), the chat font
-   size, scrolling by pixels (below), languages scrambled by skill
-   (`HearBabel`), and the commands that still say they aren't supported (/lfg, /rtarget...).
+   Still to do:
+   - More chat windows and the channel map (eqgame's `CChatManager` @004100e2: `CreateChatWindow`
+     @00410c5a, `FreeChatWindow`, `LoadChatInis`, `SetChannelMap` and `GetChannelMap`,
+     `GetChatWindowIndexFromChannelID` @00411425 for which window each channel goes to,
+     `SetLockedActiveChatWindow`; all set from the right-click menu, `InitContextMenu` @0041179c
+     and `UpdateTellMenus` @00413439; there were no tabs in this era).
+   - The chat font size (`CChatWindow::SetChatFont` @00414b55, sizes 0..6, from /chatfontsize
+     @004fdb25 on the active window, eqstr 13270 otherwise), scrolling by pixels (5), and the chat
+     keys (`ScrollChatWindowUp` @00414ad9 and `Down` @00414b17 for page up and down; see 6).
+   - Languages: what's said in one comes through `SpeakBabel` (@00505cfd, by the speaker's skill
+     at +0x86 of the packet; it also runs the bad word filter, `BadWord` @00505b7f, when /filter's
+     `DAT_00798b24` is 0) and then `HearBabel` (@005063a9: with our skill in it under 100 and the
+     world's `DAT_0079976c` set, letters swapped at random, more the less we know, never inside
+     a link's 0x12 marks); and speaking one: /language (@004fd44a: "help", eqstr 13300, lists
+     those we know under 13260; a number picks one for the active chat window, +0x188; 13261
+     out of range; 13262 says the one in use) with `CEverQuest_GetCurrentLanguage` on what's sent.
+   - `CEverquest_InterpretCmd` (@0054572f) looks a word up twice, first by each command's
+     localized name (the table's second pointer, null in the exe as it ships) and then its own:
+     nothing to do in English. A line starting with `;` is /chat's (35), where ours says it.
+   - The MOTD as we enter: `DoMainLoop`, after "You have entered %1." (12357), prints the world's
+     `OP_MOTD` text once as eqstr 12359 "MESSAGE OF THE DAY: %1" in color 15 (unless it's "~");
+     ours prints it only for /motd. Before it, 12358 "You are no longer in a PvP immunity zone."
+     (color 13) when `DAT_00799758` is 4 (a server type, by the text), under level 6, outside a
+     newbie zone (`EQWorldData::IsNewbieZone` @00523f15).
+   - `%R` in a string (`orderedStringExpansion` @004f7ea2): the grammar rules of
+     `GrammarRulesClass::Resolve` (@0054bf5c; English's `RuleEn1`..`RuleEn4` @0054c04c on, and the
+     Korean, French and German ones), which `EqStr::Format` leaves as it is.
+   - The commands that still say they aren't supported (35).
    /who (CEverQuest::Who: this zone's players filtered by class, race, levels, GM, LFG, guild or
    name, and our corpses; `all` through OP_WhoAllRequest and msg_who_response's lines), /whotarget,
    the Who key and button, and /follow (FollowPlayerAI's turning, running, walking and stopping,
-   TurnOffAutoFollow on Move back and the turn keys) are done. Still to do: /who all friends
-   (OP_FriendsWho with a friends list; no /friends yet), the
+   TurnOffAutoFollow on Move back and the turn keys) are done, and /who all friends (29). Still
+   to do: the
    spawn list's order (pinstSpawnList; ours by id), and /follow on a horse or of a rider
    (ProcessControls hands FollowPlayerAI's Following to pinstCharSpawn, the horse; not checked
    riding) and its line of sight from them to us (CastRay is ours,
@@ -270,7 +338,6 @@ no rules of its own.
    - /played: the alarm's time left (no alarm window yet);
    - /consider: under the deity PvP rules (pvpcon 4) NotOnSameDeity lets a GM off, read here as
      our `gm` flag; EQPlayer+0x109 isn't checked to be IsGameMaster.
-   - /random: leaving out the rolls of someone we ignore (CEverQuest_BeingIgnored; no /ignore yet).
    - socials: the 60 unit check is our 3D SpawnDistance (eqgame's CDisplay::PlayerDistance with
      its last argument 0, not checked to be the same), DAT_007985f1 (a flag that stops them
      all) isn't known.
@@ -296,10 +363,13 @@ no rules of its own.
    clip plane, the windows' global fades) is done; still to do there: Video Modes (CVideoModesWnd)
    and Level of Detail's effect (s3dSetDynamicLOD: models are always drawn whole); Gamma does
    nothing, as in eqgame windowed. Still to do: the Mouse page, which shows empty
-   (InitKeyboardAssignments' mouse settings; its sensitivity and invert, which `procMouse` reads,
-   are fixed at 4 and off); the reverb's drugged room (23) while drunk at 40 and
+   (`COptionsWnd::MousePageWndNotification` @0042c2d6 and InitKeyboardAssignments' mouse
+   settings; its sensitivity and invert, which `procMouse` reads,
+   are fixed at 4 and off; /mousespeed is 35's); the reverb's drugged room (23) while drunk at 40 and
    over (DoPassageOfTime's drunkenness wearing off isn't ours); the Keyboard page's
-   temporary red rows (commands not yet done) go once every command is done.
+   temporary red rows (commands not yet done) go once every command is done. Two rows are red
+   that shouldn't be: `KeyMap`'s table (`frontend/key_map.cpp`) still marks Autoattack and Toggle
+   Alt. Adv. window not done, and `FrontEnd` does both.
    A combo box's list that's down takes any press (CXWndManager's 0x34): off it, the list goes
    and the press goes no further. Its list draws the choice on the select color and the row under
    the mouse in the hover color (style 0x10000), CListWnd's or CComboWnd::SetColors' (white, yellow
@@ -337,9 +407,36 @@ no rules of its own.
    2 and 3) hides the windows and the cursor (DoMainLoop's DrawWindows and DrawCursor), the hidden
    windows still taking the mouse and the world only in mouse look, until it's pressed again or a
    zone is entered; the mouse look check is our right button held (no Toggle mouse look yet). Still to do:
-   - ExecuteCmd's commands not done yet (the page's "No"): Toggle mouse look, Duck, Use
-     centerscreen, Center view, Toggle netstat, the clip plane, voice input, screenshots, the chat line's cursor and page up and down (CChatWindow::ScrollChatWindowUp),
-     the music player window.
+   - ExecuteCmd's (@0054050c) commands not done yet (the page's "No"):
+     - 7, Toggle mouse look: `DAT_00798571` flipped (on from the start; the Mouse page's check
+       box and `loadOptions` set it too), eqstr 12372 "Mouse control deactivated." or 12373
+       "Mouse control activated.  Use right mouse button.". `CEverQuest_RMouseDown` copies it to
+       `__MouseLook`, so off, the right button no longer turns us; ours always does.
+     - 10, Duck: not as races 142, 143 or 216 nor with `DAT_007985f8` set, standing (100) or
+       ducking (111) only; `ChangeStance` to the other, and `CanIFitHere` (22) to get up.
+     - 14, Use centerscreen: with the chat line closed, the middle of the screen clicked:
+       `CEverQuest_ClickedPlayer` there is `LeftClickedOnPlayer` and, with no target or an NPC's
+       (Type 1), `RightClickedOnPlayer` too; nobody there, `CEverQuest_ClickedSwitch`.
+     - 17, Center view: in view 0 our pitch to 0 (the horse's or boat's when it's the char spawn),
+       in view 1 `_DAT_007996b4` to -100, another view's own pitch to 0.001; the held look keys'
+       state cleared.
+     - 30, Toggle netstat: `__NetStatusToggle`, drawn by `DrawNetStatus` (@0054d3ae) and
+       `DrawPacketLossBar` (@0054d1a8) from `connection_get_perf_stats`.
+     - 75 and 76, the clip plane: `DAT_00798b28` down or up one in 0..20, the far clip
+       `_DAT_00799660` that * 0.2 held to 0.1..4, saved (the Display page's slider is done).
+     - 77, voice input (`InitializeVoiceRecognition` @0055785c; with /voice, /microphone and
+       /vrdelay, see 35: kept out unless asked).
+     - 78, screenshots (15).
+     - 81..84 and 85, 86: the chat line's cursor left, right, to its start and end, and the chat
+       text a page up and down (`CChatWindow::ScrollChatWindowUp` @00414ad9, `Down` @00414b17).
+     - 104, the help window (`CHelpWnd_SetFile` then Activate, or its close), 106, the video modes
+       window (`CVideoModesWnd::Activate`), and 110, the music player window (34 for all three).
+     - Old UI only, nothing to do: 62 Backdrop, 89 Lock windows (`[Defaults] LockWindows`, eqstr
+       12376 and 12363) and 96 Toggle chat window (`HideChatWin`) return at once in the new UI.
+   - ExecuteCmd's numbers past the page: 119 the petition queue window (36), 209 a line to our
+     target (not traced), 210 the face picker (/facepick, 23), and 198, 199 and 205, which only
+     store the key's state. (200 Escape, 202 quit and 206 the chat line's Enter are ours by
+     other roads.)
    - Send tell for a GM helping a petitioner (`/tell <petitioner> `, CPetitionQWnd), and
      ExecuteCmd 0x81 and 0x82 (`;` and `/` command modes; not on the keyboard page).
    - Target myself's pet: eqgame takes the first in pinstSpawnList's order; ours the lowest id.
@@ -383,8 +480,11 @@ no rules of its own.
       `CExploreModeWnd::Activate` does to EXW_ExploreModeWindow3 (`CXWnd::_`) isn't known.
     - load2's particle effects: its switches of type 53 (`CRATEG`, the parameter the effect), which
       `ZoneDoors` doesn't do.
-    - The face picker in the zone (`/face`: CFacePick's Accept sends 0x4225 with the face, hair and
-      beard, and says eqstr 0x2efc).
+    - The face picker in the zone: /facepick (@004fffcb) is ExecuteCmd 210, which opens `CFacePick`
+      only with the Luclin expansion (`Expansions & 0xc`, or PCData+0x1362) and on a Luclin model
+      (the actor's +0x3b0), not while it's already up (`DAT_007cf258`). Its Accept sends 0x4225
+      with the face, hair and beard, and says eqstr 0x2efc; `Deactivate` (@0041a3e6) puts the old
+      look back.
 24. **Auto attack and melee.** Done (`frontend/combat.*`, `FrontEnd::ToggleAutoAttack`): auto attack
     (`__Attack`) goes on and off by the Autoattack key, the Actions window's Attack button
     (CombatPageWndNotification) and /attack (ExecuteCmd 8's checks and eqstr 12368..12371), off
@@ -457,23 +557,39 @@ no rules of its own.
     - DoAttack's other StunnedStates (2..4 and 7 say nothing; 1, stunned, is done), the
       ActorInfo +0xc8c+0x74 and DAT_007985f0 refusals, and DAT_00798560 (CanIHitTarget always
       passing);
-    - the tracking window (CTrackingWnd, TrackingWnd: GenerateTrackingList within the skill's range,
-      DoTrackSort and DoTrackFilter with /tracksort, /trackfilter and /trackplayers, the colors of
-      GetTrackingColorIndex, the Track button setting DAT_007989e2 53 for 6 minutes, eqstr 12040)
-      and DoPassageOfTime's direction lines every 2 s and its end (12674..12681) and the lost target (12499);
-      UseSkill only sends OP_Track;
+    - the tracking window (`CTrackingWnd` @00437f45, screen `TrackingWnd`: `TRW_TrackingList`,
+      `TRW_TrackButton`, the sort and players combo boxes, the six `TRW_Filter<color>Button`s and
+      Done): `GenerateTrackingList` (@0043885a) within the skill's range, leaving out the
+      invisible (`CDisplay_IsInvisible`), `DoTrackSort` (@00438a9b) and `DoTrackFilter`
+      (@00438d53), the rows' colors by `GetTrackingColorIndex` (@0043868b), the Track button
+      (`WndNotification` @004382fe) setting DAT_007989e2 53 for 6 minutes with eqstr 12040 "You
+      begin tracking %1.", `RemovePlayerFromTracking` (@00438f7c) from `ReportDeath` and
+      `~EQPlayer`, and DoPassageOfTime's direction lines every 2 s and its end (12674..12681) and
+      the lost target (12499); UseSkill only sends OP_Track. Its commands, which the window's
+      controls run too: /trackplayers (@004f9764: on, off or group, eqstr 13140..13143,
+      `[Defaults] TrackPlayers`), /tracksort (@004f98b1: normal, distance, consider, rdistance or
+      rconsider, 13149..13154, rangers only, 13155; `TrackSortType`) and /trackfilter (@004f9b3b:
+      red, yellow, white, blue, lblue or green toggled, 13163 and 13164; rangers only);
     - the AA abilities (105 Harm Touch and 107 Lay on Hands: CastSpell gem 9 of spell 88 and 87, the
       profile's timers at +0xc7a and +0xc7e, with AdjustSpellRecastTimeByClassAbility's 12 min a rank
-      of Fervent Blessing or Touch of the Wicked off; 111 Slam as bash), UseSkill's horse check by
+      of Fervent Blessing or Touch of the Wicked off; 111 Slam as bash) and the innate abilities'
+      names on the Actions window's buttons and in the skill picker (`CEverQuest_GetInnateDesc`
+      @00530118, from `CActionsWnd::UpdateButtonText` and `CSkillsSelectWnd::UpdateSkill`: eqstr
+      6604 Slam, 6605 Lay Hands, 6606 Harm Touch, 6609 Awareness, 6610 Bash Door, 6615 Breathe
+      Fire, 6616 Harmony, 6617 Infravision, 6618 Lore, 6619 No Bash, 6620 Regeneration, 6621
+      Surprise, 6622 Ultravision), UseSkill's horse check by
       ActorInfo's Mount (ours is the SPA 113 buff, which a Mount always has), stealing under the PvP deity rules (DAT_006ec740 4: NotOnSameDeity, the level range, 12412,
       12413), fishing's splash particles (DoParticleEffect 2) and the pole
       shown in hand as the cast starts (UpdateItemSlot), and someone picking our pockets (msg_steal
       0xff: 12897 and the answer);
     - AllowedToAttack's server PvP types and the water;
     - /filter's client side: the chat channels and the bad word filter
-      (msg_new_text), and the hit modes (/hitsmode, CChatManager's MyHitsMode and the rest: eqstr
-      2130's short form, the number only; /clearhits, `do_clearhits` @00500dbf, and `DrawHits`
-      @00501483);
+      (msg_new_text's `SpeakBabel`, see 3; `bad_word_class` @005054e4), and the hit modes
+      (/hitsmode @00500373: `HandleMyHitsMode` @00500f86, `HandleOtherHitsMeMode`,
+      `HandleOtherHitsOtherMode` and the three misses ones from `DoPassageOfTime`, each with its
+      `[Defaults]` Mode, X, Y, Count, FontSize, ShowBG, BGWidth, ShowHeader and AlwaysDraw; eqstr
+      2130's short form, the number only; /clearhits (@00500dba), `do_clearhits` @00500dbf, and
+      `DrawHits` @00501483);
     - fatigue's own changes (`EQ_PC::ProcessFatigue` @004d0424, from `DoPassageOfTime`): up 1 out of
       food or drink, running and moving (DAT_0079856d), or swimming (water types 5..10); down 10
       when it hasn't changed since the last call and we're fed and watered; 0 under DAT_00798560
@@ -483,7 +599,6 @@ no rules of its own.
       (`compute_tohit`: level * 2 / 5 while Drunkness / 2 is 20 or under) count. Past that,
       compute_tohit takes a value of the drunkenness the decompile loses (an `__ftol`), not ours;
     - the blood of our crushing, slashing, piercing, backstab and bash hits (SpurtBloodOnDag);
-    - the tracking window;
     - DoPassageOfTime's HP tick (`FrontEnd::HitPointsTick`): the locale's (DAT_00799770 1) regen
       of 6, 10 sitting, under level 21 is left out (English is 0); a monk's 2 past level 50 reads
       ActorInfo+0x18e, which nothing in eqgame sets but to 0; the mez broken by a DoT turns the
@@ -492,8 +607,18 @@ no rules of its own.
     - MoveToZone_2's other refusals: its test before the logout reads `StunnedState == 4 ||
       param_4 || strlen(@00546057)(Name)`, which can't be right for a zone line (every refusal
       would log out); ours logs out only going home dead;
-    - being hit on a mount (DeacSpellScreen, ChangeStance), and the guildmaster window turning auto
-      attack off (pinstActiveGMaster) once there is one;
+    - being hit on a mount (DeacSpellScreen, ChangeStance);
+    - disarm's answer: the zone's `OP_Disarm` (0x40aa, `msg_disarm` @004dfc2a, `Disarm_Struct`
+      {u16 them, u16 us, i16 skill, u8 status}) says eqstr 12890 "You disarmed %1!" (color 270,
+      with `EQ_PC_CheckSkillImprove` 16) for a status over 0 and 12891 "Your attempt to disarm
+      failed." for 0; ours drops it. Its status 0xff is us being disarmed, which the client rolls
+      itself (their skill less ours with the weapon + 10, held to 5..20, against 1..100; the
+      primary, secondary or range item to a free slot or a bag it fits, 0x41b2 with our name when
+      the cursor's full, `UpdateItemSlot`, `UpdateLight`, eqstr 12889, and the answer sent back):
+      EQMacEmu disarms on its own side and never sends that;
+    - `EQ_Character::GetSkillBaseDamage` (@004bdc9c, with `CheckRaceFactionBonus` and
+      `ElementResistDmg`) fills the fist's damage for DoAttack's bare-handed swings: the damage is
+      the zone's, so nothing of ours reads it;
     - TotalSpellAffects adds the worn items' effects only for attack speed; the other SPAs
       (`Buffs::Total`) leave them out.
 
@@ -515,6 +640,13 @@ no rules of its own.
     - The other environment damage the client reports: lava and the rest (`ProcessEnvironment`
       @004c0e32) and drowning (`ProcessAirSupply`, with the breath window, 34).
     - OP_ClientError.
+    - The checksums `ProcessGameLoop` sends the world as the game starts (and
+      `CEverQuest_HandleWorldMessage_do_quit` again): `SendSpellChecksum` (@004f2cf6, 0x4135, a
+      CRC over `spells_us.txt`) and `SendExeChecksum` (@004f2ed0, 0x4139, over eqgame.exe's own
+      file). EQMacEmu's world checks one only when it comes (`Client::HandleChecksumPacket`: three
+      known values, else the connection closed), so ours sends neither. The exe's can't be worked
+      out here (we never read eqgame.exe): ask before sending a constant.
+    - Camping's own checks and messages (40).
 26. ~~**Guilds.**~~ Done (`frontend/guild.*`, `ZoneSession`'s guild packets): ours (EQ_Character's
     GuildId and GuildStatus, the profile's @4946 and @4967) and each spawn's guild and rank;
     /guildinvite, /guildremove, /guilddelete (the confirmation dialog, 0x17), /guildstatus,
@@ -570,11 +702,26 @@ no rules of its own.
       friend (OP_FriendsWho), `[Friends]` and `[Ignored]` in the character's ini, and
       `CEverQuest_BeingIgnored` on channel messages, emotes, /random rolls and /consent's answer.
       Still to do: 0x4243's ignore check (EQMacEmu never sends it).
-    - Inspecting: /inspect and a click with the inspect mode (`CEverQuest_doInspect` @0054390e,
-      `OP_InspectRequest`), the request from another (`msg_req_inspect` @004e769d) and the answer
-      (`msg_inspect` @00420efe) in the inspect window (`CInspectWnd` @00420e01:
-      `CheckInspectionDistance`, `AcceptInspectText`).
-    - The player notes window (`CPlayerNotesWnd` @0042e779: `SaveNotes`, `AppendText`).
+    - Inspecting, none of it ours yet:
+      - /inspect (@004fb87f) only turns it on or off (`DAT_007cf28c`, `[Defaults]
+        InspectOthers`): "on" or "off" sets and keeps it, anything else says eqstr 13210 and
+        13211; then, every time, 13212 (able to inspect by right-clicking) or 13213 (not).
+      - With it on, nothing on the cursor and our deity not 20000, `RightClickedOnPlayer` ends
+        with `CEverQuest_doInspect` (@0054390e) after its /consider: too far says eqstr 12378
+        ("%1 is too far away to inspect.  Get closer."), else `OP_InspectRequest` (0x40b5).
+      - Someone inspecting us (`msg_req_inspect` @004e769d, 0x40b5 from the zone): "%1 is looking
+        at your equipment..." (1404) and our answer, `OP_InspectAnswer` (0x40b6), with what we
+        wear and our inspect text.
+      - Their answer (0x40b6, `CInspectWnd_Activate` @004e781c, `msg_inspect` @00420efe): 1402 too
+        far, else "You are inspecting %1." (1401) and the inspect window (`CInspectWnd` @00420e01,
+        screen `InspectWnd`: the worn slots, the text in `INSW_Edit`, `DoneButton`), closed by
+        walking off (`CheckInspectionDistance` @00421112) or the spawn going
+        (`PlayerBeingDeleted` @00421238). Our own text is edited there and kept
+        (`AcceptInspectText` @004211c1, `CEverQuest_saveCustom`).
+    - The player notes window (`CPlayerNotesWnd` @0042e779, screen `PlayerNotesWindow` with
+      `PlayerNotesInput`, read from and saved to `notes.txt`: `SaveNotes` @0042e9cd on closing):
+      /note (@004fbb72) alone opens it, with text `AppendText` (@0042ea6c) adds the line under the
+      date and time (eqstr 13224 when the file can't be written).
 30. ~~**Pets.**~~ Done (`frontend/pet_window.*`, `ZoneSession::PetCommand`, `MyPetId`): the owner's
     ActorInfo `PetID` (`EQPlayer::EQPlayer`, `~EQPlayer`, `OP_Charm`'s `updatePetTargetInfo`),
     SpawnAppearance 25 and 27, the pet window (`CPetInfoWnd`: `Update`, `WndNotification`,
@@ -627,82 +774,265 @@ no rules of its own.
       Request Item and the right button on a result live.
     - `msg_snd_trader_eq` (0x4217) is the old UI's; IsOkToTransact's deity 20000 and mount checks.
 34. **The smaller windows**, each opened by its command or key and none built yet:
-    - Breath (`CBreathWnd` @00408bee, `UpdateBreathIndicator`): the air left under water
-      (`EQ_PC::ProcessAirSupply` @004d0568) and drowning.
-    - Alarm (`CAlarmWnd` @00403bc2, `ProcessAlarmTrigger`), which /played's time left reads, and the
-      time left window (`CTimeLeftWnd` @00437c5b).
-    - Help (`CHelpWnd_SetFile` @0041f6ef; the help window opens empty) and /help.
-    - Music player (`MusicPlayerWnd` @004285e3, its file picker `CFileSelectionWnd`), /mp3 and
-      /music.
-    - Load UI skin (`CLoadskinWnd` @00425e1d, /loadskin and the options' button) and video modes
-      (`CVideoModesWnd` @0043b198, the options' button).
-    - Bug report and feedback (`CBugReportWnd` @004097ea, `CFeedbackWnd` @0041acaf, /bug,
-      /feedback, `OP_Bug`, `OP_Feedback`), /petition (`OP_Petition`), and /report (@004f3e8e,
-      `OP_Report`).
-    - The text entry window (`CTextEntryWnd` @004377db), which /surname's question uses
-      (`OP_Surname` from `ProcessYes`), and the gems game (`CGemsGameWnd` @0041cd06, /gems).
-35. **The other slash commands** that still say they aren't supported, not under another item
-    (/split, `CEverQuest_DoSplit`, and /yell with `msg_yell`'s directions are done; /split doesn't
-    close the windows DoSplit puts away, `DAT_007914a4` and `DAT_007952f4`. /loot, /charinfo
-    (`FullZoneName` of the bind), /ttell (@004f839a: the target's name to its apostrophe, eqstr 13090
-    for a name with '#' or '_' but an NPC corpse's), /movelog (@004fba78: "yes" sends MSG_MOVELOG,
-    0x41e4, which EQMacEmu ignores), /stopsong (@004f5c74: a bard's StopSpellCast2), /shield
-    (@004fd688, `OP_Shielding`), /quit and /exit (@004fa8c5: the connection closed, the game
-    ended), /log (@004fbad0, `eqlog`; [Defaults] Log), /keys (@004f8ec7, `OP_Key`) and /dismount
-    (@004ff5a6, `Mounts::DismountCommand`), /adriver and /sdriver (@004f69f5: eqstr 12379 only) are done too; /ttell's `send_tell` also stops on `DAT_007985f1`, as the socials do, not
-    known; /quit doesn't say /safelock's 12095, there being no /safelock): /discipline (@004f4fb5,
-    `OP_Discipline`; `OP_DisciplineChange` back), /surname, /language,
-    /facepick, /hotbutton, /alias, /note, the chat
-    channels (/join, /leave, /leaveall, /list, /announce, /autojoin, /1../10, /chat,
-    /toggletell), and the client settings (/wincolor, /resetwindows, /chatfontsize, /invwinlabels,
-    /particledensity, /showspelleffects, /mousespeed, /viewport, /showgrass, /dynamiclights,
-    /mixahead, /reverb, /reversesound, /vrdelay, /audiodebug, /dopropertinting, /newui). Also:
-    - /mcicontrol (@004ff739, `mciSendStringA` with the line, the error printed), /webupdate
-      (@004f3951, 0x423c with the text) and /edit (@004fa6fc, `EQ_Guide::Edit`, the old UI's):
-      kept out unless asked.
-    - /private, /voice, /microphone and /popmail are in our table but have no handler in the
-      decompile: find what eqgame's table does with them before taking them out.
+    - Breath (`CBreathWnd` @00408bee, screen `BreathWindow`; `UpdateBreathIndicator` @00408c7d
+      shows it while `EQ_Character::CanIBreathe` @004c0dab says no, its gauge the air left of
+      `EQ_PC::MaxAirSupply` @004d064f, by STA). `EQ_PC::ProcessAirSupply` (@004d0568, from
+      `DoPassageOfTime`): breathing fills the air; without, one off a call, and at none a share of
+      max HP as damage of type 0xfb through `ApplyDamage` (drowning, which the client reports,
+      25). `CanIBreathe`: yes with the head out of water (its environment under 5) outside a
+      no-air zone (`EQWorldData::IsNoAirZone` @00523f31), for deity 20000 and races 74, 24 and
+      35, and otherwise only with SPA 14 (water breathing) on us.
+    - Alarm (`CAlarmWnd` @00403bc2, screen `AlarmWnd`: `ALRW_HoursEditbox`, `ALRW_MinutesEditbox`,
+      `ALRW_NeverShowAgainCheckbox`, Ok and Cancel; shown by `CDisplay_ActivateMainUI` unless told
+      never to). `ProcessAlarmTrigger` (@00403f34) plays a wave and puts eqstr 6685 "Your session
+      (%1 hours and %2 minutes) has ended." in the confirmation dialog; /played's time left reads
+      it, and the time left window (`CTimeLeftWnd` @00437c5b, a label drawn `%d:%02d:%02d`,
+      `updateTimerDisplay` @00437e49) counts it down.
+    - Help (`CHelpWnd_SetFile` @0041f6ef: `CStmlWnd_LoadPage` of the help file, with the links and
+      tables of 1; the help window opens empty) on Toggle help (ExecuteCmd 104), and /help
+      (@004f92f5: normal, emote, guild, voice or chat lists the commands of that kind with each
+      one's eqstr from the table's fifth field, `getCommandDescription` @0050230c, under 13131;
+      anything else 13125..13130).
+    - Music player (`MusicPlayerWnd` @004285e3: `SongSelector`, `SongTimer`, `Volume`, and Add,
+      Delete, Clear, Play, Pause, Stop, Back, Next, Random and Save buttons;
+      `HandleMusicPlayerWndNotification` @0042898d; its file picker `CFileSelectionWnd` @0041af9a)
+      on Toggle Music Player Window (110), over `MusicManager`'s play list (`loadMusicPlaylist`
+      @005504da for `.m3u`, `ExportPlaylistToM3U` @0055041f, `SetPlaylistShuffleMode`,
+      `RemovePlaylistItem`, `SkipToNextTrack`); /mp3 (@004fa1cc: add, play, pause, stop, count,
+      list, clear, shuffle, ordered; eqstr 7531..7550) and /music (@004ff4f8: on or off into
+      `[Defaults] PlayMusic` for the next run, eqstr 6677 and 6678, else 6679).
+    - Load UI skin (`CLoadskinWnd` @00425e1d: `SkinList`, `LoadButton`, `INIButton`;
+      `UpdateSkinList` @00425f6a lists `uifiles`' folders) from the options' button and /loadskin
+      (@004f8655: no word opens the window; `SKINDIR [1]` writes `UISkin` to the UI ini, says eqstr
+      3125 and reloads, `CDisplay::ReloadUI`, see 1; 3124 is its usage).
+    - Video modes (`CVideoModesWnd` @0043b198: `VIDW_VideoResolutionsList`, the bit depth and
+      refresh rate combo boxes, `VIDW_AcceptButton`; `Init` @0043b408 lists the adapter's modes;
+      Accept changes the mode, asks eqstr 6682 for 15 s and goes back without a yes,
+      `CVideoModesWnd_RestoreOldMode` @0043bbe2; kept as `[VideoMode]` Width, Height,
+      BitsPerPixel and RefreshRate) from the options' button and Toggle video mode window (106).
+      Goes with 14.
+    - Bug report (`CBugReportWnd` @004097ea, screen `BugReportWindow`: the `BugTypes` combo box,
+      `TargetName` and `TargetButton`, the Crash, Dup and Flags check boxes, Send; `OP_Bug`,
+      0x40b3) from /bugreport (@004fb35a), and feedback (`CFeedbackWnd` @0041acaf:
+      `FBKW_FeedbackInput`, Send; `OP_Feedback`, 0x413c) from /feedback (@004fb37c).
+    - /petition (@004f8dfc: empty says eqstr 13106, as a monster 13107; `send_petition`
+      @0053685c says "You petition, '%1'" (12325) and sends it, `OP_Petition`) and /report
+      (@004f3e8e: no name says 12943; once a zone, else 12945; the chat's last lines,
+      `collectUIElementsText` @00413598, 0x2004 bytes at most, as `OP_Report` 0x425a, then 12944).
+    - The text entry window (`CTextEntryWnd` @004377db, screen `TextEntryWnd`: `Prompt`, `Entry`,
+      `Cancel`; `Callback` @00437a7f hands the text back), which the chat window's menu
+      (`CChatWindow::WndNotification`) and the soulmark window ask a name with.
+    - The gems game (`CGemsGameWnd` @0041cd06, /gems @004fa556: a falling-blocks game on the
+      spell gem art, with its high scores file; 31 functions to `UpdateGemsGameWindowUI`
+      @0041e6f2).
+35. **The other slash commands** that still say they aren't supported, not under another item.
+    The table is at 0x609afc: 277 entries of {name, a localized name, the handler, the GM level,
+    its /help eqstr}. Ghidra missed the handlers only the table points at; they're read from the
+    exe's disassembly. Done so far: /split (`CEverQuest_DoSplit`; it doesn't close the windows
+    DoSplit puts away, `DAT_007914a4` and `DAT_007952f4`), /yell with `msg_yell`'s directions,
+    /loot, /charinfo (`FullZoneName` of the bind), /ttell (@004f839a: the target's name to its
+    apostrophe, eqstr 13090 for a name with '#' or '_' but an NPC corpse's; its `send_tell` also
+    stops on `DAT_007985f1`, as the socials do, not known), /movelog (@004fba78: "yes" sends
+    MSG_MOVELOG, 0x41e4, which EQMacEmu ignores), /stopsong (@004f5c74: a bard's StopSpellCast2),
+    /shield (@004fd688, `OP_Shielding`), /quit and /exit (@004fa8c5: the connection closed, the
+    game ended), /log (@004fbad0, `eqlog`; [Defaults] Log), /keys (@004f8ec7, `OP_Key`),
+    /dismount (@004ff5a6, `Mounts::DismountCommand`), and /adriver and /sdriver (@004f69f5: eqstr
+    12379 only). Still to do:
+    - Nothing at all, where ours says "not supported": /reverb, /resetwindows, /popmail and /alias
+      all point at @0043777e, a bare `ret`. They should say nothing.
+    - /safelock (@004ff689): with a word and unlocked, it becomes the password (under 32
+      characters, else eqstr 13292) and locks the interface (13291); locked, the same word
+      unlocks (13289) and another says 13290; with no word, 12095 when locked, else 13287 and
+      13288. While locked (`DAT_007cf29c`) `CEverquest_InterpretCmd` runs only /safelock and says
+      12095 for anything else, /quit included, and /safelock lines stay out of the command
+      history. `allowslashcommand` (3) reads the same lock.
+    - /rtarget (@004ff62d): /target of the name typed, or with none the last teller's
+      (`DAT_007ce45c`, past a '.' in it; eqstr 13286 with no tells yet). The key is done (6).
+    - /discipline (@004f4fb5): by class, the usage of eqstr 12996..13003 (12976 for a class with
+      none); the word matched against the keywords of eqstr 1280..1314, the level it needs
+      (13004), then `OP_Discipline` (0x41e6). The zone's `OP_DisciplineChange` (0x41f2,
+      @004e3bc1) puts the discipline running in ActorInfo+0x2e8+0x34, and its timer comes as
+      `OP_ResetSkill`'s kind (37).
+    - /surname (@004f3ddb): with one already 12939, under level 20 12940, no word 12941, 32
+      characters or more 2239; else the first word (20 at most) asked back in the confirmation
+      dialog (`CEverQuest_Surname` @0053d8de, eqstr 10004), `OP_Surname` from `ProcessYes`, and the
+      zone's answer (0x41c4, @004e46d5): 1374 rejected, or 1375 "Congratulations, %1 %2, your
+      surname was approved." with the name over our head.
+    - /language (under 3), /facepick (23), /note and /inspect (29), /hitsmode and /clearhits and
+      the three tracking commands (24), /chatfontsize (3), /help, /mp3, /music, /loadskin,
+      /bugreport, /feedback, /petition, /report and /gems (34), /shownpcnames (9).
+    - /hotbutton (@004ff36a): `[Name] <Color> [Text]` makes a social of that name, color and
+      first line in the first free one of the 120 (or the one of that name), `registerHotButton`
+      @004ff251, and puts it on the cursor (`CCursorAttachment::Activate` type 4) for a hot
+      button; eqstr 13278..13281 with no name, 13282 done, 13283 no room.
+    - The chat channels, all through `CEverQuest::ChatServerMessage` (@00524de9) to the chat
+      server the world names (`OP_SetChatServer`; `ChatServerConnect` @00524cae,
+      `ChatServerGiveTime` @00524885 from `DoMainLoop`, `CshOnMessage` @00524b2c,
+      `ChannelServerApi` @0049c3cf, `ChannelManager_ProcessChannelCommand` @0049c6c7): /chat
+      (@004f6439, and a line starting with `;`; usage eqstr 13065), /join (@00500106), /leave,
+      /leaveall, /list, /announce, /1../10 (`_SendToChannel` @00500266, after DoPercentConvert),
+      and /autojoin (@0050008a: the names into `[Defaults] ChannelAutoJoin`, "Set channels to be
+      joined at login.", or three usage lines). EQMacEmu has no chat server for this client:
+      waits on one.
+    - The client settings, each a `[Defaults]` key in eqgame (ours go in my-client.ini):
+      - /invwinlabels (@004fdc50, `InvWinLabels`, `DAT_007cf20c`): on, off or flipped, "Inventory
+        Window Labels *ON*" or "*OFF*"; the labels are the old UI's.
+      - /dynamiclights (@004fda22, `ShowDynamicLights`, `DAT_007cf25c`): eqstr 13268 on and 13269
+        off, from the next zone.
+      - /showspelleffects (@004f9f4d, `ShowSpellEffects`): eqstr 13168..13171; off draws no spell
+        particles (world and weapon ones stay).
+      - /particledensity (@004ff0b3): OFF, LOW, MED or HIGH through `CDisplay::SetPCloudDensity`
+        (@004a9507), "Particle Cloud Density is currently: %s" and "Please choose either OFF, LOW,
+        MED, or HIGH." literal in the exe. The Display page already sets the same value
+        (`FrontEnd::ApplyDisplayOptions`); only the command is missing.
+      - /showgrass (@004faa05, `ShowGrass`): eqstr 13179..13184, `CDisplay::loadGrassObjects`
+        (@004b2043: `grass.s3d`, `LWEED1.DDS`) and `UpdateGrassRenderingPosition` (@004b1ffa, from
+        `MovePlayer`); see 42.
+      - /mousespeed (@004f9e87, `MousePointerSpeedMod`): eqstr 13165..13167.
+      - /viewport (@004ffb00): `x y width height` or `reset` (eqstr 15008), kept in the UI ini and
+        applied by `CDisplay::UpdateCameraAfterModeSwitch` (@004acb64): the 3D view's rectangle.
+      - /mixahead (@004fa100, `SoundMixAhead` 1..100, `EqSoundManager::SetMixAhead`, eqstr 7528
+        and 7529), /reversesound (@004fb9a2: normal or reverse, 13214..13218) and /audiodebug
+        (@004f60f6: 13051 on, 13052 off): Miles' own; ask before giving them a meaning in our mix.
+      - /dopropertinting (@004fffdd, `DoProperTinting`) and /newui (@004ffa57, `NewUI`: eqstr
+        15012 and 15013, the old UI the next run): ours is the new UI only.
+      - /wincolor (@004fddcd): the old UI's windows (`WriteWindowColor` @004fdcfb); nothing to do.
+      - /toggletell is a GM's (36).
+    - Kept out unless asked: /mcicontrol (@004ff739, `mciSendStringA` with the line, the error
+      printed), /webupdate (@004f3951, 0x423c with the text), /edit (@004fa6fc, `EQ_Guide::Edit`,
+      the old UI's), and voice recognition: /voice (@004f6041: on, off or flipped for the next
+      run, eqstr 13049 and 13050), /microphone (@004f60e0: a window message, 0x4c8) and /vrdelay
+      (@004f6150, 13053..13058).
 36. **GM tools**, for a GM account: /goto, /summon, /zone, /kill, /kick, /hideme, /becomenpc,
-    /searchcorpse, /delcorpse, /emotezone, /servers, /find, /broadcast, /lastname, /approval and the
-    `OP_GM*` packets; the petition queue (`CPetitionQWnd` @0042d1ca, `msg_pq_update` @004dce71,
-    /viewpetition, /deletepetition); soulmarks (`CSoulmarkWnd` @00433258, /inquire, /praise,
-    /warn, `OP_SoulMarkAdd`, `OP_SoulMarkList`, `OP_SoulMarkUpdate`); /height (@004f47b8, GM level
+    /searchcorpse, /delcorpse, /emotezone, /servers, /find, /lastname, /approval and the
+    `OP_GM*` packets; /private (@004f9062, GM level 1: the text through `send_private`
+    @005368d9) and /broadcast (@004f416c, level 4: `send_broadcast` @005384f1); /toggletell
+    (@004fa597, level 3: 0x41de, eqstr 13172..13174); the petition queue (`CPetitionQWnd`
+    @0042d1ca, `msg_pq_update` @004dce71, `handlePetitionRequest` @004e42cf for
+    `OP_PetitionCheckout`, /viewpetition, /deletepetition, ExecuteCmd 119); soulmarks
+    (`CSoulmarkWnd` @00433258, /inquire, /praise, /warn, `OP_SoulMarkAdd`, `OP_SoulMarkList`,
+    `OP_SoulMarkUpdate`); what the zone tells a GM or does to us for one (`OP_GMFind` 0x4069:
+    eqstr 2134 with the zone and place, or 2135; `OP_GMKick` 0x406d: "Thou hast been expelled by
+    the gods!", 1392, and the game ended; `OP_GMGoto` 0x406e and `OP_GMZoneRequest` 0x414f: put at
+    the place given; 0x40d2, a level set: `LevelUpAffects` @004eff2d with "You are now level
+    %1!", 12932; `msg_ability_change` @004e1a0c, 12915 and 12916); /height (@004f47b8, GM level
     4): the target's (or our) height to the number typed, said (eqstr 0x32a4) and sent as 0x40f5
     {spawn id, 29 (size), the height}, or with `DAT_00798560` or `DAT_00798620` said (0x32a3) and
     changed here (`EQPlayer::ChangeHeight`).
-37. **What the zone sends that isn't handled yet** (`OP_ManaUpdate`, `OP_PlaySound`,
-    `OP_DespawnDoor`, `OP_CancelSneakHide` (`CEverQuest_CancelSneakHide`), `OP_ShopEndConfirm` (the
-    merchant window's Deactivate), `OP_BerserkStart` and `OP_BerserkEnd` (under 24),
-    `OP_CorpsePosition` (`CEverQuest_HandleWorldMessage_FloorRelated_`: the spawn put there,
-    stopped, and dropped to the floor) and `OP_GMLastName` and `OP_GMNameChange` (the spawn's, and
-    our profile's, surname or name, and the name over their head) are done; the two name changes
-    also set `EQ_Main`+0xe64 (`DAT_007f9574`), not known): `OP_Charm`, `OP_Reward`, `OP_MultiLineMsg`, `OP_ResetSkill`, `OP_SetTitle`,
-    `OP_FreezeClientControl`, `OP_UnfreezeClientControl` and `OP_ReturnClientControl`. The boats'
-    packets are done (39), and `OP_RequestClientZoneChange` (`DoTeleportB`, refused while stance
-    102 or linkdead) and `OP_Illusion` (`do_change_form`: races 142 and 143 the nearest zone object's
-    actor by `GetNearestActorTag`, else nothing and on us the SPA 0x3a buff off with 1371; a rider
-    off and back on; the spell emitters onto the new actor's root); still to do of those:
-    - `GetNearestActorTag`'s list is `s3dGetWorldVisibleActorList`'s, the zone regions the place's
-      region can see (its PVS); ours takes every region in reach.
-    - `SetHeights` for races 142 and 143: `ModelHeightOffset` 0 (0.1), so the server's z is the
-      object's foot; ours keeps the size's center (size / 5 * 3.125) for where we stand and what we
-      send. The eye (`CameraHeightOffset` 6) and the object's scale 1 are done.
-    - `do_change_form`'s old (`spells.eff`) clouds and sprites on the spawn: whether eqgfx keeps
-      them on the deleted actor isn't known; ours stay on the spawn.
-    - A dwarf's, halfling's or gnome's z + 1 going to another zone (`DoTeleportB`) isn't sent
-      anywhere and isn't ours.
-    Also sent by EQMacEmu and dropped here:
-    - `OP_SpellTextMessageStringID` (0x4241, `EntityList::SpellTextMessageClose_StringID`): others'
-      spell messages by string id.
+37. **What the zone sends that isn't handled yet.** eqgame's dispatchers
+    (`CEverQuest::HandleWorldMessage` @004e829f and its second half `FUN_004ebe1c`) take 249
+    opcodes; `ZoneSession` takes some 137. Done from earlier lists: `OP_ManaUpdate`,
+    `OP_PlaySound`, `OP_DespawnDoor`, `OP_CancelSneakHide` (`CEverQuest_CancelSneakHide`),
+    `OP_ShopEndConfirm` (the merchant window's Deactivate), `OP_BerserkStart` and `OP_BerserkEnd`
+    (under 24), `OP_CorpsePosition` (`CEverQuest_HandleWorldMessage_FloorRelated_`: the spawn put
+    there, stopped, and dropped to the floor), `OP_GMLastName` and `OP_GMNameChange` (the spawn's,
+    and our profile's, surname or name, and the name over their head; they also set
+    `EQ_Main`+0xe64, `DAT_007f9574`, not known), `OP_Charm` (30), `OP_SpellTextMessageStringID`
+    (12), the boats' packets (39), `OP_RequestClientZoneChange` (`DoTeleportB`, refused while
+    stance 102 or linkdead) and `OP_Illusion` (`do_change_form`: races 142 and 143 the nearest
+    zone object's actor by `GetNearestActorTag`, else nothing and on us the SPA 0x3a buff off with
+    1371; a rider off and back on; the spell emitters onto the new actor's root). Still to do:
+    - Sent by EQMacEmu, handled by eqgame, dropped here (found by matching the packets the
+      server builds against `ZoneSession`'s cases):
+      - `OP_DeleteCharge` (0x4147, @004dd106) from the zone, `MoveItem_Struct` {slot, -1, -1}:
+        one comes off the count (+0x116) of the item in that slot (under 30 the slot itself, else
+        slot `(n - 30) % 10` of the bag in `(n - 30) / 10`), which goes when that was the last;
+        nothing there says eqstr 1390, color 15. The zone sends it whenever it uses up one of
+        ours (`Client::DeleteItemInInventory` with an update: reagents, a quest's hand-in taken by
+        a script, a bandage on the cursor), so our counts stay wrong until the next zone. Ours
+        only sends it.
+      - `OP_Reward` (0x4080, `QuestReward_Struct` {u16 giver, u16 us, exp @4, faction @8 and
+        @0xc, copper @0x10, silver @0x14, gold @0x18, platinum @0x1c, item ids}): "from %1" (eqstr
+        1439) with the giver's name into "You receive %1 copper %2." (1438; 1440 silver, 1441 gold,
+        1442 platinum), each coin added to the purse here, and wave 0x8d. EQMacEmu adds the coins
+        on its side without telling us otherwise (`Client::QuestReward`), so a quest's coins don't
+        show until the next zone.
+      - `OP_LevelUpdate`'s other half (`CEverQuest_HandleWorldMessage_LevelUpdate` @004e06ef; the
+        level, experience and 5 practices are ours): only for a level above ours, and then the
+        highest level reached (PCData+0x1360) raised with it, `CSkillsSelectWnd::Refresh`, our
+        spawn's level set, and wave 0x8b played. Ours takes a lower level too, plays nothing,
+        and makes no event of it.
+      - `OP_Disarm` (0x40aa, `msg_disarm`): the answer to our disarm (24).
+      - `OP_ApplyPoison` (0x41ba): the answer to a poison applied (2).
+      - `OP_ResetSkill` (0x423d, `UpdateAbilityTimer` @004e2550, {i16 skill, i32 seconds @4}): that
+        skill's timer (`DAT_007cd650`) to now + seconds; EQMacEmu sends 0 to make a skill ready
+        again (`Client::ResetSkill`).
+      - `OP_DisciplineChange` (0x41f2, @004e3bc1): the discipline running (35).
+      - `OP_FreezeClientControl` (0x406a; a name, ours: stance 102, StunnedState 2, our speeds 0),
+        `OP_UnfreezeClientControl` (0x406b, sharing 0x40c1's block: StunnedState 0 with HP over 0,
+        stance 100, `DAT_007cf1e4` 0) and `OP_ReturnClientControl` (0x40b0: `ChangeStance` 100,
+        eqstr 1394 "You have control of yourself again." in color 4, the waits let go): a charmed
+        player (`mob_ai.cpp`).
+      - `OP_MultiLineMsg` (0x4014): the text a line at a time (`ParseNextLine`), color 10 in the
+        old UI; the new UI's path (color 0x145 at `LAB_004ecdca`) isn't traced.
+      - `OP_SetTitle` (0x40d4, MSG_GRANT_TITLE, @004e45eb): eqgame reads a name at 0, a title at
+        0x80 and a flag at 0xc2, and copies the title into our profile; EQMacEmu sends 8 bytes
+        {is suffix, spawn id} for an AA title, which means nothing to it. Our titles come from
+        the AAs (28); nothing to do unless the server's packet changes.
+      - `OP_MoneyUpdate` (0x4008): in eqgame, coins picked up off the ground (`EQMoneyList`, 11);
+        EQMacEmu builds one for a trader's sale and never sends it (33).
+      - A GM's: `OP_GMFind`, `OP_GMKick`, `OP_GMZoneRequest`, `OP_PetitionCheckout`,
+        `OP_PetitionRefresh`, `OP_SoulMarkUpdate` (36).
+      - Built by EQMacEmu with no case in eqgame's dispatchers: `OP_GuildRemove` (0x4119),
+        `OP_TradeReset` (0x4010), `OP_ZoneInAvatarSet` (0x406f). Nothing to do; check where the
+        server sends them before believing that.
+    - `OP_Illusion`'s leftovers:
+      - `GetNearestActorTag`'s list is `s3dGetWorldVisibleActorList`'s, the zone regions the
+        place's region can see (its PVS); ours takes every region in reach.
+      - `SetHeights` for races 142 and 143: `ModelHeightOffset` 0 (0.1), so the server's z is the
+        object's foot; ours keeps the size's center (size / 5 * 3.125) for where we stand and
+        what we send. The eye (`CameraHeightOffset` 6) and the object's scale 1 are done.
+      - `do_change_form`'s old (`spells.eff`) clouds and sprites on the spawn: whether eqgfx
+        keeps them on the deleted actor isn't known; ours stay on the spawn.
+      - A dwarf's, halfling's or gnome's z + 1 going to another zone (`DoTeleportB`) isn't sent
+        anywhere and isn't ours.
     - Not sent by EQMacEmu (no `OP_` name in `patch_Mac.conf`; their original names from
-      `../my-eqmac-server/server/utils/structs/opcodes.h`, byte-swapped): 90 more opcodes eqgame's
+      `../my-eqmac-server/server/utils/structs/opcodes.h`, byte-swapped): 85 more opcodes eqgame's
       dispatchers handle. EQMacEmu does most of their jobs through other packets (MSG_GSAY,
       MSG_SHOUT, MSG_CURHP, MSG_BUFF, MSG_ZONE_SKY); the rest are Sony's GM, housing, message
       board and limbo features. Worth a look if the server ever sends them: MSG_SPELLWORNOFF
       (0x4265), MSG_SPELLACTIVATEPARTICLES (0x4266, 0x4267), MSG_TRAP_LOCATION (0x41f4),
-      MSG_NPC_SAY_TEXT (0x425e), MSG_ABILITY_CHANGE (0x41bf), MSG_SND_CORPSE_CON (0x4053),
-      MSG_DUST_CORPSE (0x404c), MSG_ADD_MLIST (0x4007, coins on the ground) and MSG_INVITE_OK
-      (0x4042, group follow 2, under 2).
+      MSG_NPC_SAY_TEXT (0x425e, `msg_npc_say_text` @004e07b9: an NPC's say or shout with its
+      language through `HearBabel`, eqstr 1032, 1034, 1410, 1420), MSG_ABILITY_CHANGE (0x41bf),
+      MSG_SND_CORPSE_CON (0x4053) and its notes (2), MSG_DUST_CORPSE (0x404c), MSG_ADD_MLIST
+      (0x4007, coins on the ground), MSG_INVITE_OK (0x4042, group follow 2, under 2), the
+      inventory's `msg_del_inventory` (@004e7ab9), `msg_mod_inventory` (@004e7d13),
+      `msg_delete_item` (@004e3c33) and its bank and coin kin, and 0x40d2 (a GM's level set, 36).
+40. **Camping.** Ours sends `OP_Camp`, says the first line and waits 30 s. eqgame's
+    `CEverQuest_Camp` (@00530c7b, from /camp, the Actions window's button and a hot button):
+    - nothing while frozen (stance 102); mesmerized (`TotalSpellAffects` of SPA 31) says eqstr
+      12368 "You do not have control of yourself right now.";
+    - not sitting (stance 110) says 12291 "You must be sitting to prepare to camp.", and on a
+      horse 12292 "You must dismount and be sitting to prepare to camp.";
+    - else `OP_Camp` (0x4207, with the 4 bytes of `DAT_007f95bc` when that's set),
+      `CampingInProgress` to now + 30 s, our HP remembered, and 12293;
+    - /camp again while camping calls it off: 12290 "You abandon your preparations to camp."
+    `DoPassageOfTime` then: no longer sitting (or stunned) says 12683 "Your attempt to camp has
+    been interrupted." and calls it off; every 5 s left, 12684 "It will take about %1 more
+    seconds to prepare your camp."; at the end the logout (0x4150) and the game's end. While
+    camping eqgame also turns away a trade (`msg_req_trade`, `msg_begin_trade`), a loot (done), a
+    merchant, banker or trader (`CEverQuest_IsOkToTransact`), a poison, and the world's clicks
+    (`CEverQuest_LMouseUp`, `EQ_3DView_MouseUp`); `ChangeStance` reads it too. Whether the zone
+    is told of a camp called off isn't traced (EQMacEmu ends one when we stand).
+43. **The front end's other screens** (eqmain.dll's `new_dll_main` @10025300). The start
+    screen's ACCOUNT, CREDITS and OPTIONS and server select's NEWS say "not implemented"
+    (`SISATEXT_NOT_IMPLEMENTED`), and server select's CHAT button isn't drawn:
+    - Credits (`displayCreditsScreen` @10021eb0, `processNextCreditLine` @10021df0, the folder's
+      `credits.txt`).
+    - Options (`handleModelPreferencesOptionsScreen` @1001e620 and
+      `ShowGraphicsAndMemorySettingsDialog` @1001fc80: the Luclin models by race and sex, the
+      texture and memory settings, which are my-client.ini keys now, 21).
+    - News (`displayAccountNewsScreen` @10019f90, `processNewsItems` @1001a1b0,
+      `checkAndDisplayNewsUpdates` @10026af0; the login server's `OP_LoginBanner` is the only
+      news EQMacEmu has).
+    - The login server's chat (`handleChatInterface` @1001bc40, `attemptChatLogin` @1001bb30):
+      EQMacEmu's login server has none.
+    - The splash and the intro (`displaySplashScreen` @10021820, `playIntroVideo` @10025db0 with
+      `processSmackVideoFrame`, `displayLicenseAgreements` @100267a0), the adapter and language
+      pickers (`displayAdapterSelectionScreen` @1001c8d0, `displayLanguageSelectionScreen`
+      @1001cba0).
+    - Sony's account screens (registration, billing, the expansion upgrades, the PIN and password
+      changes, voting): nothing to do against an emulator.
 
 ## Rendering / presentation
 
@@ -712,7 +1042,10 @@ no rules of its own.
    (`ZoneView::DrawNameSprites`). A Bazaar trader's "Trader " (5503) in the Bazaar, in place of an
    AA title, and its 0x40ffff (SetNameSpriteState, SetNameSpriteTint) are done. Still to do:
    the names eqgame hides in some animations (skeletons, gargoyles and mimics lying or feigning:
-   animations 0x10, 0x21, 0x26), `/shownpcnames`, Zeal's raid shownames, and the guild list in packet logs (replays show "Unknown Guild"). An HP
+   animations 0x10, 0x21, 0x26), `/shownpcnames` (@004ff9d9, GM level 10: "off" is
+   `CDisplay::TurnNPCNameSpritesOff` @004b14a4, anything else `TurnNPCNameSpritesOn` @004b14da, said
+   as "SHOWNPCNAMES *OFF*" or "*ON*"), and the guild list in packet logs (replays show "Unknown
+   Guild"). Zeal's raid shownames isn't the base client's. An HP
    bar over heads isn't eqgame's; leave it to an option if ever. Character select's name is still
    drawn on the 2D canvas (`DrawNameSprite`) at the model's top, not the head point. A 1-2 pixel
    size difference from the TAKP client was reported; the size math (texels x 0.05, focal / depth,
@@ -750,8 +1083,11 @@ no rules of its own.
     the caster's animation and a spell's stage 1 on them). Still to do: a missile's old (spells.eff)
     stage 1, blit-sprite actors as a missile's model (`GENC00_ACTORDEF`: only item meshes are built;
     the server sends `IT68`), the static kind 9 missiles' checks on who walks into them (MoveMissile's
-    sentinel and trap spells), our own archery and throwing making their missile (DoAttack), the chat filters for PC and NPC
-    spells and bard songs, and OP 0x4265 (destroy a cast's emitters; this server never sends it).
+    sentinel and trap spells), our own archery and throwing making their missile (DoAttack),
+    /showspelleffects (35: the Display page's spell particle settings are done, the command's
+    on and off isn't), `DoParticleEffectNew` (@004e8208) and
+    `t3dParticleSystemDestroyTaggedEmitters` (@004e81ef) for OP 0x4265 to 0x4267 (destroy or start
+    a cast's emitters; this server never sends them).
 13. ~~**The other camera modes F9 cycles through**~~: done (`ZoneView::CameraSetup`, `ToggleView`,
     `CameraKeys`, `MouseLookCamera`; `FrontEnd::LoadCameras`, `SaveCameras`): `CDisplay_ToggleView`'s
     five views with `CDisplay_default_camera`'s table, kept from zone to zone and the user cameras in
@@ -768,8 +1104,13 @@ no rules of its own.
       Mouse page) are fixed at 4 and off.
     - SPA 87 (magnification) as it lands or fades (under 2).
 14. **Graphics options:** fullscreen or windowed, resolution changes, gamma, anisotropic filtering,
-    MSAA, draw distance and level of detail.
-15. **Screenshots.**
+    MSAA, draw distance and level of detail. eqgame's side of it: `CDisplay::ChangeVideoMode`
+    (@004acc0f, with `CDisplay_SupportsVidMode` @004acac4 and `UpdateCameraAfterModeSwitch`
+    @004acb64), the video modes window (34), /viewport's rectangle for the 3D view (35), and
+    `s3dSetDynamicLOD` (5).
+15. **Screenshots.** ExecuteCmd 78 (Take a screenshot) says eqstr 12374 "Taking a screenshot..."
+    and `CDisplay::RealRender_World` then calls `CaptureScreenshot` (@004aa6d1), which writes the
+    frame as `EQ%06d.bmp`, the next number free, in the game's folder.
 21. **Luclin player models.** Done (`render/character_model.*`): `UseLuclin*` in my-client.ini
     picks them per race and sex (off by default), loaded in `CDisplay::InitWorld`'s order and rules;
     their variant tracks (by what they hold, `SetAnimVariation`) and source models, the `_LAYER` textures, faces, eyes
@@ -811,6 +1152,19 @@ no rules of its own.
     - `CDisplay::MoveLocalPlayerToSafeCoords` (@004b459c): `DoMainLoop`'s way out when the
       vehicle still can't be set ("Still can't set vehicle"), a floor height found or the safe
       point.
+    - Ladders: `CDisplay::GetOnActor` (@00504202, from `GetClickedActor`) for a click on a zone
+      object typed 6 (`SpriteCallBack`: its name starts `LADDER`). Farther than 25 from it says
+      eqstr 12008 "You are too far away from the ladder, get closer."; else, standing above 70% of
+      its height, we're put its radius + 0.5 in front of it (behind when `CanIFitHere` says the
+      front won't do), turned to it, stopped, and marked climbing (ActorInfo+0x189 = 6), which
+      `ProcessAnimation` (animation 23) and `DoTeleportB` read; one already climbing has its
+      heading snapped to the ladder. How climbing then moves us (and gets us off) isn't traced.
+      Ours only plays a climber's steps (`frontend/actor_sound.cpp`).
+    - `MoveToZone_2`'s (@005460b5, see 24) other lines: under `EQWorldData::GetMinLevel`
+      (@00523f42) of the zone, eqstr 12385 "Your will is not strong enough to leave the material
+      plane."; a zone with no index 12386 "That zone is currently down, moving you to safe point
+      within your current zone."; -1 from its check 5051 "This zone is not ready to receive
+      visitors yet...". What each does to the move after saying so isn't traced.
 
 38. ~~**Mounts.**~~ Done (`frontend/mounts.*`, `ZoneView::SetMounts`, `PlayerMovement::SetMounted`,
     `SpawnActor::Ride` and `Drive`): the zone's horse (race 216, `<rider>`s_Mount00`) taken by its
@@ -869,6 +1223,45 @@ no rules of its own.
     - `CreatePlayerActor` falls back to `HUM_ACTORDEF` (`HUF_ACTORDEF` for a woman) when the actor
       isn't there; ours to race 75's (a gender 0 launch, `LAUNCHM`, shows as an elemental). Check
       where the race 75 fallback came from before changing it.
+41. **Doors and switches.** Clicking, moving and sounds are done (`frontend/zone_doors.*`). Still
+    to do:
+    - Keys and lockpicks. `CEverQuest_ClickedSwitch` (@00547034) sends what's on the cursor with
+      the click, and ours always sends item 0xffff: a trap (`GetSwitchDamage` over 0) goes with
+      our Disarm Traps skill (17, done); else lockpicks on the cursor (item type 12) with their id
+      and our Pick Lock skill (35); a key (type 33), a container or any other item with its id and
+      skill 0; an item of type 39 with its id and its own value (+0x38) as the skill.
+      `EQSwitch::UseSwitch` (@00521d91) puts them in `OP_ClickDoor` (0x408d: {u8 door, u8, i16
+      skill, u16 item, u16 our spawn}). The lock's lines are the zone's; `SwitchWasOpened`
+      (@00521c77) runs only offline.
+      (`UseSwitch`'s own refusals are ours: `ZoneDoors::Click`.)
+    - Walking into one (`EQPlayer::TouchingSwitch`: pressure plates, teleporters, hurting ones;
+      22), with the teleporters' table (`msg_teleport_index` @004f1e5b reads a `_tp.txt` file as
+      the zone loads, for `GetTeleportTableEntryByID` and `GetTPCoordsFromIndex` @0052459f; the
+      TAKP folder has no such file, so find where the table comes from first).
+    - Switches by the hour (`EQSwitch::UpdateDoorStateBasedOnWorldTime` @004a3023, from
+      `EQSwitch_UpdateDoorStates`): one whose +0x30 is 1.0 is on from 5 to 18 and off at night, 2.0
+      the other way round (unless +0xcf); it sets the byte at +0x1d. What that byte shows (a lit
+      or unlit state) isn't traced.
+    - The particle-effect switches (type 53, `CRATEG`: also character select's, 23), and
+      `EQSwitch::InitializeSwitchColors` (@005214f2, from the door loading code).
+    - Type 56's 0x410f (MSG_REQ_HOUSELOCK) is Sony's housing: nothing to do.
+42. **Scenery and model odds and ends**, found in the decompile and not ours:
+    - Grass: `CDisplay::loadGrassObjects` (@004b2043, from `StartWorldDisplay` with `ShowGrass`
+      on: `grass.s3d` and `LWEED1.DDS`), `CDisplay_InitializeGrassRendering` (@004b1fd2) and
+      `UpdateGrassRenderingPosition` (@004b1ffa, from `MovePlayer`, keeping it round us);
+      /showgrass (35) turns it on and off. Which zones have any isn't checked.
+    - Dynamic lights off (`ShowDynamicLights`, `DAT_007cf25c`, /dynamiclights): ours are always
+      on.
+    - `CDisplay::ReplaceSpecialCloakMaterials` (@004a0d05, from `CDisplay_SwapMaterial`): a
+      model's materials named `CLK??06`..`CLK??09` swapped for the one named `CLK` + the actor's
+      tag + the rest. `ReplaceCloakMaterials` is ours (robes); check this one against a robed
+      Luclin model before porting.
+    - `EQPlayer::SetToRandomRace` (@005200da, from `CreatePlayerActor`): a race 20 spawn in zone
+      163 (Grieg's End) is given a race at random.
+    - `CDisplay::SetUserRender` (@004afb6e, from `InitDDraw` and `StartWorldDisplay`) and
+      `SetCameraFogMode` (@004aca90): not read yet.
+    - `CDisplay::renderDoll` (@0049f61b, from `RealRender_World`) draws the old UI's inventory
+      model; nothing to do in the new UI.
 
 ## Infrastructure / tooling
 
@@ -886,6 +1279,32 @@ no rules of its own.
     eqmain's dialog, then the start screen).
 20. **Speed and stability:** load zones in the background, cache assets, catch crashes and write a
     crash dump, tests for the file and data parsers.
+44. **What stays out**, so the decompile's function list (8128 in eqgame.exe, 5431 past the
+    unwind stubs) isn't combed for it again. Ask before taking any of it up:
+    - The old UI (`DAT_008092d8` 0, /newui): `EQ_Main` and its 17 subclasses (`draw`,
+      `ProcessButton`, `doHotButton`, `DoMerchant`, `DoLoot`...), `EQ_Bag`, `EQ_Book`,
+      `EQ_CharCreateS`, `EQ_CharSelS`, `EQ_CreateBS`, `EQ_DragItem`, `EQ_Guide`, `EQ_ItemData`,
+      `EQ_3DView`'s drawing, `EQ_TextIO`, `EQ_Overlay`, `EQ_HSlider`, `EQ_Requestor`,
+      `EQ_Columns` (the old UI's gems game), and every `DAT_008092d8 == 0` branch of the commands
+      and packets (/wincolor, /invwinlabels, Backdrop, Lock windows, Toggle chat window,
+      `msg_snd_trader_eq`, /note's `notes.txt` line).
+    - Playing offline (`GameState` 1 or `DAT_00798620`): `SpellFizzled`,
+      `CastingRequirementsMet` with `HasEnoughItemsForSpell` and `ExpendItemCharge`,
+      `EQSwitch::SwitchWasOpened`, and what the server works out for itself at creation and on a
+      level (`EQ_Character::InitMyLanguages` @004ba03a, `InitializeCharacterSkills` @004bce1d,
+      `setSkillsByLevel` @004effec).
+    - Sony's services: the chat server until a server has one (35), the message board
+      (`EQBBoard` @0049c140), housing (`EQ_Main::ClearHouseBank`, MSG_REQ_HOUSELOCK), /webupdate,
+      the client checks (`fillEvilProcessNames` @0055890c, `initializeClientValidationString`
+      @005588b7, the exe checksum of 25), account screens (43).
+    - Voice recognition (`InitializeVoiceRecognition` @0055785c, /voice, /microphone,
+      /vrdelay), the IME (`CIMEManager`, `CEditWnd`'s composition handlers) and the other
+      locales' text (the Korean, French and German grammar rules, `ConvertNameToLocal`).
+    - Windows and Miles plumbing we replace rather than port: `EverQuest_wndproc`, DirectInput
+      (`initializeDirectInputKeyboard`, `GetMouseInputData`), `rdp_*` and `NetworkConnection`
+      (`third_party/rdplib`), `SoundManager`'s Miles calls, `CXStr`, the XML and SIDL
+      loaders' internals (`XMLDocument`, `CParseTokenXML`, `UIElement` and the generated
+      `*Control` and `UI*` classes), the C runtime.
 
 ## Order
 
@@ -893,3 +1312,10 @@ no rules of its own.
 2. ~~The window manager (1).~~
 3. ~~The Player, Target and Chat windows (2, 3), which prove out the whole SIDL pipeline.~~
 4. ~~Nameplates and the target indicator (9, 10).~~
+5. What the zone already sends and we drop, since it leaves our state wrong: `OP_DeleteCharge`
+   and `OP_Reward` (37), then disarm's and the poison's answers (24, 2).
+6. Camping's checks, countdown and calling off (40), and the MOTD as we enter (3).
+7. Keys and lockpicks on doors (41), then ladders (22).
+8. Inspecting and the player notes window (29), the tracking window (24), breath and drowning
+   (34).
+9. The stale Keyboard page rows (5), and the do-nothing commands that say "not supported" (35).
