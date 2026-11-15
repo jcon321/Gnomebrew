@@ -150,6 +150,7 @@ bool WorldSession::Begin(const std::string &host, uint16_t port, const std::stri
 	Close();
 	m_zoning = false;
 	m_approved = false;
+	m_motd_entering = "~"; // SetDefaultGameValues, from DoCharacterSelection
 	m_characters.clear();
 	m_zone_address.clear();
 	m_zone_port = 0;
@@ -283,6 +284,15 @@ namespace
 	}
 }
 
+std::string WorldSession::TakeEnteringMotd()
+{
+	std::string motd;
+	if (!m_motd_entering.empty() && m_motd_entering[0] != '~')
+		motd = m_motd_entering;
+	m_motd_entering.clear();
+	return motd;
+}
+
 void WorldSession::Logout()
 {
 	if (m_session && m_state == State::CharacterSelect)
@@ -396,7 +406,12 @@ void WorldSession::Pump(int timeout_ms, std::vector<Event> &events)
 			Log("[world]    " + std::to_string(m_guilds.size()) + " guilds");
 			break;
 		case WorldOp::MOTD:
+			// HandleWorldMessage 0x41dd: kept for entering the zone only while that's still "~".
 			m_motd = CString(packet.data);
+			if (!m_motd_entering.empty() && m_motd_entering[0] == '~')
+				m_motd_entering = m_motd;
+			else
+				m_motd_entering.clear();
 			Log("[world]    MOTD: " + m_motd);
 			break;
 		case WorldOp::SetChatServer:

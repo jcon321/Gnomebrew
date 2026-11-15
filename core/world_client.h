@@ -107,6 +107,9 @@ public:
 	bool TestServer() const { return m_test_server; }     // OP_LogServer: a test server (@00799760: raids for all)
 	const std::string &WorldShortName() const { return m_world_short_name; }
 	const std::string &Motd() const { return m_motd; }
+	// DoMainLoop as a zone is entered: the MOTD that came since character select, once ("" after
+	// that, and for none or "~").
+	std::string TakeEnteringMotd();
 	// OP_GuildsList, asked for as we enter the world: for the zone (ZoneSession::SetGuilds).
 	const GuildNames &Guilds() const { return m_guilds; }
 	const std::string &ZoneAddress() const { return m_zone_address; }
@@ -130,6 +133,7 @@ private:
 	bool m_fv_rules = false, m_auto_identify = false, m_test_server = false;
 	std::string m_world_short_name;
 	std::string m_motd;
+	std::string m_motd_entering = "~"; // DAT_0079978a: "~" from character select until OP_MOTD comes
 	GuildNames m_guilds;
 	std::string m_entering;
 	NewCharacter m_new_character;

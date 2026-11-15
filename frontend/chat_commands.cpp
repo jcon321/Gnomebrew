@@ -22,7 +22,7 @@ namespace
 		UserColor, GuildInvite, GuildRemove, GuildDelete, GuildStatus, GuildLeader, GuildWar, GuildPeace, GuildMotd,
 		MakeRaidLeader, RaidInvite, RaidDecline, RaidAccept, RaidDisband, SetLootType, AddRaidLooter, RemoveRaidLooter,
 		RaidSay, RaidWindow, Channel, Loot, TargetTell, CharInfo, MoveLog, StopSong, Shield, Quit, Log, Keys, Dismount,
-		AlternateAdv, Pet, SoundDriver, Duel, Decline, Bazaar, Trader,
+		AlternateAdv, Pet, SoundDriver, Duel, Decline, Bazaar, Trader, Nothing, ParticleDensity, RTarget, Inspect,
 	};
 
 	struct CommandEntry
@@ -96,25 +96,25 @@ namespace
 		{"/log", 0, Command::Log}, {"/toggletell", 3, Command::None}, {"/inquire", 3, Command::None},
 		{"/praise", 3, Command::None}, {"/warn", 3, Command::None}, {"/edit", 3, Command::None},
 		{"/voice", 0, Command::None}, {"/microphone", 0, Command::None}, {"/movelog", 0, Command::MoveLog},
-		{"/hidecorpses", 0, Command::HideCorpses}, {"/vrdelay", 0, Command::None}, {"/reverb", 0, Command::None},
+		{"/hidecorpses", 0, Command::HideCorpses}, {"/vrdelay", 0, Command::None}, {"/reverb", 0, Command::Nothing},
 		{"/fastdrop", 0, Command::FastDrop}, {"/trackplayers", 0, Command::None}, {"/help", 0, Command::None},
 		{"/lfg", 0, Command::Lfg}, {"/approval", 4, Command::None}, {"/sit", 0, Command::Sit},
 		{"/stand", 0, Command::Stand}, {"/book", 0, Command::Book}, {"/cast", 0, Command::Cast},
 		{"/doability", 0, Command::DoAbility}, {"/whotarget", 0, Command::WhoTarget}, {"/language", 0, Command::None},
 		{"/target", 0, Command::Target}, {"/camp", 0, Command::Camp}, {"/attack", 0, Command::Attack},
 		{"/invite", 0, Command::Invite}, {"/disband", 0, Command::Disband}, {"/note", 0, Command::None},
-		{"/wincolor", 0, Command::None}, {"/usercolor", 0, Command::UserColor}, {"/resetwindows", 0, Command::None},
-		{"/mcicontrol", 0, Command::None}, {"/popmail", 0, Command::None}, {"/audiodebug", 0, Command::None},
+		{"/wincolor", 0, Command::None}, {"/usercolor", 0, Command::UserColor}, {"/resetwindows", 0, Command::Nothing},
+		{"/mcicontrol", 0, Command::None}, {"/popmail", 0, Command::Nothing}, {"/audiodebug", 0, Command::None},
 		{"/dynamiclights", 0, Command::None}, {"/chatfontsize", 0, Command::None}, {"/lootnodrop", 0, Command::LootNoDrop},
 		{"/reversesound", 0, Command::None}, {"/emotezone", 4, Command::None}, {"/invwinlabels", 0, Command::None},
 		{"/tracksort", 0, Command::None}, {"/trackfilter", 0, Command::None}, {"/mousespeed", 0, Command::None},
-		{"/gems", 0, Command::None}, {"/inspect", 0, Command::None}, {"/serverfilter", 0, Command::ServerFilter},
+		{"/gems", 0, Command::None}, {"/inspect", 0, Command::Inspect}, {"/serverfilter", 0, Command::ServerFilter},
 		{"/showspelleffects", 0, Command::None}, {"/combatmusic", 0, Command::CombatMusic}, {"/mixahead", 0, Command::None},
 		{"/guildmotd", 0, Command::GuildMotd}, {"/charinfo", 0, Command::CharInfo}, {"/safelock", 0, Command::None},
 		{"/alternateadv", 0, Command::AlternateAdv}, {"/targetgroupbuff", 0, Command::TargetGroupBuff}, {"/tgb", 0, Command::TargetGroupBuff},
-		{"/hotbutton", 0, Command::None}, {"/particledensity", 0, Command::None}, {"/facepick", 0, Command::None},
-		{"/dismount", 0, Command::Dismount}, {"/rtarget", 0, Command::None}, {"/showgrass", 0, Command::None},
-		{"/alias", 0, Command::None}, {"/hitsmode", 0, Command::None}, {"/clearhits", 0, Command::None},
+		{"/hotbutton", 0, Command::None}, {"/particledensity", 0, Command::ParticleDensity}, {"/facepick", 0, Command::None},
+		{"/dismount", 0, Command::Dismount}, {"/rtarget", 0, Command::RTarget}, {"/showgrass", 0, Command::None},
+		{"/alias", 0, Command::Nothing}, {"/hitsmode", 0, Command::None}, {"/clearhits", 0, Command::None},
 		{"/dopropertinting", 0, Command::None}, {"/makeleader", 0, Command::MakeLeader}, {"/viewport", 0, Command::None},
 		{"/clearchat", 0, Command::ClearChat}, {"/bazaar", 0, Command::Bazaar}, {"/trader", 0, Command::Trader},
 		{"/music", 0, Command::None}, {"/bugreport", 0, Command::None}, {"/loadskin", 0, Command::None},
@@ -991,6 +991,22 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 		ChatOut(format(13177, "Your Location is %1, %2, %3", {y, x, z}), ChatType::Default);
 		break;
 	}
+	case Command::Nothing:
+		// /reverb, /resetwindows, /popmail and /alias: the table's handler is a bare ret (@0043777e).
+		break;
+	case Command::RTarget:
+		// /rtarget (@004ff62d): /target of the name typed, or with none of the last teller
+		// (__LastTell, past a '.' in it).
+		if (args.empty()) {
+			if (m_tell_list.empty()) {
+				ChatOut(format(13286, "You have not received any tells, so you cannot use reply target.", {}), ChatType::Default);
+				break;
+			}
+			args = m_tell_list.front();
+			if (size_t dot = args.find('.'); dot != std::string::npos)
+				args.erase(0, dot + 1);
+		}
+		[[fallthrough]];
 	case Command::Target: {
 		// EQPlayer_get_player_partial_name: the nearest spawn whose name starts with it.
 		if (args.empty()) {
@@ -1236,6 +1252,52 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 		ChatOut("<red> <green> <blue> -> 0 to 255", ChatType::Default);
 		ChatOut("To reset a user color use /usercolor <number> reset", ChatType::Default);
 		ChatOut("To display a list of usercolor #'s use /usercolor help", ChatType::Default);
+		break;
+	}
+	case Command::ParticleDensity: {
+		// /particledensity (@004ff0b3): 0..3, or a word starting OFF, LOW, MED or HIG (any case), to
+		// CDisplay::SetPCloudDensity; said back as typed, in capitals. The Display page's own
+		// setting (DAT_00798ae4) and the ini aren't touched.
+		std::string word = args;
+		for (auto &c : word)
+			c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+		// is_number (@004f3739): a sign, then digits only.
+		size_t digits = !word.empty() && (word[0] == '+' || word[0] == '-') ? 1 : 0;
+		bool number = !word.empty();
+		for (size_t i = digits; i < word.size(); ++i)
+			number = number && std::isdigit(static_cast<unsigned char>(word[i]));
+		int level = std::atoi(word.c_str());
+		if (!number || level < 0 || level > 3) {
+			static const char *const words[] = {"OFF", "LOW", "MED", "HIG"};
+			level = -1;
+			for (int i = 0; i < 4 && level < 0; ++i)
+				if (word.compare(0, 3, words[i]) == 0)
+					level = i;
+		}
+		if (level < 0) {
+			ChatOut("Please choose either OFF, LOW, MED, or HIGH.", ChatType::Default);
+			break;
+		}
+		SetPCloudDensity(level);
+		ChatOut("Particle Cloud Density is currently: " + word, ChatType::Default);
+		break;
+	}
+	case Command::Inspect: {
+		// /inspect (@004fb87f): "on" or "off" sets whether the right button on a player inspects them
+		// (DAT_007cf28c, [Defaults] InspectOthers), anything else says the format; then the setting.
+		std::string word = Lower(args);
+		if (word == Lower(format(12947, "on", {})) || word == Lower(format(12946, "off", {}))) {
+			m_inspect_others = word == Lower(format(12947, "on", {}));
+			SaveSetting("Defaults", "InspectOthers", m_inspect_others ? "TRUE" : "FALSE");
+		}
+		else {
+			ChatOut(format(13210, "Turns on/off the ability to inspect other players by right-clicking.", {}), ChatType::Default);
+			ChatOut(format(13211, "FORMAT: /inspect <on | off>.", {}), ChatType::Default);
+		}
+		ChatOut(m_inspect_others
+			? format(13212, "You are currently able to inspect other players by right-clicking on them.", {})
+			: format(13213, "You are currently NOT able to inspect other players by right-clicking on them.", {}),
+			ChatType::Default);
 		break;
 	}
 	case Command::CombatMusic:

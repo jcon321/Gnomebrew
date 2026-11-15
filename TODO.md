@@ -303,11 +303,13 @@ no rules of its own.
    - `CEverquest_InterpretCmd` (@0054572f) looks a word up twice, first by each command's
      localized name (the table's second pointer, null in the exe as it ships) and then its own:
      nothing to do in English. A line starting with `;` is /chat's (35), where ours says it.
-   - The MOTD as we enter: `DoMainLoop`, after "You have entered %1." (12357), prints the world's
-     `OP_MOTD` text once as eqstr 12359 "MESSAGE OF THE DAY: %1" in color 15 (unless it's "~");
-     ours prints it only for /motd. Before it, 12358 "You are no longer in a PvP immunity zone."
-     (color 13) when `DAT_00799758` is 4 (a server type, by the text), under level 6, outside a
-     newbie zone (`EQWorldData::IsNewbieZone` @00523f15).
+   - The MOTD as we enter is done (`WorldSession::TakeEnteringMotd`: `DoMainLoop`'s 12359 after
+     "You have entered %1.", once after character select). Still to do: before it, 12358 "You are
+     no longer in a PvP immunity zone." (color 13) when `DAT_00799758` is 4 (the server type),
+     under level 6, outside a newbie zone (`EQWorldData::IsNewbieZone` @00523f15, by
+     `IsSpecialZone`'s zone flags, which aren't ours); a second `OP_MOTD` (EQMacEmu sends one
+     with every zone) emptying /motd's text, as eqgame's 0x41dd does (ours keeps it); and
+     "You have entered %1." itself through eqstr 12357.
    - `%R` in a string (`orderedStringExpansion` @004f7ea2): the grammar rules of
      `GrammarRulesClass::Resolve` (@0054bf5c; English's `RuleEn1`..`RuleEn4` @0054c04c on, and the
      Korean, French and German ones), which `EqStr::Format` leaves as it is.
@@ -367,9 +369,7 @@ no rules of its own.
    settings; its sensitivity and invert, which `procMouse` reads,
    are fixed at 4 and off; /mousespeed is 35's); the reverb's drugged room (23) while drunk at 40 and
    over (DoPassageOfTime's drunkenness wearing off isn't ours); the Keyboard page's
-   temporary red rows (commands not yet done) go once every command is done. Two rows are red
-   that shouldn't be: `KeyMap`'s table (`frontend/key_map.cpp`) still marks Autoattack and Toggle
-   Alt. Adv. window not done, and `FrontEnd` does both.
+   temporary red rows (commands not yet done) go once every command is done.
    A combo box's list that's down takes any press (CXWndManager's 0x34): off it, the list goes
    and the press goes no further. Its list draws the choice on the select color and the row under
    the mouse in the hover color (style 0x10000), CListWnd's or CComboWnd::SetColors' (white, yellow
@@ -703,9 +703,8 @@ no rules of its own.
       `CEverQuest_BeingIgnored` on channel messages, emotes, /random rolls and /consent's answer.
       Still to do: 0x4243's ignore check (EQMacEmu never sends it).
     - Inspecting, none of it ours yet:
-      - /inspect (@004fb87f) only turns it on or off (`DAT_007cf28c`, `[Defaults]
-        InspectOthers`): "on" or "off" sets and keeps it, anything else says eqstr 13210 and
-        13211; then, every time, 13212 (able to inspect by right-clicking) or 13213 (not).
+      - /inspect (@004fb87f) is done: it only turns it on or off (`FrontEnd`'s
+        `m_inspect_others`, `[Defaults] InspectOthers`), and nothing reads it yet.
       - With it on, nothing on the cursor and our deity not 20000, `RightClickedOnPlayer` ends
         with `CEverQuest_doInspect` (@0054390e) after its /consider: too far says eqstr 12378
         ("%1 is too far away to inspect.  Get closer."), else `OP_InspectRequest` (0x40b5).
@@ -837,17 +836,16 @@ no rules of its own.
     /shield (@004fd688, `OP_Shielding`), /quit and /exit (@004fa8c5: the connection closed, the
     game ended), /log (@004fbad0, `eqlog`; [Defaults] Log), /keys (@004f8ec7, `OP_Key`),
     /dismount (@004ff5a6, `Mounts::DismountCommand`), and /adriver and /sdriver (@004f69f5: eqstr
-    12379 only). Still to do:
-    - Nothing at all, where ours says "not supported": /reverb, /resetwindows, /popmail and /alias
-      all point at @0043777e, a bare `ret`. They should say nothing.
+    12379 only), /reverb, /resetwindows, /popmail and /alias (@0043777e, a bare `ret`: nothing
+    said), /rtarget (@004ff62d: /target of the name typed or of the last teller, eqstr 13286 with
+    no tells), /inspect (29) and /particledensity (@004ff0b3: `CDisplay::SetPCloudDensity` and
+    the exe's two literal lines). Still to do:
     - /safelock (@004ff689): with a word and unlocked, it becomes the password (under 32
       characters, else eqstr 13292) and locks the interface (13291); locked, the same word
       unlocks (13289) and another says 13290; with no word, 12095 when locked, else 13287 and
       13288. While locked (`DAT_007cf29c`) `CEverquest_InterpretCmd` runs only /safelock and says
       12095 for anything else, /quit included, and /safelock lines stay out of the command
       history. `allowslashcommand` (3) reads the same lock.
-    - /rtarget (@004ff62d): /target of the name typed, or with none the last teller's
-      (`DAT_007ce45c`, past a '.' in it; eqstr 13286 with no tells yet). The key is done (6).
     - /discipline (@004f4fb5): by class, the usage of eqstr 12996..13003 (12976 for a class with
       none); the word matched against the keywords of eqstr 1280..1314, the level it needs
       (13004), then `OP_Discipline` (0x41e6). The zone's `OP_DisciplineChange` (0x41f2,
@@ -858,7 +856,7 @@ no rules of its own.
       dialog (`CEverQuest_Surname` @0053d8de, eqstr 10004), `OP_Surname` from `ProcessYes`, and the
       zone's answer (0x41c4, @004e46d5): 1374 rejected, or 1375 "Congratulations, %1 %2, your
       surname was approved." with the name over our head.
-    - /language (under 3), /facepick (23), /note and /inspect (29), /hitsmode and /clearhits and
+    - /language (under 3), /facepick (23), /note (29), /hitsmode and /clearhits and
       the three tracking commands (24), /chatfontsize (3), /help, /mp3, /music, /loadskin,
       /bugreport, /feedback, /petition, /report and /gems (34), /shownpcnames (9).
     - /hotbutton (@004ff36a): `[Name] <Color> [Text]` makes a social of that name, color and
@@ -881,10 +879,6 @@ no rules of its own.
         off, from the next zone.
       - /showspelleffects (@004f9f4d, `ShowSpellEffects`): eqstr 13168..13171; off draws no spell
         particles (world and weapon ones stay).
-      - /particledensity (@004ff0b3): OFF, LOW, MED or HIGH through `CDisplay::SetPCloudDensity`
-        (@004a9507), "Particle Cloud Density is currently: %s" and "Please choose either OFF, LOW,
-        MED, or HIGH." literal in the exe. The Display page already sets the same value
-        (`FrontEnd::ApplyDisplayOptions`); only the command is missing.
       - /showgrass (@004faa05, `ShowGrass`): eqstr 13179..13184, `CDisplay::loadGrassObjects`
         (@004b2043: `grass.s3d`, `LWEED1.DDS`) and `UpdateGrassRenderingPosition` (@004b1ffa, from
         `MovePlayer`); see 42.
@@ -1314,8 +1308,8 @@ no rules of its own.
 4. ~~Nameplates and the target indicator (9, 10).~~
 5. What the zone already sends and we drop, since it leaves our state wrong: `OP_DeleteCharge`
    and `OP_Reward` (37), then disarm's and the poison's answers (24, 2).
-6. Camping's checks, countdown and calling off (40), and the MOTD as we enter (3).
+6. Camping's checks, countdown and calling off (40). ~~The MOTD as we enter (3).~~
 7. Keys and lockpicks on doors (41), then ladders (22).
 8. Inspecting and the player notes window (29), the tracking window (24), breath and drowning
    (34).
-9. The stale Keyboard page rows (5), and the do-nothing commands that say "not supported" (35).
+9. ~~The stale Keyboard page rows (5), and the do-nothing commands that say "not supported" (35).~~

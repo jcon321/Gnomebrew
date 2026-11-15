@@ -313,6 +313,7 @@ private:
 	// The options' General page settings eqgame keeps in eqOptions1.opt, in my-client.ini here.
 	bool m_fast_item_destroy = false; // DAT_00798b1c, Fast Item Destroy ([Defaults] FastItemDestroy)
 	bool m_guild_invites = true;      // DAT_00798adc, Receive Guild Invites ([Defaults] GuildInvites)
+	bool m_inspect_others = true;     // DAT_007cf28c, /inspect ([Defaults] InspectOthers): the right button inspects a player
 	int m_trade_with = 2;             // DAT_00798ad8, Allow trading with: 0 no one, 1 party members only, 2 everyone
 	int m_sound_realism = 0;          // DAT_00798b04 ([Sound] SoundRealism, 0..20)
 	int m_music_volume = 10, m_sound_volume = 10; // DAT_00798afc and b00 ([Sound] MusicVolume, SoundVolume)
@@ -329,6 +330,7 @@ private:
 	float DisplayOption(OptionsWindow::Host::Display setting) const;          // SyncDisplayPage's values
 	void SetDisplayOption(OptionsWindow::Host::Display setting, float value); // DisplayPageWndNotification
 	void ApplyDisplayOptions(); // the zone view's sky, clip plane and spell particles, the clouds' density
+	void SetPCloudDensity(int level); // CDisplay::SetPCloudDensity (@004a9507): 0 off .. 3 high
 	void SaveSetting(const char *section, const char *key, const std::string &value);
 	int GeneralOption(OptionsWindow::Host::General setting) const;          // SyncGeneralPage's values
 	void SetGeneralOption(OptionsWindow::Host::General setting, int value); // GeneralPageWndNotification

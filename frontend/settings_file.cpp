@@ -121,6 +121,8 @@ namespace
 		{"Defaults", "FastDrop", "0",
 			"/fastdrop and the General page's Fast Drop: 1 drops an item clicked onto the ground at once,\n"
 			"0 asks first, -1 never drops it. Kept on exit."},
+		{"Defaults", "InspectOthers", "TRUE",
+			"/inspect on|off: TRUE lets the right button on a player inspect them, FALSE doesn't."},
 		{"Defaults", "FastItemDestroy", "0",
 			"The General page's Fast Item Destroy: 1 destroys what's on the cursor without asking."},
 		{"Defaults", "GuildInvites", "1",

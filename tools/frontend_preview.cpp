@@ -5191,9 +5191,12 @@ int main(int argc, char **argv)
 			h.Snapshot("9b-zone-target");
 
 			// /consider the guard (the zone answers), /time, /played, /motd, /afk and /anonymous
-			// on and off, and /assist the guard (who has no target: nothing changes).
+			// on and off, /assist the guard (who has no target: nothing changes), /particledensity's
+			// words, numbers and refusal, /inspect, /rtarget with no tells yet, and two of the
+			// commands that do nothing.
 			for (const char *line : {"/consider", "/time", "/played", "/motd", "/afk", "/afk", "/anonymous", "/anonymous",
-				     "/assist"}) {
+				     "/assist", "/particledensity", "/particledensity med", "/particledensity 1", "/particledensity high",
+				     "/inspect", "/inspect off", "/inspect on", "/rtarget", "/reverb", "/alias x y"}) {
 				h.Key(InputEvent::Key::Enter);
 				h.Type(line);
 				h.Key(InputEvent::Key::Enter);

@@ -136,6 +136,11 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 			};
 			m_fast_item_destroy = number("Defaults", "FastItemDestroy", 0, 0, 1) == 1;
 			m_guild_invites = number("Defaults", "GuildInvites", 1, 0, 1) == 1;
+			{
+				// CEverQuest::CEverQuest: on with no key, or for a value starting T, t or 1.
+				std::string inspect = ini.Get("Defaults", "InspectOthers");
+				m_inspect_others = inspect.empty() || inspect[0] == 'T' || inspect[0] == 't' || inspect[0] == '1';
+			}
 			m_trade_with = number("Defaults", "PlayerTrade", 2, 0, 2);
 			m_sound_realism = number("Sound", "SoundRealism", 0, 0, 20);
 			m_music_volume = number("Sound", "MusicVolume", 10, 0, 20);
@@ -4249,10 +4254,15 @@ void FrontEnd::SetDisplayOption(OptionsWindow::Host::Display setting, float valu
 	}
 }
 
+void FrontEnd::SetPCloudDensity(int level)
+{
+	static const float densities[] = {0, 0.33f, 0.66f, 1};
+	render::SetPCloudDensity(densities[std::clamp(level, 0, 3)]);
+}
+
 void FrontEnd::ApplyDisplayOptions()
 {
-	static const float densities[] = {0, 0.33f, 0.66f, 1}; // SetPCloudDensity's
-	render::SetPCloudDensity(densities[std::clamp(m_particle_density, 0, 3)]);
+	SetPCloudDensity(m_particle_density);
 	if (!m_zone_view)
 		return;
 	m_zone_view->SetSkyMode(m_sky);
@@ -4499,6 +4509,9 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 		switch (event.type) {
 		case Type::ZoneInfo: {
 			AddZoneLog("You have entered " + m_zone.Info().long_name + ".", ZoneYellow);
+			// DoMainLoop: the world's message of the day, the first time in after character select.
+			if (std::string motd = m_world.TakeEnteringMotd(); !motd.empty())
+				ChatOut(FormatEqString(m_ui.eqstr, 12359, "MESSAGE OF THE DAY: %1", {motd}), ChatType::Yellow);
 			SetAutoAttack(false); // CEverQuest_EnterZone
 			m_dead = false;
 			// A new zone's ActorInfo has no stun timer, and StartWorldDisplay's SetGenericEnvironment

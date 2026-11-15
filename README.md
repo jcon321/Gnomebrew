@@ -135,6 +135,7 @@ AttackOnAssist=0
 CombatMusic=1
 LootNoDrop=0
 FastDrop=0
+InspectOthers=TRUE
 
 [Filters]
 DamageShields=0
@@ -235,6 +236,9 @@ WeatherSounds=1
   for what you can't use, `2` never (eqgame's `DAT_00799674`, kept in its `eqOptions2.opt`).
   `FastDrop` is `/fastdrop`: `1` drops an item clicked onto the ground at once, `0` asks first,
   `-1` never drops it (`DAT_0079966c`). Both are kept as they change.
+  `InspectOthers` is `/inspect on|off` (`DAT_007cf28c`): whether the right button on a player
+  inspects them. eqgame reads it in `CEverQuest::CEverQuest`: on with no key (and `TRUE` written),
+  or for a value starting `T`, `t` or `1`; /inspect writes `TRUE` or `FALSE` as it changes.
 - `[Filters]` are `/filter`'s switches and `/serverfilter`, kept as they change (eqgame keeps them in
   `eqOptions1.opt` and `eqOptions2.opt`): `DamageShields` and `NpcSpells` 0 shown, 1 hidden; `PcSpells`
   0 all, 1 off, 2 the group's; `BardSongs` 0 all, 1 ours, 2 the group's, 3 off; `GuildSay` through
@@ -356,7 +360,7 @@ eqgame's `OP_MoveItem`.
   /played, /motd, /afk, /anonymous, /shownames, /sit, /stand, /book, /cast, /camp, /clearchat,
   /random, /lootnodrop, /fastdrop, /autosplit, /roleplay, /targetgroupbuff (/tgb), /split, /yell,
   /consent, /duel, /decline, /trader, /bazaar, /loot, /ttell, /charinfo, /movelog, /stopsong, /shield, /quit (/exit), /log, /keys, /dismount,
-  /adriver, /sdriver, /attack, /combatmusic, /doability, the
+  /adriver, /sdriver, /attack, /combatmusic, /doability, /rtarget, /inspect, /particledensity, the
   guild commands (see Guilds under In the zone),
   the raid commands (see Raids), /filter, /serverfilter and the socials (/smile, /wave and the
   other 86).
@@ -2066,6 +2070,33 @@ details and the nearest spawns at the top left and the radar at the top right.
   The check's odd shape is eqgame's: an empty name or an NPC fails first, then anything but an NPC
   corpse is checked again by the '#' and '_' alone (so an NPC named without either passes), and an
   NPC corpse goes whatever its name.
+- **/rtarget** (@004ff62d; read from the exe, Ghidra has no function there): with a name typed,
+  `/target` of it; with none, of `__LastTell` (0x7ce45c, the last teller), or of what follows a
+  '.' in it; no tells yet says 13286.
+- **/inspect** (@004fb87f): the whole line `on` (12947) or `off` (12946), any case, sets
+  `DAT_007cf28c` and writes `[Defaults] InspectOthers` (`TRUE` or `FALSE`); anything else says
+  13210 and 13211. Then, every time, 13212 (able to inspect by right-clicking) or 13213 (not).
+  `RightClickedOnPlayer` reads the flag before `CEverQuest_doInspect`.
+- **/particledensity** (@004ff0b3): the line in capitals; a number (`is_number` @004f3739: a sign,
+  then digits) from 0 to 3 is the level, else its first three letters `OFF`, `LOW`, `MED` or `HIG`
+  are 0..3, else "Please choose either OFF, LOW, MED, or HIGH." (a literal in the exe). The level
+  goes to `CDisplay::SetPCloudDensity` (@004a9507: 0, 0.33, 0.66, 1) and "Particle Cloud Density
+  is currently: %s" says the line back as typed, in capitals. It doesn't change the Display
+  page's setting (`DAT_00798ae4`) or write the ini.
+- **/reverb**, **/resetwindows**, **/popmail** and **/alias** share one handler, @0043777e, a bare
+  `ret`: they say and do nothing.
+- **The MOTD on entering** (`CEverQuest::DoMainLoop` @0053df6e): `DAT_0079978a` holds the MOTD to
+  print, `"~"` from the constructor and `SetDefaultGameValues` (each `DoCharacterSelection`).
+  `OP_MOTD` (0x41dd) copies its text there only while it still starts with '~', empties it
+  otherwise, and then copies it to /motd's text (`DAT_0079998a`). After "You have entered %1."
+  (12357) DoMainLoop prints 12359 "MESSAGE OF THE DAY: %1" in color 15 unless it's empty or
+  starts with '~', and empties it: the MOTD shows once, on the first zone after character
+  select. EQMacEmu's world sends `OP_MOTD` with every `OP_EnterWorld`, each zone included, so in
+  eqgame a second one empties /motd's text too; ours keeps the last text for /motd
+  (`WorldSession::TakeEnteringMotd`, `Motd`). Between the two lines eqgame says 12358 "You are
+  no longer in a PvP immunity zone." (color 13) on a server of type 4 under level 6 outside a
+  newbie zone (`EQWorldData::IsNewbieZone` @00523f15), which isn't ours. Checked live: the MOTD
+  after "You have entered South Qeynos.".
 - **/shield** (@004fd688): nothing while `allowslashcommand` refuses or with a merchant, guildmaster
   or banker active. Not a warrior (class 1) of 30 and up: 4033. With nothing typed, our target (none:
   4031 then 4034, the ability's description), or us, 4030; with a name, `DoPercentConvert` then
