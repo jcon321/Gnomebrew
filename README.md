@@ -644,7 +644,7 @@ build/eqclient -u USER -p PASS [options]
 
 ```
 build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|train|ground|commands|group|duel|bazaar|raid|guild|skills|aa]]
-build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez|cameras]]
+build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez|cameras|packets]]
 ```
 
 This drives the real front-end code with scripted input and writes PNG snapshots. Text is
@@ -719,7 +719,13 @@ puts us on the nearest ship as zoning in with its name does, and on a race 141 b
 helm, holds forward 3 s and turns left 2 s, printing the boat and us each half second; `cameras`
 snapshots the loading screen as it starts and part way (printing the bar's percent, its line and
 when), then each of F9's views in turn, user camera 1 after Raise camera and Tether-slide right
-held a second, and the lost connection's screen, printing whether the quit followed)
+held a second, and the lost connection's screen, printing whether the quit followed; `packets`
+sends any recording's zone the packets that change our state and prints what they did:
+`OP_LevelUpdate` up, the same and down, `OP_DeleteCharge` on a stack of five put in a free slot
+(one, three, its last, the empty slot), `OP_Reward`'s coins from an NPC and from nobody,
+`OP_ResetSkill` on a skill just used (0 seconds, then past its reuse), `OP_Disarm`'s two answers,
+and `OP_FreezeClientControl` (another's name, ours, the forward key held), `OP_UnfreezeClientControl`
+and `OP_ReturnClientControl`)
 and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,
 opens, minimizes, resizes and closes windows (the layout goes to OUTDIR), types into the chat window
 (a say, commands, /target) and prints what the chat window holds, then stands near the target to
@@ -2377,7 +2383,13 @@ details and the nearest spawns at the top left and the radar at the top right.
   click puts one on the button. A left click, the hot button, or `/doability 1..10` (1..6 the
   abilities page's, 7..10 the combat page's; else eqstr 13256, 13257) uses it.
 - **Timers** (`DoPassageOfTime`): an ability is ready (`__DoAbilityAvailable`) once its reuse time
-  has gone by since its last use (`DAT_007cd650`); mend at its own time (`DAT_007cd6d0`). The combat
+  has gone by since its last use (`DAT_007cd650`); mend at its own time (`DAT_007cd6d0`, the
+  table's entry 32) and hide at its (`DAT_007cd6c4`, entry 29), which hold when they're ready
+  instead. `OP_ResetSkill` (0x423d, {i16 skill, i16, i32 seconds}; `UpdateAbilityTimer`
+  @004e2550) sets a skill's entry to now + seconds * 1000 with no check of the index: for mend
+  and hide that's when they're ready (EQMacEmu's 0 seconds makes mend ready at once,
+  `Client::ResetSkill`), for any other its last use, so 0 starts a waiting skill's wait over and a
+  time further back than its reuse readies it (`Abilities::ZoneEvent`). The combat
   skills share one timer (ActorInfo +0x164: the last one's reuse from its use), `__AltTimerReady`.
   `EQPlayer::ModifyAttackSpeed` (@0050a039) hastens a delay: `delay / (haste * 0.01)` with haste
   `TotalSpellAffects(11, 1)` (@004c6b6d, `Buffs::AttackSpeed`): over the buffs, the worst slow (a
@@ -2408,7 +2420,10 @@ details and the nearest spawns at the top left and the radar at the top right.
   `OP_SenseHeading`), intimidation (`OP_InstillDoubt`; 12398, 12691, 12400), taunt (an NPC within
   melee range, not races 141, 72, 73: 12397 and `OP_Taunt {target}`; 12395, 386, 12396) and disarm
   (within 15, `CanIHitTarget`, VisibilityState to 0 with the invisibility buffs off,
-  `OP_Disarm {us, target, skill, 0xff}`; 12416..12419). On a horse (ActorInfo's Mount, or the
+  `OP_Disarm {us, target, skill, 0xff}`; 12416..12419; the zone's answer, `msg_disarm` @004dfc2a,
+  is the same struct with the ids swapped and a status at 6: over 0 says 12890 "You disarmed %1!"
+  for a spawn we have and calls `EQ_PC_CheckSkillImprove` 16, 0 says 12891, both in 0x10e; 0xff
+  is us being disarmed, rolled by the client, which EQMacEmu never sends). On a horse (ActorInfo's Mount, or the
   SPA 113 buff) only tracking, bash, disarm, 30, mend, sense heading, fishing, intimidation, taunt
   and the AA abilities 105 and 107 go (else 12393). Sneak and hide skip the timer to stop; begging
   and pick pockets start each other's timer; hide's runs to `DAT_007cd6c4` (its reuse; Hastened
@@ -2787,8 +2802,15 @@ details and the nearest spawns at the top left and the radar at the top right.
   12067 after, a skill 12068, all as "tells you" in 0x111. Done, the close box, Escape (after the
   spellbook, before the social editor), walking over 20 away (every 500 ms), its despawning and
   its death close it (`Deactivate`, `CEverQuest_LeaveGuildMaster`): music off, `OP_GMEndTraining`
-  (0x409d: guildmaster, us) and our target cleared. `OP_LevelUpdate` going up adds 5 practices
-  (`CEverQuest_HandleWorldMessage_LevelUpdate`).
+  (0x409d: guildmaster, us) and our target cleared.
+- **`OP_LevelUpdate`** (0x4198, {u32 level, u32 old level, u32 exp};
+  `CEverQuest_HandleWorldMessage_LevelUpdate` @004e06ef) counts only for a level above ours: 5
+  practices when it's also above the packet's old level, the level, the highest level reached
+  (PCData+0x1360), the experience, `CSkillsSelectWnd::Refresh`, our spawn's level with
+  `InitSneakMod`, and wave 0x8b. A level no higher than ours is dropped whole, its experience
+  too, so eqgame keeps showing the old level after a lost one (EQMacEmu's `Client::SetLevel`
+  sends the same packet both ways) until the next profile. `ZoneSession` does the same and raises
+  `LevelGained` for the wave.
 - **Skill limits** (`frontend/skills.*`): `__SkillDict` +0x98 holds a second cap per class, used
   with any of the profile's expansion bits (+3392 in the packet, `+0xd3c`, `& 0x1f`):
   `GetSkillLimit2` picks it. `setskill` (@004d0808) is whether a skill is at the most our level
@@ -2800,6 +2822,32 @@ details and the nearest spawns at the top left and the radar at the top right.
   `EQ_PC_GetKunarkThreshold`: past level 50 the classic cap rises `ceil((expansion - classic) /
   10)` (2 at least) a level, up to the expansion cap. Both tables were taken by compiling
   `InitializeSkillData`'s decompile and checked against the first cap table.
+- **`OP_DeleteCharge` from the zone** (0x4147; the function at @004dd106, which Ghidra starts five
+  bytes late as `decreaseSkillPoints`): `MoveItem_Struct` {i32 slot, i32 -1, i32 -count}. The
+  second must be -1 and the third -1 or less; the count's low byte comes off the item's charges
+  (+0x116), and the item goes when it has no more than that. A slot under 30 is the inventory's
+  own; from 30 it's slot `(n - 30) % 10` of the container in `(n - 30) / 10`, which is the bag
+  slots' own numbering (250 is general slot 22's first). Nothing there, or other arguments, says
+  1390 "MOVE ITEM FAILED IN CLIENT APPLICATION." in color 15. EQMacEmu sends it with -1 whenever
+  it takes one of ours and the item stays (`Client::DeleteItemInInventory` with an update:
+  reagents, a hand-in a script takes, a bandage on the cursor); the last one goes as `OP_MoveItem`
+  to -1.
+- **`OP_Reward`** (0x4080, `QuestReward_Struct` {u16 giver, u16 us, i32 exp, i32 faction, i32
+  faction mod, i32 copper @16, silver @20, gold @24, platinum @28, i16 items[10]}): for each coin
+  over 0, in that order, 1438 "You receive %1 copper %2." (1440 silver, 1441 gold, 1442 platinum)
+  in 0x111 with %2 "from <the giver's trimmed name>" (1439), or nothing when the spawn isn't
+  there (leaving "copper ."), and the coins added to the purse; then wave 0x8d. The exp goes to
+  `EQ_PC_DetermineQuestExpGained` (@004d0565), an empty function. EQMacEmu adds the coins on its
+  side and sends nothing else for them (`Client::QuestReward`).
+- **A charmed player** (`mob_ai.cpp`'s three packets). `OP_FreezeClientControl` (0x406a, a name:
+  ours only, by `strcmp`) sets our stance to 102 with nothing sent, StunnedState 2 and our two
+  speeds 0. `OP_UnfreezeClientControl` (0x406b, which jumps into 0x40c1's block) sets StunnedState
+  0 when our HP is over 0, stance 100 and `DAT_007cf1e4` 0. `OP_ReturnClientControl` (0x40b0, no
+  body) is `ChangeStance(100)`, 1394 "You have control of yourself again." in color 4, and the
+  two waits (`DAT_007d0254`, `DAT_007d0258`) let go. 0x40be is the freeze again with
+  `DAT_007cf1e4` 1; EQMacEmu doesn't send it. Ours: `ZoneSession`'s `ClientControl` event and
+  `FrontEnd`'s `m_frozen`; stance 102 already takes the movement keys, auto attack, /quit and
+  the teleports away.
 - **`OP_MerchantItemPacket`** (0x4031) isn't a merchant's: the zone's `ItemPacketTrade` (what
   `PutItemInInventory` sends: something bought, traded for or handed back by an NPC) goes out
   under it, and eqgame's `HandleWorldMessage` gives it to `msg_snd_ieq` as it does

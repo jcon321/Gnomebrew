@@ -3,7 +3,7 @@
 // outline boxes of an estimated Arial size, since GDI isn't available.
 //
 //   frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|shop|train|ground|commands|group|skills]]
-//   frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse]]
+//   frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|packets]]
 //
 // Without a login server it snapshots the start screen, a dialog and the login
 // screen. With one it also logs in and snapshots server select and the play result.
@@ -36,6 +36,7 @@
 #include "inventory.h"
 #include "opcodes.h"
 #include "png_writer.h"
+#include "skills.h"
 
 #include <algorithm>
 #include <chrono>
@@ -1247,6 +1248,151 @@ namespace
 		memcpy(kill, zone.Profile().name.c_str(), zone.Profile().name.size());
 		inject_to.InjectReplayPacket(ZoneOp::GMKill, kill, sizeof(kill));
 		watch(4000, false);
+		return 0;
+	}
+
+	// Replay "packets": what the zone sends that changes our state, injected into any recording:
+	// OP_LevelUpdate (up, the same and down), OP_DeleteCharge (one off a stack, its last, an empty
+	// slot), OP_Reward's coins, OP_ResetSkill on a waiting skill, OP_Disarm's two answers, and the
+	// charm's OP_FreezeClientControl, OP_UnfreezeClientControl and OP_ReturnClientControl.
+	int PacketsTest(FrontEnd &frontend, Harness &h)
+	{
+		const ZoneSession &zone = frontend.Zone();
+		ZoneSession &inject_to = frontend.ZoneForTests();
+		size_t chat_seen = frontend.Chat().Lines().size();
+		auto run = [&](int ms) {
+			h.RunUntil([] { return false; }, ms);
+			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
+				printf("[preview] chat %06x: %s\n", frontend.Chat().Lines()[chat_seen].rgb, frontend.Chat().Lines()[chat_seen].text.c_str());
+		};
+		run(500);
+		const ZoneProfile &me = zone.Profile();
+
+		auto level = [&](int32_t to, int32_t from) {
+			int32_t body[3] = {to, from, 123};
+			inject_to.InjectReplayPacket(ZoneOp::LevelUpdate, body, sizeof(body));
+			run(300);
+			printf("[preview] OP_LevelUpdate %d (from %d): level %u, our spawn's %u, practices %d, exp %u\n", to, from, me.level,
+				zone.Self().level, me.practice_points, me.exp);
+		};
+		printf("[preview] level %u, our spawn's %u, practices %d, exp %u\n", me.level, zone.Self().level, me.practice_points, me.exp);
+		int32_t was = me.level;
+		level(was + 1, was);
+		level(was + 1, was);
+		level(was, was + 1);
+
+		auto charges = [&](int16_t slot) {
+			auto it = zone.Items().find(slot);
+			return it == zone.Items().end() ? std::string("nothing") : it->second.name + " x" + std::to_string(it->second.charges);
+		};
+		auto take = [&](int16_t slot, int32_t count) {
+			int32_t body[3] = {slot, -1, -count};
+			inject_to.InjectReplayPacket(ZoneOp::DeleteCharge, body, sizeof(body));
+			run(300);
+			printf("[preview] OP_DeleteCharge slot %d, %d: %s\n", slot, count, charges(slot).c_str());
+		};
+		// A stack of 5 put in a free general slot (the recordings' characters carry little): one
+		// off, then three, then its last; then the slot empty.
+		int16_t stack = -1;
+		for (int16_t slot = 22; slot < 30 && stack < 0; ++slot)
+			if (!zone.Items().count(slot))
+				stack = slot;
+		if (stack >= 0) {
+			ZoneItem bandages;
+			bandages.slot = stack;
+			bandages.id = 13009;
+			bandages.name = "Bandages";
+			bandages.charges = 5;
+			inject_to.EditItems()[stack] = bandages;
+			printf("[preview] slot %d: %s\n", stack, charges(stack).c_str());
+			take(stack, 1);
+			take(stack, 3);
+			take(stack, 1);
+			take(stack, 1);
+		}
+		else
+			printf("[preview] no free slot to put a stack in\n");
+
+		uint16_t npc = 0;
+		for (const auto &[id, spawn] : zone.Spawns())
+			if (npc == 0 && spawn.npc == 1)
+				npc = id;
+		auto purse = [&] { printf("[preview] purse %dp %dg %ds %dc\n", me.platinum, me.gold, me.silver, me.copper); };
+		purse();
+		for (uint16_t giver : {npc, static_cast<uint16_t>(4999)}) {
+			uint8_t reward[52] = {};
+			uint16_t us = zone.MySpawnId();
+			int32_t coins[4] = {giver == npc ? 7 : 0, giver == npc ? 0 : 3, 5, giver == npc ? 2 : 0};
+			memcpy(reward, &giver, 2);
+			memcpy(reward + 2, &us, 2);
+			memcpy(reward + 16, coins, sizeof(coins));
+			inject_to.InjectReplayPacket(ZoneOp::Reward, reward, sizeof(reward));
+			run(300);
+			purse();
+		}
+
+		// A skill we have, used (its wait starts), then its timer set back a day: ready again. Used
+		// once more and reset with 0 seconds: its wait starts over, so it stays unready.
+		// (Sense heading, forage, begging, sneak, taunt: the first that takes.)
+		int skill = -1;
+		for (int candidate : {40, 27, 67, 42, 73}) {
+			if (skill >= 0 || !frontend.Skills().Ready(candidate))
+				continue;
+			frontend.Skills().Use(candidate, NowMs());
+			if (!frontend.Skills().Ready(candidate))
+				skill = candidate;
+		}
+		auto reset = [&](int32_t seconds) {
+			uint8_t body[8] = {};
+			int16_t id = static_cast<int16_t>(skill);
+			memcpy(body, &id, 2);
+			memcpy(body + 4, &seconds, 4);
+			inject_to.InjectReplayPacket(ZoneOp::ResetSkill, body, sizeof(body));
+			run(300);
+			printf("[preview] OP_ResetSkill %d, %d s: ready %d\n", skill, seconds, frontend.Skills().Ready(skill) ? 1 : 0);
+		};
+		if (skill >= 0) {
+			run(300);
+			printf("[preview] skill %d used: ready %d\n", skill, frontend.Skills().Ready(skill) ? 1 : 0);
+			reset(0);
+			reset(-static_cast<int32_t>(::Skills::Get(skill).reuse_ms / 1000 + 1));
+		}
+		else
+			printf("[preview] no skill to use for OP_ResetSkill\n");
+
+		for (uint8_t status : {1, 0}) {
+			uint8_t body[8] = {};
+			uint16_t us = zone.MySpawnId();
+			memcpy(body, &npc, 2);
+			memcpy(body + 2, &us, 2);
+			body[6] = status;
+			inject_to.InjectReplayPacket(ZoneOp::Disarm, body, sizeof(body));
+			run(300);
+		}
+
+		auto control = [&](uint16_t opcode, const char *what, const std::string &name) {
+			uint8_t body[65] = {};
+			memcpy(body, name.c_str(), std::min<size_t>(name.size(), 64));
+			inject_to.InjectReplayPacket(opcode, body, opcode == ZoneOp::ReturnClientControl ? 0 : sizeof(body));
+			run(300);
+			printf("[preview] %s %s: stance %u\n", what, name.c_str(), zone.Self().stance);
+		};
+		control(ZoneOp::FreezeClientControl, "OP_FreezeClientControl", "Somebodyelse");
+		control(ZoneOp::FreezeClientControl, "OP_FreezeClientControl", zone.Self().name);
+		// Frozen, the forward key moves nothing.
+		ZoneMovement before = frontend.ZoneScene() ? frontend.ZoneScene()->Movement() : ZoneMovement{};
+		InputEvent key;
+		key.type = InputEvent::Type::Key;
+		key.scan = 0x11; // W
+		frontend.OnEvent(key);
+		run(600);
+		key.type = InputEvent::Type::KeyUp;
+		frontend.OnEvent(key);
+		ZoneMovement after = frontend.ZoneScene() ? frontend.ZoneScene()->Movement() : ZoneMovement{};
+		printf("[preview] forward while frozen: moved %.2f\n", std::hypot(after.x - before.x, after.y - before.y));
+		control(ZoneOp::UnfreezeClientControl, "OP_UnfreezeClientControl", zone.Self().name);
+		control(ZoneOp::ReturnClientControl, "OP_ReturnClientControl", "");
+		h.Snapshot("p0-packets");
 		return 0;
 	}
 
@@ -3056,7 +3202,7 @@ int main(int argc, char **argv)
 	if (!replay && argc != 3 && argc != 6 && argc != 7) {
 		fprintf(stderr,
 			"usage: %s EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create]]\n"
-			"       %s EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse]]\n",
+			"       %s EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|packets]]\n",
 			argv[0], argv[0]);
 		return 2;
 	}
@@ -3113,6 +3259,7 @@ int main(int argc, char **argv)
 	bool skills_test = argc == 7 && std::string(argv[6]) == "skills";
 	bool train_test = argc == 7 && std::string(argv[6]) == "train";
 	bool cameras_test = argc == 7 && std::string(argv[6]) == "cameras";
+	bool packets_test = argc == 7 && std::string(argv[6]) == "packets";
 	if (argc >= 6 && !replay) {
 		std::string login = argv[3];
 		size_t colon = login.rfind(':');
@@ -3193,6 +3340,8 @@ int main(int argc, char **argv)
 			return BoatsTest(frontend, h, seconds);
 		if (cameras_test)
 			return CamerasTest(frontend, h);
+		if (packets_test)
+			return PacketsTest(frontend, h);
 		h.RunUntil([] { return false; }, 500);
 		h.Snapshot("r0-zone");
 		// Toggle UI Display (F10, ExecuteCmd 0x15): the windows and cursor gone, then back.

@@ -528,6 +528,20 @@ public:
 			Yelled,       // id: who yelled for help near us (OP_YellForHelp)
 			SneakHideCancelled, // OP_CancelSneakHide: the zone ended our hide and sneak
 			Stunned,      // OP_Stun: value the duration in ms (0 from Client::UnStun)
+			// The zone taking control of us (a charm): value 0 frozen (OP_FreezeClientControl, our
+			// stance 102 already), 1 let go (OP_UnfreezeClientControl, stance 100 already), 2
+			// OP_ReturnClientControl.
+			ClientControl,
+			// OP_DeleteCharge from the zone with nothing in the slot to take from ("MOVE ITEM FAILED
+			// IN CLIENT APPLICATION."); one that worked is in Items() already and makes no event.
+			ChargeNotFound,
+			// OP_Reward: id the giver's spawn, data the packet (its coins are in Profile() already).
+			Rewarded,
+			SkillReset,   // OP_ResetSkill (UpdateAbilityTimer): id the skill, value the seconds
+			// OP_Disarm back from the zone (msg_disarm): id who we tried to disarm, value its status
+			// (over 0 disarmed, 0 not).
+			DisarmAnswered,
+			LevelGained,  // OP_LevelUpdate to a level above ours (in Profile() and Self() already): value the level
 			// OP_ControlBoat back from the zone: id the boat, value 1 when we have its helm (0 let go).
 			BoatControl,
 			VehicleReset, // MSG_VEHICLE_RESET

@@ -156,7 +156,19 @@ namespace ZoneOp
 	constexpr uint16_t ReadBook = 0x40ce;      // ours BookRequest_Struct {u8 type, the item's file\0}; the zone's {u8 type, its text}
 	// Eating, drinking and alcohol: see ZoneSession::Consume.
 	constexpr uint16_t Consume = 0x4156;       // Consume_Struct {i32 slot, i32 auto (999 by hand, -1 the client's own), i32 -1, i32 1 food or 2 drink}
-	constexpr uint16_t DeleteCharge = 0x4147;  // {i32 slot, i32 -1, i32 -1}: a charge (or one of a stack) used up
+	// MoveItem_Struct {i32 slot, i32 -1, i32 -count}: a charge (or some of a stack) used up. Ours as
+	// we use one, the zone's when it takes one (Client::DeleteItemInInventory: always -1).
+	constexpr uint16_t DeleteCharge = 0x4147;
+	// QuestReward_Struct {u16 giver, u16 us, i32 exp, i32 faction, i32 faction mod, i32 copper,
+	// i32 silver, i32 gold, i32 platinum, i16 items[10]}: a quest's coins (HandleWorldMessage's 0x4080).
+	constexpr uint16_t Reward = 0x4080;
+	// ResetSkill_Struct {i16 skill, i16, i32 seconds}: UpdateAbilityTimer (@004e2550).
+	constexpr uint16_t ResetSkill = 0x423d;
+	// A charmed player (mob_ai.cpp): a name[64] frozen (0x406a) or let go (0x406b), and no body for
+	// "You have control of yourself again." (0x40b0).
+	constexpr uint16_t FreezeClientControl = 0x406a;
+	constexpr uint16_t UnfreezeClientControl = 0x406b;
+	constexpr uint16_t ReturnClientControl = 0x40b0;
 	// /who all: see ZoneSession::WhoAll.
 	constexpr uint16_t WhoAllRequest = 0x40f4;  // Who_All_Struct, 140 bytes
 	// The friends' names, ',' between them, and a NUL: /who all friend (CEverQuest::Who); answered
@@ -538,6 +550,11 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::ReadBook, "OP_ReadBook"},
 	{ZoneOp::Consume, "OP_Consume"},
 	{ZoneOp::DeleteCharge, "OP_DeleteCharge"},
+	{ZoneOp::Reward, "OP_Reward"},
+	{ZoneOp::ResetSkill, "OP_ResetSkill"},
+	{ZoneOp::FreezeClientControl, "OP_FreezeClientControl"},
+	{ZoneOp::UnfreezeClientControl, "OP_UnfreezeClientControl"},
+	{ZoneOp::ReturnClientControl, "OP_ReturnClientControl"},
 	{ZoneOp::WhoAllRequest, "OP_WhoAllRequest"},
 	{ZoneOp::FriendsWho, "OP_FriendsWho"},
 	{ZoneOp::WhoAllResponse, "OP_WhoAllResponse"},

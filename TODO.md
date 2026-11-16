@@ -98,7 +98,7 @@ no rules of its own.
      Escape leaves them on the cursor, as it does an item (RemoveAttachment takes off only a
      button or a spell). Clicked onto a spawn they ask for a trade (below), and the inventory's
      Destroy takes them (`CInventoryWnd_DestroyHeld`, `EQ_PC::DestroyHeldItemOrMoney`). Still to
-     do: coins clicked onto the ground (11), and the coins a quest gives (`OP_Reward`, under 37).
+     do: coins clicked onto the ground (11). A quest's coins (`OP_Reward`) are done (37).
    - Bank window: done (`frontend/bank_window.*`, eqgame's CBankWnd): the right button on a banker
      within 20 (RightClickedOnPlayer, IsOkToTransact) opens it with the banker's welcome, the bank
      slots (2000..2007, their bags as BagBank1..8), the bank's coins on its money buttons (coins
@@ -198,8 +198,8 @@ no rules of its own.
      (`CEverQues_ApplyPoison` @00545c08, item type 42: ours returns at once; the zone's answer is
      `OP_ApplyPoison`, 0x41ba, handled @004e1778: the wait let go, eqstr 12905 "You successfully
      applied the poison." or 12906 by its success at +4, color 270), Alcohol Tolerance's skill-up
-     (EQ_PC_CheckSkillImprove 66), what drunkenness does, and a charge or stack count the zone
-     takes (`OP_DeleteCharge` from the zone, under 37). Notes and books are read
+     (EQ_PC_CheckSkillImprove 66) and what drunkenness does. A charge or stack count the zone
+     takes (`OP_DeleteCharge` from the zone) is done (37). Notes and books are read
      (EQ_Note::SendTextRequestMsg's OP_ReadBook; CNoteWnd's SetNote, checked live; CBookWnd's
      pages, buttons and keys in `frontend/book_window.*`, checked through the preview with a
      zone's book text). Still to do
@@ -263,9 +263,9 @@ no rules of its own.
      sitting's idle and fidgets (P07, the sitting fidget), meditating's regen
      (`EQ_Character::DoMeditation` @004c3def, `IsCharacterMeditating` @004c36a1), Duck (ExecuteCmd
      10, see 6) with `CDisplay::CanIFitHere` standing us back up (22), the body's tilt
-     (`CDisplay_SetPlayerPitchType` @004a2cdd, from `CreatePlayerActor` and `ChangeStance`), and the
-     zone freezing us: `OP_FreezeClientControl` (0x406a, stance 102), `OP_UnfreezeClientControl`
-     and `OP_ReturnClientControl` (under 37).
+     (`CDisplay_SetPlayerPitchType` @004a2cdd, from `CreatePlayerActor` and `ChangeStance`). The
+     zone freezing us (a charm's `OP_FreezeClientControl`, `OP_UnfreezeClientControl` and
+     `OP_ReturnClientControl`) is done (37).
    - Hotbuttons: the Actions window's buttons and socials go on them and come off by holding
      them, and they're kept in `<char>_<server>.ini` (`frontend/game_windows.*`). Clicked or by
      key (Hot1..10) they do what their button does: Attack, Range, the combat skills and the
@@ -608,10 +608,9 @@ no rules of its own.
       param_4 || strlen(@00546057)(Name)`, which can't be right for a zone line (every refusal
       would log out); ours logs out only going home dead;
     - being hit on a mount (DeacSpellScreen, ChangeStance);
-    - disarm's answer: the zone's `OP_Disarm` (0x40aa, `msg_disarm` @004dfc2a, `Disarm_Struct`
-      {u16 them, u16 us, i16 skill, u8 status}) says eqstr 12890 "You disarmed %1!" (color 270,
-      with `EQ_PC_CheckSkillImprove` 16) for a status over 0 and 12891 "Your attempt to disarm
-      failed." for 0; ours drops it. Its status 0xff is us being disarmed, which the client rolls
+    - disarm's answer (`msg_disarm` @004dfc2a, `Abilities::ZoneEvent`'s `DisarmAnswered`) says
+      12890 and 12891; its `EQ_PC_CheckSkillImprove` 16 on a success isn't ours (the zone's
+      `OP_SkillUpdate` is). Its status 0xff is us being disarmed, which the client rolls
       itself (their skill less ours with the weapon + 10, held to 5..20, against 1..100; the
       primary, secondary or range item to a free slot or a bag it fits, 0x41b2 with our name when
       the cursor's full, `UpdateItemSlot`, `UpdateLight`, eqstr 12889, and the answer sent back):
@@ -850,7 +849,7 @@ no rules of its own.
       none); the word matched against the keywords of eqstr 1280..1314, the level it needs
       (13004), then `OP_Discipline` (0x41e6). The zone's `OP_DisciplineChange` (0x41f2,
       @004e3bc1) puts the discipline running in ActorInfo+0x2e8+0x34, and its timer comes as
-      `OP_ResetSkill`'s kind (37).
+      `OP_ResetSkill`'s kind (done, 37).
     - /surname (@004f3ddb): with one already 12939, under level 20 12940, no word 12941, 32
       characters or more 2239; else the first word (20 at most) asked back in the confirmation
       dialog (`CEverQuest_Surname` @0053d8de, eqstr 10004), `OP_Surname` from `ProcessYes`, and the
@@ -925,38 +924,30 @@ no rules of its own.
     (12), the boats' packets (39), `OP_RequestClientZoneChange` (`DoTeleportB`, refused while
     stance 102 or linkdead) and `OP_Illusion` (`do_change_form`: races 142 and 143 the nearest
     zone object's actor by `GetNearestActorTag`, else nothing and on us the SPA 0x3a buff off with
-    1371; a rider off and back on; the spell emitters onto the new actor's root). Still to do:
+    1371; a rider off and back on; the spell emitters onto the new actor's root),
+    `OP_DeleteCharge` from the zone (@004dd106: the count off the slot's charges, the item gone
+    with its last, 1390 for nothing there), `OP_Reward` (0x4080: each coin's line with "from" the
+    giver, the purse, wave 0x8d), `OP_LevelUpdate` as eqgame takes it (only a level above ours,
+    our spawn's level, wave 0x8b), `OP_Disarm`'s answer (24), `OP_ResetSkill`
+    (`UpdateAbilityTimer`: mend's and hide's ready times, another skill's last use) and the
+    charm's `OP_FreezeClientControl`, `OP_UnfreezeClientControl` and `OP_ReturnClientControl`
+    (stance 102 and back, 1394). All six checked on replay (`frontend_preview ... packets`), none
+    live. Still to do:
+    - Left over from those:
+      - `OP_LevelUpdate`: the highest level reached (PCData+0x1360, not in our profile) raised
+        with it and `CSkillsSelectWnd::Refresh`. A level lost isn't shown until the next
+        profile, as in eqgame (it drops the packet).
+      - The control packets: what reads StunnedState 2 isn't traced (ours keeps `m_frozen` and
+        reads it nowhere; stance 102 does the work), `OP_ReturnClientControl` letting the waits go
+        (`DAT_007d0254`, `DAT_007d0258`; ours are each window's own), `DAT_007cf1e4` (not known),
+        and 0x40be (the freeze with `DAT_007cf1e4` 1; EQMacEmu doesn't send it). Not checked:
+        the stance our model shows frozen, and a charm live.
+      - `OP_Reward`'s giver is looked up among the spawns by id; eqgame's `trimName` of it is our
+        `DisplayName`.
     - Sent by EQMacEmu, handled by eqgame, dropped here (found by matching the packets the
       server builds against `ZoneSession`'s cases):
-      - `OP_DeleteCharge` (0x4147, @004dd106) from the zone, `MoveItem_Struct` {slot, -1, -1}:
-        one comes off the count (+0x116) of the item in that slot (under 30 the slot itself, else
-        slot `(n - 30) % 10` of the bag in `(n - 30) / 10`), which goes when that was the last;
-        nothing there says eqstr 1390, color 15. The zone sends it whenever it uses up one of
-        ours (`Client::DeleteItemInInventory` with an update: reagents, a quest's hand-in taken by
-        a script, a bandage on the cursor), so our counts stay wrong until the next zone. Ours
-        only sends it.
-      - `OP_Reward` (0x4080, `QuestReward_Struct` {u16 giver, u16 us, exp @4, faction @8 and
-        @0xc, copper @0x10, silver @0x14, gold @0x18, platinum @0x1c, item ids}): "from %1" (eqstr
-        1439) with the giver's name into "You receive %1 copper %2." (1438; 1440 silver, 1441 gold,
-        1442 platinum), each coin added to the purse here, and wave 0x8d. EQMacEmu adds the coins
-        on its side without telling us otherwise (`Client::QuestReward`), so a quest's coins don't
-        show until the next zone.
-      - `OP_LevelUpdate`'s other half (`CEverQuest_HandleWorldMessage_LevelUpdate` @004e06ef; the
-        level, experience and 5 practices are ours): only for a level above ours, and then the
-        highest level reached (PCData+0x1360) raised with it, `CSkillsSelectWnd::Refresh`, our
-        spawn's level set, and wave 0x8b played. Ours takes a lower level too, plays nothing,
-        and makes no event of it.
-      - `OP_Disarm` (0x40aa, `msg_disarm`): the answer to our disarm (24).
       - `OP_ApplyPoison` (0x41ba): the answer to a poison applied (2).
-      - `OP_ResetSkill` (0x423d, `UpdateAbilityTimer` @004e2550, {i16 skill, i32 seconds @4}): that
-        skill's timer (`DAT_007cd650`) to now + seconds; EQMacEmu sends 0 to make a skill ready
-        again (`Client::ResetSkill`).
       - `OP_DisciplineChange` (0x41f2, @004e3bc1): the discipline running (35).
-      - `OP_FreezeClientControl` (0x406a; a name, ours: stance 102, StunnedState 2, our speeds 0),
-        `OP_UnfreezeClientControl` (0x406b, sharing 0x40c1's block: StunnedState 0 with HP over 0,
-        stance 100, `DAT_007cf1e4` 0) and `OP_ReturnClientControl` (0x40b0: `ChangeStance` 100,
-        eqstr 1394 "You have control of yourself again." in color 4, the waits let go): a charmed
-        player (`mob_ai.cpp`).
       - `OP_MultiLineMsg` (0x4014): the text a line at a time (`ParseNextLine`), color 10 in the
         old UI; the new UI's path (color 0x145 at `LAB_004ecdca`) isn't traced.
       - `OP_SetTitle` (0x40d4, MSG_GRANT_TITLE, @004e45eb): eqgame reads a name at 0, a title at
@@ -1306,8 +1297,8 @@ no rules of its own.
 2. ~~The window manager (1).~~
 3. ~~The Player, Target and Chat windows (2, 3), which prove out the whole SIDL pipeline.~~
 4. ~~Nameplates and the target indicator (9, 10).~~
-5. What the zone already sends and we drop, since it leaves our state wrong: `OP_DeleteCharge`
-   and `OP_Reward` (37), then disarm's and the poison's answers (24, 2).
+5. ~~What the zone already sends and we drop, since it leaves our state wrong: `OP_DeleteCharge`
+   and `OP_Reward` (37), then disarm's answer (24).~~ The poison's answer (2) is left.
 6. Camping's checks, countdown and calling off (40). ~~The MOTD as we enter (3).~~
 7. Keys and lockpicks on doors (41), then ladders (22).
 8. Inspecting and the player notes window (29), the tracking window (24), breath and drowning

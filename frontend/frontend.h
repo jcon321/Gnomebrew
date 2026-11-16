@@ -738,6 +738,7 @@ private:
 	std::set<uint16_t> m_hidden_corpses; // /hidecorpses' (ActorInfo IsInvisible)
 	std::string m_logout_text;      // why we're going to character select, when it isn't a camp
 	bool m_stunned = false;         // EQ_Character's StunnedState 1 (StunMe)
+	bool m_frozen = false;          // EQ_Character's StunnedState 2 (OP_FreezeClientControl)
 	uint64_t m_stun_until_ms = 0;   // ActorInfo's stun timer (+0xc4): 0 not stunned
 	uint64_t m_death_ms = 0;        // ActorInfo's DeathTimer: when we lay down; 1 once told we're going home
 	int m_cycle_index = -1;         // CycleNearestTarget's place in the list (Zeal's last_index)

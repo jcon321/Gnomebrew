@@ -14,6 +14,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <ctime>
 #include <cctype>
 #include <filesystem>
@@ -4519,6 +4520,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			if (m_stunned && m_sound)
 				m_sound->SetGenericEnvironment();
 			m_stunned = false;
+			m_frozen = false;
 			m_stun_until_ms = 0;
 			m_death_ms = 0;
 			m_knocked_out = false; // a new zone's StunnedState is the profile's: not knocked out
@@ -4571,6 +4573,64 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			break;
 		case Type::Stunned:
 			StunMe(event.value); // HandleWorldMessage's 0x415b
+			break;
+		case Type::ClientControl:
+			if (event.value == 0) {
+				// 0x406a: stance 102 (the session's), StunnedState 2, our speeds 0 (no key moves us in
+				// that stance).
+				m_frozen = true;
+				m_stunned = m_knocked_out = false;
+				if (m_zone_view)
+					m_zone_view->SetStance(102);
+			}
+			else if (event.value == 1) {
+				// 0x406b: StunnedState 0 with HP over 0, stance 100.
+				if (m_game_values.CurHp() > 0)
+					m_frozen = m_stunned = m_knocked_out = false;
+				if (m_zone_view)
+					m_zone_view->SetStance(100);
+			}
+			else {
+				// 0x40b0: ChangeStance(100), which tells the zone, and the line in color 4.
+				ChangeStance(100);
+				ChatOut(EqString(1394, "You have control of yourself again."), 4);
+			}
+			break;
+		case Type::ChargeNotFound:
+			ChatOut(EqString(1390, "MOVE ITEM FAILED IN CLIENT APPLICATION."), ChatType::Yellow);
+			break;
+		case Type::Rewarded: {
+			// HandleWorldMessage's 0x4080: "from <the giver>" (nothing for a spawn we don't have) into
+			// each coin's line, then the wave.
+			std::string from;
+			auto giver = m_zone.Spawns().find(event.id);
+			if (giver != m_zone.Spawns().end())
+				from = FormatEqString(m_ui.eqstr, 1439, "from %1", {giver->second.DisplayName()});
+			else if (event.id != 0 && event.id == m_zone.MySpawnId())
+				from = FormatEqString(m_ui.eqstr, 1439, "from %1", {m_zone.Self().DisplayName()});
+			static const struct { size_t at; uint32_t id; const char *text; } coins[] = {
+				{16, 1438, "You receive %1 copper %2."}, {20, 1440, "You receive %1 silver %2."},
+				{24, 1441, "You receive %1 gold %2."}, {28, 1442, "You receive %1 platinum %2."}};
+			for (const auto &coin : coins) {
+				int32_t count = 0;
+				if (event.data.size() >= coin.at + 4)
+					std::memcpy(&count, event.data.data() + coin.at, 4);
+				if (count > 0)
+					ChatOut(FormatEqString(m_ui.eqstr, coin.id, coin.text, {std::to_string(count), from}), ChatType::Default);
+			}
+			if (m_sound)
+				m_sound->PlayWave(0x8d);
+			break;
+		}
+		case Type::SkillReset:
+		case Type::DisarmAnswered:
+			m_abilities.ZoneEvent(event);
+			break;
+		case Type::LevelGained:
+			// CEverQuest_HandleWorldMessage_LevelUpdate: the level's in the profile and on our spawn;
+			// the wave.
+			if (m_sound)
+				m_sound->PlayWave(0x8b);
 			break;
 		case Type::BoatControl: {
 			// HandleWorldMessage's 0x4126: the helm is ours, pinstCharSpawn the boat (what we were

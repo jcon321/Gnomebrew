@@ -2795,14 +2795,94 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 	case ZoneOp::LevelUpdate:
 		// LevelUpdate_Struct: {u32 level, u32 old level, u32 exp}.
 		if (data.size() >= 12) {
-			// CEverQuest_HandleWorldMessage_LevelUpdate: up from the level before, 5 practices.
+			// CEverQuest_HandleWorldMessage_LevelUpdate (@004e06ef): only a level above ours counts
+			// (a lower or the same one is dropped whole, its experience too); up from the level
+			// before, 5 practices. Our spawn's level goes with it.
 			int32_t level = Read<int32_t>(data, 0), old_level = Read<int32_t>(data, 4);
-			if (m_profile.level < level && old_level < level)
+			if (m_profile.level >= level)
+				break;
+			if (old_level < level)
 				m_profile.practice_points = static_cast<int16_t>(m_profile.practice_points + 5);
-			m_profile.level = static_cast<uint8_t>(Read<uint32_t>(data, 0));
+			m_profile.level = static_cast<uint8_t>(level);
 			m_profile.exp = Read<uint32_t>(data, 8);
+			m_self.level = m_profile.level;
+			Event e{Event::Type::LevelGained};
+			e.value = level;
+			events.push_back(e);
 		}
 		break;
+	case ZoneOp::DeleteCharge: {
+		// HandleWorldMessage's 0x4147 (@004dd106), MoveItem_Struct {slot, -1, -count}: that many off
+		// the charges of the item in the slot (in a bag: 30 + its general slot * 10 + the bag's
+		// slot, which is our numbering too), gone when it has no more than that. Anything else, or
+		// nothing there, says so.
+		bool done = false;
+		if (data.size() >= 12 && Read<int32_t>(data, 4) == -1 && Read<int32_t>(data, 8) <= -1) {
+			auto it = m_items.find(static_cast<int16_t>(Read<int32_t>(data, 0)));
+			if (it != m_items.end()) {
+				uint8_t count = static_cast<uint8_t>(-Read<int32_t>(data, 8));
+				uint8_t have = static_cast<uint8_t>(it->second.charges);
+				if (count >= have)
+					m_items.erase(it);
+				else
+					it->second.charges = static_cast<int8_t>(have - count);
+				done = true;
+			}
+		}
+		if (!done)
+			events.push_back({Event::Type::ChargeNotFound});
+		break;
+	}
+	case ZoneOp::Reward:
+		// HandleWorldMessage's 0x4080: each coin over 0 into the purse; the front end says them.
+		if (data.size() >= 32) {
+			m_profile.copper += std::max(Read<int32_t>(data, 16), 0);
+			m_profile.silver += std::max(Read<int32_t>(data, 20), 0);
+			m_profile.gold += std::max(Read<int32_t>(data, 24), 0);
+			m_profile.platinum += std::max(Read<int32_t>(data, 28), 0);
+			Event e{Event::Type::Rewarded};
+			e.id = Read<uint16_t>(data, 0);
+			e.data = data;
+			events.push_back(e);
+		}
+		break;
+	case ZoneOp::ResetSkill:
+		if (data.size() >= 8) {
+			Event e{Event::Type::SkillReset};
+			e.id = Read<uint16_t>(data, 0);
+			e.value = Read<int32_t>(data, 4);
+			events.push_back(e);
+		}
+		break;
+	case ZoneOp::Disarm:
+		// msg_disarm (@004dfc2a), Disarm_Struct {u16 them, u16 us, i16 skill, u8 status}: the answer
+		// to our disarm. Status 0xff is someone disarming us, which the client rolls itself and
+		// EQMacEmu never sends (it disarms on its own side).
+		if (data.size() >= 7 && data[6] != 0xff) {
+			Event e{Event::Type::DisarmAnswered};
+			e.id = Read<uint16_t>(data, 0);
+			e.value = static_cast<int8_t>(data[6]);
+			events.push_back(e);
+		}
+		break;
+	case ZoneOp::FreezeClientControl:
+	case ZoneOp::UnfreezeClientControl:
+		// HandleWorldMessage's 0x406a and 0x406b (0x40c1's block): for our name only, the stance set
+		// here with nothing told to the zone.
+		if (CString(data, 0, 64) == m_self.name) {
+			bool freeze = opcode == ZoneOp::FreezeClientControl;
+			m_self.stance = freeze ? 102 : 100;
+			Event e{Event::Type::ClientControl};
+			e.value = freeze ? 0 : 1;
+			events.push_back(e);
+		}
+		break;
+	case ZoneOp::ReturnClientControl: {
+		Event e{Event::Type::ClientControl};
+		e.value = 2;
+		events.push_back(e);
+		break;
+	}
 	case ZoneOp::BindWound:
 		// The 0x4093 case of HandleWorldMessage: BindWound_Struct's type.
 		if (data.size() >= 3) {

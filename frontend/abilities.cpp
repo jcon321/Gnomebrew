@@ -974,6 +974,31 @@ void Abilities::ZoneEvent(const ZoneSession::Event &event)
 			Say(1429 + type, why[type - 4], 0xf);
 		break;
 	}
+	case Type::SkillReset: {
+		// UpdateAbilityTimer (@004e2550): the skill's entry in DAT_007cd650 to now + the seconds. For
+		// mend and hide that entry is when they're ready; for the rest their last use, which the
+		// reuse time is counted from (so 0 seconds starts a skill that's waiting over).
+		uint64_t at = static_cast<uint64_t>(static_cast<int64_t>(m_now_ms) + static_cast<int64_t>(event.value) * 1000);
+		int skill = static_cast<int16_t>(event.id);
+		if (skill == Mend)
+			m_mend_ready_ms = at;
+		else if (skill == HideSkill)
+			m_hide_ready_ms = at;
+		else if (skill >= 0 && skill < SkillCount)
+			m_last_use[skill] = at;
+		break;
+	}
+	case Type::DisarmAnswered: {
+		// msg_disarm: "You disarmed %1!" for a spawn we have, or the failure.
+		if (event.value > 0) {
+			auto them = m_zone->Spawns().find(event.id);
+			if (them != m_zone->Spawns().end())
+				Say(12890, "You disarmed %1!", SkillsColor, {them->second.DisplayName()});
+		}
+		else
+			Say(12891, "Your attempt to disarm failed.", SkillsColor);
+		break;
+	}
 	case Type::Begged: {
 		Busy(-1);
 		static const char *const coins[] = {"You have begged %1 platinum.", "You have begged %1 gold.",
