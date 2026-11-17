@@ -5,16 +5,27 @@
 
 #include <cctype>
 #include <cstring>
-#include <strings.h>
 
 namespace
 {
 	constexpr uint16_t HorseRace = 216;
 	constexpr int SummonHorse = 113; // SPA 0x71
 
+	// strnicmp(text, prefix, prefix.size()) == 0: text starts with prefix, case aside.
+	bool StartsWithName(const std::string &text, const std::string &prefix)
+	{
+		if (text.size() < prefix.size())
+			return false;
+		for (size_t i = 0; i < prefix.size(); ++i)
+			if (std::tolower(static_cast<unsigned char>(text[i])) != std::tolower(static_cast<unsigned char>(prefix[i])))
+				return false;
+		return true;
+	}
+
+	// stricmp(a, b) == 0.
 	bool SameName(const std::string &a, const std::string &b)
 	{
-		return strcasecmp(a.c_str(), b.c_str()) == 0;
+		return a.size() == b.size() && StartsWithName(a, b);
 	}
 
 	// CEverQuest::trimName, as ZoneSpawn::DisplayName does it.
@@ -123,7 +134,7 @@ void Mounts::Tick()
 	size_t found_length = 0;
 	auto consider = [&](uint16_t id, const ZoneSpawn &spawn) {
 		std::string trimmed = Trimmed(spawn.name);
-		if (strncasecmp(trimmed.c_str(), wanted.c_str(), wanted.size()) != 0)
+		if (!StartsWithName(trimmed, wanted))
 			return;
 		if (!found || spawn.name.size() < found_length) {
 			found = id;
