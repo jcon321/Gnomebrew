@@ -915,6 +915,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		RangedPassageOfTime(now_ms);
 		HungerAndThirst(now_ms);
 		StunPassageOfTime(now_ms);
+		CampPassageOfTime();
 		KnockoutPassageOfTime();
 		if (me.look_serial != m_my_look_serial || m_ranged_look) {
 			m_my_look_serial = me.look_serial;
@@ -3753,6 +3754,10 @@ void FrontEnd::ChangeStance(uint8_t stance)
 	// EQPlayer::ChangeStance: no sitting on a horse; lying down gets off it, the buff with it.
 	if (!m_mounts.StanceChange(m_zone.MySpawnId(), stance))
 		return;
+	if (m_zone.CampRemainingMs() != 0) { // any change of ours calls a camp off
+		m_zone.CancelCamp();
+		ChatOut(EqString(12290, "You abandon your preparations to camp."), 0x111);
+	}
 	m_zone.SetStance(stance);
 	if (m_zone_view)
 		m_zone_view->SetStance(stance);
@@ -3781,12 +3786,27 @@ void FrontEnd::WorldClick(int x, int y)
 		if (!held && !m_containers.WorldOpen() && m_zone_view->PickGroundItem(x, y, m_zone.MySpawnId(), drop_id) && m_ground.PickUp(drop_id))
 			return;
 	}
+	// CEverQuest_ClickedSwitch (@00547034): a trap takes our Disarm Traps skill and nothing held;
+	// else what's on the cursor goes with the click: lockpicks (item type 12) with our Pick Lock
+	// skill, an item of type 39 with its HouseLockID, a key (33), a container, a book or any other
+	// item with skill 0.
+	const ZoneProfile &me = m_zone.Profile();
+	ZoneDoors::Held held;
+	held.disarm = static_cast<int16_t>(Skills::HasSkill(me, 17));
+	if (auto cursor = m_zone.Items().find(Inventory::Cursor); cursor != m_zone.Items().end()) {
+		const ZoneItem &item = cursor->second;
+		held.item = item.id;
+		if (item.item_class == 0 && item.item_type == 12)
+			held.skill = static_cast<int16_t>(Skills::HasSkill(me, 35));
+		else if (item.item_class == 0 && item.item_type == 39)
+			held.skill = item.house_lock;
+	}
 	uint8_t door = 0;
+	uint16_t item = 0xffff;
 	int16_t skill = 0;
-	int16_t disarm = m_zone.Profile().skills[17]; // disarm traps
-	switch (m_zone_view->ClickDoor(x, y, disarm, door, skill)) {
+	switch (m_zone_view->ClickDoor(x, y, held, door, item, skill)) {
 	case ZoneDoors::Use::Ask:
-		m_zone.ClickDoor(door, 0xffff, skill);
+		m_zone.ClickDoor(door, item, skill);
 		break;
 	case ZoneDoors::Use::TooFar:
 		AddZoneLog(EqString(1462, "You can't reach that, get closer."), ZoneYellow);
@@ -4497,10 +4517,44 @@ bool FrontEnd::CanIHitTarget(uint16_t id, float extra)
 
 void FrontEnd::StartCamp()
 {
+	// CEverQuest_Camp (@00530c7b), from /camp, the Actions window's Camp and a hot button. Every
+	// line is print_chat_dsp_chat_2's (0x111).
 	if (m_zone.GetState() != ZoneSession::State::InZone)
 		return;
-	if (m_zone.Camp())
-		AddZoneLog("It will take you about 30 seconds to prepare your camp.", ZoneYellow);
+	uint8_t stance = m_zone.Self().stance;
+	if (stance == 102) // frozen: nothing said
+		return;
+	if (m_zone.CampRemainingMs() != 0) {
+		m_zone.CancelCamp();
+		ChatOut(EqString(12290, "You abandon your preparations to camp."), 0x111);
+	}
+	else if (m_buffs.Total(31) != 0) // mesmerized
+		ChatOut(EqString(12368, "You do not have control of yourself right now."), 0x111);
+	else if (stance != 110)
+		ChatOut(EqString(12291, "You must be sitting to prepare to camp."), 0x111);
+	else if (m_mounts.Mounted())
+		ChatOut(EqString(12292, "You must dismount and be sitting to prepare to camp."), 0x111);
+	else if (m_zone.Camp()) // CampingInProgress: now + 30 s
+		ChatOut(EqString(12293, "It will take you about 30 seconds to prepare your camp."), 0x111);
+}
+
+void FrontEnd::CampPassageOfTime()
+{
+	// DoPassageOfTime: no longer sitting calls the camp off; else, each time the seconds left come
+	// to a multiple of 5, how many. The timer's end (OP_Logout) is ZoneSession's.
+	uint64_t left = m_zone.CampRemainingMs();
+	if (left == 0 || m_zone.GetState() != ZoneSession::State::InZone)
+		return;
+	if (m_zone.Self().stance != 110) {
+		ChatOut(EqString(12683, "Your attempt to camp has been interrupted."), 0x111);
+		m_zone.CancelCamp();
+		return;
+	}
+	int seconds = static_cast<int>(left / 1000);
+	if (seconds != 0 && seconds != m_camp_seconds && seconds % 5 == 0)
+		ChatOut(FormatEqString(m_ui.eqstr, 12684, "It will take about %1 more seconds to prepare your camp.",
+			{std::to_string(seconds)}), 0x111);
+	m_camp_seconds = seconds; // DAT_0063d8c4
 }
 
 void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)

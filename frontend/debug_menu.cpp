@@ -339,7 +339,7 @@ void DebugMenu::DrawCard(Canvas &canvas, TextRenderer &text, const ZoneSession &
 	};
 
 	lines.push_back({info.long_name.empty() ? "Entering the zone..." : info.long_name, 20, White, 2});
-	if (zone.GetState() == ZoneSession::State::Camping)
+	if (zone.CampRemainingMs() != 0)
 		row("Camping... " + std::to_string((zone.CampRemainingMs() + 999) / 1000) + "s");
 	else {
 		// Norrath's clock: hour 1 is midnight.

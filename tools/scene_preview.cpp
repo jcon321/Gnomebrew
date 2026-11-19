@@ -392,9 +392,10 @@ namespace
 		printf("%zu triangles drawn, %.1f ms per frame\n", view.TrianglesDrawn(), total / frames);
 		if (click_x >= 0) {
 			uint8_t id = 0;
+			uint16_t item = 0xffff;
 			int16_t skill = 0;
 			static const char *const uses[] = {"nothing", "too far", "ask the zone"};
-			ZoneDoors::Use use = view.ClickDoor(click_x, click_y, 0, id, skill);
+			ZoneDoors::Use use = view.ClickDoor(click_x, click_y, ZoneDoors::Held{}, id, item, skill);
 			printf("click at %d, %d: %s", click_x, click_y, uses[static_cast<int>(use)]);
 			if (use == ZoneDoors::Use::Ask)
 				printf(" (door %u)", id);

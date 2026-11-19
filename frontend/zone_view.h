@@ -148,8 +148,9 @@ public:
 	size_t DoorCount() const { return m_doors.Count(); }
 	size_t DoorsShown() const { return m_doors.Shown(); }
 	// A left click on the window at (x, y), after Render: the door it's on, if any, and whether we
-	// can use it (EQSwitch::UseSwitch). `disarm` is our disarm traps skill; `id` and `skill` are for OP_ClickDoor.
-	ZoneDoors::Use ClickDoor(int x, int y, int16_t disarm, uint8_t &id, int16_t &skill) const;
+	// can use it (EQSwitch::UseSwitch). `held` is what goes with the click (ZoneDoors::Held); `id`,
+	// `item` and `skill` are for OP_ClickDoor.
+	ZoneDoors::Use ClickDoor(int x, int y, const ZoneDoors::Held &held, uint8_t &id, uint16_t &item, int16_t &skill) const;
 	// CastRay: nothing of the zone's between two points (render space); true until it's loaded.
 	bool CanSee(const render::Vec3 &from, const render::Vec3 &to) const;
 

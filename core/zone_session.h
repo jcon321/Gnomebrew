@@ -426,6 +426,7 @@ struct ZoneItem
 	int8_t charges = 0;
 	int8_t effect_type2 = 0; // EffectType2 (@279): the click's kind for CInvSlot_DoDrinkEatPoison (0 none, 2 worn)
 	int16_t effect2 = 0;     // Effect2: the spell of its effect
+	int16_t house_lock = 0;  // HouseLockID (@284): an item of type 39's skill with a door click
 	int32_t classes = 0, races = 0; // a bit per class (WAR first) and per race (HUM first)
 	// Containers:
 	uint8_t bag_type = 0;    // 2 a quiver, 8 a bandolier...
@@ -499,6 +500,7 @@ class ZoneSession
 {
 public:
 	// ZoneRequested: OP_ZoneChange is out. Departing: approved, waiting for the zone to let us go.
+	// Camping: OP_Logout is out (a camp's timer run, or LogoutNow), waiting for the zone to close.
 	enum class State { Idle, Entering, InZone, ZoneRequested, Departing, Camping, LoggedOut, Failed };
 
 	struct Event
@@ -872,7 +874,10 @@ public:
 	// (1 back off .. 17 feign; 7 attack takes the target).
 	bool PetCommand(uint32_t command, uint16_t target);
 	// /camp: OP_Camp, then OP_Logout once the 30 second camp timer has run (Handle_OP_Logout expects that).
+	// We stay InZone while the timer runs (eqgame's CampingInProgress); Camping is the logout sent.
 	bool Camp();
+	// The camp called off before its timer ran (/camp again, standing up): nothing sent.
+	void CancelCamp();
 	// Ask to leave for another zone (a zone line): our position, then OP_ZoneChange. The answer
 	// comes as ZoneApproved (then Departed) or ZoneDenied.
 	bool RequestZoneChange(uint32_t zone_id, int32_t reason = 0);
@@ -1047,6 +1052,7 @@ public:
 	std::string GuildName(int16_t guild) const;
 	// __Guilds by id: the name, empty for a guild not in the list (msg_stat_change, msg_guild_war).
 	std::string GuildSlotName(int16_t guild) const;
+	// What's left of a camp's 30 seconds; 0 when we aren't camping.
 	uint64_t CampRemainingMs() const;
 	// Norrath's time: OP_TimeOfDay's hour (1..24) and minute, carried on at 20 game seconds a
 	// second as EQWorldData::AdvanceTime does. False until the zone has sent it.

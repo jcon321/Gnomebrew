@@ -231,6 +231,9 @@ namespace
 		chat();
 		printf("[preview] fall of 3: %d damage, HP %d -> %d\n", damage, before, frontend.CurHp());
 		h.Key(InputEvent::Key::Enter);
+		h.Type("/sit");
+		h.Key(InputEvent::Key::Enter);
+		h.Key(InputEvent::Key::Enter);
 		h.Type("/camp");
 		h.Key(InputEvent::Key::Enter);
 		h.RunUntil([] { return false; }, 32000);
@@ -393,6 +396,7 @@ namespace
 			frontend.OnEvent({InputEvent::Type::MouseMove, 480, 300});
 			frontend.OnEvent({InputEvent::Type::RightUp, 480, 300});
 		}
+		type("/sit"); // CEverQuest_Camp: sitting
 		type("/camp");
 		h.RunUntil([&] { return zone.GetState() != ZoneSession::State::InZone && zone.GetState() != ZoneSession::State::Camping; },
 			40000);
@@ -608,6 +612,7 @@ namespace
 				zone.Profile().silver, zone.Profile().copper);
 			click("MerchantWnd", "DoneButton");
 		}
+		type("/sit"); // CEverQuest_Camp: sitting
 		type("/camp");
 		h.RunUntil([&] { return zone.GetState() != ZoneSession::State::InZone && zone.GetState() != ZoneSession::State::Camping; },
 			60000);
@@ -680,6 +685,7 @@ namespace
 		h.RunUntil([] { return false; }, 500);
 		chat();
 		state("gone");
+		type("/sit"); // CEverQuest_Camp: sitting
 		type("/camp");
 		h.RunUntil([&] { return zone.GetState() != ZoneSession::State::InZone && zone.GetState() != ZoneSession::State::Camping; },
 			60000);
@@ -815,6 +821,7 @@ namespace
 		state("after delete");
 		type("/guildstatus");
 		type("/guildmotd");
+		type("/sit"); // CEverQuest_Camp: sitting
 		type("/camp");
 		h.RunUntil([&] { return zone.GetState() != ZoneSession::State::InZone && zone.GetState() != ZoneSession::State::Camping; },
 			40000);
@@ -1729,6 +1736,7 @@ namespace
 		h.RunUntil([] { return false; }, 2500);
 		chat();
 		state("removed");
+		type("/sit"); // CEverQuest_Camp: sitting
 		type("/camp");
 		h.RunUntil([&] { return zone.GetState() != ZoneSession::State::InZone && zone.GetState() != ZoneSession::State::Camping; },
 			40000);
@@ -2140,6 +2148,7 @@ namespace
 			type(line);
 		h.RunUntil([] { return false; }, 1000);
 		chat();
+		type("/sit"); // CEverQuest_Camp: sitting
 		type("/camp");
 		h.RunUntil([&] { return zone.GetState() != ZoneSession::State::InZone && zone.GetState() != ZoneSession::State::Camping; },
 			40000);
@@ -2323,6 +2332,9 @@ namespace
 			break;
 		}
 		h.Key(InputEvent::Key::Enter);
+		h.Type("/sit");
+		h.Key(InputEvent::Key::Enter);
+		h.Key(InputEvent::Key::Enter);
 		h.Type("/camp");
 		h.Key(InputEvent::Key::Enter);
 		h.RunUntil([&] { return zone.GetState() != ZoneSession::State::InZone && zone.GetState() != ZoneSession::State::Camping; },
@@ -2410,6 +2422,9 @@ namespace
 		if (!found) {
 		// Camp out, so the character isn't left in the zone.
 		h.Key(InputEvent::Key::Enter);
+		h.Type("/sit");
+		h.Key(InputEvent::Key::Enter);
+		h.Key(InputEvent::Key::Enter);
 		h.Type("/camp");
 		h.Key(InputEvent::Key::Enter);
 		h.RunUntil([&] { return zone.GetState() != ZoneSession::State::InZone && zone.GetState() != ZoneSession::State::Camping; },
@@ -2424,6 +2439,9 @@ namespace
 			chat();
 			printf("[preview] no training window\n");
 		// Camp out, so the character isn't left in the zone.
+		h.Key(InputEvent::Key::Enter);
+		h.Type("/sit");
+		h.Key(InputEvent::Key::Enter);
 		h.Key(InputEvent::Key::Enter);
 		h.Type("/camp");
 		h.Key(InputEvent::Key::Enter);
@@ -2469,6 +2487,9 @@ namespace
 		chat();
 		printf("[preview] window %s\n", windows.Shown("TrainWindow") ? "up" : "down");
 		// Camp out, so the character isn't left in the zone.
+		h.Key(InputEvent::Key::Enter);
+		h.Type("/sit");
+		h.Key(InputEvent::Key::Enter);
 		h.Key(InputEvent::Key::Enter);
 		h.Type("/camp");
 		h.Key(InputEvent::Key::Enter);
@@ -2618,6 +2639,9 @@ namespace
 			static_cast<size_t>(std::count_if(zone.Items().begin(), zone.Items().end(),
 				[](const auto &p) { return p.first >= Inventory::FirstMerchant; })));
 		chat();
+		h.Key(InputEvent::Key::Enter);
+		h.Type("/sit");
+		h.Key(InputEvent::Key::Enter);
 		h.Key(InputEvent::Key::Enter);
 		h.Type("/camp");
 		h.Key(InputEvent::Key::Enter);

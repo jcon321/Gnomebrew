@@ -242,6 +242,7 @@ namespace
 		item.charges = Read<int8_t>(d, o + 278);
 		item.effect_type2 = Read<int8_t>(d, o + 279);
 		item.effect2 = Read<int16_t>(d, o + 280);
+		item.house_lock = Read<int16_t>(d, o + 284);
 		item.cast_time = Read<int32_t>(d, o + 292);
 		item.skill_mod_type = Read<uint16_t>(d, o + 312);
 		item.skill_mod_value = Read<int16_t>(d, o + 314);
@@ -2119,11 +2120,17 @@ void ZoneSession::SendMovement(uint64_t now_ms)
 
 bool ZoneSession::Camp()
 {
-	if (m_state != State::InZone)
+	if (m_state != State::InZone || m_camp_started_ms != 0)
 		return false;
-	m_state = State::Camping;
 	m_camp_started_ms = NowMs();
 	return Send(ZoneOp::Camp, nullptr, 0, "OP_Camp");
+}
+
+void ZoneSession::CancelCamp()
+{
+	// CampingInProgress back to 0; nothing is sent (EQMacEmu ends its own camp when we stand).
+	if (m_state == State::InZone)
+		m_camp_started_ms = 0;
 }
 
 bool ZoneSession::NetworkStats(RdpStats &out) const
@@ -2186,7 +2193,7 @@ uint32_t ZoneSession::MinutesPlayed() const
 
 uint64_t ZoneSession::CampRemainingMs() const
 {
-	if (m_state != State::Camping)
+	if (m_camp_started_ms == 0)
 		return 0;
 	uint64_t elapsed = NowMs() - m_camp_started_ms;
 	return elapsed >= CampMs ? 0 : CampMs - elapsed;
@@ -4330,8 +4337,10 @@ void ZoneSession::Pump(int timeout_ms, std::vector<Event> &events)
 		if (m_session)
 			m_session->Close();
 	}
-	if (m_state == State::Camping && CampRemainingMs() == 0 && m_camp_started_ms != 0) {
+	// DoPassageOfTime: the camp's timer run out, OP_Logout. We stay in the zone until then.
+	if ((m_state == State::InZone || m_state == State::Camping) && m_camp_started_ms != 0 && CampRemainingMs() == 0) {
 		m_camp_started_ms = 0; // send once
+		m_state = State::Camping;
 		Send(ZoneOp::Logout, nullptr, 0, "OP_Logout");
 		if (m_replay) { // no zone to answer
 			m_state = State::LoggedOut;

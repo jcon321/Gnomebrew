@@ -454,8 +454,8 @@ void ZoneDoors::Update(render::ZoneScene &scene, uint64_t now_ms)
 	}
 }
 
-ZoneDoors::Use ZoneDoors::Click(int scene_door, const render::Vec3 &center, float height, int16_t disarm, uint8_t &id,
-	int16_t &skill) const
+ZoneDoors::Use ZoneDoors::Click(int scene_door, const render::Vec3 &center, float height, const Held &held, uint8_t &id,
+	uint16_t &item, int16_t &skill) const
 {
 	auto found = std::find_if(m_doors.begin(), m_doors.end(), [&](const Door &door) { return door.scene == scene_door; });
 	if (found == m_doors.end())
@@ -470,8 +470,10 @@ ZoneDoors::Use ZoneDoors::Click(int scene_door, const render::Vec3 &center, floa
 		return Use::Nothing;
 	if (door.state == 1 && door.spawn.param == -2)
 		return Use::Nothing;
-	// CEverQuest_ClickedSwitch: a trap takes the disarm traps skill, and does nothing without it.
-	skill = damage != 0 ? std::min<int16_t>(disarm, 0xfe) : 0;
+	// CEverQuest_ClickedSwitch: a trap takes the disarm traps skill, and does nothing without it
+	// (EQSwitch_GetSwitchDamage2); anything else what we hold. UseSwitch caps the skill at 0xfe.
+	item = damage != 0 ? 0xffff : held.item;
+	skill = std::min<int16_t>(damage != 0 ? held.disarm : held.skill, 0xfe);
 	if (damage != 0 && (skill < 1 || skill == 0xfe))
 		return Use::Nothing;
 	// Within reach: a quarter of the model's radius, our height, and 20.

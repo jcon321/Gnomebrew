@@ -983,22 +983,14 @@ no rules of its own.
       (0x4007, coins on the ground), MSG_INVITE_OK (0x4042, group follow 2, under 2), the
       inventory's `msg_del_inventory` (@004e7ab9), `msg_mod_inventory` (@004e7d13),
       `msg_delete_item` (@004e3c33) and its bank and coin kin, and 0x40d2 (a GM's level set, 36).
-40. **Camping.** Ours sends `OP_Camp`, says the first line and waits 30 s. eqgame's
-    `CEverQuest_Camp` (@00530c7b, from /camp, the Actions window's button and a hot button):
-    - nothing while frozen (stance 102); mesmerized (`TotalSpellAffects` of SPA 31) says eqstr
-      12368 "You do not have control of yourself right now.";
-    - not sitting (stance 110) says 12291 "You must be sitting to prepare to camp.", and on a
-      horse 12292 "You must dismount and be sitting to prepare to camp.";
-    - else `OP_Camp` (0x4207, with the 4 bytes of `DAT_007f95bc` when that's set),
-      `CampingInProgress` to now + 30 s, our HP remembered, and 12293;
-    - /camp again while camping calls it off: 12290 "You abandon your preparations to camp."
-    `DoPassageOfTime` then: no longer sitting (or stunned) says 12683 "Your attempt to camp has
-    been interrupted." and calls it off; every 5 s left, 12684 "It will take about %1 more
-    seconds to prepare your camp."; at the end the logout (0x4150) and the game's end. While
-    camping eqgame also turns away a trade (`msg_req_trade`, `msg_begin_trade`), a loot (done), a
-    merchant, banker or trader (`CEverQuest_IsOkToTransact`), a poison, and the world's clicks
-    (`CEverQuest_LMouseUp`, `EQ_3DView_MouseUp`); `ChangeStance` reads it too. Whether the zone
-    is told of a camp called off isn't traced (EQMacEmu ends one when we stand).
+40. ~~**Camping.**~~ Done (`FrontEnd::StartCamp`, `CampPassageOfTime`, `ZoneSession::Camp` and
+    `CancelCamp`): `CEverQuest_Camp` (@00530c7b)'s checks (frozen, mesmerized 12368, not sitting
+    12291, mounted 12292), /camp again calling it off (12290), `ChangeStance` calling it off, and
+    `DoPassageOfTime`'s interruption (12683) and countdown (12684). Still to do:
+    - `OP_Camp`'s 4 bytes of `DAT_007f95bc` when that's set (not known; ours sends none), and
+      `CEverQuest_Camp`'s HP remembered (`DAT_0079875c`) and `DAT_00798744`, whose readers aren't
+      traced.
+    - The poison's refusal while camping goes with the poison (2).
 43. **The front end's other screens** (eqmain.dll's `new_dll_main` @10025300). The start
     screen's ACCOUNT, CREDITS and OPTIONS and server select's NEWS say "not implemented"
     (`SISATEXT_NOT_IMPLEMENTED`), and server select's CHAT button isn't drawn:
@@ -1208,17 +1200,9 @@ no rules of its own.
     - `CreatePlayerActor` falls back to `HUM_ACTORDEF` (`HUF_ACTORDEF` for a woman) when the actor
       isn't there; ours to race 75's (a gender 0 launch, `LAUNCHM`, shows as an elemental). Check
       where the race 75 fallback came from before changing it.
-41. **Doors and switches.** Clicking, moving and sounds are done (`frontend/zone_doors.*`). Still
-    to do:
-    - Keys and lockpicks. `CEverQuest_ClickedSwitch` (@00547034) sends what's on the cursor with
-      the click, and ours always sends item 0xffff: a trap (`GetSwitchDamage` over 0) goes with
-      our Disarm Traps skill (17, done); else lockpicks on the cursor (item type 12) with their id
-      and our Pick Lock skill (35); a key (type 33), a container or any other item with its id and
-      skill 0; an item of type 39 with its id and its own value (+0x38) as the skill.
-      `EQSwitch::UseSwitch` (@00521d91) puts them in `OP_ClickDoor` (0x408d: {u8 door, u8, i16
-      skill, u16 item, u16 our spawn}). The lock's lines are the zone's; `SwitchWasOpened`
-      (@00521c77) runs only offline.
-      (`UseSwitch`'s own refusals are ours: `ZoneDoors::Click`.)
+41. **Doors and switches.** Clicking, moving, sounds, and keys and lockpicks on the cursor
+    (`CEverQuest_ClickedSwitch` @00547034, `FrontEnd::WorldClick`) are done
+    (`frontend/zone_doors.*`). Still to do:
     - Walking into one (`EQPlayer::TouchingSwitch`: pressure plates, teleporters, hurting ones;
       22), with the teleporters' table (`msg_teleport_index` @004f1e5b reads a `_tp.txt` file as
       the zone loads, for `GetTeleportTableEntryByID` and `GetTPCoordsFromIndex` @0052459f; the
@@ -1299,8 +1283,8 @@ no rules of its own.
 4. ~~Nameplates and the target indicator (9, 10).~~
 5. ~~What the zone already sends and we drop, since it leaves our state wrong: `OP_DeleteCharge`
    and `OP_Reward` (37), then disarm's answer (24).~~ The poison's answer (2) is left.
-6. Camping's checks, countdown and calling off (40). ~~The MOTD as we enter (3).~~
-7. Keys and lockpicks on doors (41), then ladders (22).
+6. ~~Camping's checks, countdown and calling off (40). The MOTD as we enter (3).~~
+7. ~~Keys and lockpicks on doors (41)~~, then ladders (22).
 8. Inspecting and the player notes window (29), the tracking window (24), breath and drowning
    (34).
 9. ~~The stale Keyboard page rows (5), and the do-nothing commands that say "not supported" (35).~~

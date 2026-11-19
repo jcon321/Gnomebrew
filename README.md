@@ -1453,10 +1453,18 @@ the rejection).
   closes by itself after `GetSwitchStateChangeTime` (10 s for types 0 and 5, 20 s for most). A left
   click on one (the first door the ray from the camera hits before the zone) is `EQSwitch::UseSwitch`:
   nothing while it moves, "You can't reach that, get closer." (1462) beyond a quarter of its radius +
-  our height + 20, else `OP_ClickDoor` (8 bytes: id, skill, item 0xffff, our spawn id). The zone
-  answers everyone with `OP_MoveDoor {id, state}` (2 opening, 3 closing), which is `ChangeState`. A
-  door is solid where it stands, so closed doors block, lifts carry, and the camera stops at them.
-  Not done: sounds, keys and lockpicks, pressure plates and touch teleporters, the particle-effect switches.
+  our height + 20, else `OP_ClickDoor` (8 bytes: id, a byte, skill i16, item u16, our spawn id). What
+  goes with the click is `CEverQuest_ClickedSwitch`'s (@00547034): a trap (`GetSwitchDamage` over 0)
+  sends our Disarm Traps skill (`HasSkill(17)`) and item 0xffff whatever we hold, and does nothing
+  with a skill under 1 or 254 (`EQSwitch_GetSwitchDamage2`); otherwise the cursor's item id (0xffff
+  for none), with our Pick Lock skill (`HasSkill(35)`) for lockpicks (common, item type 12), the
+  item's `HouseLockID` (Item_Struct @284) for item type 39, and 0 for a key (33), a container, a
+  book or anything else. `UseSwitch` caps the skill at 0xfe. Type 39 on a door of type 56 also sends
+  0x410f (MSG_REQ_HOUSELOCK), Sony's housing, which isn't ours. The lock's answer is the zone's.
+  The zone answers everyone with `OP_MoveDoor {id, state}` (2 opening, 3 closing), which is
+  `ChangeState`. A door is solid where it stands, so closed doors block, lifts carry, and the camera
+  stops at them (`frontend/zone_doors.cpp`, `FrontEnd::WorldClick`). Not done: pressure plates and
+  touch teleporters, the particle-effect switches.
 - **Position updates:** `OP_ClientUpdate` as `pack_physics` packs it (the speed * 10, the heading in
   256ths, its change per tick, y/x/z*10, and the velocities in 16ths per tick). `ProcessControls` flags an
   update when the heading moves 2 or the speed 0.2, `DoPassageOfTime` every second, and `DoMainLoop` sends
@@ -3495,7 +3503,17 @@ A rejected world login gets no error packet. The server just drops the connectio
 - **Chat:** `0x4107` ChannelMessage is 136 bytes plus the text, and the client sends `strlen + 141`.
 - **Server messages:** `0x4236` FormattedMessage carries an `eqstr_en.txt` id and NUL-separated
   arguments.
-- **Camping:** `0x4207` Camp, then `0x4150` Logout 30 seconds later (the server's camp timer), and
+- **Camping:** `CEverQuest_Camp` (@00530c7b, from /camp, the Actions window's Camp and a hot button)
+  does nothing while frozen (stance 102); a camp already running is called off ("You abandon your
+  preparations to camp.", 12290); mesmerized (SPA 31) says 12368, not sitting (stance 110) 12291, on
+  a horse 12292; else it sends `0x4207`, sets `CampingInProgress` to now + 30 s and says 12293, all in
+  color 0x111. Any `ChangeStance` of ours calls the camp off with 12290, and `DoPassageOfTime` calls
+  it off with 12683 once we aren't sitting, and says 12684 ("It will take about %1 more seconds...")
+  each time the whole seconds left reach a multiple of 5 (25, 20, 15, 10, 5). Nothing is sent when a
+  camp is called off. While it runs, `IsOkToTransact`, trades, loot and the world's right clicks
+  are refused. Ours: `FrontEnd::StartCamp` and `CampPassageOfTime`; the session stays `InZone`
+  through the timer (`ZoneSession::Camp`, `CancelCamp`, `CampRemainingMs`) and is `Camping` once
+  `OP_Logout` is out. On the wire: `0x4207` Camp, then `0x4150` Logout 30 seconds later (the server's camp timer), and
   `0x4159` LogoutReply. On it `DoMainLoop` ends with 0xca, and before the connection closes
   `ProcessGameLoop` ("Cleaning up groups") clears the group selection and invitation, calls
   `CEverQuest_Disband` (`OP_GroupDisband` with our name, grouped or not), and in a raid

@@ -1360,7 +1360,7 @@ uint16_t ZoneView::PickSpawn(int x, int y, uint16_t me) const
 	return Pick(x, y, me).spawn;
 }
 
-ZoneDoors::Use ZoneView::ClickDoor(int x, int y, int16_t disarm, uint8_t &id, int16_t &skill) const
+ZoneDoors::Use ZoneView::ClickDoor(int x, int y, const ZoneDoors::Held &held, uint8_t &id, uint16_t &item, int16_t &skill) const
 {
 	// CDisplay::GetClickedActor: what's under the cursor, unless the zone is in front of it.
 	if (!m_loaded || !m_error.empty())
@@ -1372,7 +1372,7 @@ ZoneDoors::Use ZoneView::ClickDoor(int x, int y, int16_t disarm, uint8_t &id, in
 	if (door < 0 || m_zone.SegmentHit(from, from + direction * distance, fraction, nullptr, false))
 		return ZoneDoors::Use::Nothing;
 	render::Vec3 center = m_feet + render::Vec3{0, 0, m_height / 5 * 3.125f};
-	return m_doors.Click(door, center, m_height, disarm, id, skill);
+	return m_doors.Click(door, center, m_height, held, id, item, skill);
 }
 
 bool ZoneView::CanSee(const render::Vec3 &from, const render::Vec3 &to) const

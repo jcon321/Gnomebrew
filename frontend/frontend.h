@@ -367,6 +367,8 @@ private:
 	// One name sprite (eqgfx's renderNameTag) sitting on the point x, y, `depth` in front of the
 	// camera; a '\n' starts its second line.
 	void DrawNameSprite(Canvas &canvas, int x, int y, float depth, float focal, const std::string &text, uint32_t color);
+	// CEverQuest_Camp: sitting and in control of ourselves, start the 30 second camp; while one
+	// runs, call it off.
 	void StartCamp();
 	// CEverquest_InterpretCmd (chat_commands.cpp): a line typed into the chat window.
 	void InterpretCommand(const std::string &line);
@@ -438,6 +440,8 @@ private:
 	// EQ_Character::StunMe (@004c0001), from OP_Stun; and DoPassageOfTime's end of it.
 	void StunMe(int32_t duration_ms);
 	void StunPassageOfTime(uint64_t now_ms);
+	// DoPassageOfTime's camp: called off once we aren't sitting, and the seconds left told.
+	void CampPassageOfTime();
 	// The boats (vehicle.h). DoPassageOfTime, once a second: the boat under us is the profile's boat,
 	// and OP_BoardBoat goes as we get on; two seconds off one clears it, and OP_LeaveBoat goes.
 	// ProcessControls: off the boat we steer, we let go of its helm.
@@ -733,6 +737,7 @@ private:
 	bool m_attack = false;          // auto attack (__Attack)
 	bool m_dead = false;            // we died in this zone (EQPlayer::IDied's stance 120): nothing moves us
 	bool m_knocked_out = false;     // EQ_Character's StunnedState 3 (KnockedOut, until GetConscious)
+	int m_camp_seconds = 0;         // DAT_0063d8c4: the camp's seconds left at the last tick
 	uint64_t m_sat_ms = 0;          // ActorInfo's UnknownTimer5: when we last sat down (ChangeStance 110)
 	std::vector<uint8_t> m_rez_request; // msg_resurrect's packet, kept in the dialog (its +0x204)
 	std::set<uint16_t> m_hidden_corpses; // /hidecorpses' (ActorInfo IsInvisible)

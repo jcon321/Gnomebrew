@@ -51,9 +51,18 @@ public:
 		TooFar,  // "You can't reach that, get closer."
 		Ask,     // send OP_ClickDoor for `id`, with `skill`
 	};
+	// What CEverQuest_ClickedSwitch sends with a click: our Disarm Traps skill (HasSkill) for a trap,
+	// else the item on the cursor (0xffff none) and the skill that goes with it.
+	struct Held
+	{
+		int16_t disarm = 0;
+		uint16_t item = 0xffff;
+		int16_t skill = 0;
+	};
 	// UseSwitch for our click on the scene's door `scene_door` (ZoneScene::DoorHit). `center` is our
-	// position (the model's center), `height` our size, `disarm` our disarm traps skill.
-	Use Click(int scene_door, const render::Vec3 &center, float height, int16_t disarm, uint8_t &id, int16_t &skill) const;
+	// position (the model's center), `height` our size. A trap gets `held.disarm` and no item.
+	Use Click(int scene_door, const render::Vec3 &center, float height, const Held &held, uint8_t &id, uint16_t &item,
+		int16_t &skill) const;
 
 	size_t Count() const { return m_doors.size(); }
 	// The sounds the doors made since the last call (EqSoundManager slots, where they are), and the
