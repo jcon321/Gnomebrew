@@ -134,6 +134,7 @@ public:
 	bool Busy() const { return m_busy > 0; }   // DAT_007d0254
 	bool Hidden() const { return m_hidden; }   // DAT_00798780
 	int Activity() const { return m_activity; } // DAT_007989e2: 9 bandaging, 29 hiding, 53 tracking, 55 fishing
+	void SetActivity(int activity) { m_activity = activity; } // the tracking window's Track and Done
 
 private:
 	void UseCombatSkill(int skill, uint64_t now_ms); // DoAttack 100

@@ -1232,6 +1232,98 @@ namespace
 		return 0;
 	}
 
+	int TrackingTest(FrontEnd &frontend, Harness &h)
+	{
+		WindowManager &windows = frontend.Windows();
+		ZoneSession &zone = frontend.ZoneForTests();
+		Tracking &tracking = frontend.TrackingForTests();
+		size_t chat_seen = frontend.Chat().Lines().size();
+		auto chat = [&] {
+			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
+				printf("[preview] chat: %s\n", frontend.Chat().Lines()[chat_seen].text.c_str());
+		};
+		auto run = [&](int ms) {
+			h.RunUntil([] { return false; }, ms);
+			chat();
+		};
+		auto type = [&](const std::string &line) {
+			printf("[preview] typing %s\n", line.c_str());
+			h.Key(InputEvent::Key::Enter);
+			h.Type(line);
+			h.Key(InputEvent::Key::Enter);
+			run(300);
+		};
+		auto list = [&](const char *what) {
+			const SidlWindow *wnd = windows.Find(Tracking::Screen);
+			const SidlWindow::Control *c = wnd ? wnd->Find("TRW_TrackingList") : nullptr;
+			if (!c) {
+				printf("[preview] no list\n");
+				return;
+			}
+			const SidlWindow::Control *sort = wnd->Find("TRW_TrackSortCombobox");
+			const SidlWindow::Control *players = wnd->Find("TRW_TrackPlayersCombobox");
+			printf("[preview] %s: shown %d, %zu rows, sort %d (%s), players %d, filter %d:", what,
+				windows.Shown(Tracking::Screen) ? 1 : 0, c->rows.size(), sort ? sort->choice : -1,
+				sort && sort->enabled ? "on" : "off", players ? players->choice : -1, tracking.FilterBits());
+			for (size_t i = 0; i < c->rows.size() && i < 12; ++i)
+				printf(" %s#%06x", c->rows[i][0].c_str(), i < c->row_colors.size() ? c->row_colors[i] : 0);
+			printf("\n");
+		};
+		auto press = [&](const char *control) {
+			const SidlWindow *wnd = windows.Find(Tracking::Screen);
+			const SidlWindow::Control *c = wnd ? wnd->Find(control) : nullptr;
+			if (!c) {
+				printf("[preview] no %s\n", control);
+				return;
+			}
+			Rect area = frontend.ScreenArea();
+			int x = area.x + c->rect.x + c->rect.w / 2, y = area.y + c->rect.y + std::min(c->rect.h / 2, 30);
+			printf("[preview] click %s\n", control);
+			frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+			frontend.OnEvent({InputEvent::Type::MouseDown, x, y});
+			frontend.OnEvent({InputEvent::Type::MouseUp, x, y});
+			run(300);
+		};
+		h.Key(InputEvent::Key::F11);
+		run(500);
+		const ZoneProfile &me = zone.Profile();
+		printf("[preview] class %d, level %d, tracking %d, time type %d\n", me.class_id, me.level, me.skills[53],
+			zone.Info().time_type);
+		tracking.Activate();
+		run(600);
+		list("opened");
+		h.Snapshot("t1-tracking");
+		type("/tracksort distance"); // not a ranger
+		zone.EditProfile().class_id = 4; // a ranger, for the rest
+		zone.EditProfile().skills[53] = 200;
+		tracking.Activate();
+		run(600);
+		list("as a ranger");
+		for (const char *line : {"/tracksort distance", "/tracksort rdistance", "/tracksort consider",
+		                         "/tracksort rc", "/tracksort bogus", "/trackfilter white", "/trackfilter g",
+		                         "/trackfilter purple", "/trackplayers off", "/trackplayers group", "/trackplayers on",
+		                         "/tracksort normal"}) {
+			type(line);
+			list(line);
+		}
+		press("TRW_FilterWhiteButton");
+		list("white button");
+		// Track the first row.
+		SidlWindow *wnd = windows.Find(Tracking::Screen);
+		if (SidlWindow::Control *c = wnd ? wnd->Find("TRW_TrackingList") : nullptr; c && !c->rows.empty())
+			c->selected_row = 0;
+		press("TRW_TrackButton");
+		printf("[preview] target %u, window %d\n", tracking.Target(), windows.Shown(Tracking::Screen) ? 1 : 0);
+		run(6500);
+		printf("[preview] target %u\n", tracking.Target());
+		tracking.Activate();
+		run(300);
+		press("DoneButton");
+		run(2500);
+		printf("[preview] after Done: target %u\n", tracking.Target());
+		return 0;
+	}
+
 	int InspectTest(FrontEnd &frontend, Harness &h)
 	{
 		const ZoneSession &zone = frontend.Zone();
@@ -3681,7 +3773,7 @@ int main(int argc, char **argv)
 	if (!replay && argc != 3 && argc != 6 && argc != 7) {
 		fprintf(stderr,
 			"usage: %s EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create]]\n"
-			"       %s EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|packets|inspect]]\n",
+			"       %s EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|packets|inspect|tracking]]\n",
 			argv[0], argv[0]);
 		return 2;
 	}
@@ -3733,6 +3825,7 @@ int main(int argc, char **argv)
 	bool death_test = argc == 7 && (std::string(argv[6]) == "death" || std::string(argv[6]) == "rez");
 	bool friends_test = argc == 7 && std::string(argv[6]) == "friends";
 	bool inspect_test = argc == 7 && std::string(argv[6]) == "inspect";
+	bool tracking_test = argc == 7 && std::string(argv[6]) == "tracking";
 	bool chat_windows_test = argc == 7 && std::string(argv[6]) == "chatwindows";
 	bool multiline_test = argc == 7 && std::string(argv[6]) == "multiline";
 	bool boats_test = argc == 7 && std::string(argv[6]) == "boats";
@@ -3820,6 +3913,8 @@ int main(int argc, char **argv)
 			return FriendsTest(frontend, h, argv[2]);
 		if (inspect_test)
 			return InspectTest(frontend, h);
+		if (tracking_test)
+			return TrackingTest(frontend, h);
 		if (chat_windows_test)
 			return ChatWindowsTest(frontend, h);
 		if (multiline_test)

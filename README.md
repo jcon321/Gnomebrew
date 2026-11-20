@@ -136,6 +136,9 @@ CombatMusic=1
 LootNoDrop=0
 FastDrop=0
 InspectOthers=TRUE
+TrackPlayers=TRUE
+TrackSortType=NORMAL
+TrackFilterType=0
 ShowInspectMessage=TRUE
 
 [Filters]
@@ -241,7 +244,11 @@ WeatherSounds=1
   inspects them. eqgame reads it in `CEverQuest::CEverQuest`: on with no key (and `TRUE` written),
   or for a value starting `T`, `t` or `1`; /inspect writes `TRUE` or `FALSE` as it changes.
   `ShowInspectMessage` (`DAT_007cf208`, read the same way) says "%1 is looking at your
-  equipment..." (eqstr 1404) when another player inspects us.
+  equipment..." (eqstr 1404) when another player inspects us. `TrackPlayers` (`TRUE`, `FALSE`,
+  `GROUP`) and `TrackSortType` (`NORMAL`, `DISTANCE`, `CONSIDER`, `RDISTANCE`, `RCONSIDER`) are
+  /trackplayers' and /tracksort's, written as they change; `TrackFilterType` is the ranger's hidden
+  NPC colors (1 green, 2 blue, 4 white, 8 yellow, 16 red, 32 light blue), read only (/trackfilter
+  doesn't write it).
 - `[Filters]` are `/filter`'s switches and `/serverfilter`, kept as they change (eqgame keeps them in
   `eqOptions1.opt` and `eqOptions2.opt`): `DamageShields` and `NpcSpells` 0 shown, 1 hidden; `PcSpells`
   0 all, 1 off, 2 the group's; `BardSongs` 0 all, 1 ours, 2 the group's, 3 off; `GuildSay` through
@@ -749,7 +756,7 @@ build/eqclient -u USER -p PASS [options]
 
 ```
 build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|train|ground|commands|group|duel|bazaar|raid|guild|skills|aa]]
-build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez|cameras|packets|friends|chatwindows|multiline|inspect]]
+build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez|cameras|packets|friends|chatwindows|multiline|inspect|tracking]]
 ```
 
 This drives the real front-end code with scripted input and writes PNG snapshots. Text is
@@ -818,7 +825,10 @@ Shift+Home, Shift+Left, Shift+End, clicks on a row and right of one, a drag acro
 past the bottom; `inspect` injects someone's `OP_InspectRequest` (twice inside a second) and
 ours, `OP_InspectAnswer`s for a far spawn, a near one (put by us) and ourselves, clicks a slot and
 Done, types our text and presses Enter and Done, then `/note` alone and twice with text, printing
-the window, our text and the notes box at each step (it writes `notes.txt` in EQDIR); `mounts`
+the window, our text and the notes box at each step (it writes `notes.txt` in EQDIR); `tracking`
+opens the tracking window, tries /tracksort as a non-ranger, then as a ranger runs each sort,
+filter and /trackplayers choice and a filter button (printing the rows and their colors), tracks the
+first row for 6 s and presses Done; `mounts`
 prints each horse (its speeds, Rider, whether it's drawn), who rides what and the chat for SECONDS,
 and each second where another's rider and horse are and what they play, with the old models,
 `mountsluclin` with the human Luclin models and `mountshorse` with them and the horse models; on
@@ -2725,7 +2735,24 @@ details and the nearest spawns at the top left and the radar at the top right.
     (FindZoneTopZ) within 30 of our height, splash particles and sound 99 there and 9 s more;
     then it's over. EQMacEmu does the catch.
   - **Tracking** (53): `CTrackingWnd::Activate` (the old UI's list instead) and `OP_Track`; EQMacEmu
-    kicks a class without it.
+    kicks a class without it. The window, its list, sorts and filters, /trackplayers, /tracksort,
+    /trackfilter and the direction lines are in `frontend/tracking.h`, from `CTrackingWnd`
+    (@00437f45 on), /trackplayers (@004f9764), /tracksort (@004f98b1), /trackfilter (@004f9b3b) and
+    `DoPassageOfTime`. Its quirks: the range is `Tracking * 10 + 500` outdoors (`DAT_0079892c` 1, 2,
+    5), `Tracking / 2 + 500` elsewhere, more over 100, measured across the ground
+    (`PlayerDistance(..., 0)`); the group goes in first at any distance; `DoTrackSort`'s consider
+    sorts swap an NPC with the first later non-NPC and stop (players end up first); the consider
+    colors are `DoTrackFilter`'s own (gray level 48 at 61, 51 at 62, `level * 3 / 4` under 61, else
+    `level - 10`; light blue from the green ones by `level² * 100` plus a fifth of it per level from
+    gray, with a level less under 55, 41 and 31, and -4 and -5 making it `level² * -80`, only over
+    level 7). Sort and filter are a ranger's (13155 for anyone else, whose sort and filter are
+    reset to 0 and controls disabled); Track starts 6 minutes (`DAT_007989e8`) of a line every 2 s
+    (`DAT_007989ec`, the first at once) from `get_bearing` and the heading: within 32 (of 512) 12676,
+    96 12677, 160 12678, 224 12679 with 12675 left when `(their y - ours) * cos(h) * 100 + (their x -
+    ours) * sin(h) * 100` (h = heading * 6.28 / 512 + 1.57) is 0 or more, else 12674 right; 256
+    12680; color 0x10e. Done stops it (`DAT_007989e2` 53 to -1, the spawn kept); the time running
+    out says 12681, no spawn 12499, the spawn's death or despawn 12102. eqgame's list follows
+    `pinstSpawnList`'s order; ours the spawns' ids'. Checked in the preview's `tracking` test.
 - **CanIHitTarget** (`EQPlayer::CanIHitTarget` @00509e09): not with divine aura (SPA 40: 12695), at
   ourselves (12696) or nobody (12697), `AllowedToAttack` (@0050996a: never at or as races 72, 141,
   73, nor as 114; an NPC or an NPC's pet yes; a player or a player's pet only both PvP, within 4

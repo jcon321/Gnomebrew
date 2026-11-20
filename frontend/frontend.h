@@ -48,6 +48,7 @@
 #include "friends.h"
 #include "inspect_window.h"
 #include "player_notes.h"
+#include "tracking.h"
 #include "duel.h"
 #include "bazaar_search.h"
 #include "bazaar_window.h"
@@ -191,6 +192,7 @@ public:
 	BazaarSearch &BazaarSearchForTests() { return m_bazaar_search; }
 	ZoneSession &ZoneForTests() { return m_zone; } // the preview's injected packets
 	InspectWindow &InspectForTests() { return m_inspect; }
+	Tracking &TrackingForTests() { return m_tracking; }
 	// RightClickedOnPlayer, as the right button on a spawn in the world does.
 	void RightClickForTests(uint16_t spawn) { RightClickedOnPlayer(spawn); }
 	const LoadingScreen &Loading() const { return m_loading; }
@@ -829,6 +831,7 @@ private:
 	Friends m_friends;        // CFriendsWnd, /friends, /ignore, __FriendsList and __IgnoreList
 	InspectWindow m_inspect;  // CInspectWnd, doInspect, msg_req_inspect, our inspect text
 	PlayerNotes m_notes;      // CPlayerNotesWnd, /note, notes.txt
+	Tracking m_tracking;      // CTrackingWnd, /trackplayers, /tracksort, /trackfilter, DoPassageOfTime's tracking
 	Duel m_duel;              // /duel, /decline, msg_duel
 	BazaarWindow m_bazaar;    // CBazaarWnd: /trader
 	BazaarSearch m_bazaar_search; // CBazaarSearchWnd: /bazaar

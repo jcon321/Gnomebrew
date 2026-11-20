@@ -147,6 +147,7 @@ add_library(eqfrontend STATIC
     frontend/friends.cpp
     frontend/inspect_window.cpp
     frontend/player_notes.cpp
+    frontend/tracking.cpp
     frontend/duel.cpp
     frontend/bazaar_window.cpp
     frontend/bazaar_search.cpp

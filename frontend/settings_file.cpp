@@ -123,6 +123,13 @@ namespace
 			"0 asks first, -1 never drops it. Kept on exit."},
 		{"Defaults", "InspectOthers", "TRUE",
 			"/inspect on|off: TRUE lets the right button on a player inspect them, FALSE doesn't."},
+		{"Defaults", "TrackPlayers", "TRUE",
+			"/trackplayers and the tracking window: TRUE lists players, FALSE doesn't, GROUP only the group's."},
+		{"Defaults", "TrackSortType", "NORMAL",
+			"/tracksort (rangers): NORMAL, DISTANCE, CONSIDER, RDISTANCE or RCONSIDER."},
+		{"Defaults", "TrackFilterType", "0",
+			"The tracking window's hidden NPC colors (rangers), read only: 1 green, 2 blue, 4 white, 8 yellow,\n"
+			"16 red, 32 light blue, added together."},
 		{"Defaults", "ShowInspectMessage", "TRUE",
 			"TRUE says \"<name> is looking at your equipment...\" when someone inspects you."},
 		{"Defaults", "FastItemDestroy", "0",

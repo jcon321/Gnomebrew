@@ -23,7 +23,7 @@ namespace
 		MakeRaidLeader, RaidInvite, RaidDecline, RaidAccept, RaidDisband, SetLootType, AddRaidLooter, RemoveRaidLooter,
 		RaidSay, RaidWindow, Channel, Loot, TargetTell, CharInfo, MoveLog, StopSong, Shield, Quit, Log, Keys, Dismount,
 		AlternateAdv, Pet, SoundDriver, Duel, Decline, Bazaar, Trader, Nothing, ParticleDensity, RTarget, Inspect,
-		ChatFontSize, Language, Note,
+		ChatFontSize, Language, Note, TrackPlayers, TrackSort, TrackFilter,
 	};
 
 	struct CommandEntry
@@ -98,7 +98,7 @@ namespace
 		{"/praise", 3, Command::None}, {"/warn", 3, Command::None}, {"/edit", 3, Command::None},
 		{"/voice", 0, Command::None}, {"/microphone", 0, Command::None}, {"/movelog", 0, Command::MoveLog},
 		{"/hidecorpses", 0, Command::HideCorpses}, {"/vrdelay", 0, Command::None}, {"/reverb", 0, Command::Nothing},
-		{"/fastdrop", 0, Command::FastDrop}, {"/trackplayers", 0, Command::None}, {"/help", 0, Command::None},
+		{"/fastdrop", 0, Command::FastDrop}, {"/trackplayers", 0, Command::TrackPlayers}, {"/help", 0, Command::None},
 		{"/lfg", 0, Command::Lfg}, {"/approval", 4, Command::None}, {"/sit", 0, Command::Sit},
 		{"/stand", 0, Command::Stand}, {"/book", 0, Command::Book}, {"/cast", 0, Command::Cast},
 		{"/doability", 0, Command::DoAbility}, {"/whotarget", 0, Command::WhoTarget}, {"/language", 0, Command::Language},
@@ -108,7 +108,7 @@ namespace
 		{"/mcicontrol", 0, Command::None}, {"/popmail", 0, Command::Nothing}, {"/audiodebug", 0, Command::None},
 		{"/dynamiclights", 0, Command::None}, {"/chatfontsize", 0, Command::ChatFontSize}, {"/lootnodrop", 0, Command::LootNoDrop},
 		{"/reversesound", 0, Command::None}, {"/emotezone", 4, Command::None}, {"/invwinlabels", 0, Command::None},
-		{"/tracksort", 0, Command::None}, {"/trackfilter", 0, Command::None}, {"/mousespeed", 0, Command::None},
+		{"/tracksort", 0, Command::TrackSort}, {"/trackfilter", 0, Command::TrackFilter}, {"/mousespeed", 0, Command::None},
 		{"/gems", 0, Command::None}, {"/inspect", 0, Command::Inspect}, {"/serverfilter", 0, Command::ServerFilter},
 		{"/showspelleffects", 0, Command::None}, {"/combatmusic", 0, Command::CombatMusic}, {"/mixahead", 0, Command::None},
 		{"/guildmotd", 0, Command::GuildMotd}, {"/charinfo", 0, Command::CharInfo}, {"/safelock", 0, Command::None},
@@ -1286,6 +1286,15 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 		ChatOut("Particle Cloud Density is currently: " + word, ChatType::Default);
 		break;
 	}
+	case Command::TrackPlayers: // /trackplayers (@004f9764)
+		m_tracking.TrackPlayers(args);
+		break;
+	case Command::TrackSort: // /tracksort (@004f98b1)
+		m_tracking.TrackSort(args);
+		break;
+	case Command::TrackFilter: // /trackfilter (@004f9b3b)
+		m_tracking.TrackFilter(args);
+		break;
 	case Command::Note:
 		// /note (@004fbb72), the new UI's: nothing opens the notes window, else the text's added.
 		m_notes.Command(args);

@@ -598,19 +598,10 @@ no rules of its own.
     - DoAttack's other StunnedStates (2..4 and 7 say nothing; 1, stunned, is done), the
       ActorInfo +0xc8c+0x74 and DAT_007985f0 refusals, and DAT_00798560 (CanIHitTarget always
       passing);
-    - the tracking window (`CTrackingWnd` @00437f45, screen `TrackingWnd`: `TRW_TrackingList`,
-      `TRW_TrackButton`, the sort and players combo boxes, the six `TRW_Filter<color>Button`s and
-      Done): `GenerateTrackingList` (@0043885a) within the skill's range, leaving out the
-      invisible (`CDisplay_IsInvisible`), `DoTrackSort` (@00438a9b) and `DoTrackFilter`
-      (@00438d53), the rows' colors by `GetTrackingColorIndex` (@0043868b), the Track button
-      (`WndNotification` @004382fe) setting DAT_007989e2 53 for 6 minutes with eqstr 12040 "You
-      begin tracking %1.", `RemovePlayerFromTracking` (@00438f7c) from `ReportDeath` and
-      `~EQPlayer`, and DoPassageOfTime's direction lines every 2 s and its end (12674..12681) and
-      the lost target (12499); UseSkill only sends OP_Track. Its commands, which the window's
-      controls run too: /trackplayers (@004f9764: on, off or group, eqstr 13140..13143,
-      `[Defaults] TrackPlayers`), /tracksort (@004f98b1: normal, distance, consider, rdistance or
-      rconsider, 13149..13154, rangers only, 13155; `TrackSortType`) and /trackfilter (@004f9b3b:
-      red, yellow, white, blue, lblue or green toggled, 13163 and 13164; rangers only);
+    - the tracking window: done (`frontend/tracking.*`, `CTrackingWnd`, /trackplayers, /tracksort,
+      /trackfilter, DoPassageOfTime's direction lines). Not checked live (no ranger to test with);
+      the list's order is the spawns' ids', not `pinstSpawnList`'s; a selection isn't kept across
+      a refresh (UpdateTrackingList's callers all pass 0, so neither is eqgame's);
     - the AA abilities (105 Harm Touch and 107 Lay on Hands: CastSpell gem 9 of spell 88 and 87, the
       profile's timers at +0xc7a and +0xc7e, with AdjustSpellRecastTimeByClassAbility's 12 min a rank
       of Fervent Blessing or Touch of the Wicked off; 111 Slam as bash) and the innate abilities'
@@ -886,7 +877,7 @@ no rules of its own.
       zone's answer (0x41c4, @004e46d5): 1374 rejected, or 1375 "Congratulations, %1 %2, your
       surname was approved." with the name over our head.
     - /language (under 3), /facepick (23), /hitsmode and /clearhits and
-      the three tracking commands (24), /chatfontsize (3), /help, /mp3, /music, /loadskin,
+      /chatfontsize (3), /help, /mp3, /music, /loadskin,
       /bugreport, /feedback, /petition, /report and /gems (34), /shownpcnames (9).
     - /hotbutton (@004ff36a): `[Name] <Color> [Text]` makes a social of that name, color and
       first line in the first free one of the 120 (or the one of that name), `registerHotButton`
@@ -1314,6 +1305,6 @@ no rules of its own.
    and `OP_Reward` (37), then disarm's answer (24). The poison's answer (2).~~
 6. ~~Camping's checks, countdown and calling off (40). The MOTD as we enter (3).~~
 7. ~~Keys and lockpicks on doors (41)~~, then ladders (22).
-8. ~~Inspecting and the player notes window (29)~~, the tracking window (24), breath and drowning
+8. ~~Inspecting and the player notes window (29), the tracking window (24)~~, breath and drowning
    (34).
 9. ~~The stale Keyboard page rows (5), and the do-nothing commands that say "not supported" (35).~~

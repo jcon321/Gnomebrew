@@ -146,6 +146,7 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 				std::string message = ini.Get("Defaults", "ShowInspectMessage");
 				m_inspect.show_message = message.empty() || message[0] == 'T' || message[0] == 't' || message[0] == '1';
 			}
+			m_tracking.Load(ini);
 			m_trade_with = number("Defaults", "PlayerTrade", 2, 0, 2);
 			m_sound_realism = number("Sound", "SoundRealism", 0, 0, 20);
 			m_music_volume = number("Sound", "MusicVolume", 10, 0, 20);
@@ -982,6 +983,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		m_friends.Frame();
 		m_inspect.Frame(now_ms);
 		m_notes.Frame();
+		m_tracking.Frame(now_ms);
 		m_bazaar.Frame();
 		m_bazaar_search.Frame();
 		m_aa_window.Frame(now_ms);
@@ -2162,6 +2164,7 @@ void FrontEnd::EnterZoneScreen(bool zoning)
 	m_ui_hidden = false; // ProcessGameLoop: __ScreenMode 2 in the world
 	m_hunger_ms = 0;     // a new ActorInfo: its UnknownTimer4 at 0
 	m_inspect.Reset();
+	m_tracking.Reset();
 	m_poison_ms = 0;     // CEverQuest_EnterZone: DAT_00798604, DAT_00798608
 	m_poison_item = 0;
 	m_poison_waiting = false;
@@ -2208,7 +2211,7 @@ namespace
 		{"SkillsSelectWindow", false}, {"NoteWindow", false}, {"BookWindow", false}, {"TrainWindow", false},
 		{RaidWindow::Screen, false}, {RaidWindow::OptionsScreen, false}, {AAWindow::Screen, false},
 		{BazaarWindow::Screen, false}, {BazaarSearch::Screen, false}, {InspectWindow::Screen, false},
-		{PlayerNotes::Screen, false},
+		{PlayerNotes::Screen, false}, {Tracking::Screen, false},
 	};
 
 	// The selector's buttons (EQUI_SelectorWnd.xml) and the windows they open and close.
@@ -2298,6 +2301,7 @@ void FrontEnd::BuildZoneWindows()
 	abilities_host.attacking = [this] { return m_attack; };
 	abilities_host.casting = [this] { return m_spell_cast.Casting() && m_zone.Profile().class_id != 8; };
 	abilities_host.stunned = [this] { return m_stunned; };
+	abilities_host.open_tracking = [this] { m_tracking.Activate(); };
 	abilities_host.waiting = [this] { return m_spell_cast.Waiting() || ZoneAnswerWaiting(); };
 	abilities_host.ability_ready = [this] { return m_spell_cast.AbilityReady(m_now_ms); };
 	abilities_host.cast_ability = [this](int spell) { m_spell_cast.CastAbility(spell, m_now_ms); };
@@ -2370,6 +2374,26 @@ void FrontEnd::BuildZoneWindows()
 		return std::string(s ? s : "");
 	};
 	m_notes.Attach(m_windows, m_ui.eq_dir, std::move(notes_host));
+	Tracking::Host tracking_host;
+	tracking_host.text = [this](uint32_t id, const std::vector<std::string> &args, const std::string &fallback) {
+		return FormatEqString(m_ui.eqstr, id, fallback, args);
+	};
+	tracking_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
+	tracking_host.color = [this](int type) { return m_chat_colors.Get(type); };
+	tracking_host.activity = [this] { return m_abilities.Activity(); };
+	tracking_host.set_activity = [this](int activity) { m_abilities.SetActivity(activity); };
+	tracking_host.invisible = [this](const ZoneSpawn &spawn) { return InvisibleToMe(spawn); };
+	tracking_host.ridden = [this](uint16_t id) { return m_mounts.RiderOf(id) != 0; };
+	tracking_host.group = [this] {
+		std::vector<uint16_t> ids;
+		if (m_group.InGroup())
+			for (int i = 0; i < Group::Members; ++i)
+				if (const ZoneSpawn *member = m_group.MemberSpawn(i))
+					ids.push_back(member->id);
+		return ids;
+	};
+	tracking_host.save = [this](const char *key, const std::string &value) { SaveSetting("Defaults", key, value); };
+	m_tracking.Attach(m_windows, m_zone, std::move(tracking_host));
 	BazaarWindow::Host bazaar_host;
 	bazaar_host.color = [this](int type) { return m_chat_colors.Get(type); };
 	bazaar_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
@@ -2847,7 +2871,7 @@ void FrontEnd::HandleWindowClicks()
 		if (m_color_picker.Click(click.window, click.control))
 			continue;
 		// The inspect window's Done; its slots do nothing, Alt or not (CInvSlot::HandleLButtonUp).
-		if (m_inspect.Click(click.window, click.control))
+		if (m_inspect.Click(click.window, click.control) || m_tracking.Click(click.window, click.control))
 			continue;
 		// The Options window's keyboard page, and the question about its defaults.
 		if (m_options.Click(click.window, click.control, m_now_ms))
@@ -4017,6 +4041,7 @@ void FrontEnd::ReportDeath(const ZoneSession::Event &event)
 		m_bank.Deactivate(false);
 	if (victim != 0 && victim == m_train.Guildmaster()) // CEverQuest_LeaveGuildMaster
 		m_train.Deactivate();
+	m_tracking.SpawnGone(victim); // the spawn tracked lost (12102); out of the window's list
 	if (victim == m_game_values.target) {
 		SetTarget(0);
 		SetAutoAttack(false);
@@ -5524,6 +5549,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			m_mounts.SpawnRemoved(event.id); // ~EQPlayer's Dismount2
 			m_hidden_corpses.erase(event.id);
 			m_inspect.SpawnRemoved(event.id); // ~EQPlayer: CInspectWnd::PlayerBeingDeleted
+			m_tracking.SpawnGone(event.id);   // the despawn's 12102, RemovePlayerFromTracking
 			if (event.id == m_game_values.target) {
 				SetAutoAttack(false);
 				m_game_values.target = 0;
