@@ -102,6 +102,9 @@ public:
 	// EQ_Character::UpdateMyVisibleStatus: our VisibilityState from hiding and the invisibility
 	// buffs, the ones that don't fit it taken off and the zone told when it changed.
 	void UpdateMyVisibleStatus();
+	// CActionsWnd::SelectSkillForCombatBtn and SelectSkillForAbilityBtn (DoHotButtonRightClick's 2
+	// and 3 too): the skill select window for that button.
+	void OpenSelect(bool combat, int index);
 	// InitInnates: Lay on Hands is a paladin's, Harm Touch a shadow knight's.
 	bool ClassAbility(int skill) const;
 	// A left click on one of the buttons or the skill select window's list; true if it was one.
@@ -148,7 +151,6 @@ private:
 	bool CanBash() const;                            // UseSkill's shield (or two-hander) check
 	void Say(uint32_t id, const std::string &fallback, int type, const std::vector<std::string> &args = {});
 	void UpdateButtons();
-	void OpenSelect(bool combat, int index);
 	int Rand();
 
 	WindowManager *m_windows = nullptr;

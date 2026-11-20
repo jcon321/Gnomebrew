@@ -20,8 +20,9 @@ no rules of its own.
      the arrows, Home and End; HandleLButtonDown, Shift+click and the drag; ReplaceSelection with
      FilterInputStr's markers kept out; the selection drawn inverse and the caret blinking).
      `processClipboardText` is voice dictation: eqgame has no paste. Still to do: a multi-line
-     box's caret and scrolling (it types at its end), the price boxes' AlphaNumericOnly 3
-     (`edit_filter`, not set yet), masked text (`GetMaskedText`), and the IME.
+     box's caret and scrolling (it types at its end), masked text (`GetMaskedText`), and the IME.
+     FilterInputStr's AlphaNumericOnly (`edit_filter`: 1 and 2 letters, 3 digits, the Bazaar search's
+     price boxes, 4 letters and digits) is done.
    - STML boxes (`CStmlWnd`; ours take `<BR>`, `<P>`, `<c "#RRGGBB">`, `&lt;` and `&gt;`): tables
      (`ParseHtmlTable` @00584540), links and their pages (`HandleMouseClickOnText` @00587540,
      `LoadPage` @005889b0, the history and `NavigateBackInBrowserHistory`), the named colors and
@@ -264,8 +265,6 @@ no rules of its own.
      AltAdvManager_AdjustSpellRecastTimeByClassAbility). A bard's song interrupted by a hit is
      only `ApplyDamage`'s, which needs an attacker and so never runs online (the zone's). Still to
      do:
-     - the spell info display from a spell hot button (CHotButtonWnd::WndNotification's 0x17 and
-       0x19 @00420462: CItemDisplayWnd::SetSpell with a third argument other than -1);
      - what the book doesn't do yet: Activate's auto attack off (12371) when ChangeStance's sit is
        refused on a horse (eqgame turns it off anyway), a bard's AA 0x7b doubling
        memorizing, the spell bar locking other things while it waits (DAT_007d0254 also blocks
@@ -301,9 +300,11 @@ no rules of its own.
      shown over the button, used as a right click on the slot, DoHotButtonRightClick), a gem held
      (CCastSpellWnd's 0x16, type 9: its gem shown, a gem click, a right click forgets it) and the
      gems' book button (type 5, 10: the book). DoHotButton refuses without control of ourselves
-     (stance 102) or while the zone's answer is waited on (12084). Still to do: right-click on a
-     combat skill or ability (CActionsWnd::SelectSkillForCombatBtn, SelectSkillForAbilityBtn), and
-     the cursor's count for an item hot button (CCursorAttachment::Activate's fifth argument).
+     (stance 102) or while the zone's answer is waited on (12084). A combat skill's or ability's
+     right click opens the skill select window for its button (SelectSkillForCombatBtn,
+     SelectSkillForAbilityBtn), and a spell's gem held shows its spell (WndNotification's 0x17,
+     0x19). Still to do: the cursor's count for an item hot button (CCursorAttachment::Activate's
+     fifth argument).
    - Socials: done (defaults, the editor, running them with `/pause`, `[Socials]`). Still to do:
      the edit boxes take typing only at their end (no caret to move, no Tab between them), and
      a social's lines go to InterpretCommand as typed, without eqgame's switch to the main chat

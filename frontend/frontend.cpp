@@ -2785,15 +2785,29 @@ void FrontEnd::HandleWindowClicks()
 			ItemSlotRightClick(action.item_slot, false, false, false);
 		else if (action.window == "CastSpellWnd")
 			m_spell_book.RightClick(action.window, action.control);
+		else if (action.window == "ActionsWindow")
+			m_abilities.RightClick(action.window, action.control);
 	}
 	// The right button held: a slot's item, a book slot's, a gem's or a buff's spell in the item
 	// display; let go, it closes (WndNotification's 0x17 and 0x19).
-	for (const auto &hold : m_windows.TakeRightHolds()) {
+	// A spell hot button's gem: its gem's (CHotButtonWnd::WndNotification's 0x17 and 0x19).
+	auto as_gem = [this](WindowManager::Click c) {
+		if (c.window == "HotButtonWnd" && c.control.rfind("HB_SpellGem", 0) == 0) {
+			int n = std::atoi(c.control.c_str() + 11) - 1;
+			const HotButton &b = m_window_state.hot_buttons[m_window_state.hot_button_page * HotButtonsPerPage + std::clamp(n, 0, 9)];
+			if (n >= 0 && n < HotButtonsPerPage && b.type == HotButton::Spell)
+				return WindowManager::Click{"CastSpellWnd", "CSPW_Spell" + std::to_string(b.value)};
+		}
+		return c;
+	};
+	for (auto hold : m_windows.TakeRightHolds()) {
+		hold = as_gem(hold);
 		if (m_spell_book.RightHold(hold.window, hold.control) || BuffSpellInfo(hold.control, hold.window))
 			continue;
 		ShowItemDisplay(m_windows, m_game_values, m_window_state, hold.window, hold.control);
 	}
-	for (const auto &release : m_windows.TakeRightReleases()) {
+	for (auto release : m_windows.TakeRightReleases()) {
+		release = as_gem(release);
 		if (m_spell_book.RightRelease(release.window, release.control) || BuffSpellInfo(release.control, release.window))
 			continue;
 		GameWindowRightRelease(m_windows, release.window, release.control);

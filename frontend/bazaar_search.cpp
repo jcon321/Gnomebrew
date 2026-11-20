@@ -125,8 +125,10 @@ void BazaarSearch::Attach(WindowManager &windows, ZoneSession &zone, Host host)
 	if (SidlWindow::Control *c = wnd->Find("BZR_ItemNameInput"))
 		c->max_chars = 0x1e;
 	for (const char *box : {"BZR_MaxPriceInput", "BZR_MinPriceInput"})
-		if (SidlWindow::Control *c = wnd->Find(box))
+		if (SidlWindow::Control *c = wnd->Find(box)) {
 			c->max_chars = 7;
+			c->edit_filter = 3; // CBazaarSearchWnd::CBazaarSearchWnd's AlphaNumericOnly 3: digits
+		}
 	if (SidlWindow::Control *list = wnd->Find("BZR_ItemList")) {
 		list->justification = {0, 1, 0, 0};
 		list->column_clicks = true;

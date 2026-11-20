@@ -870,6 +870,13 @@ WindowButton GameWindowRightClick(WindowManager &windows, GameWindowState &state
 		}
 		else if (button.type == HotButton::Spell && button.value >= 0 && button.value < 8)
 			return {"CastSpellWnd", "CSPW_Spell" + std::to_string(button.value)};
+		else if (button.type == HotButton::CombatSkill || button.type == HotButton::Ability) {
+			// SelectSkillForCombatBtn / SelectSkillForAbilityBtn: as its Actions window button's
+			// right click.
+			std::string source = SourceButton(windows, button);
+			if (!source.empty())
+				return {"ActionsWindow", source};
+		}
 	}
 	return {};
 }

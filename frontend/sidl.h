@@ -292,7 +292,7 @@ public:
 		// item tag counting as its name), the caret at its end or its start (+0x208), the text as the
 		// box last saw it (a change from outside is SetText's: the caret to its end), the first
 		// shown character, where each shown character starts as last drawn, and the input filter
-		// (AlphaNumericOnly: 0 any but a tag's marker, 1 and 2 letters and digits, 3 and 4 digits).
+		// (AlphaNumericOnly: 0 any but a tag's marker, 1 and 2 letters, 3 digits, 4 letters and digits).
 		int edit_start = 0, edit_end = 0;
 		bool edit_caret_end = true;
 		std::string edit_seen;

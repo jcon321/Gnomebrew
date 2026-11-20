@@ -57,9 +57,11 @@ namespace
 			unsigned char u = static_cast<unsigned char>(c);
 			bool keep = true;
 			if (mode == 1 || mode == 2)
-				keep = std::isalnum(u) != 0;
-			else if (mode == 3 || mode == 4)
-				keep = std::isdigit(u) != 0;
+				keep = std::isalpha(u) != 0; // isAlphanumeric: ctype 0x103
+			else if (mode == 3)
+				keep = std::isdigit(u) != 0; // isSpecialCharacter: 4
+			else if (mode == 4)
+				keep = std::isalnum(u) != 0; // isNumericCharacter: 0x107
 			else
 				keep = c != ItemTags::Marker;
 			if (keep)
