@@ -42,6 +42,7 @@ public:
 	const ZoneSession *zone = nullptr;
 	const EqStr *eqstr = nullptr; // for the class and deity names; null: English
 	const SpellFile *spells = nullptr; // for the item display's spells; null: none known
+	int air_supply = 100, max_air_supply = 100; // EQ_PC's AirSupply and MaxAirSupply, for the breath gauge
 	const SpellBook *spell_book = nullptr; // for its gauges
 	const SpellCast *spell_cast = nullptr; // for the casting gauge
 	const Buffs *buffs = nullptr; // the spells on us; null: none

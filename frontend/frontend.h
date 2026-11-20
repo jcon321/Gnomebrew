@@ -193,6 +193,7 @@ public:
 	ZoneSession &ZoneForTests() { return m_zone; } // the preview's injected packets
 	InspectWindow &InspectForTests() { return m_inspect; }
 	Tracking &TrackingForTests() { return m_tracking; }
+	void SetAirForTests(int air) { m_air = air; }
 	// RightClickedOnPlayer, as the right button on a spawn in the world does.
 	void RightClickForTests(uint16_t spawn) { RightClickedOnPlayer(spawn); }
 	const LoadingScreen &Loading() const { return m_loading; }
@@ -210,6 +211,16 @@ public:
 	// EQ_Character::TakeFallDamage (@004bfe16) for a fall of `fall` past 2.5: the damage, told to
 	// the zone and shown as ApplyDamage does (0 for none). The zone view's landing calls it.
 	int TakeFallDamage(float fall);
+	// EQ_Character::ApplyDamage (@004c0150) of our own (a fall's 0xfc, drowning's 0xfb): OP_EnvDamage,
+	// and our death past -10 HP (1 for deity 20000), else the hit as an incoming one's.
+	void ApplyDamage(uint8_t type, int damage);
+	// EQ_Character::CanIBreathe (@004c0dab): the head out of water outside a no-air zone, deity 20000,
+	// races 74, 24 and 35, or water breathing (SPA 14).
+	bool CanIBreathe() const;
+	int MaxAirSupply() const; // EQ_PC::MaxAirSupply (@004d064f)
+	// DoPassageOfTime's tick (ActorInfo's LastTick, over 1 s): EQ_PC::ProcessAirSupply (@004d0568);
+	// and CBreathWnd::UpdateBreathIndicator (@00408c7d), every 500 ms.
+	void BreathPassageOfTime(uint64_t now_ms);
 	const CharacterSelectView *CharacterScene() const { return m_charselect_view.get(); }
 	const CharSelectAnimWindow *AnimationsWindow() const { return m_anim_window.get(); }
 	const audio::EqSound *Sound() const { return m_sound.get(); }
@@ -800,6 +811,9 @@ private:
 	bool m_knocked_out = false;     // EQ_Character's StunnedState 3 (KnockedOut, until GetConscious)
 	int m_camp_seconds = 0;         // DAT_0063d8c4: the camp's seconds left at the last tick
 	uint64_t m_poison_ms = 0;       // DAT_00798604: when applying a poison began, 0 none
+	int m_air = -1;                 // EQ_PC's AirSupply (-1: full, not set yet)
+	uint64_t m_air_tick_ms = 0;     // ActorInfo's LastTick, for ProcessAirSupply
+	uint64_t m_breath_window_ms = 0; // CBreathWnd+0x138
 	uint16_t m_poison_item = 0;     // DAT_00798608: the poison's item number
 	bool m_poison_waiting = false;  // DAT_007d0254 and DAT_007d0258 for OP_ApplyPoison's answer
 	uint64_t m_sat_ms = 0;          // ActorInfo's UnknownTimer5: when we last sat down (ChangeStance 110)

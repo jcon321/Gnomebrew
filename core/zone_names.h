@@ -19,3 +19,7 @@ std::string ShortZoneName(uint32_t zone_id);
 // EQWorldData::ExpansionZone (@00523ec1): the expansion AddZone gives a zone (0 the original world,
 // 1 Kunark, 2 Velious, 3 Luclin, 4 the Planes of Power); 0 for an id it doesn't know.
 int ZoneExpansion(uint32_t zone_id);
+
+// EQWorldData::IsNoAirZone (@00523f31, IsSpecialZone's flag 0x4000): AddZone gives it to The Grey
+// (171) alone.
+bool NoAirZone(uint32_t zone_id);

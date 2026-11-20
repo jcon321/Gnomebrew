@@ -922,6 +922,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		StunPassageOfTime(now_ms);
 		CampPassageOfTime();
 		PoisonPassageOfTime(now_ms);
+		BreathPassageOfTime(now_ms);
 		KnockoutPassageOfTime();
 		if (me.look_serial != m_my_look_serial || m_ranged_look) {
 			m_my_look_serial = me.look_serial;
@@ -2165,6 +2166,7 @@ void FrontEnd::EnterZoneScreen(bool zoning)
 	m_hunger_ms = 0;     // a new ActorInfo: its UnknownTimer4 at 0
 	m_inspect.Reset();
 	m_tracking.Reset();
+	m_air_tick_ms = m_breath_window_ms = 0; // a new ActorInfo and CBreathWnd timer
 	m_poison_ms = 0;     // CEverQuest_EnterZone: DAT_00798604, DAT_00798608
 	m_poison_item = 0;
 	m_poison_waiting = false;
@@ -2211,7 +2213,7 @@ namespace
 		{"SkillsSelectWindow", false}, {"NoteWindow", false}, {"BookWindow", false}, {"TrainWindow", false},
 		{RaidWindow::Screen, false}, {RaidWindow::OptionsScreen, false}, {AAWindow::Screen, false},
 		{BazaarWindow::Screen, false}, {BazaarSearch::Screen, false}, {InspectWindow::Screen, false},
-		{PlayerNotes::Screen, false}, {Tracking::Screen, false},
+		{PlayerNotes::Screen, false}, {Tracking::Screen, false}, {"BreathWindow", false},
 	};
 
 	// The selector's buttons (EQUI_SelectorWnd.xml) and the windows they open and close.
@@ -3695,24 +3697,98 @@ int FrontEnd::TakeFallDamage(float fall)
 		damage = 0;
 	if (damage <= 0 || m_dead)
 		return 0;
+	ApplyDamage(0xfc, damage);
+	return damage;
+}
+
+void FrontEnd::ApplyDamage(uint8_t type, int damage)
+{
 	// ApplyDamage (@004c0150): OP_EnvDamage; then, past -10 HP (1 for deity 20000), our death
-	// (SendDeathMessage, skill 0xfc, the damage) in place of OP_Damage (type 0xfc) and
+	// (SendDeathMessage, the type as the skill, the damage) in place of OP_Damage and
 	// ReportSuccessfulHit's line and sound here, as an incoming hit's. The HP drop is the zone's to
 	// send back.
-	int least = me.deity != 20000 ? -10 : 1;
+	int least = m_zone.Profile().deity != 20000 ? -10 : 1;
 	if (m_game_values.CurHp() - damage <= least) {
-		m_zone.ReportEnvDamage(0xfc, damage, false);
-		SendDeathMessage(0, -1, 0xfc, damage);
-		return damage;
+		m_zone.ReportEnvDamage(type, damage, false);
+		SendDeathMessage(0, -1, type, damage);
+		return;
 	}
-	m_zone.ReportEnvDamage(0xfc, damage);
+	m_zone.ReportEnvDamage(type, damage);
 	ZoneCast hit;
 	hit.target = m_zone.MySpawnId();
-	hit.type = 0xfc;
+	hit.type = type;
 	hit.spell = -1;
 	hit.damage = damage;
 	ApplyCombat(m_combat.Damaged(hit, m_zone, m_game_values.target, m_game_values.CurHp()));
-	return damage;
+}
+
+bool FrontEnd::CanIBreathe() const
+{
+	const ZoneProfile &me = m_zone.Profile();
+	bool head_dry = !m_zone_view || static_cast<uint8_t>(m_zone_view->HeadEnvironment()) < 5;
+	if ((head_dry && !NoAirZone(me.zone_id)) || me.deity == 20000 || me.race == 74 || me.race == 24 || me.race == 35)
+		return true;
+	return m_buffs.Total(14) > 0; // water breathing
+}
+
+int FrontEnd::MaxAirSupply() const
+{
+	// (STA - 30) * Innate Lung Capacity's 100, 110, 125 or 150 percent / 100, from 10 to that
+	// percent; an Iksar's 127.
+	const ZoneProfile &me = m_zone.Profile();
+	int base = 0;
+	int16_t sta = static_cast<int16_t>(m_game_values.Stat(6, base));
+	int percent = 100;
+	switch (me.aa_ranks[0x10]) {
+	case 1: percent = 110; break;
+	case 2: percent = 125; break;
+	case 3: percent = 150; break;
+	default: break;
+	}
+	if (me.race == 128)
+		return 127;
+	int16_t air = static_cast<int16_t>(static_cast<int16_t>(sta - 30) * percent / 100);
+	if (air < 10)
+		return 10;
+	return std::min<int>(air, percent);
+}
+
+void FrontEnd::BreathPassageOfTime(uint64_t now_ms)
+{
+	if (m_zone.GetState() != ZoneSession::State::InZone)
+		return;
+	int max = MaxAirSupply();
+	if (m_air < 0)
+		m_air = max;
+	if (now_ms - m_air_tick_ms > 1000) {
+		m_air_tick_ms = now_ms;
+		// ProcessAirSupply, for us alive (Type 0): breathing fills it; else one off a tick, and with
+		// none left an eighth of our max HP as drowning's damage (0xfb).
+		if (!m_dead) {
+			if (CanIBreathe())
+				m_air = max;
+			else if (m_air < 1) {
+				m_air = 0;
+				int16_t damage = static_cast<int16_t>(static_cast<double>(m_game_values.MaxHp()) * 0.125);
+				if (damage > 0)
+					ApplyDamage(0xfb, damage);
+			}
+			else
+				--m_air;
+		}
+	}
+	m_game_values.air_supply = m_air;
+	m_game_values.max_air_supply = max;
+	// UpdateBreathIndicator: past 500 ms, the window shown while we can't breathe, hidden once we can.
+	if (now_ms > m_breath_window_ms + 500) {
+		bool breathe = CanIBreathe();
+		bool shown = m_windows.Shown("BreathWindow");
+		if (!breathe && !shown)
+			m_windows.Show("BreathWindow", true);
+		else if (breathe && shown)
+			m_windows.Show("BreathWindow", false);
+		m_breath_window_ms = now_ms;
+	}
 }
 
 void FrontEnd::StunMe(int32_t duration_ms)

@@ -756,7 +756,7 @@ build/eqclient -u USER -p PASS [options]
 
 ```
 build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|train|ground|commands|group|duel|bazaar|raid|guild|skills|aa]]
-build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez|cameras|packets|friends|chatwindows|multiline|inspect|tracking]]
+build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez|cameras|packets|friends|chatwindows|multiline|inspect|tracking|breath]]
 ```
 
 This drives the real front-end code with scripted input and writes PNG snapshots. Text is
@@ -828,7 +828,9 @@ Done, types our text and presses Enter and Done, then `/note` alone and twice wi
 the window, our text and the notes box at each step (it writes `notes.txt` in EQDIR); `tracking`
 opens the tracking window, tries /tracksort as a non-ranger, then as a ranger runs each sort,
 filter and /trackplayers choice and a filter button (printing the rows and their colors), tracks the
-first row for 6 s and presses Done; `mounts`
+first row for 6 s and presses Done; `breath` makes the zone no-air for 12 s, then nearly out of air
+for 4 s, printing the breath window, gauge, air and HP each step (the drowning's OP_EnvDamage
+and its line); `mounts`
 prints each horse (its speeds, Rider, whether it's drawn), who rides what and the chat for SECONDS,
 and each second where another's rider and horse are and what they play, with the old models,
 `mountsluclin` with the human Luclin models and `mountshorse` with them and the horse models; on
@@ -2052,6 +2054,22 @@ details and the nearest spawns at the top left and the radar at the top right.
   called by `TakeFallDamage`, `ProcessEnvironment` and `ProcessAirSupply` (types -4, -10, -5, no
   attacker), and the others are in the offline cast's end. `OP_Stun` is `StunMe`, which leaves the
   cast alone; the zone interrupts a stunned cast itself.
+- **Breath and drowning** (`FrontEnd::BreathPassageOfTime`, `CanIBreathe`, `MaxAirSupply`).
+  `EQ_Character::CanIBreathe` (@004c0dab): yes with the head's environment (ActorInfo's
+  `IsSwimmingUnderwater`) under 5 outside a no-air zone (`EQWorldData::IsNoAirZone` @00523f31,
+  `IsSpecialZone` flag 0x4000, which `EQWorldData::EQWorldData`'s AddZone gives The Grey, 171,
+  alone), for deity 20000, for races 74, 24 and 35, and otherwise only with SPA 14 (water
+  breathing) over 0. `EQ_PC::MaxAirSupply` (@004d064f): `(STA - 30) * percent / 100` as a short,
+  10 at least and `percent` at most, `percent` 100 or Innate Lung Capacity's (AA 0x10) 110, 125,
+  150; an Iksar (race 128) 127. `EQ_PC::ProcessAirSupply` (@004d0568) runs on `DoPassageOfTime`'s
+  tick (ActorInfo's `LastTick`, over 1000 ms) for a living player: breathing, `AirSupply`
+  (+0x1708) to the max; else one off a tick, and at 0 `Max_HP * 0.125` (the double at 0x5e8c78)
+  as `ApplyDamage` of type 0xfb (-5), which reports `OP_EnvDamage` and our death past -10 HP.
+  The breath gauge (EQType 8, `fn_GetGaugeLabelFromEQ`) is `AirSupply * 1000 / MaxAirSupply`.
+  `CBreathWnd` (@00408bee, "BreathWindow"), activated by `CDisplay_ActivateMainUI`:
+  `UpdateBreathIndicator` (@00408c7d), past 500 ms since last, shows it while `CanIBreathe` says no
+  and hides it once it says yes. Ours starts `AirSupply` full on login rather than the profile's.
+  Checked in the preview's `breath` test (The Grey's flag faked).
 - **Anyone's casts** (`frontend/spell_casting.*`): `OP_BeginCast`, `OP_Action` and `OP_Damage`.
   `CEverQuest_StartCasting` prints "%1 begins to cast a spell." (ours is 12205; a bard's is
   `other_casts`; rogue poisons are silent). `TriggerSpellEffect` plays the caster's `CastingAnim`,
@@ -2878,6 +2896,7 @@ details and the nearest spawns at the top left and the radar at the top right.
     lets a trade skill past 200 while no more than New Tanaan Crafting Mastery's (0x8d) rank of the
     others are.
   - **Falls.** `TakeFallDamage`: Acrobatics (0x7a) adds 10, 20 or 30% of safe fall's skill.
+  - **Breath.** `MaxAirSupply`: Innate Lung Capacity (0x10) makes the 100% 110, 125 or 150.
   - **Archery.** `DoAttack(11)` with Endless Quiver (0x54) uses up no arrow.
   - **Casting time.** `GetAACastingTimeModifier` (@004c5fb2), the change in ms, by the spell's
     `+0x87` (beneficial), `+0x20` (duration formula) and effects (`SpellAffectIndex`): a buff of 4 s

@@ -235,3 +235,8 @@ int ZoneExpansion(uint32_t zone_id)
 		return 4;
 	return 0;
 }
+
+bool NoAirZone(uint32_t zone_id)
+{
+	return zone_id == 171;
+}

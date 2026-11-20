@@ -670,7 +670,7 @@ no rules of its own.
       aura. (Its stun, and Stalwart
       Endurance against it, need an attacker, which no caller passes.)
     - The other environment damage the client reports: lava and the rest (`ProcessEnvironment`
-      @004c0e32) and drowning (`ProcessAirSupply`, with the breath window, 34).
+      @004c0e32). Drowning (`ProcessAirSupply`, 34) is done.
     - OP_ClientError.
     - The checksums `ProcessGameLoop` sends the world as the game starts (and
       `CEverQuest_HandleWorldMessage_do_quit` again): `SendSpellChecksum` (@004f2cf6, 0x4135, a
@@ -792,15 +792,10 @@ no rules of its own.
     - Not checked: a trader's stack's count in the merchant window's slot (ours shows 1), and
       Request Item and the right button on a result live.
     - `msg_snd_trader_eq` (0x4217) is the old UI's; IsOkToTransact's deity 20000 and mount checks.
-34. **The smaller windows**, each opened by its command or key and none built yet:
-    - Breath (`CBreathWnd` @00408bee, screen `BreathWindow`; `UpdateBreathIndicator` @00408c7d
-      shows it while `EQ_Character::CanIBreathe` @004c0dab says no, its gauge the air left of
-      `EQ_PC::MaxAirSupply` @004d064f, by STA). `EQ_PC::ProcessAirSupply` (@004d0568, from
-      `DoPassageOfTime`): breathing fills the air; without, one off a call, and at none a share of
-      max HP as damage of type 0xfb through `ApplyDamage` (drowning, which the client reports,
-      25). `CanIBreathe`: yes with the head out of water (its environment under 5) outside a
-      no-air zone (`EQWorldData::IsNoAirZone` @00523f31), for deity 20000 and races 74, 24 and
-      35, and otherwise only with SPA 14 (water breathing) on us.
+34. **The smaller windows**, each opened by its command or key:
+    - ~~Breath~~: done (`FrontEnd::BreathPassageOfTime`, `CBreathWnd`, `CanIBreathe`,
+      `MaxAirSupply`, `ProcessAirSupply` and drowning's `ApplyDamage`). Still to do: `AirSupply`
+      from the profile at login (ours starts full), and checking it in water live.
     - Alarm (`CAlarmWnd` @00403bc2, screen `AlarmWnd`: `ALRW_HoursEditbox`, `ALRW_MinutesEditbox`,
       `ALRW_NeverShowAgainCheckbox`, Ok and Cancel; shown by `CDisplay_ActivateMainUI` unless told
       never to). `ProcessAlarmTrigger` (@00403f34) plays a wave and puts eqstr 6685 "Your session
@@ -1305,6 +1300,6 @@ no rules of its own.
    and `OP_Reward` (37), then disarm's answer (24). The poison's answer (2).~~
 6. ~~Camping's checks, countdown and calling off (40). The MOTD as we enter (3).~~
 7. ~~Keys and lockpicks on doors (41)~~, then ladders (22).
-8. ~~Inspecting and the player notes window (29), the tracking window (24)~~, breath and drowning
-   (34).
+8. ~~Inspecting and the player notes window (29), the tracking window (24), breath and drowning
+   (34).~~
 9. ~~The stale Keyboard page rows (5), and the do-nothing commands that say "not supported" (35).~~

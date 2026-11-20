@@ -695,6 +695,8 @@ int GameValues::Gauge(int eq_type, std::string &text)
 		text = pet->DisplayName();
 		return Permille(pet->hp, 100);
 	}
+	case 8: // breath: AirSupply * 1000 / MaxAirSupply
+		return max_air_supply > 0 ? air_supply * 1000 / max_air_supply : 0;
 	case 7: // GetSpellCastingTime
 		return spell_cast ? spell_cast->Gauge() : -1;
 	case 9: // GetSpellMemTicksLeft

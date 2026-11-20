@@ -1232,6 +1232,49 @@ namespace
 		return 0;
 	}
 
+	int BreathTest(FrontEnd &frontend, Harness &h)
+	{
+		WindowManager &windows = frontend.Windows();
+		ZoneSession &zone = frontend.ZoneForTests();
+		size_t chat_seen = frontend.Chat().Lines().size();
+		auto chat = [&] {
+			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
+				printf("[preview] chat: %s\n", frontend.Chat().Lines()[chat_seen].text.c_str());
+		};
+		auto state = [&](const char *what) {
+			const SidlWindow *wnd = windows.Find("BreathWindow");
+			std::string text;
+			int gauge = frontend.Values().Gauge(8, text);
+			printf("[preview] %s: breath window %d, gauge %d (air %d of %d), HP %d\n", what,
+				wnd && windows.Shown("BreathWindow") ? 1 : 0, gauge, frontend.Values().air_supply,
+				frontend.Values().max_air_supply, frontend.Values().CurHp());
+		};
+		h.Key(InputEvent::Key::F11);
+		h.RunUntil([] { return false; }, 1500);
+		chat();
+		state("breathing");
+		uint32_t zone_id = zone.Profile().zone_id;
+		zone.EditProfile().zone_id = 171; // The Grey's no air, as far as CanIBreathe goes
+		for (int s = 1; s <= 12; ++s) {
+			h.RunUntil([] { return false; }, 1000);
+			chat();
+			if (s <= 2 || s % 3 == 0)
+				state(("no air, " + std::to_string(s) + " s").c_str());
+		}
+		h.Snapshot("b1-breath");
+		frontend.SetAirForTests(1); // nearly out
+		for (int s = 1; s <= 4; ++s) {
+			h.RunUntil([] { return false; }, 1000);
+			chat();
+			state(("drowning, " + std::to_string(s) + " s").c_str());
+		}
+		zone.EditProfile().zone_id = zone_id;
+		h.RunUntil([] { return false; }, 1600);
+		chat();
+		state("air again");
+		return 0;
+	}
+
 	int TrackingTest(FrontEnd &frontend, Harness &h)
 	{
 		WindowManager &windows = frontend.Windows();
@@ -3773,7 +3816,7 @@ int main(int argc, char **argv)
 	if (!replay && argc != 3 && argc != 6 && argc != 7) {
 		fprintf(stderr,
 			"usage: %s EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create]]\n"
-			"       %s EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|packets|inspect|tracking]]\n",
+			"       %s EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|packets|inspect|tracking|breath]]\n",
 			argv[0], argv[0]);
 		return 2;
 	}
@@ -3826,6 +3869,7 @@ int main(int argc, char **argv)
 	bool friends_test = argc == 7 && std::string(argv[6]) == "friends";
 	bool inspect_test = argc == 7 && std::string(argv[6]) == "inspect";
 	bool tracking_test = argc == 7 && std::string(argv[6]) == "tracking";
+	bool breath_test = argc == 7 && std::string(argv[6]) == "breath";
 	bool chat_windows_test = argc == 7 && std::string(argv[6]) == "chatwindows";
 	bool multiline_test = argc == 7 && std::string(argv[6]) == "multiline";
 	bool boats_test = argc == 7 && std::string(argv[6]) == "boats";
@@ -3915,6 +3959,8 @@ int main(int argc, char **argv)
 			return InspectTest(frontend, h);
 		if (tracking_test)
 			return TrackingTest(frontend, h);
+		if (breath_test)
+			return BreathTest(frontend, h);
 		if (chat_windows_test)
 			return ChatWindowsTest(frontend, h);
 		if (multiline_test)
