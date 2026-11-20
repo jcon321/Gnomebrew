@@ -564,6 +564,10 @@ void WindowManager::SetResizeEdges(const std::string &screen, uint8_t edges)
 
 const char *WindowManager::Cursor(int x, int y) const
 {
+	// CListWnd::GetCursorToDisplay: over a sizable list's column separator, or dragging one.
+	for (const auto &w : m_windows)
+		if (w->shown && w->wnd.OverColumnSeparator())
+			return "A_CursorResizeEW";
 	// CXWndManager's cursors: a window being moved, or being sized or ready to be (the mouse on
 	// a sizable, unlocked window's border).
 	bool left, top, right, bottom;

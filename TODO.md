@@ -27,10 +27,17 @@ no rules of its own.
      alignment of `ParseColorValue` (@00581650) and `ParseAlignmentValue`, the other entities
      (`InitializeHtmlEntityMappings` @00581b20). Nothing we show needs them until the help window
      (34) does.
-   - Lists (`CListWnd`): a column's separator dragged (`ShiftColumnSeparator` @00579170,
-     `SetColumnWidth`), its widths kept (`LoadIniListWnd`, `StoreIniListWnd`), `Sort` and `Compare`
-     as the list's own (ours sort in each window), `ToggleSel` and `ExtendSel`, and editing a cell
-     in place (`CloseAndUpdateEditWindow` @0057c530).
+   - Lists (`CListWnd`): a column's separator dragged on the lists that allow it (+0x13c: the AA
+     window's and the raid window's; `SidlWindow::Press`, `SeparatorRect`, ShiftColumnSeparator's
+     10 least, the resize cursor) is done. `LoadIniListWnd` and `StoreIniListWnd` only ever run
+     for the Bazaar search window's ItemList (`<window>` section, `ItemList_ColWidth_<n>`), whose
+     +0x13c nothing sets, so no widths are ever kept. Still to do: `DrawColumnSeparators` (each
+     separator's 2-pixel line through the header, CListWnd+0x174's animation, not traced), `Sort`
+     and `Compare` as the list's own (ours sort in each window), and, for a window that needs them
+     (none of ours does: only the file dialog's list is multi-select, style 0x20000, and no list
+     has an editable column, flag 1), `ToggleSel` and `ExtendSel` with Shift and Ctrl
+     (HandleListItemClick @0057bff0) and editing a cell in place (`CloseAndUpdateEditWindow`
+     @0057c530).
    - `CDisplay::ReloadUI` (@004a1465, from `ProcessGameLoop` and `DoPassageOfTime`): the whole UI
      taken down and built again from another skin, with eqstr 3146 when its XML doesn't fit
      (`CXWndManager::IsAllValid`); waits on /loadskin (34).

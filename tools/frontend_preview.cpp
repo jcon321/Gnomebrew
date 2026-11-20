@@ -1840,6 +1840,22 @@ namespace
 		frontend.Update(NowMs());
 		click("InventoryWindow", "IW_AltAdvBtn");
 		show("opened from the inventory", true);
+		// A column separator dragged 20 to the right (CListWnd's HandleLButtonDown on it,
+		// HandleMouseMove's ShiftColumnSeparator, HandleLButtonUp).
+		if (SidlWindow *wnd = windows.Find(AAWindow::Screen))
+			if (SidlWindow::Control *list = wnd->Find("List1"); list && list->columns.size() > 1) {
+				int before = list->columns[0].width;
+				int sep_x = list->client.x, sep_y = list->client.y + 3;
+				Rect area = frontend.ScreenArea();
+				sep_x += before;
+				frontend.OnEvent({InputEvent::Type::MouseMove, area.x + sep_x, area.y + sep_y});
+				frontend.OnEvent({InputEvent::Type::MouseDown, area.x + sep_x, area.y + sep_y});
+				for (int step = 1; step <= 4; ++step)
+					frontend.OnEvent({InputEvent::Type::MouseMove, area.x + sep_x + step * 5, area.y + sep_y + 10});
+				frontend.OnEvent({InputEvent::Type::MouseUp, area.x + sep_x + 20, area.y + sep_y + 10});
+				frontend.Update(NowMs());
+				printf("[preview] List1 column 0: %d wide, dragged to %d\n", before, list->columns[0].width);
+			}
 		h.Snapshot("aa-1-open");
 		click(AAWindow::Screen, "LessExpButton");
 		show("after -", false);

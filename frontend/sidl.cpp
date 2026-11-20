@@ -1529,8 +1529,62 @@ std::string SidlWindow::OnMouse(const InputEvent &event)
 	return clicked;
 }
 
+Rect SidlWindow::SeparatorRect(const Control &control, int n) const
+{
+	if (n < 0 || n + 1 >= static_cast<int>(control.columns.size()))
+		return {};
+	Rect content = ContentRect(control);
+	int x = content.x;
+	for (int i = 0; i <= n; ++i)
+		x += control.columns[i].width;
+	return {x - 3, content.y, 6, ListHeaderHeight(control)};
+}
+
+bool SidlWindow::OverColumnSeparator() const
+{
+	for (const Control &control : m_controls)
+		if (control.column_sizing && (control.separator_hover >= 0 || control.separator_drag >= 0) && Shown(control))
+			return true;
+	return false;
+}
+
 std::string SidlWindow::Press(const InputEvent &event)
 {
+	// A sizable list's column separators (CListWnd+0x13c): the mouse over one (HandleMouseMove), a
+	// press on it starts dragging it and is no click on the list (HandleLButtonDown), the mouse
+	// moving within the list while dragged moves it by how far it is from its middle
+	// (ShiftColumnSeparator: the column no narrower than its 10, the next keeping its width), and
+	// the button coming up ends it (HandleLButtonUp).
+	for (Control &control : m_controls) {
+		if (!control.column_sizing || !Shown(control))
+			continue;
+		if (event.type == InputEvent::Type::MouseUp && control.separator_drag >= 0) {
+			control.separator_drag = -1;
+			return "";
+		}
+		if (event.type == InputEvent::Type::MouseMove) {
+			control.separator_hover = -1;
+			for (int n = 0; n + 1 < static_cast<int>(control.columns.size()); ++n)
+				if (SeparatorRect(control, n).Contains(event.x, event.y)) {
+					control.separator_hover = n;
+					break;
+				}
+			if (control.separator_drag >= 0 && ContentRect(control).Contains(event.x, event.y)) {
+				Rect sep = SeparatorRect(control, control.separator_drag);
+				int delta = event.x - (sep.x + sep.Right()) / 2;
+				SidlPiece::Column &column = control.columns[control.separator_drag];
+				constexpr int MinWidth = 10; // AddColumn1's from the XML
+				if (delta != 0 && column.width + delta >= MinWidth)
+					column.width += delta;
+			}
+		}
+		if ((event.type == InputEvent::Type::MouseDown || event.type == InputEvent::Type::DoubleClick) &&
+		    control.separator_hover >= 0 && control.separator_drag < 0) {
+			control.separator_drag = control.separator_hover;
+			return "";
+		}
+	}
+
 	// A combo box's list while it's down: a press on a choice picks it, one anywhere else puts the
 	// list away (CListWnd's notification to CComboWnd, HandleComboWindowClick).
 	if (int open = OpenCombo(); open >= 0) {

@@ -459,6 +459,19 @@ eqgame's `OP_MoveItem`.
   the target (no ring: the client of this era had none). Name sprites are lit as `renderNameTag`
   lights them: the world's ambient plus 0.4, each channel at most full. F1, or clicking our own
   model in the chase view, targets ourselves.
+- **List columns** (`CListWnd`, `SidlWindow::Press`): a list whose window sets +0x13c (the AA
+  window's `List1`..`List4`, `CAAWnd::CAAWnd`; the raid window's two player lists, `CRaidWnd::CRaidWnd`)
+  lets its column separators be dragged. `HandleMouseMove` (vtable 0x5c, @0057bef0) finds the one
+  under the mouse (+0x148: `GetSeparatorRect` @0057c7d0, the column's right edge in the header,
+  3 each side) and, while one's dragged (+0x144), with the mouse in the list,
+  `ShiftColumnSeparator` (@00579170) widens it by the mouse's distance from the separator's
+  middle, if that leaves it no narrower than its least (10, as `CreateXWndFromTemplate` adds the
+  XML's columns); the next column keeps its width. `HandleLButtonDown` (vtable 0x34, @0057bff0)
+  on a separator starts the drag and isn't a click; `HandleLButtonUp` (@0057c440) ends it;
+  `GetCursorToDisplay` (@0057d070) shows the resize cursor meanwhile. Every list with columns has
+  style 0x200000, its header and separators. `LoadIniListWnd` and `StoreIniListWnd` (@00570440,
+  @00570500, `%s_ColWidth_%d` in the window's section) only run for the Bazaar search window's
+  ItemList and only for a list with +0x13c, which it hasn't, so no widths are kept.
 - **Tooltips** (`WindowManager::DrawTooltip`, eqgame's `DrawWindows` and `DrawTooltipAtPoint`):
   once the mouse has rested 500 ms, the control under it shows its tooltip, white on a
   `0xc8000080` box 16 pixels right of the mouse (left of it at the screen's edge). `DrawWindows`

@@ -363,6 +363,11 @@ public:
 		int header_clicked = -1;
 		// Its columns: the Listbox's own to start with; its window can add more.
 		std::vector<SidlPiece::Column> columns;
+		// CListWnd+0x13c (the AA window's lists, the raid window's): its column separators drag
+		// (HandleMouseMove's hover, +0x148; HandleLButtonDown's drag, +0x144, to the button's up;
+		// ShiftColumnSeparator).
+		bool column_sizing = false;
+		int separator_hover = -1, separator_drag = -1;
 		// Combobox: its choices (its Choices to start with), the one showing (-1 none:
 		// CComboWnd::GetCurChoice), and its list dropped down under it. Picking one reports the
 		// combo box's ScreenID as a button's click would.
@@ -396,6 +401,8 @@ public:
 	void UpdateListHover(int mouse_x, int mouse_y);
 	// Returns the ScreenID of a button clicked by this event, or "". A click on an edit box focuses it.
 	std::string OnMouse(const InputEvent &event);
+	// A sizable list's separator under the mouse or being dragged (CListWnd's GetCursorToDisplay).
+	bool OverColumnSeparator() const;
 	// Typing into the focused edit box; false if there's none (or it's hidden).
 	bool OnKey(const InputEvent &event);
 	// The wheel over a scrolling control: three rows a notch. False if there's none under (x, y).
@@ -520,6 +527,8 @@ private:
 	void ComboListInsets(const Control &combo, int &left, int &top, int &right, int &bottom) const; // its border
 	void DrawStml(const Control &control, Canvas &canvas, TextRenderer &text) const;
 	int ListHeaderHeight(const Control &control) const;
+	// CListWnd::GetSeparatorRect (@0057c7d0): column `n`'s right edge in the header, 3 each side.
+	Rect SeparatorRect(const Control &control, int n) const;
 	int ListRowHeight(const Control &control) const;
 	void DrawCell(Canvas &canvas, SidlTextures &textures, const std::string &name, int cell, const Rect &dest) const;
 

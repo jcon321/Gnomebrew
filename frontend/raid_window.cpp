@@ -99,6 +99,7 @@ void RaidWindow::Attach(WindowManager &windows, Raid &raid, const GameValues &va
 			list->select_color = Gray;
 			list->header_color = 0x8aa3ff;
 			list->justification = {1, 0, 1, 0, 0};
+			list->column_sizing = true; // +0x13c
 		}
 	// CRaidOptionsWnd::CRaidOptionsWnd: SetColors(white, yellow, gray), left-justified.
 	if (SidlWindow::Control *list = List(Options(), LooterList)) {

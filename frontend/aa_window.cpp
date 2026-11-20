@@ -73,6 +73,7 @@ void AAWindow::Attach(WindowManager &windows, const GameValues &values, Host hos
 			list->select_color = 0x808080;
 			list->justification = {0, 1, 1};
 			list->header_color = 0x8aa3ff;
+			list->column_sizing = true; // +0x13c
 		}
 	if (m_values->zone && m_values->zone->Profile().class_id != 0)
 		Init();
