@@ -997,6 +997,10 @@ void FrontEnd::Update(uint64_t now_ms)
 			m_mounts.Tick(); // ProcessAffects' SPA 113
 		if (m_zone_view) {
 			m_zone_view->SetAutoAttack(m_attack);
+			// Levitation while a buff of it's on us (Levitate as it lands, RemovePCAffectex as it
+			// fades), and Vision1 and 2 from buffs and items (CanISeeInvis' TotalSpellAffects).
+			m_zone_view->SetLevitating(m_buffs.HasAffect(57));
+			m_zone_view->SetVisionBuffs(m_game_values.SpellTotal(65) > 0, m_game_values.SpellTotal(66) > 0);
 			m_zone_view->SetSpeedModifier(m_buffs.SpeedModifier(m_zone.Self().run_speed, m_game_values.running));
 			// EQPlayer::InitSneakMod: half the walk speed sneaking, a rogue's 0.1 more a level past 50.
 			float sneak = 0;
@@ -2430,6 +2434,9 @@ void FrontEnd::BuildZoneWindows()
 	};
 	m_spell_cast.Attach(m_windows, m_zone, m_ui.spells, m_ui.eqstr, std::move(cast_host));
 	m_buffs.Attach(m_zone, m_ui.spells, m_ui.eqstr, [this](const std::string &text, int type) { ChatOut(text, type); });
+	m_buffs.effects = [this](const SpellInfo &spell, int slot, int level, bool landed) {
+		BuffEffect(spell, slot, level, landed);
+	};
 	Mounts::Host mounts_host;
 	mounts_host.say = [this](uint32_t id, const std::string &fallback, int type) { ChatOut(EqString(id, fallback), type); };
 	mounts_host.has_affect = [this](int spa) { return m_buffs.HasAffect(spa); };
@@ -3041,14 +3048,189 @@ void FrontEnd::SetTarget(uint16_t id, bool command)
 
 bool FrontEnd::InvisibleToMe(const ZoneSpawn &spawn) const
 {
-	// A player or an NPC alive: an untargetable body type is, and one invisible (VisibilityState
-	// 1) is unless we see invisible (EQ_Character::CanISeeInvis, which we don't have: we don't),
-	// and a GM's is to all but GMs.
+	// CDisplay_IsInvisible: a player or an NPC alive: an untargetable body type is, and one
+	// invisible (VisibilityState 1) is unless we see invisible (EQ_Character::CanISeeInvis: SPA
+	// 13 on us, with the worn items'), and then a GM's is to all but GMs.
 	if (spawn.npc >= 2 || spawn.hp <= 0)
 		return false;
 	if (spawn.body_type > 0x40)
 		return true;
-	return spawn.invis == 1;
+	if (spawn.invis != 1)
+		return false;
+	if (m_game_values.SpellTotal(13) <= 0)
+		return true;
+	return spawn.gm != 0 && m_zone.Self().gm == 0;
+}
+
+void FrontEnd::BuffEffect(const SpellInfo &spell, int slot, int level, bool landed)
+{
+	// HitBySpell's effects of ours as a spell lands (its loop over them), and RemovePCAffectex's as
+	// a buff fades. Levitation and vision are the frame's (from the buffs on us).
+	const ZoneBuff *buff = slot >= 0 ? &m_buffs.Slot(slot) : nullptr;
+	for (int i = 0; i < 12; ++i) {
+		int spa = spell.spas[i];
+		if (landed) {
+			switch (spa) {
+			case 57: // EQ_Character::Levitate: SetNoGrav(2), and the zone told (SpawnAppearance 0x13)
+				m_zone.SendAppearance(0x13, 2);
+				break;
+			case 12: case 28: case 29:
+				m_abilities.UpdateMyVisibleStatus();
+				break;
+			case 73: // Bind Sight: our target's eyes, or with none 214 and the buff cleared
+				if (m_game_values.target == 0) {
+					ChatOut(EqString(214, "You must first select a target for this spell!"), 0x121);
+					if (slot >= 0)
+						m_buffs.Erase(slot);
+					return;
+				}
+				SetViewActorByName(m_game_values.target);
+				break;
+			case 77:
+				LocateCorpse();
+				break;
+			case 87: // the lens (SetViewAngle)
+				if (m_zone_view)
+					m_zone_view->SetViewAngle(static_cast<float>(Buffs::Value(spell, level, i, buff)));
+				break;
+			default:
+				break;
+			}
+			continue;
+		}
+		switch (spa) {
+		case 12: case 28: case 29:
+			m_abilities.UpdateMyVisibleStatus();
+			break;
+		case 13: // seeing invisible gone: a target now unseen isn't ours
+			if (m_game_values.target != 0 && m_game_values.target != m_zone.MySpawnId())
+				if (auto it = m_zone.Spawns().find(m_game_values.target); it != m_zone.Spawns().end() && InvisibleToMe(it->second))
+					m_game_values.target = 0;
+			break;
+		case 67: case 73: // back to our own eyes (SetViewActorByName of our name)
+			SetViewActorByName(m_zone.MySpawnId());
+			break;
+		case 87:
+			if (m_zone_view)
+				m_zone_view->ResetViewAngle();
+			break;
+		default:
+			break;
+		}
+	}
+}
+
+void FrontEnd::HandleSpecialPCAffects()
+{
+	// EQ_Character::HandleSpecialPCAffects(1), as EQPlayer::EQPlayer makes us in a zone: the buffs
+	// that last only in the zone they were cast in go (the Eye of Zomm 67, mez 31, an illusion 58,
+	// charm 22, fear 23, Bind Sight 73, 64), but an enchanter's illusion with Permanent Illusion (AA
+	// 0x37); the rest do what they do as they land (levitation and vision are the frame's, the
+	// movement rate SpeedModifier's): the lens of SPA 87.
+	const ZoneProfile &me = m_zone.Profile();
+	bool permanent = me.class_id == 14 && me.aa_ranks[0x37] != 0;
+	for (int slot = 0; slot < Buffs::Slots; ++slot) {
+		const SpellInfo *spell = m_buffs.SlotSpell(slot);
+		if (!spell)
+			continue;
+		bool zone_only = false;
+		for (int spa : {67, 31, 58, 22, 23, 73, 64})
+			zone_only |= spell->HasSpa(spa);
+		if (zone_only) {
+			if (permanent && spell->HasSpa(58))
+				continue; // eqspa_change_form keeps it (the zone's OP_Illusion does the form)
+			m_buffs.RemoveAffect(spell->spas[0]);
+			continue;
+		}
+		for (int i = 0; i < 12; ++i)
+			if (spell->spas[i] == 87 && m_zone_view)
+				m_zone_view->SetViewAngle(static_cast<float>(Buffs::Value(*spell, m_buffs.Slot(slot).level, i, &m_buffs.Slot(slot))));
+	}
+}
+
+void FrontEnd::SetViewActorByName(uint16_t id)
+{
+	// CDisplay::SetViewActorByName (@004b3527): the spawn's view actor (EQPlayer_get_player of its
+	// name); nobody there, "I can't find a player named %1!" (1276); already it, nothing; from our
+	// own, quietly; else back to us "Returning to your own perspective." (1275) or "Successful
+	// change to %1's perspective." (1277), color 13.
+	if (!m_zone_view)
+		return;
+	uint16_t me = m_zone.MySpawnId();
+	auto it = m_zone.Spawns().find(id);
+	std::string name = id == me ? m_zone.Profile().name : it != m_zone.Spawns().end() ? it->second.name : "";
+	if (id != me && (it == m_zone.Spawns().end() || !m_zone_view->CanViewFrom(id))) {
+		ChatOut(FormatEqString(m_ui.eqstr, 1276, "I can't find a player named %1!", {name}), 13);
+		return;
+	}
+	uint16_t current = m_zone_view->ViewActor();
+	uint16_t next = id == me ? 0 : id;
+	if (current == next)
+		return;
+	m_zone_view->SetViewActor(next);
+	if (current == 0)
+		return;
+	if (next == 0)
+		ChatOut(EqString(1275, "Returning to your own perspective."), 13);
+	else
+	{
+		std::string trimmed; // CEverQuest::trimName
+		for (char c : name)
+			if (!std::isdigit(static_cast<unsigned char>(c)))
+				trimmed.push_back(c == '_' ? ' ' : c);
+		ChatOut(FormatEqString(m_ui.eqstr, 1277, "Successful change to %1's perspective.", {trimmed}), 13);
+	}
+}
+
+void FrontEnd::LocateCorpse()
+{
+	// EQ_Character::eqspa_locate_corpse (@004cac8a): with no target, the nearest corpse
+	// (FindClosest(0): 10000 at most); with one, "Finding Target Player corpse..." (12445) and the
+	// first corpse whose name starts with the target's. Found: our target, faced (and our horse),
+	// "You sense a corpse in this direction." (1563, 0x108); else 12446 (a target) or 12447 (none).
+	uint16_t found = 0;
+	const ZoneProfile &me = m_zone.Profile();
+	if (m_game_values.target == 0) {
+		float best = 10000;
+		for (const auto &[id, spawn] : m_zone.Spawns()) {
+			if (spawn.npc != 2 && spawn.npc != 3)
+				continue;
+			float dx = spawn.x - me.x, dy = spawn.y - me.y, dz = spawn.z - me.z;
+			float distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+			if (distance < best) {
+				best = distance;
+				found = id;
+			}
+		}
+	}
+	else {
+		ChatOut(EqString(12445, "Finding Target Player corpse..."), 0x108);
+		std::string want;
+		if (auto it = m_zone.Spawns().find(m_game_values.target); it != m_zone.Spawns().end())
+			want = it->second.name;
+		else if (m_game_values.target == m_zone.MySpawnId())
+			want = me.name;
+		for (const auto &[id, spawn] : m_zone.Spawns()) {
+			if ((spawn.npc != 2 && spawn.npc != 3) || spawn.name.size() < want.size())
+				continue;
+			bool same = true;
+			for (size_t c = 0; c < want.size() && same; ++c)
+				same = std::tolower(static_cast<unsigned char>(want[c])) == std::tolower(static_cast<unsigned char>(spawn.name[c]));
+			if (same) {
+				found = id;
+				break;
+			}
+		}
+	}
+	if (found != 0) {
+		m_game_values.target = found;
+		FaceSpawn(found);
+		ChatOut(EqString(1563, "You sense a corpse in this direction."), 0x108);
+		return;
+	}
+	ChatOut(m_game_values.target == 0 ? EqString(12447, "You don't sense any corpses.")
+	                                  : EqString(12446, "You don't sense any corpses of that name."),
+		0x121);
 }
 
 uint16_t FrontEnd::NearestInView(float range, bool npc) const
@@ -4664,6 +4846,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			m_zone_view->SetPlayer(PlayerAppearance(m_zone), me.walk_speed, me.run_speed);
 			m_my_look_serial = me.look_serial;
 			m_zone_view->SetPlayerPosition(me.x, me.y, me.z, me.heading);
+			HandleSpecialPCAffects(); // EQPlayer::EQPlayer's, ours made
 			if (!m_zone.Doors().empty())
 				m_zone_view->SetDoors(m_zone.Doors(), m_now_ms);
 			for (const auto &[drop_id, item] : m_zone.GroundItems())

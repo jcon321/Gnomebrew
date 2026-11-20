@@ -48,7 +48,19 @@ ZoneView::Vision ZoneView::CurrentVision() const
 
 ZoneView::Vision ZoneView::OwnVision() const
 {
-	return m_appearance ? RaceVision(m_appearance->race) : Vision::None;
+	// Vision2 (ultravision) over Vision1 (infravision): our race's, or our buffs'.
+	Vision race = m_appearance ? RaceVision(m_appearance->race) : Vision::None;
+	if (race == Vision::Ultravision || m_ultravision_buff)
+		return Vision::Ultravision;
+	if (race == Vision::Infravision || m_infravision_buff)
+		return Vision::Infravision;
+	return Vision::None;
+}
+
+bool ZoneView::CanViewFrom(uint16_t id) const
+{
+	auto it = m_actors.find(id);
+	return it != m_actors.end() && it->second.model != nullptr;
 }
 
 ZoneView::DayLight ZoneView::Lighting() const
@@ -1444,7 +1456,21 @@ render::Camera ZoneView::MakeCamera(float &distance) const
 	if (m_horse)
 		eye *= 0.85f; // MountEQPlayer: CameraHeightOffset * 0.85
 	render::Vec3 feet = MyFeet();
-	float yaw = render::HeadingToRadians(m_heading + m_orbit);
+	float heading = m_heading;
+	float eye_drop = m_eye_drop;
+	float body = m_height;
+	// Another's view actor (Bind Sight): their eyes and heading in place of ours.
+	if (m_view_actor != 0)
+		if (auto it = m_actors.find(m_view_actor); it != m_actors.end() && it->second.model) {
+			const render::CharacterModel &model = *it->second.model;
+			height = model.MaxZ() - model.MinZ();
+			eye = (model.HeadZ() - model.MinZ()) * 1.05f;
+			feet = it->second.Feet();
+			heading = it->second.actor.Heading();
+			eye_drop = 0;
+			body = height;
+		}
+	float yaw = render::HeadingToRadians(heading + m_orbit);
 	float pitch = m_pitch * render::Pi / 180;
 	render::Vec3 look{std::cos(yaw) * std::cos(pitch), std::sin(yaw) * std::cos(pitch), std::sin(pitch)};
 
@@ -1470,7 +1496,7 @@ render::Camera ZoneView::MakeCamera(float &distance) const
 	}
 	distance = 0;
 	if (m_cam->view == CameraView::FirstPerson) {
-		camera.position = feet + render::Vec3{0, 0, eye - m_eye_drop * 1.05f};
+		camera.position = feet + render::Vec3{0, 0, eye - eye_drop * 1.05f};
 		camera.forward = look;
 	}
 	else if (m_cam->view != CameraView::Chase) {
@@ -1481,7 +1507,7 @@ render::Camera ZoneView::MakeCamera(float &distance) const
 		// by its pitch, or at our center for LookAtUs. View 1 is 25 straight over the eye, our
 		// heading, -100 down.
 		const CameraSetup::View &v = m_cam->Current();
-		render::Vec3 center = feet + render::Vec3{0, 0, m_height / 5 * 3.125f};
+		render::Vec3 center = feet + render::Vec3{0, 0, body / 5 * 3.125f};
 		float around = render::HeadingToRadians(v.heading);
 		render::Vec3 target{center.x + std::cos(around) * v.distance, center.y + std::sin(around) * v.distance,
 			feet.z + eye + v.height};
@@ -1494,13 +1520,13 @@ render::Camera ZoneView::MakeCamera(float &distance) const
 			float reach = std::max(0.0f, fraction * (length + margin) - margin);
 			camera.position = center + offset * (std::min(reach, length) / length);
 		}
-		float heading = render::HeadingToRadians(m_heading);
+		float facing = render::HeadingToRadians(heading);
 		render::Vec3 to_us = center - camera.position;
 		float level = std::sqrt(to_us.x * to_us.x + to_us.y * to_us.y);
 		if (v.bearing != 0 && level > 0.001f)
-			heading = std::atan2(to_us.y, to_us.x);
+			facing = std::atan2(to_us.y, to_us.x);
 		float pitch = v.pitch == CameraSetup::LookAtUs ? std::atan2(to_us.z, level) : v.pitch * 2 * render::Pi / 512;
-		camera.forward = {std::cos(heading) * std::cos(pitch), std::sin(heading) * std::cos(pitch), std::sin(pitch)};
+		camera.forward = {std::cos(facing) * std::cos(pitch), std::sin(facing) * std::cos(pitch), std::sin(pitch)};
 		distance = render::Length(camera.position - (feet + render::Vec3{0, 0, eye}));
 	}
 	else {

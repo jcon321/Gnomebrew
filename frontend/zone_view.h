@@ -103,6 +103,22 @@ public:
 	void SetSpeedModifier(float modifier) { m_movement.SetSpeedModifier(modifier); }
 	// __Attack, which ProcessAnimation reads: no fidgets for anyone while it's on.
 	void SetAutoAttack(bool on) { m_auto_attack = on; }
+	// EQ_Character::Levitate and RemovePCAffectex's SPA 57: gravity off and back on.
+	void SetLevitating(bool on) { m_movement.SetLevitating(on); }
+	// Vision1 and Vision2 from our buffs and items (SPA 65 infravision, 66 ultravision: HitBySpell,
+	// RemovePCAffectex's InitInnates, CanISeeInvis), over our race's.
+	void SetVisionBuffs(bool infravision, bool ultravision)
+	{
+		m_infravision_buff = infravision;
+		m_ultravision_buff = ultravision;
+	}
+	// CDisplay::SetViewAngle (@004acaa6): the lens (SPA 87's value as it lands).
+	void SetViewAngle(float angle) { m_cam->angle = angle; }
+	// CDisplay::SetViewActor: whose eyes the camera sees from (Bind Sight), 0 our own.
+	void SetViewActor(uint16_t id) { m_view_actor = id; }
+	uint16_t ViewActor() const { return m_view_actor; }
+	// A spawn there with a model to see from (SetViewActorByName's ActorInfo->ViewActor_).
+	bool CanViewFrom(uint16_t id) const;
 	void SetSneakModifier(float modifier) { m_movement.SetSneakModifier(modifier); }
 	// The sound the doors, we and the spawns make (none when unset).
 	void SetSound(audio::EqSound *sound) { m_sound = sound; }
@@ -598,6 +614,8 @@ private:
 	uint32_t m_fidget_random = 0x2468aceu; // number_percent's for our fidgets
 	bool m_auto_attack = false;            // __Attack: no fidgets (ProcessAnimation)
 	uint8_t m_stance = 100;                // our StandingState as SetStance last had it
+	bool m_infravision_buff = false, m_ultravision_buff = false; // SetVisionBuffs
+	uint16_t m_view_actor = 0;             // SetViewActor: 0 ourselves
 	bool m_dead = false;
 
 	// Other spawns: models shared by everyone who looks the same, built once they're in range.

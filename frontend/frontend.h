@@ -482,6 +482,15 @@ private:
 	void WhoAnswer(const ZoneWho &who);
 	// CDisplay_IsInvisible to us (we don't know whether we see invisible: we don't).
 	bool InvisibleToMe(const ZoneSpawn &spawn) const;
+	// HitBySpell's and RemovePCAffectex's effects of a spell landing on us or a buff fading
+	// (Buffs::effects).
+	void BuffEffect(const SpellInfo &spell, int slot, int level, bool landed);
+	// EQ_Character::HandleSpecialPCAffects(1) from EQPlayer::EQPlayer: the zone-only buffs gone, the
+	// lens of what's left.
+	void HandleSpecialPCAffects();
+	// CDisplay::SetViewActorByName: the camera from a spawn's eyes (Bind Sight), ours with our id.
+	void SetViewActorByName(uint16_t id);
+	void LocateCorpse(); // EQ_Character::eqspa_locate_corpse
 	// CDisplay::RealRender_World's DeathTimer: lying dead, 2 seconds on "Returning to home point,
 	// please wait...", and the frame after it, back to our bind point (MoveToZone).
 	void UpdateDeath(uint64_t now_ms);

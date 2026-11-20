@@ -97,6 +97,10 @@ public:
 	bool Crouching() const { return m_crouching || m_ducking; }
 	bool Ducking() const { return m_ducking; }
 	bool JumpWindingUp() const { return m_jump_armed; } // DAT_007985f8
+	// EQPlayer::SetNoGrav(2) from EQ_Character::Levitate (LevitationState 2): no gravity, and no
+	// jumps (ProcessControls arms one only with LevitationState 0); RemovePCAffectex turns it back.
+	void SetLevitating(bool on) { m_levitating = on; }
+	bool Levitating() const { return m_levitating; }
 	void Duck() { m_ducking = true; }
 	// EQPlayer::ChangeStance from 111 to 100: only where CanIFitHere standing, with the ceiling at
 	// least the ModelHeightOffset over the body's center; false (still ducking) otherwise.
@@ -169,6 +173,7 @@ private:
 	bool m_jump_armed = false;
 	bool m_crouching = false;
 	bool m_ducking = false;
+	bool m_levitating = false;
 	render::Vec3 m_floor_normal{0, 0, 1};
 	float m_ceiling = 0;               // ActorInfo's ZCeiling, CanIFitHere's last
 	bool m_stand_latched = false;      // DAT_00798572

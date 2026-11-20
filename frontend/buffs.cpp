@@ -163,8 +163,11 @@ void Buffs::Land(const ZoneCast &cast)
 	int level = caster.level;
 	if (cast.spell >= 1252 && cast.spell <= 1266 && cast.level > 0 && cast.level < 61)
 		level = cast.level;
-	if (spell->duration_formula == 0)
-		return; // no buff: its effects at once (none of them here)
+	if (spell->duration_formula == 0) {
+		if (effects)
+			effects(*spell, -1, level, true); // no buff: its effects at once
+		return;
+	}
 	int slot = FindAffectSlot(cast.spell, *spell, caster);
 	if (slot < 0)
 		return;
@@ -179,6 +182,17 @@ void Buffs::Land(const ZoneCast &cast)
 	b.level = static_cast<uint8_t>(level);
 	b.duration = static_cast<int16_t>(Duration(*spell, level, m_zone->Profile().aa_ranks[0x37]));
 	b.activated = spell->activated;
+	++m_serial;
+	if (effects)
+		effects(*spell, slot, level, true);
+}
+
+void Buffs::Erase(int slot)
+{
+	if (slot < 0 || slot >= Slots)
+		return;
+	m_slots[slot] = ZoneBuff{};
+	m_casters[slot] = 0;
 	++m_serial;
 }
 
@@ -389,6 +403,8 @@ void Buffs::Remove(int slot, bool tell)
 		gone.spell = old.spell;
 		m_zone->SendBuff(slot, gone, 0);
 	}
+	if (const SpellInfo *spell = old.type != 0 ? Spell(old.spell) : nullptr; spell && effects)
+		effects(*spell, slot, old.level, false);
 }
 
 bool Buffs::TickDue(uint64_t now_ms) const

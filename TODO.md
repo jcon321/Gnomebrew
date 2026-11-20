@@ -63,24 +63,31 @@ no rules of its own.
      and its expiry, clicking a beneficial one off, their icons on red or blue, names (tooltips and
      EQTypes 45..59) and the blink in their last ticks. Their effects count in the stats, resists,
      AC, max HP (worked out as `Max_HP` does, not the zone's), max mana and our speed (SoW,
-     snares, roots). Still to do: the effects that act as a buff
-     lands or fades (levitation, invisibility, see invisible, infravision and
-     `CDisplay::TurnInfravisionEffectOff` @004b1559, illusions, Eye of Zomm,
-     magnification: SPA 87's lens, `SetViewAngle` from `HitBySpell`, `RemovePCAffectex` and
-     `HandleSpecialPCAffects`;
-     a horse's is `frontend/mounts.*`) and a bard's instrument mastery; Bind Sight (SPA 73:
-     `HitBySpell` hands the target's name to `CDisplay::SetViewActorByName` @004b3527, which says
-     eqstr 1277 "Successful change to %1's perspective." or 1276 for nobody of that name and makes
-     them the view actor; `RemovePCAffectex` gives it our own name as it fades, eqstr 1275;
-     `ProcessAffects` and `do_change_form` call it too); HitBySpell's own branches: Locate Corpse
-     (`eqspa_locate_corpse` @004cac8a, eqstr 0x309d), the bind's place checks
-     (`InSpecialBindSpot` @004cadbc, `EQWorldData::IsNoBindZone`), the teleport checks
-     (`CDisplay::IsValidTeleport` @004af646, `EQPlayer::HandoverControlToZoneserver`), `Levitate`
-     (@004cac0d) and the illusion's change of form (`eqspa_change_form` @004ca8b2, through
-     `EQPlayer::do_change_form` @005074fa and `HandleSpecialPCAffects` @004c62bd; races 142 and
-     143 failing its own `GetNearestActorTag`, `ZoneView::NearestActorTag`, land no form). Alt+click or the right button held on a buff shows its
-     spell's name and icon in the item display (HandleSpellInfoDisplay), and Alt over the window
-     shows every buff's tooltip (CBuffWindow::PostDraw, `FrontEnd::DrawBuffTooltips`).
+     snares, roots). What their effects do as they land and fade (`Buffs::effects`,
+     `FrontEnd::BuffEffect`, HitBySpell's loop and RemovePCAffectex) is done for levitation (SPA
+     57: Levitate's SpawnAppearance 0x13, no gravity and no jumps), invisibility (12, 28, 29:
+     UpdateMyVisibleStatus), seeing invisible (13: CanISeeInvis in `InvisibleToMe`, a target lost
+     as it fades), infravision and ultravision (65, 66: Vision1 and 2 over the race's), the lens
+     (87: SetViewAngle), Bind Sight (73: SetViewActorByName, the camera from the target's eyes;
+     1275..1277; no target 214 and the buff cleared) and Locate Corpse (77:
+     eqspa_locate_corpse), and HandleSpecialPCAffects(1) as we're made in a zone (the zone-only
+     buffs, 67, 31, 58, 22, 23, 73 and 64, taken off, an enchanter's illusion kept with Permanent
+     Illusion). Still to do: the Eye of Zomm (67: the eye becomes pinstCharSpawn, which we'd drive,
+     and its view actor; RemovePCAffectex hands us back with headEnvironmentChange); blindness (20
+     and 34: ActorInfo+0x18d, what it does to the view not traced); fear and charm handing us to
+     the zone (22, 23: `EQPlayer::HandoverControlToZoneserver` @0050b783; the zone's
+     OP_FreezeClientControl does it now); TurnInfravisionEffectOff's spawn ambient reset (ours
+     redoes the glow each frame); a bard's instrument mastery; levitation on our horse
+     (SetNoGrav on the Mount); HitBySpell's own branches: the bind's place checks
+     (`InSpecialBindSpot` @004cadbc, `EQWorldData::IsNoBindZone`: setting ZoneBound and SavePC, or
+     0x69 / 0x103), the teleport checks (`CDisplay::IsValidTeleport` @004af646,
+     `EQPlayer::HandoverControlToZoneserver`), SPA 0x26's cursor messages (0x30a4, 0x61a, 0x30a3)
+     and the illusion's change of form here (`eqspa_change_form` @004ca8b2, through
+     `EQPlayer::do_change_form` @005074fa; races 142 and 143 failing its own
+     `GetNearestActorTag`, `ZoneView::NearestActorTag`, land no form; the zone's OP_Illusion does
+     the form now). Alt+click or the right button held on a buff shows its spell's name and icon
+     in the item display (HandleSpellInfoDisplay), and Alt over the window shows every buff's
+     tooltip (CBuffWindow::PostDraw, `FrontEnd::DrawBuffTooltips`).
    - Inventory: name, level, class (its title from 51), deity, HP, stats and resists (base, worn
      items, the next food and drink; `GameValues::Stat`, `Resist`), AC, ATK and weight (`GameValues::Ac`, `Atk`, `Weight`), money, the class picture, item icons in the slots, the Alt. Adv. row from 51, Done, and the
      Skills button opening the skills window (`frontend/game_windows.*`), and items picked up, put

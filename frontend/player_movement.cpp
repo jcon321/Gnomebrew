@@ -164,7 +164,8 @@ bool PlayerMovement::Step(const MoveControls &controls, float ms, const render::
 	}
 
 	// ProcessControls: a press on the ground, out of the water, 1.5 s after the last jump arms one.
-	if (controls.jump && !swimming && !m_mounted && !m_jump_armed && m_on_ground && m_clock_ms - m_last_jump_ms > JumpCooldownMs) {
+	if (controls.jump && !swimming && !m_mounted && !m_levitating && !m_jump_armed && m_on_ground &&
+	    m_clock_ms - m_last_jump_ms > JumpCooldownMs) {
 		m_jump_armed = true;
 		m_jump_armed_ms = m_clock_ms;
 	}
@@ -218,7 +219,10 @@ void PlayerMovement::Tick(float t, const render::ZoneScene &scene)
 	// process_physics: gravity, then damping and the push along the heading (and in water, up
 	// or down the way we look).
 	bool swimming = Swimming();
-	m_velocity.z -= m_gravity * t;
+	if (!m_levitating) // IsAffectedByGravity
+		m_velocity.z -= m_gravity * t;
+	else if (m_velocity.z < 0 && !swimming)
+		m_velocity.z = 0; // levitating, nothing pulls us down
 	float friction = AirFriction, control = 0, rise_friction = AirFriction, rise_control = 0;
 	if (swimming) {
 		bool thick = m_body_environment == render::Environment::Slime || m_body_environment == render::Environment::Lava ||

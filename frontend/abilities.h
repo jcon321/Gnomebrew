@@ -99,6 +99,9 @@ public:
 	void Frame(uint64_t now_ms);
 	// EQ_Character::UseSkill.
 	void Use(int skill, uint64_t now_ms);
+	// EQ_Character::UpdateMyVisibleStatus: our VisibilityState from hiding and the invisibility
+	// buffs, the ones that don't fit it taken off and the zone told when it changed.
+	void UpdateMyVisibleStatus();
 	// InitInnates: Lay on Hands is a paladin's, Harm Touch a shadow knight's.
 	bool ClassAbility(int skill) const;
 	// A left click on one of the buttons or the skill select window's list; true if it was one.
@@ -138,9 +141,6 @@ private:
 	void Beg(uint16_t target);
 	void PickPocket(uint16_t target);
 	void Fish();
-	// EQ_Character::UpdateMyVisibleStatus: our VisibilityState from hiding and the invisibility
-	// buffs, the ones that don't fit it taken off and the zone told when it changed.
-	void UpdateMyVisibleStatus();
 	void DoFishingEvent(uint64_t now_ms);
 	// FindItemBySkillId: the first item of a type in slots 0..29 or their bags; false none.
 	bool FindItemByType(int type, int16_t &slot, int &bag_slot) const;

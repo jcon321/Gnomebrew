@@ -36,9 +36,8 @@
 //     else the movement total, in percent of the run speed, -65 at the least (below -999 rooted);
 //     ProcessControls adds it to the run or walk speed, at most 1.092006 (more with Fleet of Foot);
 //     running with none, Innate Run Speed's;
-// Not done: the effects that act as a buff lands or fades (levitation, invisibility, seeing
-// invisible, infravision, illusions, the Eye of Zomm, mounts, binding, gating...), the mana and
-// fatigue a buff gives each tick (the zone's updates carry them), the AAs (a bard's instrument
+// What a buff's effects do as it lands or fades is the game's (`effects`, FrontEnd::BuffEffect).
+// Not done: the mana and fatigue a buff gives each tick (the zone's updates carry them), the AAs (a bard's instrument
 // mastery, Jam Fest), the item effects TotalSpellAffects adds, and a buff's caster's
 // level for its stacking when it came with the profile (it has the level it was cast at).
 
@@ -60,6 +59,13 @@ public:
 	using Chat = std::function<void(const std::string &text, int type)>;
 
 	void Attach(ZoneSession &zone, const SpellFile *spells, const EqStr *eqstr, Chat chat);
+	// What a spell's effects do as it lands on us (HitBySpell's loop over them, after it took its
+	// slot, or at once for one with no duration: slot -1) and as a buff fades (RemovePCAffectex's,
+	// after its slot's empty), for the game to do.
+	std::function<void(const SpellInfo &spell, int slot, int level, bool landed)> effects;
+	// A slot emptied with no fading text and the zone not told (HitBySpell's Bind Sight with no
+	// target: the buff it was given cleared).
+	void Erase(int slot);
 	// A new zone: the buffs in the profile, the tick starting now.
 	void Reset(uint64_t now_ms);
 	// The zone's: SpellAction (one landing on us) and BuffChanged.

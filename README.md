@@ -1992,6 +1992,28 @@ details and the nearest spawns at the top left and the radar at the top right.
   times the button's width (plus 1) over the columns, and at its top plus 15 times the column's
   number mod 3. Buffs count in the stats, resists, AC, max mana and speed (SoW,
   snares, roots), and max HP is `Max_HP`'s, not the zone's HP updates.
+- **What a buff does as it lands and fades** (`FrontEnd::BuffEffect`, `HitBySpell`'s loop over the
+  effects and `RemovePCAffectex` @004cb0e2): levitation (57) is `EQ_Character::Levitate`
+  (@004cac0d: `SetNoGrav(2)` on us and our horse, `OP_SpawnAppearance` 0x13 of `LevitationState`
+  2), no gravity and no jumps until it fades; invisibility (12, to animals 28, to the undead 29)
+  is `UpdateMyVisibleStatus`; seeing invisible (13) is `CanISeeInvis` (@004c0d02,
+  `TotalSpellAffects(13, 1)` over 0), which `CDisplay_IsInvisible` asks of a spawn with
+  `VisibilityState` 1 (a GM's stays unseen by all but GMs), and fading it drops a target now
+  unseen; infravision and ultravision (65, 66) set Vision1 and Vision2 (0 is on), which
+  `InitInnates` puts back to the race's as they fade (ultravision first); the lens (87) is
+  `SetViewAngle` of its value (CDisplay+0x2890, `ChangeVideoMode`), back to the view's as it
+  fades; Bind Sight (73) needs a target (214, the buff cleared) and is `SetViewActorByName`
+  (@004b3527) of its name: the camera sees from that spawn's eyes, "Successful change to %1's
+  perspective." (1277) or "I can't find a player named %1!" (1276), color 13, and quietly from
+  our own; fading it (or the Eye of Zomm, 67) is our own name again, "Returning to your own
+  perspective." (1275); Locate Corpse (77) is `eqspa_locate_corpse` (@004cac8a): with no target
+  the nearest corpse (`FindClosest(0)`, 10000 at most), with one "Finding Target Player
+  corpse..." (12445) and the first corpse whose name starts with the target's; found, our target
+  and faced, "You sense a corpse in this direction." (1563, 0x108), else 12447 or 12446 (0x121).
+  `HandleSpecialPCAffects(1)` (@004c62bd, from `EQPlayer::EQPlayer` as we're made in a zone)
+  takes the zone-only buffs off (67, 31, 58, 22, 23, 73, 64; an enchanter's illusion stays with
+  Permanent Illusion, AA 0x37) and does the rest's as they land; `do_change_form` calls it with
+  0, which keeps them all.
 - **Luclin effects** (`frontend/spell_effects.*`, `render/spell_particles.*`): a spell's
   `SpellsNew.eff` record plays stage 0 while casting and stage 2 on landing, each emitter chosen by
   the caster's level (NPCs count as 1). The emitters sit on the caster, the target or a summoning's
