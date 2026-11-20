@@ -256,6 +256,10 @@ private:
 	uint32_t KeyWithModifiers(const InputEvent &event) const; // the scan code and Shift, Ctrl, Alt bits
 	void SaveKeyBinding(int id, bool alternate, uint32_t key); // _writeKeyMapToIni
 	void ResetKeyBindings(); // DeleteKeyBindingFromConfig for all
+	// CDisplay_KeyMapUpdated: the selector, spell gem, group and Actions windows' buttons and pages
+	// whose tooltips end in their command's key (CXWnd::SetKeyTooltip).
+	void KeyMapUpdated();
+	void SetKeyTooltip(const std::string &window, const std::string &control, int cmd);
 	void SaveUserColor(int index, uint32_t rgb); // COptionsWnd::SaveColors
 	void WriteUserColor(int index, uint32_t rgb); // only [TextColors] User_<index+1>_Red, _Green, _Blue
 	MoveControls ZoneControls();

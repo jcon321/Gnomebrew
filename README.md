@@ -462,7 +462,18 @@ eqgame's `OP_MoveItem`.
   uses the system font (2), but the TAKP client shows an item's or a gem's in font 3. Controls
   start with their `TooltipReference`; an inventory slot shows its item's name or the empty worn
   slot's (eqstr 558-576), a gem `1) Spell`. Alt held shows every gem's at once
-  (`DrawSpellButtonTooltips`).
+  (`DrawSpellButtonTooltips`). `CXWnd::SetKeyTooltip` (@005756f0) ends a button's with its
+  command's key: the `TooltipReference`, a space when there is one, then `<` and
+  `GetKeypressDescription` and `>` (the alternate key when the key is unbound; with neither, the
+  tooltip stays as it was). `CDisplay_KeyMapUpdated` (@004a7ca5, after any keyboard page change)
+  and each window's `Activate` set them (`FrontEnd::KeyMapUpdated`): the selector's nine buttons
+  (`CSelectorWnd`'s constructor pairs them with ExecuteCmd 93, 97, 12, 102, 101, 103, 95, 94, 104),
+  the gems' `CSPW_SpellBook` (64), the group window's Invite and Follow (70), Disband and Decline
+  (71), and the Actions window's pages (68, 65, 66, 67, shown over the page's empty space), Who
+  (69), Invite and Follow (70), Disband (71), Camp (72), Sit and Stand (73), Run and Walk (74) and
+  `ACP_MeleeAttackButton` (8). A gauge's `CXWnd::UpdateTooltipText` (@005c2d80, its
+  `OnProcessFrame`) would add ` <NN%>`, but only with the byte at 0x62c12c set, which is 0 in the
+  exe and written nowhere.
 - **In-game text** goes through eqgfx's glyph cache, not whole GDI strings: each glyph is
   `ExtTextOutW`'d alone white on black, cut to its `GetTextExtentPoint32W` width
   (`createGlyphCacheEntry`), its alpha the blue channel's top four bits (`updateGlyphTexture`),

@@ -350,8 +350,8 @@ no rules of its own.
    DrawTooltipAtPoint): after the mouse rests 500 ms, the control under it shows its tooltip, its
    TooltipReference or what its window sets: an inventory slot's item name (an empty worn slot's
    name), a spell gem's "1) Spell", and Alt held shows every gem's (DrawSpellButtonTooltips).
-   The buff window's: the spell's name. Still to do: the key bound to a
-   button after its text (SetKeyTooltip, UpdateTooltipText, from CDisplay_KeyMapUpdated), the help texts
+   The buff window's: the spell's name. The key bound to a button after its text
+   (`CXWnd::SetKeyTooltip`, `FrontEnd::KeyMapUpdated`) is done. Still to do: the help texts
    FindWnd's other hit codes ask for (GetHelpTextFromStringTable), and the slots of windows we
    don't have yet (the world container's).
 5. **Options window.** The Keyboard page is done (`frontend/options_window.*`, COptionsWnd's

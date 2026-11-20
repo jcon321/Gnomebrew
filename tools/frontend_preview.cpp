@@ -3405,6 +3405,14 @@ int main(int argc, char **argv)
 			return w;
 		};
 		printf("[preview] %d windows, layout %s\n", windows.Count(), frontend.UiLayoutPath().c_str());
+		// The keys at the end of the buttons' tooltips (CXWnd::SetKeyTooltip).
+		for (auto [screen, control] : {std::pair{"SelectorWindow", "SELW_InventoryToggleButton"},
+		         std::pair{"CastSpellWnd", "CSPW_SpellBook"}, std::pair{"GroupWindow", "InviteButton"},
+		         std::pair{"ActionsWindow", "ActionsMainPage"}, std::pair{"ActionsWindow", "AMP_SitButton"},
+		         std::pair{"ActionsWindow", "ACP_MeleeAttackButton"}})
+			if (const SidlWindow *w = windows.Find(screen))
+				if (const SidlWindow::Control *c = w->Find(control))
+					printf("[preview] tooltip %s.%s: '%s'\n", screen, control, c->tooltip.c_str());
 		h.Key(InputEvent::Key::F11); // the debug menu out of the way
 		// A book's window (CBookWnd) with the zone's text for the Quintessence book: its pages as
 		// ParseAndFormatBookContent lays them out, Right and Left, Escape.

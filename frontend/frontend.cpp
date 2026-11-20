@@ -2535,6 +2535,7 @@ void FrontEnd::BuildZoneWindows()
 	options_host.filters = &m_filters;
 	options_host.filters_changed = [this] { FiltersChanged(); };
 	m_options.Attach(m_windows, m_key_bindings, std::move(options_host));
+	KeyMapUpdated();
 	m_windows.TakeChanged();
 }
 
@@ -5629,8 +5630,59 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 	}
 }
 
+void FrontEnd::SetKeyTooltip(const std::string &window, const std::string &control, int cmd)
+{
+	// CXWnd::SetKeyTooltip (@005756f0): the XML's TooltipReference (GetXMLTooltip), a space if it has
+	// one, then "<" GetKeypressDescription ">" of the command's key, or its alternate when the key's
+	// unbound; with neither (or key 0) the tooltip is left as it was.
+	SidlWindow *wnd = m_windows.Find(window);
+	SidlWindow::Control *c = wnd ? wnd->Find(control) : nullptr;
+	if (!c || !c->def)
+		return;
+	int32_t primary = static_cast<int32_t>(m_key_bindings.Get(cmd, false));
+	int32_t alternate = static_cast<int32_t>(m_key_bindings.Get(cmd, true));
+	int32_t key = primary >= 0 ? primary : alternate;
+	if (key == 0 || (primary < 0 && alternate < 0))
+		return;
+	std::string tip = c->def->tooltip;
+	if (!tip.empty())
+		tip += ' ';
+	c->tooltip = tip + "<" + KeyMap::Describe(static_cast<uint32_t>(key)) + ">";
+}
+
+void FrontEnd::KeyMapUpdated()
+{
+	// CDisplay_KeyMapUpdated (@004a7ca5), and each window's Activate, which set the same.
+	// CSelectorWnd::KeyMapUpdated: its nine buttons and the commands its constructor gives them.
+	static const struct { const char *control; int cmd; } selector[] = {
+		{"SELW_CastSpellToggleButton", KeyMap::ToggleSpellsWin}, {"SELW_ActionsToggleButton", KeyMap::ToggleMainMenuWin},
+		{"SELW_InventoryToggleButton", KeyMap::Inventory}, {"SELW_PetInfoToggleButton", KeyMap::TogglePetInfoWin},
+		{"SELW_FriendsToggleButton", KeyMap::ToggleFriendsWin}, {"SELW_OptionsToggleButton", KeyMap::ToggleOptionsWin},
+		{"SELW_HotboxToggleButton", KeyMap::ToggleHotboxWin}, {"SELW_BuffToggleButton", KeyMap::ToggleBuffWin},
+		{"SELW_HelpToggleButton", KeyMap::ToggleHelpWin}};
+	for (const auto &b : selector)
+		SetKeyTooltip("SelectorWindow", b.control, b.cmd);
+	// CCastSpellWnd's book button.
+	SetKeyTooltip("CastSpellWnd", "CSPW_SpellBook", KeyMap::SpellBook);
+	// CGroupWnd's.
+	SetKeyTooltip("GroupWindow", "FollowButton", KeyMap::InviteFollow);
+	SetKeyTooltip("GroupWindow", "InviteButton", KeyMap::InviteFollow);
+	SetKeyTooltip("GroupWindow", "DeclineButton", KeyMap::Disband);
+	SetKeyTooltip("GroupWindow", "DisbandButton", KeyMap::Disband);
+	// CActionsWnd::KeyMapUpdated_UpdateActionWindowKeyTooltips: the pages and the buttons.
+	static const struct { const char *control; int cmd; } actions[] = {
+		{"ActionsMainPage", KeyMap::Main}, {"ActionsAbilitiesPage", KeyMap::Abilities}, {"ActionsCombatPage", KeyMap::Combat},
+		{"ActionsSocialsPage", KeyMap::Socials}, {"AMP_WhoButton", KeyMap::Who}, {"AMP_InviteButton", KeyMap::InviteFollow},
+		{"AMP_FollowButton", KeyMap::InviteFollow}, {"AMP_DisbandButton", KeyMap::Disband}, {"AMP_CampButton", KeyMap::Camp},
+		{"AMP_SitButton", KeyMap::SitStand}, {"AMP_StandButton", KeyMap::SitStand}, {"AMP_RunButton", KeyMap::RunWalk},
+		{"AMP_WalkButton", KeyMap::RunWalk}, {"ACP_MeleeAttackButton", KeyMap::AutoAttack}};
+	for (const auto &b : actions)
+		SetKeyTooltip("ActionsWindow", b.control, b.cmd);
+}
+
 void FrontEnd::SaveKeyBinding(int id, bool alternate, uint32_t key)
 {
+	KeyMapUpdated();
 	if (m_config.settings_ini.empty())
 		return;
 	IniFile ini;
@@ -5665,6 +5717,7 @@ void FrontEnd::WriteUserColor(int index, uint32_t rgb)
 
 void FrontEnd::ResetKeyBindings()
 {
+	KeyMapUpdated();
 	if (m_config.settings_ini.empty())
 		return;
 	IniFile ini;
