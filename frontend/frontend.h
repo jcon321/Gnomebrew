@@ -14,6 +14,7 @@
 #include "charcreate.h"
 #include "charselect_anim_window.h"
 #include "charselect_view.h"
+#include "chat_manager.h"
 #include "chat_text.h"
 #include "chat_window.h"
 #include "creation_rules.h"
@@ -53,6 +54,7 @@
 #include "trade_window.h"
 #include "spell_book.h"
 #include "spell_cast.h"
+#include "text_entry.h"
 #include "weather.h"
 #include "window_manager.h"
 #include "world_client.h"
@@ -114,6 +116,8 @@ struct GameData
 	audio::Mixer *mixer = nullptr;
 	audio::EqSound::Settings sound;
 };
+
+class IniFile;
 
 class FrontEnd
 {
@@ -190,7 +194,8 @@ public:
 	const Group &GroupState() const { return m_group; }
 	const Mounts &MountState() const { return m_mounts; }
 	const Raid &RaidState() const { return m_raid; }
-	const ChatWindow &Chat() const { return m_chat; }
+	const ChatWindow &Chat() const { return m_chats.Main(); }
+	const ChatManager &Chats() const { return m_chats; }
 	Abilities &Skills() { return m_abilities; } // the ability buttons and UseSkill (for the preview tool)
 	uint16_t Target() const { return m_game_values.target; } // spawn id, 0 none
 	int CurHp() const { return m_game_values.CurHp(); }
@@ -208,6 +213,7 @@ public:
 	const SpellBook &SpellBookState() const { return m_spell_book; }
 	BookWindow &Book() { return m_book; }
 	const std::string &UiLayoutPath() const { return m_ui_layout_path; }
+	void SaveUiLayoutForTests() { SaveUiLayout(); }
 	CharacterCreation *Creation() { return m_creation.get(); }
 	// For tools: the window-pixel center of a visible SIDL control on character select or creation.
 	bool ControlCenter(const std::string &screen_id, int &x, int &y) const;
@@ -664,17 +670,33 @@ private:
 	bool m_creating = false; // waiting for the world server's answer
 
 	// zone: the 3D view with the SIDL windows and the debug menu over it
-	ChatWindow m_chat;
+	ChatManager m_chats;
 	ChatColors m_chat_colors;
+	TextEntry m_text_entry; // CTextEntryWnd (Rename Window's)
+	// CChatManager::InitContextMenu's menus, in the window manager's (-1 until built): the chat
+	// window's own, and the ones UpdateContextMenus fills as it opens.
+	struct ChatMenus
+	{
+		int root = -1, filters = -1, melee = -1, spells = -1, channel = -1, language = -1, reply = -1, friends = -1,
+		    raid = -1, chat_filter = -1, chat_channel = -1;
+	} m_chat_menus;
+	void BuildChatMenus();
+	void UpdateChatMenus(const std::string &screen); // UpdateContextMenus and UpdateTellMenus
+	void ChatMenuPick(const WindowManager::MenuPick &pick); // CChatWindow::WndNotification's 0x13
+	void CheckChatWindows(); // each frame: a closed chat window freed, the active one followed
+	ChatWindow &ActiveChat() { return *m_chats.Active().chat; }
+	void OpenChat(const std::string &text = ""); // the active window shown, its input open
+	void SendChatLine(int window, const std::string &line); // CChatWindow::WndNotification's Enter
+	void SetChatDefaults(); // SetDefaultGameValues' DefaultChannel, DefaultChannelTell, DefaultLanguage
+	void BuildChats(const IniFile *layout); // CChatManager's constructor, from the UI ini (null: none)
+	ChatManager::Defaults m_chat_defaults;
 	GameValues m_game_values;
 	// __LastTell: who sent us tells, the newest first, 50 at most (AddNameToTellList); /reply goes
 	// to the first, Cycle reply steps through them (CycleNamesInTellList's DAT_007cf0dc).
 	std::vector<std::string> m_tell_list;
-	// The chat window's default channel for what's typed without a command (CChatWindow+0x140, set
-	// by /channel; CChatManager starts it at DAT_00798598, SetDefaultGameValues' 8, say) and a
-	// tell's name or chat channel's (+0x148).
-	uint8_t m_chat_channel = 8;
-	std::string m_chat_channel_to;
+	// The chat window whose default channel and language what's typed goes by (DAT_00798598,
+	// DAT_0079859a: the main window's but while a window's Enter interprets its line).
+	int m_chat_sender = 0;
 	int m_tell_index = 0;
 	// A key that opened the chat line (OpenChatLine): its own character, which Windows sends after
 	// the key, isn't typed into it (eqgame's DirectInput key reaches the edit box before the

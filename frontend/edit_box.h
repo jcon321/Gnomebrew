@@ -32,6 +32,8 @@ namespace EditBox
 	// SetText's, when the text changed from outside since the box last saw it: the caret to its end.
 	void Sync(SidlWindow::Control &box);
 	int Caret(const SidlWindow::Control &box);
+	// SetSel: the selection [start, end) of the shown text (end -1: to the end).
+	void SetSel(SidlWindow::Control &box, int start, int end);
 	// ReplaceSelection: `text` (already tagged, an item tag allowed) in the selection's place,
 	// filtered when `filter`, if the box's limit lets it.
 	void ReplaceSelection(SidlWindow::Control &box, const std::string &text, bool filter);

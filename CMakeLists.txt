@@ -117,6 +117,8 @@ add_library(eqfrontend STATIC
     frontend/weather.cpp
     frontend/debug_menu.cpp
     frontend/window_manager.cpp
+    frontend/chat_manager.cpp
+    frontend/chat_menus.cpp
     frontend/chat_window.cpp
     frontend/item_tags.cpp
     frontend/chat_commands.cpp
@@ -125,6 +127,7 @@ add_library(eqfrontend STATIC
     frontend/game_windows.cpp
     frontend/containers.cpp
     frontend/edit_box.cpp
+    frontend/text_entry.cpp
     frontend/babel.cpp
     frontend/bank_window.cpp
     frontend/merchant_window.cpp

@@ -153,8 +153,19 @@ void WindowManager::Load(const IniFile &ini)
 	m_globals.fade_to = ini.GetInt("Main", "GlobalFadeToAlpha", m_globals.fade_to) & 0xff;
 	m_globals.delay = ini.GetInt("Main", "GlobalFadeDelay", m_globals.delay);
 	m_globals.duration = ini.GetInt("Main", "GlobalFadeDuration", m_globals.duration);
-	for (auto &wp : m_windows) {
-		Window &w = *wp;
+	for (auto &wp : m_windows)
+		LoadWindow(ini, *wp);
+}
+
+void WindowManager::Load(const IniFile &ini, const std::string &screen)
+{
+	if (Window *w = WindowNamed(screen))
+		LoadWindow(ini, *w);
+}
+
+void WindowManager::LoadWindow(const IniFile &ini, Window &w)
+{
+	{
 		const std::string &section = w.screen;
 		Settings &s = w.settings;
 		s.fades = ini.GetBool(section, "Fades", s.fades);
@@ -497,7 +508,10 @@ bool WindowManager::OnMouse(const InputEvent &event, uint64_t now_ms)
 		    !m_windows[top]->wnd.InteractiveAt(event.x, event.y)) {
 			BringToTop(top);
 			m_menu_window = m_windows[top]->screen;
-			OpenMenuAt(2, event.x, event.y, 0);
+			int menu = m_windows[top]->menu;
+			if (menu != WindowMenu && menu_opening)
+				menu_opening(m_menu_window);
+			OpenMenuAt(menu, event.x, event.y, 0);
 			return true;
 		}
 		if (event.type == Type::RightDown) {
@@ -893,9 +907,9 @@ void WindowManager::OpenMenuAt(int menu, int x, int y, int parent_width)
 	for (const MenuItem &item : items) {
 		// CContextMenuManager::WarnDefaultMenu: Background only when the window isn't transparent,
 		// Minimize and Close when it has their boxes; Lock checked when it's locked.
-		bool enabled = !item.separator;
-		bool checked = false;
-		if (menu == 2 && item.submenu == 0)
+		bool enabled = !item.separator && item.enabled;
+		bool checked = item.checked;
+		if (menu == WindowMenu && item.submenu == 0)
 			enabled = !owner->wnd.Def().transparent;
 		else if (item.id == MenuMinimize)
 			enabled = owner->wnd.HasMinimizeBox();
@@ -927,6 +941,24 @@ Rect WindowManager::MenuRowRect(int level, int row) const
 		return {};
 	Rect content = wnd.ContentRect(*list);
 	return {content.x, content.y + row * list->row_height, content.w, list->row_height};
+}
+
+std::string WindowManager::MenuRowText(int level, int row) const
+{
+	if (level < 0 || level >= static_cast<int>(m_open_menus.size()))
+		return {};
+	const SidlWindow::Control *list = m_open_menus[level].wnd.Find("CM_List");
+	if (!list || row < 0 || row >= static_cast<int>(list->rows.size()) || list->rows[row].size() < 2)
+		return {};
+	return list->rows[row][1];
+}
+
+int WindowManager::MenuRows(int level) const
+{
+	if (level < 0 || level >= static_cast<int>(m_open_menus.size()))
+		return 0;
+	const SidlWindow::Control *list = m_open_menus[level].wnd.Find("CM_List");
+	return list ? static_cast<int>(list->rows.size()) : 0;
 }
 
 void WindowManager::CloseMenus()
@@ -990,8 +1022,9 @@ bool WindowManager::MenuMouse(const InputEvent &event)
 			const MenuItem &item = m_menus[m_open_menus[level].menu][row];
 			if (m_open_menus[level].enabled[row] && item.submenu < 0 && item.id != 0) {
 				int id = item.id;
+				std::string text = item.text;
 				CloseMenus();
-				MenuAction(id);
+				MenuAction(id, text);
 			}
 		}
 		return true;
@@ -1011,7 +1044,7 @@ bool WindowManager::MenuMouse(const InputEvent &event)
 	}
 }
 
-void WindowManager::MenuAction(int id)
+void WindowManager::MenuAction(int id, const std::string &text)
 {
 	Window *w = WindowNamed(m_menu_window);
 	if (!w)
@@ -1023,7 +1056,7 @@ void WindowManager::MenuAction(int id)
 	case MenuTint:
 	case MenuNormalAlpha:
 	case MenuFadedAlpha:
-		m_menu_picks.push_back({m_menu_window, id});
+		m_menu_picks.push_back({m_menu_window, id, text});
 		break;
 	case MenuMinimize: // CXWndManager::MinimizeWindow
 		SetMinimized(*w, !w->wnd.Minimized());
@@ -1036,9 +1069,54 @@ void WindowManager::MenuAction(int id)
 		w->settings.locked = !w->settings.locked;
 		m_changed = true;
 		break;
-	default:
+	default: // the window's own menu's: its WndNotification 0x13
+		m_menu_picks.push_back({m_menu_window, id, text});
 		break;
 	}
+}
+
+int WindowManager::AddMenu(std::vector<MenuItem> items)
+{
+	m_menus.push_back(std::move(items));
+	return static_cast<int>(m_menus.size()) - 1;
+}
+
+void WindowManager::SetMenu(int menu, std::vector<MenuItem> items)
+{
+	if (menu >= 0 && menu < static_cast<int>(m_menus.size()) && menu != WindowMenu)
+		m_menus[menu] = std::move(items);
+}
+
+void WindowManager::SetWindowMenu(const std::string &screen, int menu)
+{
+	if (Window *w = WindowNamed(screen))
+		w->menu = menu;
+}
+
+bool WindowManager::Remove(const std::string &screen)
+{
+	for (size_t i = 0; i < m_windows.size(); ++i) {
+		if (m_windows[i]->screen != screen)
+			continue;
+		if (m_menu_window == screen)
+			CloseMenus();
+		m_windows.erase(m_windows.begin() + static_cast<std::ptrdiff_t>(i));
+		// What was pressed or dragged is gone, or has moved down one.
+		int index = static_cast<int>(i);
+		auto fix = [&](int &at) {
+			if (at == index)
+				at = -1;
+			else if (at > index)
+				--at;
+		};
+		fix(m_press);
+		fix(m_drag_window);
+		if (m_drag_window < 0)
+			m_drag = Drag::None;
+		m_changed = true;
+		return true;
+	}
+	return false;
 }
 
 void WindowManager::LayoutMenu(OpenMenu &open, TextRenderer &text)

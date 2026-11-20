@@ -1055,6 +1055,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		if (m_zone_view)
 			m_game_values.heading = m_zone_view->Movement().heading;
 		UpdateGameWindows(m_windows, m_game_values, m_window_state);
+		CheckChatWindows();
 		WindowMenuPicks();
 		m_color_picker.Update();
 		m_compass.Frame(m_windows, m_game_values.heading, m_zone.Profile().skills[40] /* Sense Heading */, now_ms);
@@ -2045,6 +2046,11 @@ void FrontEnd::WindowMenuPicks()
 		if (!settings)
 			continue;
 		std::string window = pick.window;
+		if (pick.id != WindowManager::MenuTint && pick.id != WindowManager::MenuNormalAlpha &&
+		    pick.id != WindowManager::MenuFadedAlpha) {
+			ChatMenuPick(pick);
+			continue;
+		}
 		if (pick.id == WindowManager::MenuTint) {
 			m_color_picker.Activate(settings->tint, [this, window](uint32_t color) { m_windows.SetTint(window, color); });
 			continue;
@@ -2132,8 +2138,8 @@ void FrontEnd::EnterZoneScreen(bool zoning)
 {
 	m_screen = Screen::Zone;
 	if (!zoning) {
-		m_chat.Attach(nullptr);
-		m_chat.Clear();
+		m_chats.Detach();
+		m_chats.Main().Clear();
 		m_game_values.target = 0;
 	}
 	m_time_of_day.clear();
@@ -2184,9 +2190,9 @@ namespace
 		{"PlayerWindow", true}, {"TargetWindow", true}, {"GroupWindow", true}, {"BuffWindow", true},
 		{"CastSpellWnd", true}, {"HotButtonWnd", true}, {"SelectorWindow", true}, {"ActionsWindow", false},
 		{"InventoryWindow", false}, {"OptionsWindow", false}, {"FriendsWindow", false}, {"PetInfoWindow", false},
-		{"HelpWindow", false}, {"CompassWindow", false}, {"SocialEditWnd", false}, {"ChatWindow", true},
+		{"HelpWindow", false}, {"CompassWindow", false}, {"SocialEditWnd", false},
 		{"SkillsWindow", false}, {"ItemDisplayWindow", false}, {"QuantityWnd", false}, {"SpellBookWnd", false},
-		{ColorPicker::Screen, false},
+		{ColorPicker::Screen, false}, {TextEntry::Screen, false},
 		{"ConfirmationDialogBox", false}, {"CastingWindow", false}, {"BankWnd", false},
 		{"MerchantWnd", false}, {"LootWnd", false}, {"TradeWnd", false}, {"GiveWnd", false},
 		{"SkillsSelectWindow", false}, {"NoteWindow", false}, {"BookWindow", false}, {"TrainWindow", false},
@@ -2244,13 +2250,13 @@ void FrontEnd::BuildZoneWindows()
 		std::string suffix = name + "_" + m_config.login_host.substr(0, 7) + ".ini";
 		m_ui_layout_path = m_config.ui_dir + "/UI_" + suffix;
 		IniFile ini;
-		if (ini.Load(m_ui_layout_path)) {
+		bool have_layout = ini.Load(m_ui_layout_path);
+		// CChatManager::CChatManager: the chat windows from [ChatManager]; then the layouts, and
+		// CChatManager::Activate shows them all.
+		BuildChats(have_layout ? &ini : nullptr);
+		if (have_layout)
 			m_windows.Load(ini);
-			// CChatManager::CChatManager: [ChatManager] ChatWindow0_FontStyle, the chat's font.
-			std::string font = ini.Get("ChatManager", "ChatWindow0_FontStyle", "*");
-			if (!font.empty() && font[0] != '*')
-				m_chat.SetFont(std::atoi(font.c_str()));
-		}
+		m_chats.ShowAll();
 		m_windows.Show("QuantityWnd", false); // only ever up for a stack
 		m_windows.Show("SpellBookWnd", false); // open only while it's activated
 		m_windows.Show("ConfirmationDialogBox", false);
@@ -2335,10 +2341,7 @@ void FrontEnd::BuildZoneWindows()
 	};
 	friends_host.save = [this] { SaveCustom(); };
 	friends_host.who = [this](const std::string &text) { Who(text); };
-	friends_host.contact = [this](const std::string &text) {
-		m_windows.Show("ChatWindow", true);
-		m_chat.Open(text);
-	};
+	friends_host.contact = [this](const std::string &text) { OpenChat(text); };
 	m_friends.Attach(m_windows, std::move(friends_host));
 	BazaarWindow::Host bazaar_host;
 	bazaar_host.color = [this](int type) { return m_chat_colors.Get(type); };
@@ -2455,14 +2458,12 @@ void FrontEnd::BuildZoneWindows()
 	m_spell_book.Reset();
 	m_game_values.spell_book = &m_spell_book;
 	m_game_values.spell_cast = &m_spell_cast;
-	// CChatManager::CChatManager: the main chat window is titled "Main Chat" (eqstr 6623), with
-	// no close or minimize box.
-	if (SidlWindow *chat = m_windows.Find("ChatWindow")) {
-		chat->Root().text = EqString(6623, "Main Chat");
-		chat->RemoveTitleBoxes();
+	// No layout to read (no character name yet): the chat windows without one.
+	if (!m_windows.Find(ChatManager::MainScreen)) {
+		BuildChats(nullptr);
+		m_chats.ShowAll();
 	}
-	m_chat.Attach(m_windows.Find("ChatWindow"));
-	m_chat.SetLinkColor(m_chat_colors.Get(ItemTags::ColorType));
+	m_text_entry.Attach(m_windows);
 	auto bag_sound = [this](int wave) {
 		if (m_sound)
 			m_sound->PlayWave(wave);
@@ -2568,22 +2569,17 @@ void FrontEnd::SaveUiLayout()
 	IniFile ini;
 	ini.Load(m_ui_layout_path); // keep what we don't manage
 	m_windows.Store(ini);
+	m_chats.Store(ini); // CChatManager::Deactivate's [ChatManager]
 	if (!ini.Save(m_ui_layout_path))
 		Log("UI: couldn't write " + m_ui_layout_path);
 }
 
 void FrontEnd::SetChatFont(int font)
 {
-	// CChatWindow::SetChatFont, kept as CChatManager::Deactivate keeps it ([ChatManager]
-	// ChatWindow0_FontStyle in the UI ini).
-	m_chat.SetFont(font);
-	if (m_ui_layout_path.empty())
-		return;
-	IniFile ini;
-	ini.Load(m_ui_layout_path);
-	ini.Set("ChatManager", "ChatWindow0_FontStyle", std::to_string(m_chat.Font()));
-	if (!ini.Save(m_ui_layout_path))
-		Log("UI: couldn't write " + m_ui_layout_path);
+	// CChatWindow::SetChatFont on the active window, kept as CChatManager::Deactivate keeps it
+	// ([ChatManager] ChatWindow<n>_FontStyle in the UI ini).
+	ActiveChat().SetFont(font);
+	SaveUiLayout();
 }
 
 void FrontEnd::SaveCustom()
@@ -2825,16 +2821,17 @@ void FrontEnd::HandleWindowClicks()
 			continue;
 		// Shift+click on an item while typing in the chat links it there, with nothing on the
 		// cursor (ours; eqgame links from the item display's icon only).
-		if (click.shift && m_chat.Typing() && !m_zone.Items().count(Inventory::Cursor))
+		if (click.shift && m_chats.Typing() && !m_zone.Items().count(Inventory::Cursor))
 			if (const ZoneItem *item = SlotItem(m_windows, m_game_values, click.window, click.control)) {
-				m_chat.AddItemTag(item->id, item->name);
+				m_chats.Typing()->AddItemTag(item->id, item->name);
 				continue;
 			}
 		// The item display's icon links its item in the chat (CItemDisplayWnd::WndNotification).
 		if (click.window == "ItemDisplayWindow" && click.control == "IconButton") {
-			if (m_window_state.display_item.id && m_chat.Attached()) {
-				m_windows.Show("ChatWindow", true);
-				m_chat.AddItemTag(m_window_state.display_item.id, m_window_state.display_item.name);
+			// CEditWnd::AddItemTag on the active window's input (GetActiveChatWindow).
+			if (m_window_state.display_item.id && ActiveChat().Attached()) {
+				m_windows.Show(m_chats.Active().screen, true);
+				ActiveChat().AddItemTag(m_window_state.display_item.id, m_window_state.display_item.name);
 			}
 			continue;
 		}
@@ -2868,7 +2865,8 @@ void FrontEnd::HandleWindowClicks()
 		if (m_containers.Click(click.window, click.control) || m_bank.Click(click.window, click.control) ||
 		    m_merchant.Click(click.window, click.control, click.shift, click.ctrl) || m_train.Click(click.window, click.control) ||
 		    m_raid_window.Click(click.window, click.control) || m_aa_window.Click(click.window, click.control) ||
-		    m_pet_window.Click(click.window, click.control) || m_friends.Click(click.window, click.control))
+		    m_pet_window.Click(click.window, click.control) || m_friends.Click(click.window, click.control) ||
+		    m_text_entry.Click(click.window, click.control))
 			continue;
 		// CInventoryWnd::WndNotification: the Alt. Adv. button opens the AA window, or closes it.
 		if (click.window == "InventoryWindow" && click.control == "IW_AltAdvBtn") {
@@ -2903,7 +2901,8 @@ void FrontEnd::HandleWindowClicks()
 				m_containers.Close(moved.close_bag);
 			// The quantity window's edit box takes the keys from the others.
 			if (m_windows.Shown("QuantityWnd")) {
-				m_chat.Close();
+				if (ChatWindow *chat = m_chats.Typing())
+					chat->Close();
 				if (SidlWindow *social_editor = m_windows.Find("SocialEditWnd"))
 					social_editor->Focus("");
 			}
@@ -3043,7 +3042,7 @@ void FrontEnd::ActionsClick(const std::string &control)
 
 void FrontEnd::AddZoneLog(const std::string &text, uint32_t color)
 {
-	m_chat.Add(text, color);
+	m_chats.Main().Add(text, color);
 	EqLog(text);
 }
 
@@ -3068,7 +3067,7 @@ void FrontEnd::ChatOut(const std::string &text, int type)
 {
 	// print_chat_dsp_chat: DoPercentConvert first.
 	std::string line = PercentConvert(text);
-	m_chat.Add(line, m_chat_colors.Get(type));
+	m_chats.Add(line, m_chat_colors.Get(type), type); // ProcessChatMessage: to its kind's window
 	EqLog(line);
 }
 
@@ -3366,7 +3365,7 @@ void FrontEnd::CycleNearestTarget()
 
 void FrontEnd::ToggleTarget()
 {
-	if (m_chat.Typing()) // UI_ChatInputCheck() == 2
+	if (m_chats.Typing()) // UI_ChatInputCheck() == 2
 		return;
 	uint16_t me = m_zone.MySpawnId();
 	if (m_game_values.target == me) {
@@ -3405,10 +3404,11 @@ void FrontEnd::AddNameToTellList(const std::string &name)
 
 void FrontEnd::CycleReply(bool back)
 {
-	if (!m_chat.Typing())
+	ChatWindow *chat = m_chats.Typing();
+	if (!chat)
 		return;
 	// The line's start picks the command: eqstr 13974 "/tell", 14202 "/rtarget", or ";tell".
-	std::string line = Lower(m_chat.InputText());
+	std::string line = Lower(chat->InputText());
 	std::string tell = Lower(EqString(13974, "/tell")), rtarget = Lower(EqString(14202, "/rtarget"));
 	std::string command;
 	if (line.compare(0, tell.size(), tell) == 0)
@@ -3431,20 +3431,19 @@ void FrontEnd::CycleReply(bool back)
 	// "/rtarget <name> "; otherwise "/tell <name> ", or the chat server's ";tell <name> " for a
 	// name with a dot (another server's).
 	if (command == EqString(14202, "/rtarget"))
-		m_chat.Open(command + " " + name + " ");
+		chat->Open(command + " " + name + " ");
 	else if (name.find('.') != std::string::npos)
-		m_chat.Open(";tell " + name + " ");
+		chat->Open(";tell " + name + " ");
 	else
-		m_chat.Open(EqString(13974, "/tell") + " " + name + " ");
+		chat->Open(EqString(13974, "/tell") + " " + name + " ");
 }
 
 void FrontEnd::OpenChatLine(const std::string &text)
 {
 	// The active chat window's input box set to it and given the focus.
-	if (!m_chat.Attached())
+	if (!ActiveChat().Attached())
 		return;
-	m_windows.Show("ChatWindow", true);
-	m_chat.Open(text);
+	OpenChat(text);
 	m_chat_opened_by_key = true;
 }
 
@@ -5604,7 +5603,7 @@ void FrontEnd::ZoneKey(const InputEvent &event)
 	}
 	// ProcessKeyDown: while the chat has the keys, a key that types a character runs nothing.
 	int typed = KeyMap::TypedChar(event.scan);
-	if (m_chat.Typing() && typed)
+	if (m_chats.Typing() && typed)
 		return;
 	for (int cmd : m_key_bindings.Down(key)) {
 		// Windows repeats a held key; DirectInput doesn't.
@@ -5619,7 +5618,7 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 	(void)typed;
 	// While the chat has the keys, nothing runs whose own key types a character
 	// (isCharacterAllowed of ConvertScanCodeToChar of the command's key).
-	if (m_chat.Typing() && KeyMap::TypedChar(static_cast<int>(m_key_bindings.Get(cmd, false) & 0xff)))
+	if (m_chats.Typing() && KeyMap::TypedChar(static_cast<int>(m_key_bindings.Get(cmd, false) & 0xff)))
 		return;
 	bool in_zone = m_screen == Screen::Zone;
 	auto toggle = [&](const char *screen) {
@@ -5792,7 +5791,7 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 		break;
 	case KeyMap::CycleNearestTarget:
 		// Zeal's: not while the chat line is open (UI_ChatInputCheck).
-		if (!m_chat.Typing())
+		if (!m_chats.Typing())
 			CycleNearestTarget();
 		break;
 	case KeyMap::ToggleTarget:
@@ -5812,7 +5811,7 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 		// name Cycle reply is on: "/tell <name> " (";tell <name> " for another server's, with a
 		// dot), "/rtarget <name> " (eqstr 14202); with no tells, eqstr 12364 (12365 for
 		// /rtarget). (A GM's Send tell to the petitioner being helped, CPetitionQWnd, isn't ours.)
-		if (m_chat.Typing())
+		if (m_chats.Typing())
 			break;
 		if (cmd == KeyMap::Tell) {
 			OpenChatLine(EqString(13974, "/tell") + " ");
@@ -5850,7 +5849,8 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 		break;
 	case KeyMap::HistoryUp:
 	case KeyMap::HistoryDown:
-		m_chat.History(cmd == KeyMap::HistoryUp);
+		if (ChatWindow *chat = m_chats.Typing())
+			chat->History(cmd == KeyMap::HistoryUp);
 		break;
 	case KeyMap::SpellBook:
 		// The book opened, or closed when it's open (DeactivateSpellBook through the window's 0x88).
@@ -5909,11 +5909,11 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 		break;
 	case KeyMap::PageUp: // ExecuteCmd 0x55, 0x56: the active chat window a page up or down
 		if (down && in_zone)
-			m_chat.PageUp();
+			ActiveChat().PageUp();
 		break;
 	case KeyMap::PageDown:
 		if (down && in_zone)
-			m_chat.PageDown();
+			ActiveChat().PageDown();
 		break;
 	case KeyMap::ToggleRaidWin:
 		// ExecuteCmd 0x6d: pressed, with the raid's expansion; CRaidWnd::Activate or down.
@@ -6000,7 +6000,7 @@ void FrontEnd::SaveUserColor(int index, uint32_t rgb)
 	// COptionsWnd::SaveColors: CDisplay_SetUserDefinedColor, and [TextColors] User_<n+1>_Red,
 	// _Green and _Blue (my-client.ini for eqclient.ini).
 	m_chat_colors.Set(index, rgb);
-	m_chat.SetLinkColor(m_chat_colors.Get(ItemTags::ColorType));
+	m_chats.SetLinkColor(m_chat_colors.Get(ItemTags::ColorType));
 	WriteUserColor(index, rgb);
 }
 
@@ -6116,11 +6116,15 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 	SidlWindow *quantity = m_windows.Find("QuantityWnd");
 	SidlWindow *color_picker = m_windows.Find(ColorPicker::Screen);
 	SidlWindow *friends = m_windows.Find(Friends::Screen);
+	SidlWindow *text_entry = m_windows.Find(TextEntry::Screen);
 	// The chat's links light under the mouse, and a click on one asks the zone about it.
 	ItemTag link;
-	if (event.IsMouse() && !m_mouse_turn && !m_mouse_pan &&
-	    m_chat.OnMouse(event, m_windows.ScreenAt(event.x, event.y) == "ChatWindow", link))
-		m_zone.ClickItemLink(link.id, link.name);
+	if (event.IsMouse() && !m_mouse_turn && !m_mouse_pan) {
+		std::string over = m_windows.ScreenAt(event.x, event.y);
+		for (int i = 0; i < m_chats.Count(); ++i)
+			if (ChatManager::Window *chat = m_chats.At(i); chat && chat->chat->OnMouse(event, over == chat->screen, link))
+				m_zone.ClickItemLink(link.id, link.name);
+	}
 	if (event.IsMouse() && !m_mouse_turn && !m_mouse_pan && m_windows.OnMouse(event, m_now_ms)) {
 		if (event.type == InputEvent::Type::MouseDown) {
 			std::string pressed = m_windows.ScreenAt(event.x, event.y);
@@ -6128,21 +6132,35 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			                             : pressed == "QuantityWnd"       ? quantity
 			                             : pressed == ColorPicker::Screen ? color_picker
 			                             : pressed == Friends::Screen     ? friends
+			                             : pressed == TextEntry::Screen   ? text_entry
 			                                                              : nullptr;
+			int pressed_chat = m_chats.IndexOf(pressed);
 			if (pressed_editor && pressed_editor->Typing()) {
-				m_chat.Close();
-				for (SidlWindow *other : {social_editor, quantity, color_picker, friends})
+				for (int i = 0; i < m_chats.Count(); ++i)
+					if (ChatManager::Window *chat = m_chats.At(i))
+						chat->chat->Close();
+				for (SidlWindow *other : {social_editor, quantity, color_picker, friends, text_entry})
 					if (other && other != pressed_editor)
 						other->Focus("");
 			}
-			else if (pressed == "ChatWindow" && m_chat.Typing())
-				for (SidlWindow *other : {social_editor, quantity, color_picker, friends})
-					if (other)
-						other->Focus("");
+			else if (pressed_chat >= 0) {
+				// CChatWindow::OnSetFocus: the active window (SetActiveChatChannel). One input
+				// has the keys: a press in this one's takes them from the others.
+				m_chats.SetActive(pressed_chat);
+				if (m_chats.At(pressed_chat)->chat->Typing()) {
+					for (int i = 0; i < m_chats.Count(); ++i)
+						if (ChatManager::Window *chat = m_chats.At(i); chat && i != pressed_chat)
+							chat->chat->Close();
+					for (SidlWindow *other : {social_editor, quantity, color_picker, friends, text_entry})
+						if (other)
+							other->Focus("");
+				}
+			}
 		}
 		return;
 	}
-	SidlWindow *editor = quantity && quantity->Typing()           ? quantity
+	SidlWindow *editor = text_entry && text_entry->Typing()       ? text_entry
+	                     : quantity && quantity->Typing()           ? quantity
 	                     : color_picker && color_picker->Typing() ? color_picker
 	                     : friends && friends->Typing()           ? friends
 	                                                              : social_editor;
@@ -6245,12 +6263,10 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 	if (event.type == InputEvent::Type::Char) {
 		if (editing)
 			editor->OnKey(event);
-		else if (m_chat.Typing())
-			m_chat.OnChar(event.ch);
-		else if (event.ch == '/' && m_chat.Attached()) {
-			m_windows.Show("ChatWindow", true);
-			m_chat.Open("/");
-		}
+		else if (ChatWindow *chat = m_chats.Typing())
+			chat->OnChar(event.ch);
+		else if (event.ch == '/' && ActiveChat().Attached())
+			OpenChat("/");
 		return;
 	}
 	if (event.type != InputEvent::Type::Key)
@@ -6271,6 +6287,9 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 	// the bazaar search's name box, a search.
 	if (editing && event.key == InputEvent::Key::Enter && editor == friends && m_friends.Enter())
 		return;
+	// Into the text entry's box (its notification 6): OK, if it's enabled.
+	if (editing && event.key == InputEvent::Key::Enter && editor == text_entry && m_text_entry.Enter())
+		return;
 	if (editing && event.key == InputEvent::Key::Enter && m_bazaar_search.Enter())
 		return;
 	if (editing && (editor->OnKey(event) || event.key == InputEvent::Key::Enter))
@@ -6280,11 +6299,12 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 	if (editing && !(!event.shift && (event.scan == 0x01 || event.scan == 0xd3 || event.scan == 0xc8 ||
 	                                  event.scan == 0xd0 || event.scan == 0xcb || event.scan == 0xcd)))
 		return;
-	if (m_chat.Typing()) {
+	if (ChatWindow *chat = m_chats.Typing()) {
+		int sender = m_chats.TypingIndex();
 		std::string line;
-		if (m_chat.OnKey(event, line)) {
+		if (chat->OnKey(event, line)) {
 			if (event.key == InputEvent::Key::Enter && !line.empty())
-				InterpretCommand(line);
+				SendChatLine(sender, line);
 			return;
 		}
 	}
@@ -6302,11 +6322,9 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 	}
 	switch (event.key) {
 	case InputEvent::Key::Enter:
-		// ProcessKeyDown's Enter: ExecuteCmd 0xce, the chat's input line.
-		if (m_chat.Attached()) {
-			m_windows.Show("ChatWindow", true);
-			m_chat.Open();
-		}
+		// ProcessKeyDown's Enter: ExecuteCmd 0xce, the active chat window's input line.
+		if (ActiveChat().Attached())
+			OpenChat();
 		break;
 	case InputEvent::Key::Escape: {
 		// A button on the cursor goes, and that's all (CDisplay_NewUIProcessEscape's RemoveAttachment).
@@ -6440,7 +6458,7 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 			TextSize size = m_text.Measure(help, FontSize::Small);
 			m_text.Draw(c, width - size.w - 10, height - size.h - 8, help, FontSize::Small, ZoneGrey);
 		}});
-	m_chat.Layout(m_text);
+	m_chats.Layout(m_text);
 	if (!m_ui_hidden && !loading) // DrawWindows
 		m_windows.Pieces(m_text, now_ms, pieces);
 	pieces.push_back({AltTooltipsPiece, [this, loading](Canvas &c) {

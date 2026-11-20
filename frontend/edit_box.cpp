@@ -92,6 +92,18 @@ void EditBox::Sync(SidlWindow::Control &box)
 	Saw(box);
 }
 
+void EditBox::SetSel(SidlWindow::Control &box, int start, int end)
+{
+	Sync(box);
+	int length = ShownLength(box.text);
+	if (end < 0 || end > length)
+		end = length;
+	start = std::clamp(start, 0, end);
+	box.edit_start = start;
+	box.edit_end = end;
+	box.edit_caret_end = true;
+}
+
 int EditBox::Caret(const SidlWindow::Control &box)
 {
 	return box.edit_caret_end ? box.edit_end : box.edit_start;

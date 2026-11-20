@@ -372,14 +372,66 @@ eqgame's `OP_MoveItem`.
   `DAT_00798598`): 0 /guildsay, 2 /gsay, 4 /auction, 5 /ooc, 7 a /tell to the name at +0x148 (`"%s
   %s"`), 15 `CRaid_SendRaidChat` (no expansion check, unlike /rsay), 19 /chat to a chat channel,
   anything else /say; a line starting `/` that isn't a command is 12380 in red. It starts as
-  `DAT_00798598` (`SetDefaultGameValues`: 8, or eqclient.ini's `DefaultChannel`; ours is always 8)
-  and `/channel` (@004f799f) changes it: the word matched whole and without case against eqstr
+  `DAT_00798598` (`SetDefaultGameValues`: 8, or eqclient.ini's `DefaultChannel` and
+  `DefaultChannelTell`, ours in my-client.ini's [Defaults]) and `/channel` (@004f799f) changes it: the word matched whole and without case against eqstr
   13070 GuildSay, 13071 gsay, 5111 rsay, 13072 tell (the next word the name), 13074 Auction, 13075
   OOC, 13076 Say, 13077 chat (the next word the channel), or the short forms gu, g, rs, t and auc;
   13079 "Your default channel for typing is now %1." with the matched string (13073 "Tell to %1",
   13078 "Chat to Channel %1"); nothing or anything else prints the usage, 13080..13083. The new UI
-  keeps it per chat window (the active one's); the old UI wrote eqclient.ini instead. We have one
-  chat window, and no chat server for 19 (it says /chat isn't supported).
+  keeps it per chat window (`/channel` sets `GetActiveChatWindow`'s +0x140 and a tell's +0x148);
+  the old UI wrote eqclient.ini instead. While a window's Enter interprets its line, `DAT_00798598`,
+  the tell name (`DAT_0079859c`) and the language (`DAT_0079859a`) are that window's, then back as
+  they were; anything else interpreted (a hot button, a social) goes by the main window's
+  (`EQ_Character::DoPassageOfTime` copies them from it). We have no chat server for 19 (it says
+  /chat isn't supported).
+- **Chat windows (`CChatManager`, `frontend/chat_manager.*`, `chat_menus.cpp`):** up to 32, all on
+  the ChatWindow SIDL screen. Window 0 is the main one (layout section [MainChat], font 3 from the
+  constructor's `SetChatFont(3)`); `CreateChatWindow` (@00410c5a, @00410e84) takes the first free
+  slot after it, or a new one (none past 32: eqstr 6648 into the main window in color 13), titles
+  it "Chat <n>" (6624, a space, the number) and lays it out from [Chat<n>] (`EnableIniStorage`,
+  the number in a CXStr two wide padded with spaces: [Chat 1], [Chat10]; mask 0xfffffeff keeps
+  Show out of it: `CChatManager::Activate` shows them all). Its language is the main window's; its
+  default channel 8. Closing one (its box or the window menu's Close) runs its `Deactivate`
+  (@00413b17): `UpdateChannelReferences` (its kinds back to the main window), the active window
+  back to 0, `FreeChatWindow` (the locked window unlocked if it was this one, the slot empty) and
+  the window deleted; the main one has no close box. `CChatWindow::OnSetFocus` (@004147d3) makes a
+  window the active one (`SetActiveChatChannel`); `GetActiveChatWindow` (@0041114a) is the locked
+  one (+0x88, Always Chat Here) if any, else the active one (+0x84). Enter, `/`, the item display's
+  icon link, Page up and down, /chatfontsize, /language and /clearchat (@004fdb05,
+  `CChatWindow::Clear`) all go to it.
+  - **The channel map** (+0x90, 41 windows): `ProcessChatMessage` (@0041115f) puts each printed
+    line in the window its kind maps to, dropping it if that window's gone;
+    `GetChatWindowIndexFromChannelID` (@00411425) turns a color type into the kind: 0x100/0x133
+    say 0, 0x101/0x134 tell 1, 0x102/0x135 group 2, 0x147 raid 3, 0x103/0x136 guild 4,
+    0x104/0x137 OOC 5, 0x105/0x138 auction 6, 0x106/0x139 shout 7, 0x107/0x13a emotes 8, 0x109
+    your hits 9, 0x108 your spells 10, 0x10e skills 11, chat channels 0x123..0x12c (and
+    0x13b..0x144) 12..21, 0x10b 23, 0x10a 24, 0x10c 25, 0x117 26, 0x118 27, 0x115 28, 0x116 29,
+    0x12d 30, 0x10f 31, 0x12f 32, 0x130 33, 0x131 34, 0x132 35, 0x120 36, 0x121 37, 0x12e 38,
+    0x11c 39, 0x11b 40, anything else 22 (Other). They all start on the main window.
+  - **The menu** (`InitContextMenu` @0041179c, filled as it opens by `UpdateContextMenus`
+    @00412f9b and `UpdateTellMenus` @00413439; picks in `CChatWindow::WndNotification` @00413be9's
+    0x13): Window (6643, the window menu), New Chat Window (6644, id 0x2a), Rename Window (3140,
+    0x2c: `CTextEntryWnd::Activate` with 3141, the title selected, 1 to 15 characters; its OK sets
+    the title), Always Chat Here (15009, 0x2b, checked when locked here: locks it with 15011 into
+    the window, or unlocks with 15010, color 10), Reply to... (3147: `__LastTell`'s names, ids
+    500+), Tell a friend... (3148: the friends list, 0x28a + the slot), Tell a raidmember... (3149:
+    the raid, 0x226 + the member), each disabled when empty and opening the active window's input
+    on `"/tell <name> "` (13974); Filters (6645: Say..Emotes 0x64..0x6c, Chat Channel, Melee 15014..
+    15027 and Spells 15028..15033 submenus, Skills 0x6f, Other 0x7a; the id less 100 is the kind,
+    checked when it maps here; a pick maps it here with "<item> " + 3135, or back to the main
+    window with 3136 when it's here already); Channel (6646: Say 0xc8 8, Tell 0xc9 7 with the tell
+    name "a", Group 0xca 2, Raid 0xd9 15, Guild 0xcb 0, OOC 0xcc 5, Auction 0xcd 4, Chat Channel
+    0xcf.. 19; the window's checked; "<item>" + 3138); Language (6647: the languages we know, id 300
+    + its place in that list, which is what the window keeps, checked; 3133 "Language set to %1";
+    the main window's also writes `DefaultLanguage`, ours in my-client.ini's [Defaults]); Hit Modes
+    (15038, not ours yet). The chat channel items need the chat server and stay disabled.
+  - **[ChatManager]** in the UI ini (`CChatManager::Deactivate` @00410871 writes it; the
+    constructor reads it, a value starting `*` meaning none): NumWindows (the slots past the main
+    one), LockedActiveWindow, ChatWindow<n>_Language (`@42` for a freed slot, which the
+    constructor makes and frees again so the rest keep their numbers), _DefaultChannel,
+    _ChatChannel, _TellTarget for n from 1; _FontStyle and _Name for every window;
+    ChannelMap0..40 (a window's number); HitMode0..7 (0..2). A missing key takes the main
+    window's value. We write it whenever the layout's saved.
   The rest say they aren't supported yet; a GM's commands act as if they weren't there for
   anyone else.
 - `/consider` sends `OP_Consider` (`OP_ConsiderCorpse` on a corpse) and prints the answer as
@@ -671,7 +723,7 @@ build/eqclient -u USER -p PASS [options]
 
 ```
 build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|train|ground|commands|group|duel|bazaar|raid|guild|skills|aa]]
-build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez|cameras|packets]]
+build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez|cameras|packets|friends|chatwindows]]
 ```
 
 This drives the real front-end code with scripted input and writes PNG snapshots. Text is
@@ -728,7 +780,11 @@ whose face picker steps through each feature, printing the rows shown and what t
 then what's sent and what the server lists. `explore` goes into explore mode, turns to the chase
 camera, prints the name tags, clicks the other character, walks forward, and leaves with Escape. It's for
 checking layout and flow without Windows. `--replay` plays a packet log back instead (no server;
-`settings` after SECONDS reads `OUTDIR/my-client.ini` first, such as its `[Filters]`; `mounts`
+`settings` after SECONDS reads `OUTDIR/my-client.ini` first, such as its `[Filters]`;
+`chatwindows` opens the main chat window's menu, makes a new window, filters tells there and
+injects one, sends Worn Off there, sets its channel to Group, locks it (Always Chat Here), renames
+it through the text entry, opens its input with Enter, prints [ChatManager] as saved, closes it
+and makes another, printing the windows (title, channel, language, lines) at each step; `mounts`
 prints each horse (its speeds, Rider, whether it's drawn), who rides what and the chat for SECONDS,
 and each second where another's rider and horse are and what they play, with the old models,
 `mountsluclin` with the human Luclin models and `mountshorse` with them and the horse models; on
@@ -3662,8 +3718,8 @@ A rejected world login gets no error packet. The server just drops the connectio
   `DAT_0079976c`) is set, never inside an item tag. The letter tests are the CRT's `isalpha` and
   `isdigit` (ctype masks 0x103 and 4, which TAKP's list names `UTF8_convertToUTF16` and
   `isAlphaNumeric`). /language (@004fd44a): "help" (eqstr 13300) lists the languages we know under
-  13260 as `%d - %s`; a number picks one for the chat window (13261 out of range); then 13262
-  "Current Language is %1. (%2)", all in 0x111. The new UI's /language doesn't keep it.
+  13260 as `%d - %s`; a number picks one for the active chat window (13261 out of range); then
+  13262 "Current Language is %1. (%2)", all in 0x111. The new UI's /language doesn't keep it.
 - **Chat font and paging:** `CChatWindow::SetChatFont` (@00414b55) puts the output in
   `CXWndManager`'s font 0..6, parsed again and scrolled to the bottom; /chatfontsize (@004fdb25)
   sets the active window's, or prints 13270 into it. `CChatManager` keeps it as [ChatManager]

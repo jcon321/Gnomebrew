@@ -40,6 +40,7 @@
 
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -87,6 +88,7 @@ public:
 
 	// A layout from a UI_*.ini, for every window added so far; Store writes them back.
 	void Load(const IniFile &ini);
+	void Load(const IniFile &ini, const std::string &screen); // one window's (EnableIniStorage)
 	void Store(IniFile &ini) const;
 	// The layout changed (moved, resized, shown, hidden) since the last call.
 	bool TakeChanged();
@@ -159,7 +161,28 @@ public:
 	{
 		std::string window;
 		int id = 0;
+		std::string text; // the item's (GetItemText)
 	};
+	// The menus (CContextMenu): their items, an item's submenu the index of another menu. Menu 2
+	// is the window menu (WindowMenu); the others a window has of its own (the chat's) are added
+	// with AddMenu, and picks of their items come back in TakeMenuPicks.
+	struct MenuItem
+	{
+		std::string text;
+		int id = 0;
+		int submenu = -1;
+		bool separator = false;
+		bool checked = false; // CheckMenuItem
+		bool enabled = true;  // EnableMenuItem (the window menu's own are worked out as it opens)
+	};
+	static constexpr int WindowMenu = 2;
+	int AddMenu(std::vector<MenuItem> items); // its index; the menus go with Reset
+	void SetMenu(int menu, std::vector<MenuItem> items);
+	// The menu a right click on the window opens instead of the window menu (CXWnd's 0x12c).
+	void SetWindowMenu(const std::string &screen, int menu);
+	// Called with the window as its own menu opens, to bring the menus up to date (the chat's
+	// UpdateContextMenus).
+	std::function<void(const std::string &screen)> menu_opening;
 	// The menu's screen (a WDT_RoundedNoTitle window with a list), into the UI's definitions.
 	static void AddDefinitions(SidlDefinitions &defs);
 	void SetStrings(const EqStr *strings) { m_strings = strings; } // the items' names
@@ -170,6 +193,8 @@ public:
 	void CloseMenus(); // CloseAllContextMenus
 	// Where an open menu's row was last drawn (for tools); empty if there's no such row.
 	Rect MenuRowRect(int level, int row) const;
+	std::string MenuRowText(int level, int row) const; // its item's text, "" if there's no such row
+	int MenuRows(int level) const;
 	// A window's settings, and what the window menu's picks change in them (kept in the layout).
 	const Settings *SettingsOf(const std::string &screen) const;
 	void SetTint(const std::string &screen, uint32_t rgb);  // the color picker's 0x1e
@@ -190,6 +215,8 @@ public:
 	void SetGlobalFadeDuration(int ms);
 
 	int Count() const { return static_cast<int>(m_windows.size()); }
+	// A window added with Add gone again (a chat window freed); false if there's none.
+	bool Remove(const std::string &screen);
 
 private:
 	struct Window
@@ -206,6 +233,7 @@ private:
 		int alpha = 255, fade_from = 255, fade_target = 255;
 		uint64_t fade_start_ms = 0;
 		int fade_ms = 0;
+		int menu = WindowMenu; // what a right click on it opens
 	};
 	enum class Drag { None, Move, Resize };
 
@@ -216,18 +244,11 @@ private:
 	void BringToTop(int &index);
 	void Place(Window &w, const Rect &rect);
 	void SetMinimized(Window &w, bool minimized);
+	void LoadWindow(const IniFile &ini, Window &w);
 	int EffectiveAlpha(const Window &w) const;
 	Rect Clamped(const Rect &rect) const;
 	Window *WindowNamed(const std::string &screen);
 
-	// The menus (CContextMenu): their items, an item's submenu the index of another menu.
-	struct MenuItem
-	{
-		std::string text;
-		int id = 0;
-		int submenu = -1;
-		bool separator = false;
-	};
 	struct OpenMenu
 	{
 		int menu = 0;
@@ -240,7 +261,7 @@ private:
 	// run off the right goes left of its parent (`parent_width` wide) instead.
 	void OpenMenuAt(int menu, int x, int y, int parent_width);
 	bool MenuMouse(const InputEvent &event);
-	void MenuAction(int id); // HandleContextMenuAction
+	void MenuAction(int id, const std::string &text); // HandleContextMenuAction
 	void DrawMenus(Canvas &canvas, TextRenderer &text, uint64_t now_ms);
 	void LayoutMenu(OpenMenu &open, TextRenderer &text); // its columns and rect, from its text
 	TextRenderer *m_text = nullptr; // the last Draw's, to lay a menu out as it opens

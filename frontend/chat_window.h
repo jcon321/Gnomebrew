@@ -4,7 +4,8 @@
 // (CW_ChatOutput, an STML box with a scrollbar) keeps the last 400 lines, wrapped to its width and
 // kept scrolled to the bottom unless scrolled up (AddOutputText); the input (CW_ChatInput) takes up
 // to 512 characters, with the last 40 lines sent a press of the keymap's History up or down away
-// (AddHistory, HandleKeyboardInput; Shift+Up and Shift+Down by default). Every channel goes to this one window so far. Item tags (item_tags.h) in
+// (AddHistory, HandleKeyboardInput; Shift+Up and Shift+Down by default). ChatManager
+// (chat_manager.h) has up to 32 of them and routes each line to one. Item tags (item_tags.h) in
 // a line are links, and the input takes them (CEditWnd::AddItemTag).
 
 #include "item_tags.h"
@@ -51,7 +52,7 @@ public:
 	// CChatWindow::SetChatFont (@00414b55): the output in font 0..6 (CXWndManager's fonts), wrapped
 	// again and scrolled to the bottom; -1 until set (the XML's).
 	void SetFont(int font);
-	int Font() const { return m_font_index; }
+	int Font() const { return m_font_index >= 0 ? m_font_index : 3; } // +0x238: CChatWindow's constructor's 3 until set
 	// ScrollChatWindowUp and Down (@00414ad9, @00414b17): a page, the output's height less 8.
 	void PageUp();
 	void PageDown();

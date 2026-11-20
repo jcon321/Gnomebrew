@@ -939,6 +939,158 @@ namespace
 	// emote and a /random from someone ignored left out (and heard again once they're not); /who all
 	// friend; the friends window: its lists, a name typed into the ignore page's box and Enter, a row
 	// selected and Delete, the Who and Contact buttons.
+	// The chat windows (CChatManager): the main one's menu, a new window, a filter sending tells
+	// there, a rename through the text entry, Always Chat Here, a default channel, what the UI ini
+	// keeps, and closing it.
+	int ChatWindowsTest(FrontEnd &frontend, Harness &h)
+	{
+		WindowManager &windows = frontend.Windows();
+		const ChatManager &chats = frontend.Chats();
+		ZoneSession &inject_to = frontend.ZoneForTests();
+		h.Key(InputEvent::Key::F11); // the debug menu out of the way
+		h.RunUntil([] { return false; }, 300);
+		auto state = [&](const char *when) {
+			printf("[preview] %s: %d slots, active %d, locked %d, map say %d tell %d\n", when, chats.Count(),
+				chats.ActiveIndex(), chats.Locked(), chats.ChannelMap(0), chats.ChannelMap(1));
+			for (int i = 0; i < chats.Count(); ++i)
+				if (const ChatManager::Window *w = chats.At(i))
+					printf("[preview]   %d '%s' title '%s' %s, channel %d tell '%s' language %d, %zu lines\n", i,
+						w->screen.c_str(), chats.Title(i).c_str(), windows.Shown(w->screen) ? "shown" : "hidden",
+						w->channel, w->tell_target.c_str(), w->language, w->chat->Lines().size());
+				else
+					printf("[preview]   %d freed\n", i);
+		};
+		auto last_line = [&](int index) {
+			const ChatManager::Window *w = chats.At(index);
+			return w && !w->chat->Lines().empty() ? w->chat->Lines().back().text : std::string("(none)");
+		};
+		auto at = [](const Rect &r) { return std::make_pair(r.x + r.w / 2, r.y + r.h / 2); };
+		auto move = [&](const Rect &r) {
+			auto [x, y] = at(r);
+			frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+			frontend.Update(NowMs());
+			h.RunUntil([] { return false; }, 50);
+		};
+		auto pick = [&](const Rect &r) {
+			auto [x, y] = at(r);
+			frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+			frontend.OnEvent({InputEvent::Type::MouseDown, x, y});
+			frontend.OnEvent({InputEvent::Type::MouseUp, x, y});
+			frontend.Update(NowMs());
+			h.RunUntil([] { return false; }, 100);
+		};
+		// A right press on the window's output (not one of its controls that takes it).
+		auto menu = [&](const std::string &screen) {
+			const SidlWindow *w = windows.Find(screen);
+			if (!w)
+				return false;
+			const Rect &c = w->Root().client;
+			int px = -1, py = -1;
+			for (int y = c.y + 4; y < c.Bottom() && px < 0; y += 3)
+				for (int x = c.x + 4; x < c.Right() && px < 0; x += 3)
+					if (!w->InteractiveAt(x, y) && windows.ScreenAt(x, y) == screen)
+						px = x, py = y;
+			frontend.OnEvent({InputEvent::Type::MouseMove, px, py});
+			frontend.OnEvent({InputEvent::Type::RightDown, px, py});
+			frontend.OnEvent({InputEvent::Type::RightUp, px, py});
+			frontend.Update(NowMs());
+			h.RunUntil([] { return false; }, 100);
+			return windows.MenuOpen();
+		};
+		auto row = [&](int level, const std::string &text) {
+			for (int r = 0; r < windows.MenuRows(level); ++r)
+				if (windows.MenuRowText(level, r) == text)
+					return r;
+			printf("[preview] no '%s' at level %d\n", text.c_str(), level);
+			return -1;
+		};
+		auto rows = [&](int level) {
+			std::string out;
+			for (int r = 0; r < windows.MenuRows(level); ++r)
+				out += (r ? " | " : "") + windows.MenuRowText(level, r);
+			return out;
+		};
+		// The path's items in turn: the submenus opened by moving over them, the last picked.
+		auto choose = [&](const std::string &screen, std::vector<std::string> path) {
+			if (!menu(screen)) {
+				printf("[preview] no menu on %s\n", screen.c_str());
+				return;
+			}
+			for (size_t level = 0; level < path.size(); ++level) {
+				int r = row(static_cast<int>(level), path[level]);
+				if (r < 0) {
+					windows.CloseMenus();
+					return;
+				}
+				if (level + 1 < path.size()) {
+					move(windows.MenuRowRect(static_cast<int>(level), r));
+					printf("[preview] %s > %s: %s\n", screen.c_str(), path[level].c_str(), rows(static_cast<int>(level) + 1).c_str());
+				}
+				else
+					pick(windows.MenuRowRect(static_cast<int>(level), r));
+			}
+		};
+		auto tell = [&](const std::string &text) {
+			std::string me = frontend.Zone().Profile().name, who = "Somebody";
+			std::vector<uint8_t> body(136 + text.size() + 1, 0);
+			memcpy(&body[0], me.c_str(), me.size());
+			memcpy(&body[64], who.c_str(), who.size());
+			uint16_t channel = 7, skill = 100;
+			memcpy(&body[130], &channel, 2);
+			memcpy(&body[134], &skill, 2);
+			memcpy(&body[136], text.c_str(), text.size());
+			inject_to.InjectReplayPacket(ZoneOp::ChannelMessage, body.data(), body.size());
+			h.RunUntil([] { return false; }, 300);
+		};
+
+		state("start");
+		if (menu(ChatManager::MainScreen)) {
+			printf("[preview] main menu: %s\n", rows(0).c_str());
+			h.Snapshot("c1-chat-menu");
+			windows.CloseMenus();
+		}
+		choose(ChatManager::MainScreen, {"New Chat Window"});
+		state("new window");
+		windows.MoveTo("Chat 1", 20, 60);
+		h.RunUntil([] { return false; }, 100);
+		choose("Chat 1", {"Filters", "Tell"});
+		printf("[preview] Chat 1 says: %s\n", last_line(1).c_str());
+		tell("are you there?");
+		printf("[preview] main's last: %s; Chat 1's last: %s\n", last_line(0).c_str(), last_line(1).c_str());
+		h.Snapshot("c2-tell-in-chat1");
+		choose("Chat 1", {"Filters", "Spells", "Worn Off"});
+		printf("[preview] Chat 1 says: %s (worn off to %d)\n", last_line(1).c_str(), chats.ChannelMap(39));
+		choose("Chat 1", {"Channel", "Group"});
+		printf("[preview] Chat 1 says: %s\n", last_line(1).c_str());
+		choose("Chat 1", {"Always Chat Here"});
+		printf("[preview] Chat 1 says: %s\n", last_line(1).c_str());
+		choose("Chat 1", {"Rename Window"});
+		printf("[preview] text entry %s\n", windows.Shown(TextEntry::Screen) ? "shown" : "hidden");
+		h.Snapshot("c3-rename");
+		h.Type("Tells");
+		h.Key(InputEvent::Key::Enter);
+		h.RunUntil([] { return false; }, 100);
+		state("renamed, group, locked");
+		// Enter opens the locked window's input.
+		h.Key(InputEvent::Key::Enter);
+		h.RunUntil([] { return false; }, 100);
+		printf("[preview] Enter: typing in %d\n", chats.TypingIndex());
+		h.Key(InputEvent::Key::Escape);
+		choose("Chat 1", {"Filters", "Tell"});
+		printf("[preview] Chat 1 says: %s\n", last_line(1).c_str());
+		frontend.SaveUiLayoutForTests();
+		IniFile ini;
+		if (ini.Load(frontend.UiLayoutPath()))
+			for (const char *key : {"NumWindows", "LockedActiveWindow", "ChatWindow1_Language", "ChatWindow1_DefaultChannel",
+			         "ChatWindow1_Name", "ChatWindow0_Name", "ChannelMap1", "ChannelMap39", "HitMode0"})
+				printf("[preview] [ChatManager] %s=%s\n", key, ini.Get("ChatManager", key, "(none)").c_str());
+		choose("Chat 1", {"Window", "Close"});
+		state("closed");
+		choose(ChatManager::MainScreen, {"New Chat Window"});
+		state("another");
+		return 0;
+	}
+
 	int FriendsTest(FrontEnd &frontend, Harness &h, const std::string &out_dir)
 	{
 		const ZoneSession &zone = frontend.Zone();
@@ -2258,7 +2410,7 @@ namespace
 				break;
 			// Where it is at our feet, past our model: the pixels that pick it, and ours that pick us.
 			const ZoneGroundItem &there = zone.GroundItems().at(mine);
-			windows.Show("ChatWindow", false);
+			windows.Show("MainChat", false);
 			windows.Show("InventoryWindow", false);
 			auto where = [&](const char *when) {
 				int on_item = 0, on_us = 0, x0 = 1 << 30, y0 = 1 << 30, x1 = -1, y1 = -1;
@@ -2310,7 +2462,7 @@ namespace
 			if (item.object_type != 17)
 				continue;
 			uint32_t forge = id;
-			windows.Show("ChatWindow", false);
+			windows.Show("MainChat", false);
 			view->SetPlayerPosition(item.x, item.y - 12, item.z + 20, 0); // over the floor, to fall onto it
 			h.RunUntil([] { return false; }, 2500);
 			h.Snapshot("o4-forge");
@@ -2419,7 +2571,7 @@ namespace
 			return 1;
 		}
 		h.Key(InputEvent::Key::F11);
-		for (const char *screen : {"InventoryWindow", "ChatWindow"})
+		for (const char *screen : {"InventoryWindow", "MainChat"})
 			windows.Show(screen, false);
 		int x = 0, y = 0;
 		bool found = false;
@@ -2561,9 +2713,9 @@ namespace
 		uint16_t merchant_id = merchant->id;
 		printf("[preview] merchant %s (%d), %.0f away\n", merchant->name.c_str(), merchant_id, best);
 		h.Key(InputEvent::Key::F11); // the debug menu (open by default) out of the way
-		for (const char *screen : {"InventoryWindow", "ChatWindow"})
+		for (const char *screen : {"InventoryWindow", "MainChat"})
 			windows.Show(screen, false);
-		windows.MoveTo("ChatWindow", frontend.ScreenWidth() - 400, 10); // clear of the shop's Done
+		windows.MoveTo("MainChat", frontend.ScreenWidth() - 400, 10); // clear of the shop's Done
 		frontend.ZoneScene()->SetPlayerPosition(merchant->x, merchant->y - 10, merchant->z, 0);
 		h.RunUntil([] { return false; }, 2000); // our position to the zone
 		int x = 0, y = 0;
@@ -2580,7 +2732,7 @@ namespace
 			return 1;
 		}
 		h.RunUntil([] { return false; }, 1000); // its items
-		windows.Show("ChatWindow", true);
+		windows.Show("MainChat", true);
 		size_t count = 0;
 		for (const auto &[slot, item] : zone.Items())
 			if (slot >= Inventory::FirstMerchant && slot <= Inventory::LastMerchant) {
@@ -2811,7 +2963,7 @@ namespace
 				}
 				printf("\n");
 				const WindowManager::Globals &g = windows.Global();
-				const WindowManager::Settings *chat = windows.SettingsOf("ChatWindow");
+				const WindowManager::Settings *chat = windows.SettingsOf("MainChat");
 				printf("[preview]   globals alpha %d fade-to %d delay %d duration %d; ChatWindow alpha %d delay %d\n", g.alpha,
 					g.fade_to, g.delay, g.duration, chat ? chat->alpha : -1, chat ? chat->delay : -1);
 			};
@@ -3181,7 +3333,7 @@ namespace
 		key(0x11, false, false, false, true);
 		press(0xc8, true); // Shift+Up
 		frontend.Update(NowMs());
-		if (SidlWindow *chat_window = windows.Find("ChatWindow"))
+		if (SidlWindow *chat_window = windows.Find("MainChat"))
 			printf("[preview] chat input after W and Shift+Up: '%s'\n", chat_window->Find("CWChatInput")->text.c_str());
 		h.Snapshot("o4-done");
 		return 0;
@@ -3293,6 +3445,7 @@ int main(int argc, char **argv)
 	bool pet_test = argc == 7 && std::string(argv[6]) == "pet";
 	bool death_test = argc == 7 && (std::string(argv[6]) == "death" || std::string(argv[6]) == "rez");
 	bool friends_test = argc == 7 && std::string(argv[6]) == "friends";
+	bool chat_windows_test = argc == 7 && std::string(argv[6]) == "chatwindows";
 	bool boats_test = argc == 7 && std::string(argv[6]) == "boats";
 	bool aa_test = argc == 7 && std::string(argv[6]) == "aa";
 	bool guild_test = argc == 7 && std::string(argv[6]) == "guild";
@@ -3376,6 +3529,8 @@ int main(int argc, char **argv)
 			return DeathTest(frontend, h, seconds, std::string(argv[6]) == "rez");
 		if (friends_test)
 			return FriendsTest(frontend, h, argv[2]);
+		if (chat_windows_test)
+			return ChatWindowsTest(frontend, h);
 		if (boats_test)
 			return BoatsTest(frontend, h, seconds);
 		if (cameras_test)
@@ -4143,15 +4298,15 @@ int main(int argc, char **argv)
 		}
 		// The chat window sized from its border: the right side alone, then the bottom right corner
 		// both ways, with the resize cursor over the corner.
-		if (const SidlWindow *chat = where("ChatWindow")) {
+		if (const SidlWindow *chat = where("MainChat")) {
 			Rect b = chat->Bounds();
 			drag(b.Right() - 2, b.y + b.h / 2, b.Right() + 38, b.y + b.h / 2);
-			where("ChatWindow");
+			where("MainChat");
 			b = chat->Bounds();
 			frontend.OnEvent({InputEvent::Type::MouseMove, b.Right() - 2, b.Bottom() - 2});
 			h.Snapshot("w4-resize-cursor");
 			drag(b.Right() - 2, b.Bottom() - 2, b.Right() - 42, b.Bottom() - 32);
-			where("ChatWindow");
+			where("MainChat");
 		}
 		h.RunUntil([] { return false; }, 300);
 		h.Snapshot("w3-closed");
@@ -4238,7 +4393,7 @@ int main(int argc, char **argv)
 		h.RunUntil([] { return false; }, 300);
 		h.Snapshot("c1-chat");
 		h.Key(InputEvent::Key::Escape); // closes the chat line, not a window
-		if (const SidlWindow *chat = where("ChatWindow")) {
+		if (const SidlWindow *chat = where("MainChat")) {
 			Rect b = chat->Bounds();
 			InputEvent wheel;
 			wheel.type = InputEvent::Type::Wheel;
@@ -4430,7 +4585,7 @@ int main(int argc, char **argv)
 		// markers as '|'), send it, then light the link in the chat under the mouse and click it
 		// (OP_ItemLinkResponse goes out); and the item display's icon links its item.
 		auto input_text = [&] {
-			const SidlWindow *chat = windows.Find("ChatWindow");
+			const SidlWindow *chat = windows.Find("MainChat");
 			const SidlWindow::Control *input = chat ? chat->Find("CWChatInput") : nullptr;
 			std::string text = input ? input->text : "";
 			std::replace(text.begin(), text.end(), ItemTags::Marker, '|');
@@ -4471,10 +4626,10 @@ int main(int argc, char **argv)
 					count += static_cast<int>(packet.count);
 			return count;
 		};
-		if (const SidlWindow *chat = windows.Find("ChatWindow"); chat && linked_slot) {
+		if (const SidlWindow *chat = windows.Find("MainChat"); chat && linked_slot) {
 			Rect b = chat->Bounds(); // taller first, from its top border: the sizing above left it a title bar
 			drag(b.x + b.w / 2, b.y + 1, b.x + b.w / 2, b.y - 160);
-			where("ChatWindow");
+			where("MainChat");
 			const SidlWindow::Control *output = chat->Find("CWChatOutput");
 			Rect area = output ? chat->ContentRect(*output) : Rect{};
 			InputEvent wheel; // back down to the newest line

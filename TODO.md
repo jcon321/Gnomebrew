@@ -8,14 +8,15 @@ no rules of its own.
 1. ~~**In-game SIDL windows.**~~ Done: `frontend/window_manager.*` (drag, resize, close, minimize,
    focus order, fading, `UI_<char>_<server>.ini`, BGTint and BGType drawn, the window menu and
    the color picker: `CContextMenuManager`, `CColorPickerWnd`). Still to do:
-   - The windows' own menus over the default one: `CPlayerWnd::CreateLocalMenu` (@0042ef32) and
+   - The windows' own menus over the default one: a window can have its own (`AddMenu`,
+     `SetWindowMenu`, checked and disabled items, `menu_opening` to fill it; the chat windows' is
+     done, see 3). Still to do: `CPlayerWnd::CreateLocalMenu` (@0042ef32) and
      `CGroupWnd::CreateLocalMenu` (@0041f30d) put a checked "Pet Display" (eqstr 3126) and a
-     separator (`CContextMenu::AddSeparator`, `CheckMenuItem`) over "Window" (6643); the chat
-     window's is `CChatManager::InitContextMenu` (@0041179c, see 3).
+     separator (`CContextMenu::AddSeparator`, `CheckMenuItem`) over "Window" (6643).
    - Lock for windows that can't be locked (CXWnd 0x13, always allowed here).
-   - Edit boxes (`CEditWnd`, @005a1ed0 on): the keys go to one of five (the chat window's, the
-     social editor's, the quantity window's, the color picker's and the friends window's:
-     `FrontEnd`'s focus group). A single-line box's caret and selection are done
+   - Edit boxes (`CEditWnd`, @005a1ed0 on): the keys go to one of them (a chat window's, the
+     social editor's, the quantity window's, the color picker's, the friends window's and the text
+     entry's: `FrontEnd`'s focus group). A single-line box's caret and selection are done
      (`frontend/edit_box.*`: HandleKeyboardMsg's Backspace, Delete, Shift+Delete and Shift with
      the arrows, Home and End; HandleLButtonDown, Shift+click and the drag; ReplaceSelection with
      FilterInputStr's markers kept out; the selection drawn inverse and the caret blinking).
@@ -306,9 +307,8 @@ no rules of its own.
      0x19). Still to do: the cursor's count for an item hot button (CCursorAttachment::Activate's
      fifth argument).
    - Socials: done (defaults, the editor, running them with `/pause`, `[Socials]`). Still to do:
-     the edit boxes take typing only at their end (no caret to move, no Tab between them), and
-     a social's lines go to InterpretCommand as typed, without eqgame's switch to the main chat
-     window's channel while it runs.
+     the edit boxes take typing only at their end (no caret to move, no Tab between them). (A
+     social's lines, like a hot button's, go by the main chat window's channel and language.)
    - ~~Compass~~: done (`frontend/compass.*`, eqgame's CCompassWnd): the strips slide by our
      heading, and the needle wanders with a Sense Heading under 200, and Toggle Compass (Alt+D)
      opens and closes it, and using Sense Heading points it true for 5 s (CCompassWnd::SenseHeading).
@@ -316,19 +316,28 @@ no rules of its own.
      close their windows.
 3. ~~**A real chat window**~~: done (`frontend/chat_window.*`, `chat_text.*`, `chat_commands.cpp`).
    Still to do:
-   - More chat windows, their window manager instances (one SIDL screen, several windows) and the
-     channel map: `CChatManager` @004100e2 (`CreateChatWindow` @00410c5a, 32 at most, named eqstr
-     6624 + the number; `FreeChatWindow`; `SetChannelMap`, 41 entries), `ProcessChatMessage`
-     @0041115f routing every printed line by its color type through
-     `GetChatWindowIndexFromChannelID` @00411425 (0x100..0x144 to entries 0..0x28, the rest 0x16);
-     kept in the UI ini's [ChatManager]: NumWindows, ChatWindow%d_Name, _Language,
-     _DefaultChannel, _ChatChannel, _TellTarget, _FontStyle, LockedActiveWindow, ChannelMap%d,
-     HitMode%d (`Deactivate` @00410871); all set from the window's menu, `InitContextMenu`
-     @0041179c (14 submenus, their items' eqstr ids pushed as CXStr, not read yet) and
-     `UpdateTellMenus` @00413439; there were no tabs in this era. The one window's font, language
-     and page keys are done (below).
+   - More chat windows and the channel map are done (`frontend/chat_manager.*`, `chat_menus.cpp`:
+     `CChatManager` @004100e2, `CreateChatWindow`, `FreeChatWindow` on a close, the channel map
+     and `ProcessChatMessage` by `GetChatWindowIndexFromChannelID`, the active and locked windows,
+     each window's default channel, tell target and language, [ChatManager] in the UI ini; the
+     right-click menu, `InitContextMenu` @0041179c, `UpdateContextMenus` @00412f9b and
+     `UpdateTellMenus` @00413439, with its picks from `CChatWindow::WndNotification`; Rename
+     Window through `CTextEntryWnd`, `frontend/text_entry.*`). Still to do:
+     - Hit Modes (15038): the menu's five submenus (ids 0x190..0x1c4: Normal 15034, Abbreviated
+       15035, Number Only 15036 or Miss Only 15037) setting `CChatManager`'s eight modes (kept as
+       HitMode0..7, which we read and write back), and the combat lines they change:
+       `HandleMyHitsMode` (@00500f86: Abbreviated is eqstr 2130 "%1 %2 for %3", Number Only the
+       damage alone), `HandleOtherHitsMeMode` (@00501077), `HandleOtherHitsOtherMode` (@00501168),
+       `HandleMyMissesMode` (@0050125b), `HandleOtherMissesMeMode` (@005012f8),
+       `HandleOtherMissesOtherMode` (@00501395), from `frontend/combat.cpp`'s lines.
+     - The chat channel items (Filters' and Channel's Chat Channel, ids 0x70.. and 0xcf..) are
+       disabled: they list the chat server's channels (`ChannelManager`), which we don't have.
+     - The language menu's ids and /language number the languages we know by their place in that
+       list, and the window keeps that place; what's sent is that place's language
+       (`CEverQuest_GetCurrentLanguage`), as eqgame does.
    - The chat font size is done (`ChatWindow::SetFont`: `CChatWindow::SetChatFont`'s 0..6, from
-     /chatfontsize @004fdb25, 13270 otherwise; [ChatManager] ChatWindow0_FontStyle in the UI ini),
+     /chatfontsize @004fdb25 on the active window, 13270 otherwise; [ChatManager]
+     ChatWindow<n>_FontStyle in the UI ini; the main window starts at 3),
      and Page up and down (ExecuteCmd 0x55, 0x56: `ScrollChatWindowUp` and `Down`, a page of the
      output's height less 8). Still to do: scrolling by pixels (5).
    - Languages are done (`frontend/babel.*`: `SpeakBabel` by the speaker's skill at +0x86 and the

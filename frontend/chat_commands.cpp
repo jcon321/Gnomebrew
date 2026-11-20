@@ -896,14 +896,17 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 		// name, 15 the raid (CRaid_SendRaidChat, without the commands' expansion check), 19 a chat
 		// channel, anything else said.
 		args = line;
-		switch (m_chat_channel) {
+		const ChatManager::Window *sender = m_chats.At(m_chat_sender);
+		if (!sender)
+			sender = m_chats.At(0);
+		switch (sender->channel) {
 		case 0: command = Command::Guild; break;
 		case 2: command = Command::Group; break;
 		case 4: command = Command::Auction; break;
 		case 5: command = Command::Ooc; break;
 		case 7: // sprintf("%s %s", the name, the text), then /tell
 			command = Command::Tell;
-			args = m_chat_channel_to + " " + line;
+			args = sender->tell_target + " " + line;
 			break;
 		case 15: command = Command::RaidSay; break;
 		case 19:
@@ -1742,9 +1745,9 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 			if (pick < 0 || pick >= static_cast<int>(known.size()))
 				ChatOut(format(13261, "Type /language help for a list of available languages.", {}), 0x111);
 			else
-				m_zone.SetChatLanguage(pick);
+				m_chats.Active().language = pick; // the new UI's: the active chat window's
 		}
-		int current = m_zone.ChatLanguage();
+		int current = m_chats.Active().language;
 		std::string desc = current >= 0 && current < static_cast<int>(known.size()) ? name(known[current]) : "";
 		ChatOut(format(13262, "Current Language is %1. (%2)", {desc, std::to_string(current + 1)}), 0x111);
 		break;
@@ -1754,7 +1757,7 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 		// nothing or anything else, eqstr 13270 into it (AddOutputText).
 		int size = args.empty() ? -1 : std::atoi(args.c_str());
 		if (size < 0 || size > 6) {
-			m_chat.Add(format(13270, "Format: /chatfontsize 0-5 (0 = smallest)", {}), 0xffffff);
+			ActiveChat().Add(format(13270, "Format: /chatfontsize 0-5 (0 = smallest)", {}), 0xffffff);
 			break;
 		}
 		SetChatFont(size);
@@ -1985,10 +1988,13 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 				{}), ChatType::Default);
 			break;
 		}
+		// The new UI's: the active chat window's (+0x140, and +0x148 a tell's name).
 		std::string shown;
-		m_chat_channel = picked->channel;
+		ChatManager::Window &active = m_chats.Active();
+		active.channel = picked->channel;
+		if (picked->channel == 7)
+			active.tell_target = to.substr(0, 63);
 		if (picked->channel == 7 || picked->channel == 19) {
-			m_chat_channel_to = to;
 			shown = picked->channel == 7 ? format(13073, "Tell to %1", {to}) : format(13078, "Chat to Channel %1", {to});
 		}
 		else
@@ -2117,8 +2123,8 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 	case Command::Camp:
 		StartCamp();
 		break;
-	case Command::ClearChat:
-		m_chat.Clear();
+	case Command::ClearChat: // /clearchat (@004fdb05): the active window's CChatWindow::Clear
+		ActiveChat().Clear();
 		break;
 	case Command::Sit:
 		Sit();
