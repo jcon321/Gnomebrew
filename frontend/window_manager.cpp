@@ -112,6 +112,14 @@ SidlWindow *WindowManager::Find(const std::string &screen)
 	return nullptr;
 }
 
+const SidlWindow *WindowManager::Find(const std::string &screen) const
+{
+	for (const auto &w : m_windows)
+		if (w->screen == screen)
+			return &w->wnd;
+	return nullptr;
+}
+
 void WindowManager::Place(Window &w, const Rect &rect)
 {
 	w.rect = rect;

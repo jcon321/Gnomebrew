@@ -38,7 +38,8 @@ struct SpellInfo
 	int16_t base[12] = {}, max[12] = {};
 	uint8_t formula[12] = {};
 	uint8_t activated = 0; // copied into its buffs
-	uint8_t good_effect = 0; // 0 detrimental; the book's slot is red for those, blue for the rest
+	uint8_t good_effect = 0; // 0 detrimental; the book's slot is red for those, blue for the rest (EQ_Spell +0x87)
+	uint8_t resist_type = 0; // EQ_Spell +0x89: what it's resisted with (a focus's SPA 135 limit)
 	uint8_t first_spa = 0;   // the first of its 12 effects (EQ_Spell +0x8a)
 	uint8_t spas[12] = {};   // all of them
 	uint8_t target_type = 0; // the gem's color (CSpellBookWnd::UpdateSpellGems)

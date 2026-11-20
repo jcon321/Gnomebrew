@@ -146,6 +146,7 @@ add_library(eqfrontend STATIC
     frontend/ground_items.cpp
     frontend/spell_book.cpp
     frontend/spell_cast.cpp
+    frontend/spell_focus.cpp
     frontend/buffs.cpp
     frontend/color_picker.cpp
     frontend/book_window.cpp

@@ -4004,6 +4004,44 @@ int main(int argc, char **argv)
 			frontend.Update(NowMs());
 			report("1 used again (running)");
 			h.Snapshot("h3-hot-buttons");
+			// The gems' book button and an inventory slot held onto hot buttons 4 and 5
+			// (CCastSpellWnd's 0x16, CInvSlot::HandleLButtonHeld), then 5 shown and used.
+			int book_x, book_y, hb4_x, hb4_y, hb5_x, hb5_y;
+			windows.Show("CastSpellWnd", true);
+			windows.Show("InventoryWindow", true);
+			windows.Raise("InventoryWindow");
+			frontend.Update(NowMs());
+			int first = -1;
+			for (int slot = 22; slot <= 29 && first < 0; ++slot)
+				if (frontend.Zone().Items().count(static_cast<int16_t>(slot)))
+					first = slot;
+			std::string slot_id;
+			if (SidlWindow *inventory = windows.Find("InventoryWindow"))
+				for (int n = 1; n <= 30 && first >= 0 && slot_id.empty(); ++n)
+					if (const SidlWindow::Control *c = inventory->Find("InvSlot" + std::to_string(n)); c && c->ItemSlot() == first)
+						slot_id = c->def->screen_id;
+			int inv_x, inv_y;
+			if (at("CastSpellWnd", "CSPW_SpellBook", book_x, book_y) && at("HotButtonWnd", "HB_Button4", hb4_x, hb4_y) &&
+			    at("HotButtonWnd", "HB_Button5", hb5_x, hb5_y)) {
+				hold(book_x, book_y);
+				report("book button held");
+				click(hb4_x, hb4_y);
+				printf("[preview] HB4 \"%s\" type %d value %d\n", hot_text(4).c_str(),
+					frontend.WindowState().hot_buttons[frontend.WindowState().hot_button_page * 10 + 3].type,
+					frontend.WindowState().hot_buttons[frontend.WindowState().hot_button_page * 10 + 3].value);
+				if (!slot_id.empty() && at("InventoryWindow", slot_id, inv_x, inv_y)) {
+					hold(inv_x, inv_y);
+					report(("slot " + std::to_string(first) + " held").c_str());
+					windows.Raise("HotButtonWnd");
+					click(hb5_x, hb5_y);
+					frontend.Update(NowMs());
+					const SidlWindow::Control *shown = windows.Find("HotButtonWnd")->Find("HB_InvSlot5");
+					const HotButton &b5 = frontend.WindowState().hot_buttons[frontend.WindowState().hot_button_page * 10 + 4];
+					printf("[preview] HB5 type %d value %d, its slot %s cell %d \"%s\"\n", b5.type, b5.value,
+						shown && shown->visible ? "shown" : "hidden", shown ? shown->cell : -1, shown ? shown->tooltip.c_str() : "");
+					h.Snapshot("h4-item-hot-button");
+				}
+			}
 		}
 		// Socials: the first page's defaults, one edited (right click, Clear, a name, two lines, a
 		// color, Accept), done from the Actions window, then put on hot button 3 and done from there.

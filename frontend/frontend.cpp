@@ -966,6 +966,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		m_windows.Update(now_ms, m_mouse_x - area.x, m_mouse_y - area.y);
 		m_window_state.busy = m_containers.Combining() || m_merchant.Busy() || m_loot.Busy() || m_ground.Busy() ||
 		                      m_abilities.Busy();
+		m_window_state.hot_buttons_refused = m_zone.Self().stance == 102 || ZoneAnswerWaiting();
 		m_window_state.fv_rules = m_game_values.fv_rules;
 		HandleWindowClicks();
 		m_bank.Frame(now_ms);
@@ -2270,6 +2271,9 @@ void FrontEnd::BuildZoneWindows()
 	abilities_host.attacking = [this] { return m_attack; };
 	abilities_host.casting = [this] { return m_spell_cast.Casting() && m_zone.Profile().class_id != 8; };
 	abilities_host.stunned = [this] { return m_stunned; };
+	abilities_host.waiting = [this] { return m_spell_cast.Waiting() || ZoneAnswerWaiting(); };
+	abilities_host.ability_ready = [this] { return m_spell_cast.AbilityReady(m_now_ms); };
+	abilities_host.cast_ability = [this](int spell) { m_spell_cast.CastAbility(spell, m_now_ms); };
 	abilities_host.hp = [this] { return m_game_values.CurHp(); };
 	abilities_host.haste = [this] { return m_buffs.AttackSpeed(); };
 	abilities_host.can_hit = [this](uint16_t id) { return CanIHitTarget(id); };
@@ -2420,6 +2424,10 @@ void FrontEnd::BuildZoneWindows()
 	cast_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
 	cast_host.total = [this](int spa) { return m_buffs.Total(spa); };
 	cast_host.stunned = [this] { return m_stunned; };
+	cast_host.buffs = &m_buffs;
+	cast_host.aa_cast_modifier = [this](const SpellInfo &spell) {
+		return AltAdv::CastingTimeModifier(m_game_values.AltAdvCharacter(), spell);
+	};
 	m_spell_cast.Attach(m_windows, m_zone, m_ui.spells, m_ui.eqstr, std::move(cast_host));
 	m_buffs.Attach(m_zone, m_ui.spells, m_ui.eqstr, [this](const std::string &text, int type) { ChatOut(text, type); });
 	Mounts::Host mounts_host;
@@ -2712,8 +2720,14 @@ void FrontEnd::HandleWindowClicks()
 {
 	// Nothing goes on the cursor over an item or coins (CCursorAttachment::IsOkToActivate).
 	for (const auto &hold : m_windows.TakeHolds())
-		if (!m_zone.Items().count(Inventory::Cursor) && !Inventory::CursorMoneyType(m_zone.Profile()))
+		if (!m_zone.Items().count(Inventory::Cursor) && !Inventory::CursorMoneyType(m_zone.Profile())) {
+			// CInvSlot::HandleLButtonHeld: an inventory slot's item hot button (0..29).
+			if (int slot = InvSlotAt(m_windows, hold.window, hold.control); slot >= 0) {
+				AttachItemSlot(m_windows, m_window_state, slot);
+				continue;
+			}
 			GameWindowHold(m_windows, m_window_state, hold.window, hold.control);
+		}
 	for (const auto &click : m_windows.TakeRightClicks()) {
 		if (m_spell_book.RightClick(click.window, click.control))
 			continue;
@@ -2729,18 +2743,7 @@ void FrontEnd::HandleWindowClicks()
 		// Under 1000, a common item in the cursor, worn or general slots is eaten, drunk or clicked
 		// (CInvSlot_DoDrinkEatPoison).
 		if (int slot = InvSlotAt(m_windows, click.window, click.control); slot >= 0) {
-			if (!click.shift && !click.ctrl && !click.alt && !m_window_state.busy &&
-			    (!m_spell_cast.Casting() || m_zone.Profile().class_id == 8))
-				if (const ZoneItem *item = SlotItem(m_windows, m_game_values, click.window, click.control)) {
-					if (item->item_class == 1)
-						m_containers.Toggle(static_cast<int16_t>(slot));
-					else if (item->item_class == 2 && slot < 1000)
-						ReadNote(*item, static_cast<int16_t>(slot));
-					else if (item->item_class == 0 && slot < 31) {
-						ZoneItem copy = *item; // what it was: eating may take the last of it
-						DoDrinkEatPoison(copy, static_cast<int16_t>(slot));
-					}
-				}
+			ItemSlotRightClick(slot, click.shift, click.ctrl, click.alt);
 			continue;
 		}
 		// DoHotButtonRightClick on an AA ability: CAAWnd::Activate and ShowAbility.
@@ -2749,7 +2752,12 @@ void FrontEnd::HandleWindowClicks()
 			m_aa_window.ShowAbility(id);
 			continue;
 		}
-		GameWindowRightClick(m_windows, m_window_state, click.window, click.control);
+		// DoHotButtonRightClick: an item's slot right clicked, a spell gem's gem (forgotten).
+		WindowButton action = GameWindowRightClick(m_windows, m_window_state, click.window, click.control);
+		if (action.item_slot >= 0)
+			ItemSlotRightClick(action.item_slot, false, false, false);
+		else if (action.window == "CastSpellWnd")
+			m_spell_book.RightClick(action.window, action.control);
 	}
 	// The right button held: a slot's item, a book slot's, a gem's or a buff's spell in the item
 	// display; let go, it closes (WndNotification's 0x17 and 0x19).
@@ -2893,12 +2901,8 @@ void FrontEnd::HandleWindowClicks()
 		// A hot button holding one of the Actions window's buttons does what that button does; one
 		// of the pet window's, the pet window's notification for it, enabled or not.
 		WindowButton action = GameWindowClick(m_windows, m_window_state, click.window, click.control);
-		if (action.window == PetWindow::Screen) {
-			m_pet_window.Press(PetWindow::ButtonIndex(action.control));
+		if (HotButtonAction(action))
 			continue;
-		}
-		if (!action.empty())
-			click = {"ActionsWindow", action.control};
 		if (click.window == "SelectorWindow")
 			for (const auto &toggle : SelectorToggles)
 				if (click.control == toggle.button)
@@ -2913,6 +2917,52 @@ void FrontEnd::HandleWindowClicks()
 		for (const auto &toggle : SelectorToggles)
 			if (SidlWindow::Control *button = selector->Find(toggle.button))
 				button->checked = m_windows.Shown(toggle.screen);
+}
+
+bool FrontEnd::HotButtonAction(const WindowButton &action)
+{
+	if (action.refused) {
+		ChatOut(EqString(12084, "You can't use that command right now..."), 0x111);
+		return true;
+	}
+	if (action.item_slot >= 0) {
+		ItemSlotRightClick(action.item_slot, false, false, false);
+		return true;
+	}
+	if (action.window == PetWindow::Screen) {
+		m_pet_window.Press(PetWindow::ButtonIndex(action.control));
+		return true;
+	}
+	if (action.window == "CastSpellWnd") {
+		m_spell_book.Click(action.window, action.control, false, m_now_ms);
+		return true;
+	}
+	if (!action.empty()) {
+		ActionsClick(action.control);
+		return true;
+	}
+	return false;
+}
+
+void FrontEnd::ItemSlotRightClick(int slot, bool shift, bool ctrl, bool alt)
+{
+	// CInvSlot::HandleRButtonUp: a bag's window opens or closes, with no Shift, Ctrl or Alt down,
+	// nothing waiting on the zone and no spell being cast (but a bard's song). Under 1000, a common
+	// item in the cursor, worn or general slots is eaten, drunk or clicked (CInvSlot_DoDrinkEatPoison).
+	if (shift || ctrl || alt || m_window_state.busy || (m_spell_cast.Casting() && m_zone.Profile().class_id != 8))
+		return;
+	auto it = m_zone.Items().find(static_cast<int16_t>(slot));
+	if (it == m_zone.Items().end())
+		return;
+	const ZoneItem *item = &it->second;
+	if (item->item_class == 1)
+		m_containers.Toggle(static_cast<int16_t>(slot));
+	else if (item->item_class == 2 && slot < 1000)
+		ReadNote(*item, static_cast<int16_t>(slot));
+	else if (item->item_class == 0 && slot < 31) {
+		ZoneItem copy = *item; // what it was: eating may take the last of it
+		DoDrinkEatPoison(copy, static_cast<int16_t>(slot));
+	}
 }
 
 void FrontEnd::ActionsClick(const std::string &control)
@@ -5639,11 +5689,7 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 	default:
 		if (cmd >= KeyMap::Hot1 && cmd <= KeyMap::Hot10) {
 			// CHotButtonWnd::DoHotButton: the button of the page showing.
-			WindowButton action = DoHotButton(m_windows, m_window_state, cmd - KeyMap::Hot1);
-			if (action.window == PetWindow::Screen)
-				m_pet_window.Press(PetWindow::ButtonIndex(action.control));
-			else if (!action.empty())
-				ActionsClick(action.control);
+			HotButtonAction(DoHotButton(m_windows, m_window_state, cmd - KeyMap::Hot1));
 		}
 		else if (cmd >= KeyMap::HotPage1 && cmd <= KeyMap::HotPage10)
 			m_window_state.hot_button_page = cmd - KeyMap::HotPage1; // Activate_HotkeyPage

@@ -3,6 +3,7 @@
 #include "game_values.h"
 #include "game_windows.h"
 #include "spell_file.h"
+#include "spell_focus.h"
 #include "world_client.h"
 #include "zone_session.h"
 
@@ -595,12 +596,14 @@ std::string SpellDisplayText(const GameValues &values, const SpellInfo &spell, b
 		out += Text(values, 3006, "Mana Cost: %1", {Number(spell.mana)}) + Br;
 	if (me.class_id == 8) // a bard's songs: no casting time
 		return out;
-	// GetAACastingTimeModifier (AltAdv::CastingTimeModifier) and GetFocusCastingTimeModifier (0
-	// here: no focus items yet): with neither, "Cast Time"; with either, "Normal Cast Time: %1    Your
-	// Cast Time: %2" (3106), the second the cast time with both, no less than half of it.
+	// GetAACastingTimeModifier (AltAdv::CastingTimeModifier) and GetFocusCastingTimeModifier
+	// (SpellFocus): with neither, "Cast Time"; with either, "Normal Cast Time: %1    Your Cast Time:
+	// %2" (3106), the second the cast time with both, no less than half of it.
 	char seconds[32];
 	snprintf(seconds, sizeof(seconds), "%4.1f", spell.cast_ms * 0.001);
 	int aa = AltAdv::CastingTimeModifier(values.AltAdvCharacter(), spell), focus = 0;
+	if (values.zone && values.spells)
+		focus = SpellFocus::CastingTimeModifier(*values.zone, values.buffs, *values.spells, spell);
 	if (aa == 0 && focus == 0) {
 		out += Text(values, 3107, "Cast Time: %1", {seconds}) + Br;
 		return out;

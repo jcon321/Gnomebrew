@@ -240,15 +240,17 @@ no rules of its own.
      offline, see README Spells); others' fizzles, interrupts and regains are told
      (OP_SpellTextMessage, OP_SpellTextMessageStringID, by the spell filters); our own interrupt
      (StopSpellCast 1, msg_stat_change's SpawnAppearance 0x12 of 0 on us) tells us and the zone;
-     divine aura (174) and being stunned (175, OP_Stun) stop a cast. Still to do:
-     - casting: the focus cast time and range modifiers,
-       abilities (gem 9), and a bard being hit (StopSpellCast 1);
-     - the spell info display (done: `ToggleSpellDisplay`, CItemDisplayWnd::SetSpell, from a book
-       slot, a gem or a buff): "Your Cast Time" (eqstr 3106) has the AA casting time modifier and
-       waits on the focus one (GetFocusCastingTimeModifier), and the hot button's call (CHotButtonWnd::WndNotification @00420462, with a
-       third argument other than -1) on spell hot buttons;
-     - spell hot buttons: a gem held onto the cursor (CCursorAttachment type 9) and the book button
-       (type 5); a spell on the cursor clicked on a hot button;
+     divine aura (174) and being stunned (175, OP_Stun) stop a cast. The cast time has the AAs' and
+     the focus's modifiers and the range the focus's (`frontend/spell_focus.*`:
+     GetFocusCastingTimeModifier, GetFocusRangeModifier, GetFocusItem, GetFocusEffect,
+     DoesSpellMatchFocusFilters; "Your %1 shimmers briefly.", 12444), as has the spell info
+     display's "Your Cast Time" (3106). Lay on Hands and Harm Touch cast as gem 9
+     (`SpellCast::CastAbility`, UseSkill's 'k' and 'i', their recast by
+     AltAdvManager_AdjustSpellRecastTimeByClassAbility). A bard's song interrupted by a hit is
+     only `ApplyDamage`'s, which needs an attacker and so never runs online (the zone's). Still to
+     do:
+     - the spell info display from a spell hot button (CHotButtonWnd::WndNotification's 0x17 and
+       0x19 @00420462: CItemDisplayWnd::SetSpell with a third argument other than -1);
      - what the book doesn't do yet: Activate's auto attack off (12371) when ChangeStance's sit is
        refused on a horse (eqgame turns it off anyway), a bard's AA 0x7b doubling
        memorizing, the spell bar locking other things while it waits (DAT_007d0254 also blocks
@@ -279,9 +281,14 @@ no rules of its own.
      key (Hot1..10) they do what their button does: Attack, Range, the combat skills and the
      abilities (CHotButtonWnd::DoHotButton), AA abilities (28) and the pet window's buttons ("Pet
      <text>", 30), and they're checked while they aren't ready (OnProcessFrame: Attack and Range by
-     __RangeAttackReady, a skill by its timer, an AA ability by IsAbilityReady). Still to do: items
-     and spells on them, DoHotButton's refusal while stunned or DAT_007d0254 (string 0x2f34), and right-click on
-     anything but a social or an AA ability.
+     __RangeAttackReady, a skill by its timer, an AA ability by IsAbilityReady). Items and spells
+     go on them too: an inventory slot held (CInvSlot::HandleLButtonHeld, type 8: its InvSlot
+     shown over the button, used as a right click on the slot, DoHotButtonRightClick), a gem held
+     (CCastSpellWnd's 0x16, type 9: its gem shown, a gem click, a right click forgets it) and the
+     gems' book button (type 5, 10: the book). DoHotButton refuses without control of ourselves
+     (stance 102) or while the zone's answer is waited on (12084). Still to do: right-click on a
+     combat skill or ability (CActionsWnd::SelectSkillForCombatBtn, SelectSkillForAbilityBtn), and
+     the cursor's count for an item hot button (CCursorAttachment::Activate's fifth argument).
    - Socials: done (defaults, the editor, running them with `/pause`, `[Socials]`). Still to do:
      the edit boxes take typing only at their end (no caret to move, no Tab between them), and
      a social's lines go to InterpretCommand as typed, without eqgame's switch to the main chat

@@ -1,5 +1,7 @@
 #include "spell_cast.h"
+#include "buffs.h"
 #include "chat_text.h"
+#include "spell_focus.h"
 #include "inventory.h"
 #include "spell_file.h"
 #include "window_manager.h"
@@ -41,6 +43,7 @@ void SpellCast::Reset()
 	m_timeout = 0;
 	m_cast_ms = 0;
 	std::fill(std::begin(m_recast_ms), std::end(m_recast_ms), 0);
+	m_ability_ms = 0;
 	m_fizzle_ms = 0;
 	m_waiting = m_casts = 0;
 }
@@ -142,6 +145,36 @@ bool SpellCast::CastSpell(int gem, uint64_t now_ms)
 		return false;
 	}
 	return Cast(gem, spell, *info, nullptr, -1, now_ms);
+}
+
+bool SpellCast::AbilityReady(uint64_t now_ms) const
+{
+	return m_ability_ms <= now_ms;
+}
+
+bool SpellCast::CastAbility(int spell, uint64_t now_ms)
+{
+	// CastSpell(9, spell) from UseSkill's Lay on Hands and Harm Touch: no gem, no level check.
+	if (!m_zone)
+		return false;
+	const ZoneProfile &me = m_zone->Profile();
+	uint8_t stance = m_zone->Self().stance;
+	if (stance != Standing) {
+		Say(12441, "You must be standing to cast a spell.", ChatType::SpellFailure);
+		if (stance == Feigning)
+			Say(12368, "You do not have control of yourself right now.", ChatType::SpellFailure);
+		return false;
+	}
+	if (Incapacitated())
+		return false;
+	if (m_spell != -1 && me.class_id != Bard) {
+		Say(12442, "You are already casting a spell!", ChatType::SpellFailure);
+		return false;
+	}
+	const SpellInfo *info = Spell(spell);
+	if (!info)
+		return false;
+	return Cast(AbilityGem, spell, *info, nullptr, -1, now_ms);
 }
 
 bool SpellCast::CastItem(const ZoneItem &item, int16_t slot, uint64_t now_ms)
@@ -298,10 +331,19 @@ bool SpellCast::Cast(int gem, int spell, const SpellInfo &spell_info, const Zone
 		return false;
 	}
 
-	// Away it goes: a gem's cast time (no AA or focus modifiers here), and the zone's to say the rest.
+	// Away it goes: a gem's (or an ability's) cast time with the AAs' and the focus's modifiers
+	// (GetAACastingTimeModifier, GetFocusCastingTimeModifier), no less than half of it, and "Your
+	// %1 shimmers briefly." (12444, 0x108) when a focus item did something; the zone's to say the
+	// rest.
 	if (!item) {
+		const ZoneItem *focus_item = nullptr;
+		int aa = m_host.aa_cast_modifier ? m_host.aa_cast_modifier(*info) : 0;
+		int focus = m_spells ? SpellFocus::CastingTimeModifier(*m_zone, m_host.buffs, *m_spells, *info, &focus_item) : 0;
+		int cast_ms = std::max(info->cast_ms + focus + aa, info->cast_ms / 2);
+		if (focus != 0 && focus_item && m_host.chat)
+			m_host.chat(FormatEqString(m_eqstr, 12444, "Your %1 shimmers briefly.", {focus_item->name}), 0x108);
 		m_cast_ms = 0;
-		m_timeout = now_ms + static_cast<uint64_t>(std::max(info->cast_ms, 0));
+		m_timeout = now_ms + static_cast<uint64_t>(std::max(cast_ms, 0));
 		m_spell = spell;
 		m_gem = gem;
 	}
@@ -310,6 +352,8 @@ bool SpellCast::Cast(int gem, int spell, const SpellInfo &spell_info, const Zone
 		m_recast_ms[gem] = now_ms + AnswerMs;
 		m_fizzle_ms = now_ms + AnswerMs;
 	}
+	if (gem == AbilityGem)
+		m_ability_ms = now_ms + AnswerMs;
 	if (!song) {
 		++m_casts;
 		++m_waiting;
@@ -334,7 +378,12 @@ uint32_t SpellCast::CheckTarget(const SpellInfo &spell, uint16_t target, bool ar
 	float tx = target == mine ? me.x : spawn->x, ty = target == mine ? me.y : spawn->y;
 	float tz = target == mine ? me.z : spawn->z;
 	float distance = std::sqrt((tx - me.x) * (tx - me.x) + (ty - me.y) * (ty - me.y));
-	if (distance > spell.range)
+	// The range with the focus's (GetFocusRangeModifier), no more than five times its own.
+	float range = spell.range;
+	if (m_spells)
+		range = std::min(range + static_cast<float>(SpellFocus::RangeModifier(*m_zone, m_host.buffs, *m_spells, spell)),
+			spell.range * 5);
+	if (distance > range)
 		return 100;
 	if (area) // a targeted AE: within 40 of our height too (ModelHeightOffset aside)
 		return std::fabs(tz - me.z) <= 39.99f ? 0 : 100;
@@ -437,10 +486,21 @@ void SpellCast::ZoneEvent(int type, int id, int value, uint64_t now_ms)
 	case Type::SpellRecast:
 		if (!info)
 			break;
-		if (id < GemCount) { // (9, an ability's, adjusted by AltAdvManager: no abilities here)
+		if (id < GemCount) {
 			m_recast_ms[id] = now_ms + info->recast_ms;
 			m_gem = GoneOff;
 			m_fizzle_ms = now_ms + (m_zone->Profile().class_id == Bard ? 0 : info->recovery_ms);
+		}
+		else if (id == AbilityGem) {
+			// AltAdvManager_AdjustSpellRecastTimeByClassAbility (@004b7952): a paladin's AA 200 and a
+			// shadow knight's 201 take 720000 ms off a rank.
+			const ZoneProfile &me = m_zone->Profile();
+			int64_t recast = info->recast_ms;
+			if (me.class_id == 3 && me.aa_ranks[200] != 0)
+				recast -= me.aa_ranks[200] * int64_t{720000};
+			else if (me.class_id == 5 && me.aa_ranks[201] != 0)
+				recast -= me.aa_ranks[201] * int64_t{720000};
+			m_ability_ms = static_cast<uint64_t>(std::max<int64_t>(static_cast<int64_t>(now_ms) + recast, 0));
 		}
 		break;
 	case Type::ManaChanged:

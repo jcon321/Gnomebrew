@@ -81,6 +81,7 @@ public:
 	// CContainerWnd's EnableIniStorage names: BagInv1...).
 	SidlWindow *Add(const std::string &screen, bool shown, std::string *error = nullptr, const std::string &name = "");
 	SidlWindow *Find(const std::string &screen);
+	const SidlWindow *Find(const std::string &screen) const;
 	// What gauges and labels with an EQType show, for every window (kept across Reset).
 	void SetValues(SidlValues *values);
 

@@ -87,7 +87,7 @@ void Abilities::Load(const IniFile &ini)
 	auto check = [&](int &skill) {
 		if (skill < 0)
 			return;
-		if (skill >= 100 || Skills::HasSkill(me, skill) == 0) {
+		if (skill >= 100 ? !ClassAbility(skill) : Skills::HasSkill(me, skill) == 0) {
 			skill = -1;
 			m_changed = true;
 		}
@@ -123,8 +123,19 @@ uint32_t Abilities::ModifyAttackSpeed(uint32_t delay, int haste)
 	return delay;
 }
 
+bool Abilities::ClassAbility(int skill) const
+{
+	// InitInnates' Lay on Hands (+0xc7e, a paladin's) and Harm Touch (+0xc7a, a shadow knight's).
+	if (!m_zone)
+		return false;
+	int class_id = m_zone->Profile().class_id;
+	return (skill == LayOnHands && class_id == 3) || (skill == HarmTouch && class_id == 5);
+}
+
 bool Abilities::Ready(int skill) const
 {
+	if (skill == LayOnHands || skill == HarmTouch)
+		return m_host.ability_ready ? m_host.ability_ready() : true;
 	if (skill < 0 || skill >= SkillCount)
 		return false;
 	return Skills::Get(skill).type == Skills::Combat ? m_alt_ready : m_available[skill];
@@ -243,6 +254,13 @@ void Abilities::OpenSelect(bool combat, int index)
 			list->rows.push_back({SkillName(m_eqstr, skill)});
 		}
 	}
+	// After them, SetTypesToDisplay lists Lay on Hands and Harm Touch for those who have them (and
+	// Slam, 111, for its races: not ours).
+	for (int ability : {LayOnHands, HarmTouch})
+		if (ClassAbility(ability)) {
+			m_select_skills.push_back(ability);
+			list->rows.push_back({SkillName(m_eqstr, ability)});
+		}
 	m_select_combat = combat;
 	m_select_index = index;
 	m_windows->Show("SkillsSelectWindow", true);
@@ -355,8 +373,22 @@ void Abilities::Use(int skill, uint64_t now_ms)
 			return;
 		}
 	}
+	if (skill == HarmTouch || skill == LayOnHands) {
+		// UseSkill's 'i' and 'k': ours, nothing waiting on the zone (DAT_007d0254, DAT_007d0258),
+		// and its timer (RecastTimeout[9]) past: CastSpell(9) of Harm Touch (88) or Lay on Hands
+		// (87); else "You haven't recovered yet..." (12029).
+		if (!ClassAbility(skill) || (m_host.waiting && m_host.waiting()))
+			return;
+		if (m_host.ability_ready && !m_host.ability_ready()) {
+			Say(12029, "You haven't recovered yet...", SkillsColor);
+			return;
+		}
+		if (m_host.cast_ability)
+			m_host.cast_ability(skill == HarmTouch ? 88 : 87);
+		return;
+	}
 	if (skill >= SkillCount)
-		return; // the AA abilities (105 Harm Touch, 107 Lay on Hands, 111 Slam): the AAs aren't ours
+		return; // 111, Slam (InitInnates' +0xc86 for its races): a combat ability, not ours yet
 	const Skills::Info &info = Skills::Get(skill);
 	if (info.type == Skills::Combat) {
 		m_alt_ready = false;

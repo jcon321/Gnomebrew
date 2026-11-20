@@ -169,6 +169,9 @@ struct GameWindowState
 	uint64_t social_step_ms = 0;
 	// The social editor's: the social it's on, and the color picked.
 	int edit_social = 0, edit_color = 0;
+	// DoHotButton's refusal, as the game sets it each frame: stance 102 (no control of ourselves)
+	// or the spell bar waiting on the zone (DAT_007d0254).
+	bool hot_buttons_refused = false;
 
 	void ClearCursor() { cursor = {}; cursor_text.clear(); cursor_spell = cursor_spell_icon = -1; } // RemoveAttachment
 	bool Attached() const { return cursor.type != HotButton::Empty || cursor_spell >= 0; } // a button or a spell
@@ -205,7 +208,13 @@ struct GameWindowState
 struct WindowButton
 {
 	std::string window, control;
-	bool empty() const { return control.empty(); }
+	// An item hot button's inventory slot, to be right clicked (DoHotButtonRightClick's
+	// CInvSlot::HandleRButtonUp); -1 none.
+	int item_slot = -1;
+	// DoHotButton refused it (no control of ourselves, or the spell bar waiting on the zone):
+	// "You can't use that command right now..." (12084, 0x111).
+	bool refused = false;
+	bool empty() const { return control.empty() && item_slot < 0 && !refused; }
 };
 
 // A button clicked in one of the windows: the page arrows and the hot buttons. A hot button that
@@ -222,8 +231,14 @@ WindowButton DoHotButton(WindowManager &windows, GameWindowState &state, int slo
 int HotButtonAltAbility(GameWindowState &state, const std::string &window, const std::string &control);
 // CAAWnd's Hotkey: the ability onto the cursor (CCursorAttachment::Activate type 4, 0x78 + id).
 void AttachAltAbility(WindowManager &windows, GameWindowState &state, int id);
-// A button right clicked: a social's opens the social editor on it.
-void GameWindowRightClick(WindowManager &windows, GameWindowState &state, const std::string &window, const std::string &control);
+// A button right clicked: a social's opens the social editor on it. A hot button's
+// (DoHotButtonRightClick) holding an item returns its slot to right click, one holding a spell gem
+// that gem to right click (forgetting it).
+WindowButton GameWindowRightClick(WindowManager &windows, GameWindowState &state, const std::string &window,
+	const std::string &control);
+// CInvSlot::HandleLButtonHeld: an inventory slot's (0..29) item hot button onto the cursor
+// (CCursorAttachment type 8), if CCursorAttachment::IsOkToActivate.
+void AttachItemSlot(WindowManager &windows, GameWindowState &state, int slot);
 // CInvSlot::SetItem: an InvSlot showing `item` (null: none), its icon, its stack's count and its tooltip.
 void FillInvSlot(SidlWindow::Control &control, const ZoneItem *item, const GameValues &values);
 // The item slot a shown InvSlot shows (its window's, or its EQType); -1 if the control isn't one.

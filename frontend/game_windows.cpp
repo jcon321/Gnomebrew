@@ -584,6 +584,9 @@ namespace
 			const SidlWindow::Control *source = pet && id ? pet->Find(id) : nullptr;
 			return source ? "Pet " + source->text : "";
 		}
+		// An item's and a spell gem's show the slot or the gem over the button, no text.
+		if (button.type == HotButton::Item || button.type == HotButton::Spell)
+			return "";
 		if (button.type == HotButton::Action && button.value >= static_cast<int>(std::size(MainButtons)))
 			return button.value == 10 ? "Spells" : "Menu Button";
 		if (button.type == HotButton::Social && AltAbilityId(button.value) >= 0)
@@ -618,10 +621,20 @@ namespace
 	// HB_Button1..HB_Button10: 0..9; -1 for the window's other controls.
 	int HotButtonSlot(const std::string &control)
 	{
-		for (int i = 1; i <= HotButtonsPerPage; ++i)
-			if (control == "HB_Button" + std::to_string(i))
+		// WndNotification: the button, or the InvSlot or SpellGem over it.
+		for (int i = 1; i <= HotButtonsPerPage; ++i) {
+			std::string n = std::to_string(i);
+			if (control == "HB_Button" + n || control == "HB_InvSlot" + n || control == "HB_SpellGem" + n)
 				return i - 1;
+		}
 		return -1;
+	}
+
+	// CCursorAttachment::IsOkToActivate: not with the quantity window up (an item or coins on the
+	// cursor the callers check).
+	bool OkToAttach(const GameWindowState &state)
+	{
+		return !state.QuantityUp();
 	}
 
 	HotButton &PageButton(GameWindowState &state, int slot)
@@ -676,8 +689,27 @@ namespace
 					}
 				}
 			}
-			Show(wnd, "HB_InvSlot" + n, false);
-			Show(wnd, "HB_SpellGem" + n, false);
+			// OnProcessFrame's 5 and 7: an item's slot shown with what's in it (its InvSlot points
+			// at the slot), a spell gem's gem as the spell bar shows it.
+			bool item = held.type == HotButton::Item, gem = held.type == HotButton::Spell;
+			if (SidlWindow::Control *slot = wnd.Find("HB_InvSlot" + n)) {
+				if (item && values.zone) {
+					auto it = values.zone->Items().find(static_cast<int16_t>(held.value));
+					FillInvSlot(*slot, it != values.zone->Items().end() ? &it->second : nullptr, values);
+				}
+				slot->visible = item;
+			}
+			if (SidlWindow::Control *spell = wnd.Find("HB_SpellGem" + n)) {
+				SidlWindow *bar = gem ? windows.Find("CastSpellWnd") : nullptr;
+				const SidlWindow::Control *source = bar ? bar->Find("CSPW_Spell" + std::to_string(held.value)) : nullptr;
+				if (source) {
+					spell->cell = source->cell;
+					spell->gem_color = source->gem_color;
+					spell->gem_fade = source->gem_fade;
+					spell->tooltip = source->tooltip;
+				}
+				spell->visible = gem && source;
+			}
 		}
 	}
 }
@@ -735,7 +767,24 @@ WindowButton DoHotButton(WindowManager &windows, GameWindowState &state, int slo
 	// (UseSkill of __DoAbilityList's or the combat list's skill), which the caller clicks.
 	if (slot < 0 || slot >= HotButtonsPerPage)
 		return {};
+	if (state.hot_buttons_refused) {
+		WindowButton refused;
+		refused.refused = true;
+		return refused;
+	}
 	HotButton &button = PageButton(state, slot);
+	// 5, an item: DoHotButtonRightClick (its slot right clicked); 7, a spell gem:
+	// CCastSpellWnd::HandleSpellLeftClick; 6's 10, the spellbook (the gems' book button's).
+	if (button.type == HotButton::Item) {
+		WindowButton item;
+		item.item_slot = button.value;
+		return item;
+	}
+	if (button.type == HotButton::Spell)
+		return button.value >= 0 && button.value < 8 ? WindowButton{"CastSpellWnd", "CSPW_Spell" + std::to_string(button.value)}
+		                                             : WindowButton{};
+	if (button.type == HotButton::Action && button.value == 10)
+		return {"CastSpellWnd", "CSPW_SpellBook"};
 	if (button.type == HotButton::Social && (ValidSocial(button.value) || AltAbilityId(button.value) >= 0) &&
 	    state.current_social < 0)
 		StartSocial(state, button.value);
@@ -754,6 +803,15 @@ void GameWindowHold(WindowManager &windows, GameWindowState &state, const std::s
 		HotButton button = ActionsHotButton(state, control);
 		if (button.type != HotButton::Empty)
 			Attach(windows, state, button);
+	}
+	else if (window == "CastSpellWnd" && OkToAttach(state)) {
+		// CCastSpellWnd::WndNotification's 0x16: the book button onto the cursor (type 5, 10), a
+		// gem (type 9, its number).
+		if (control == "CSPW_SpellBook")
+			Attach(windows, state, {HotButton::Action, 10});
+		for (int gem = 0; gem < 8; ++gem)
+			if (control == "CSPW_Spell" + std::to_string(gem))
+				Attach(windows, state, {HotButton::Spell, gem});
 	}
 	else if (window == PetWindow::Screen) {
 		// CPetInfoWnd::WndNotification's 0x16: the button onto the cursor (type 10).
@@ -789,9 +847,10 @@ void AttachAltAbility(WindowManager &windows, GameWindowState &state, int id)
 	Attach(windows, state, {HotButton::Social, AltAdv::HotButtonBase + id});
 }
 
-void GameWindowRightClick(WindowManager &windows, GameWindowState &state, const std::string &window, const std::string &control)
+WindowButton GameWindowRightClick(WindowManager &windows, GameWindowState &state, const std::string &window,
+	const std::string &control)
 {
-	// SocialsPageWndNotification's 3, and DoHotButtonRightClick for a social.
+	// SocialsPageWndNotification's 3, and DoHotButtonRightClick for a social, an item and a gem.
 	if (window == "ActionsWindow") {
 		HotButton social = ActionsHotButton(state, control);
 		if (social.type == HotButton::Social)
@@ -799,9 +858,27 @@ void GameWindowRightClick(WindowManager &windows, GameWindowState &state, const 
 	}
 	else if (window == "HotButtonWnd") {
 		int slot = HotButtonSlot(control);
-		if (slot >= 0 && PageButton(state, slot).type == HotButton::Social)
-			OpenSocialEditor(windows, state, PageButton(state, slot).value);
+		if (slot < 0)
+			return {};
+		const HotButton &button = PageButton(state, slot);
+		if (button.type == HotButton::Social)
+			OpenSocialEditor(windows, state, button.value);
+		else if (button.type == HotButton::Item) {
+			WindowButton item;
+			item.item_slot = button.value;
+			return item;
+		}
+		else if (button.type == HotButton::Spell && button.value >= 0 && button.value < 8)
+			return {"CastSpellWnd", "CSPW_Spell" + std::to_string(button.value)};
 	}
+	return {};
+}
+
+void AttachItemSlot(WindowManager &windows, GameWindowState &state, int slot)
+{
+	if (slot < 0 || slot >= 30 || !OkToAttach(state))
+		return;
+	Attach(windows, state, {HotButton::Item, slot});
 }
 
 void FillInvSlot(SidlWindow::Control &control, const ZoneItem *item, const GameValues &values)
@@ -1088,7 +1165,14 @@ void UpdateGameWindows(WindowManager &windows, const GameValues &values, GameWin
 
 std::string SkillName(const EqStr *eqstr, int skill)
 {
-	// Past them, InitializeSkillData's default: "None" (eqstr 1216).
+	// InitializeSkillData's Slam, Lay Hands and Harm Touch past them; the rest its default, "None"
+	// (eqstr 1216).
+	if (skill == 111)
+		return EqText(eqstr, 6604, "Slam");
+	if (skill == 107)
+		return EqText(eqstr, 6605, "Lay Hands");
+	if (skill == 105)
+		return EqText(eqstr, 6606, "Harm Touch");
 	if (skill < 0 || skill >= SkillCount)
 		return EqText(eqstr, 1216, "None");
 	return EqText(eqstr, Skills::Get(skill).name, "Skill " + std::to_string(skill));
@@ -1147,6 +1231,33 @@ void DrawCursorAttachment(Canvas &canvas, TextRenderer &text, const WindowManage
 	// A spell from the book: its icon (the book slot's decal, A_SpellIcons).
 	if (state.cursor_spell >= 0) {
 		windows.DrawCell(canvas, "A_SpellIcons", state.cursor_spell_icon, dest);
+		return;
+	}
+	// An item hot button (type 8): the slot's item's icon (CA_Anim2's A_DragItem cell), if it has one.
+	if (state.cursor.type == HotButton::Item) {
+		if (values.zone) {
+			auto it = values.zone->Items().find(static_cast<int16_t>(state.cursor.value));
+			if (it != values.zone->Items().end() && it->second.icon >= 500)
+				windows.DrawCell(canvas, "A_DragItem", it->second.icon - 500, dest);
+		}
+		return;
+	}
+	// A spell gem (type 9): CA_SpellGem with the gem's spell, its ring and icon (the spell bar's).
+	if (state.cursor.type == HotButton::Spell) {
+		Rect gem{x + 1 + 5, y + 1 + 5, 40, 32};
+		if (const SidlDefinitions *defs = windows.Definitions())
+			if (const SidlPiece *piece = defs->Piece("CA_SpellGem"))
+				gem = {x + 1 + piece->rect.x, y + 1 + piece->rect.y, piece->rect.w, piece->rect.h};
+		const SidlWindow *bar = windows.Find("CastSpellWnd");
+		const SidlWindow::Control *source = bar ? bar->Find("CSPW_Spell" + std::to_string(state.cursor.value)) : nullptr;
+		if (source && source->cell >= 0) {
+			windows.DrawAnimation(canvas, source->def->gem_background, gem, now_ms);
+			if (const SidlDefinitions *defs = windows.Definitions())
+				if (const SidlAnimation *icons = defs->Animation("A_SpellGems"))
+					windows.DrawCell(canvas, "A_SpellGems", source->cell,
+						{gem.x + source->def->gem_icon_x, gem.y + source->def->gem_icon_y, icons->cell_width, icons->cell_height});
+			windows.DrawAnimation(canvas, source->def->gem_highlight, gem, now_ms);
+		}
 		return;
 	}
 	// A button: CA_Anim showing A_SquareBtnNormal, and the text over that in font 2, white

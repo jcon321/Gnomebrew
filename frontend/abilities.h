@@ -34,8 +34,8 @@
 //     the cast's animation, and 2 s on its hook in the water, or the cast called off by moving:
 //     DoFishingEvent).
 // UseSkill's answers keep a count of requests the zone hasn't answered (DAT_007d0254, bind wound's
-// DAT_007d0258 too): Busy() while there are. Not yet: the AA abilities (105 Harm Touch, 107 Lay on
-// Hands, 111 Slam: the AAs aren't ours) and the timers' AA reductions, PvP stealing's rules
+// DAT_007d0258 too): Busy() while there are. Lay on Hands (107) and Harm Touch (105) cast their
+// spells as gem 9 (SpellCast::CastAbility). Not yet: Slam (111) and the timers' AA reductions, PvP stealing's rules
 // (DAT_006ec740), fishing's splash particles.
 
 #include "zone_session.h"
@@ -82,7 +82,11 @@ public:
 		std::function<bool(float, float &, float &, float &)> hook_point;
 		std::function<void(float, float, float, int)> sound_at; // CDisplay_PlaySoundAtLocation
 		std::function<void()> open_tracking;                // CTrackingWnd::Activate
+		std::function<bool()> waiting;                      // DAT_007d0254, DAT_007d0258: the zone's answer waited on
+		std::function<bool()> ability_ready;                // RecastTimeout[9] past (SpellCast::AbilityReady)
+		std::function<void(int)> cast_ability;              // CastSpell(9, spell) (SpellCast::CastAbility)
 	};
+	static constexpr int HarmTouch = 105, LayOnHands = 107; // UseSkill's 'i' and 'k'
 
 	void Attach(WindowManager &windows, GameWindowState &state, ZoneSession &zone, const EqStr *eqstr, Host host);
 	void Reset(); // a new character: no skills on the buttons, every timer ready
@@ -95,6 +99,8 @@ public:
 	void Frame(uint64_t now_ms);
 	// EQ_Character::UseSkill.
 	void Use(int skill, uint64_t now_ms);
+	// InitInnates: Lay on Hands is a paladin's, Harm Touch a shadow knight's.
+	bool ClassAbility(int skill) const;
 	// A left click on one of the buttons or the skill select window's list; true if it was one.
 	bool Click(const std::string &window, const std::string &control, uint64_t now_ms);
 	bool RightClick(const std::string &window, const std::string &control);

@@ -9,7 +9,7 @@ namespace
 	constexpr size_t NameField = 1, YouCastField = 4, OtherCastsField = 5, CastOnYouField = 6, CastOnOtherField = 7,
 	                 FadesField = 8, RangeField = 9, CastTimeField = 13, RecoveryField = 14, RecastField = 15, DurationFormulaField = 16, DurationField = 17,
 	                 AeDurationField = 18, ManaField = 19, FirstBaseField = 20, FirstMaxField = 32, FirstFormulaField = 58,
-	                 GoodEffectField = 71, ActivatedField = 72, FirstSpaField = 74, TargetTypeField = 86, SkillField = 88, FirstClassField = 92,
+	                 GoodEffectField = 71, ActivatedField = 72, ResistTypeField = 73, FirstSpaField = 74, TargetTypeField = 86, SkillField = 88, FirstClassField = 92,
 	                 CastingAnimField = 107, TargetAnimField = 108, TravelTypeField = 109, EffectField = 110, IconField = 131,
 	                 NewEffectField = 132, DeletableField = 136, RecourseField = 137;
 }
@@ -59,6 +59,7 @@ bool SpellFile::Load(const std::string &path)
 		}
 		spell.good_effect = static_cast<uint8_t>(number(GoodEffectField));
 		spell.activated = static_cast<uint8_t>(number(ActivatedField));
+		spell.resist_type = static_cast<uint8_t>(number(ResistTypeField));
 		for (int i = 0; i < 12; ++i)
 			spell.spas[i] = static_cast<uint8_t>(number(FirstSpaField + i));
 		spell.first_spa = spell.spas[0];

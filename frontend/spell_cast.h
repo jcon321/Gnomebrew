@@ -29,11 +29,11 @@
 //     OP_ManaChange, "Your song ends."), and gems without a recast time come back at once.
 //   - The casting window shows while GetSpellCastingTime has something: the time left of the cast,
 //     0..1000, emptying (EQType 7).
-// Not done: CEverQuest_IsOkToTransact (trading and the like), divine aura (SPA 40) and stuns
-// (StunnedState, OP_Stun), our invisibility and sneaking ending as we cast, the AA and focus cast
-// time modifiers (GetAACastingTimeModifier, GetFocusCastingTimeModifier: none of either here) and
-// the focus's range, Modulation and Mystical Transvergance's checks (items and abilities, not gems),
-// PvP deities, abilities (gem 9) and the spell_crc (the zone ignores it).
+// The cast time has the AAs' and the focus's modifiers (GetAACastingTimeModifier,
+// GetFocusCastingTimeModifier, spell_focus.h), the range the focus's (GetFocusRangeModifier).
+// Not done: CEverQuest_IsOkToTransact (trading and the like), our invisibility and sneaking ending
+// as we cast, Modulation and Mystical Transvergance's checks (items and abilities, not gems), PvP
+// deities and the spell_crc (the zone ignores it).
 //   - Our own interrupt (StopSpellCast 1, only from msg_stat_change's SpawnAppearance 0x12 clearing
 //     our link death): a spell, not a song, says "Your spell is interrupted." (439, 0x121) and
 //     sends OP_SpellTextMessage "%1's casting is interrupted!" (12478) for the zone to pass on, with
@@ -51,6 +51,7 @@
 #include <string>
 #include <vector>
 
+class Buffs;
 class EqStr;
 class SpellFile;
 class WindowManager;
@@ -71,7 +72,10 @@ public:
 		std::function<void(const std::string &, int)> chat;
 		std::function<int(int)> total;              // TotalSpellAffects of an SPA (divine aura, 40)
 		std::function<bool()> stunned;              // StunnedState 1
+		const Buffs *buffs = nullptr;               // for the focus effects (GetFocusEffect)
+		std::function<int(const SpellInfo &)> aa_cast_modifier; // GetAACastingTimeModifier
 	};
+	static constexpr int AbilityGem = 9; // CastSpell's gem for Lay on Hands and Harm Touch
 
 	void Attach(WindowManager &windows, ZoneSession &zone, const SpellFile *spells, const EqStr *eqstr, Host host);
 	void Reset(); // a new zone: nothing cast, nothing waited for
@@ -83,6 +87,10 @@ public:
 	void StopSong();
 	// msg_stat_change's SpawnAppearance 0x12 of 0 on us: StopSpellCast2(1), an interrupt of ours.
 	void Interrupted();
+	// CastSpell(9, spell) for UseSkill's Lay on Hands (87) and Harm Touch (88); AbilityReady is its
+	// timer (ActorInfo's RecastTimeout[9]: 10 s while the zone answers, then the spell's recast).
+	bool CastAbility(int spell, uint64_t now_ms);
+	bool AbilityReady(uint64_t now_ms) const;
 	// CastSpell for an item's click effect (gem 10, CInvSlot_DoDrinkEatPoison): from the slot it's in.
 	bool CastItem(const ZoneItem &item, int16_t slot, uint64_t now_ms);
 	// The zone's: ZoneSession::Event's SpellMemorized, SpellForgotten, SpellRecast, ManaChanged.
@@ -128,6 +136,7 @@ private:
 	int m_cast_ms = 0;      // CastingSpellCastTime: 0, the spell's own
 	uint64_t m_recast_ms[8] = {}; // RecastTimeout
 	uint64_t m_fizzle_ms = 0;     // FizzleTimeout: the recovery
+	uint64_t m_ability_ms = 0;    // RecastTimeout[9] (ActorInfo+0xfc): Lay on Hands and Harm Touch
 	int m_waiting = 0;      // DAT_007d0254
 	int m_casts = 0;        // DAT_007d0258
 	uint64_t m_now_ms = 0;  // the last Frame's

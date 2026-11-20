@@ -326,9 +326,12 @@ Hot buttons work as eqgame's do: hold the left button on any button of the Actio
 of its pages, for 3/4 of a second and a copy of it follows the cursor; click a hot button to put it
 there (whatever was there goes onto the cursor instead). Hold a hot button to take it off onto the
 cursor. Clicking the world or pressing Escape drops what's on the cursor. Clicking a hot button
-does what its button does (so far, the main page's Camp and Run/Walk). They're kept in eqgame's
-format in `<character>_<server>.ini` next to the exe, under `[HotButtons]`
-(`Page<p>Button<b>=<type letter><number>`).
+does what its button does. Holding a spell gem or the gems' book button, or an inventory slot (worn,
+general or the cursor's), puts that on the cursor too: a spell hot button shows the gem and casts
+it, a book one opens the book, and an item one shows the slot's item and does what the right
+button on it does (`CHotButtonWnd::DoHotButton` @004209bd: types 5 item, 6 action, 7 gem; the
+cursor's 8 item, 5 action, 9 gem). They're kept in eqgame's format in `<character>_<server>.ini`
+next to the exe, under `[HotButtons]` (`Page<p>Button<b>=<type letter><number>`).
 
 Items move as they do in eqgame (`core/inventory.*`, mirroring its `CInvSlot`, `SwapCombine` and
 `AutoInventory`): click an item in the inventory window to pick it up, and click a slot to put it
@@ -1869,7 +1872,33 @@ details and the nearest spawns at the top left and the radar at the top right.
   and messages (standing, level, line of sight, mana, target type, range, body type, pet spells),
   sends `OP_CastSpell` and shows the casting window's gauge. The zone answers with
   `OP_MemorizeSpell` 3 for the recast and recovery, `OP_ManaChange` to end the cast, and
-  `OP_TokenText` for why one failed. A gem click stops a bard's song.
+  `OP_TokenText` for why one failed. A gem click stops a bard's song. The cast time is the
+  spell's plus `GetAACastingTimeModifier` and `GetFocusCastingTimeModifier`, no less than half of
+  it, with "Your %1 shimmers briefly." (12444, color 0x108) when a focus item changed it; the
+  range is the spell's plus `GetFocusRangeModifier`, at most five times it (a player's; an NPC's
+  is 1.2 times, at least 500).
+- **Focus effects** (`frontend/spell_focus.*`): an item's focus spell (`FocusEffect`, +0x166) on a
+  worn item (slots 1..20) or a buff whose first effect (SPA) is the focus's kind: 127 cast time
+  (a base percent of it off), 129 range (a base percent of it more, truncated), 130..133 the
+  others' kinds. `GetFocusItem` (@004c41b5) takes the matching worn item with the highest base,
+  `GetFocusEffect` (@004c42cb) the matching buff with the most negative base if any is negative,
+  else the highest; warriors, monks, bards and rogues get none. `DoesSpellMatchFocusFilters`
+  (@004c4432) checks the focus spell's later effects in order until a 0xfe: 134 the spell's level
+  for our class at most the base, 135 its resist type (`+0x89`, spells_en.txt field 73), 136 its
+  target type (a negative base excludes it), 137 an effect it has (negative: hasn't; its table at
+  @00606c64 counts 0 and 79, 33 and 71 as each other, and every other effect as 0), 138 beneficial
+  or not (`goodEffect`), 139 the spell id (negative: not it), 140 the least duration
+  (`CalculateSpellDuration` at our level), 141 no duration at all, 142 the least level, 143 and
+  144 the least and most cast time.
+- **Lay on Hands and Harm Touch** (`UseSkill`'s 'k', 107, and 'i', 105, for which `InitInnates`
+  sets +0xc7e for a paladin and +0xc7a for a shadow knight; `CSkillsSelectWnd::SetTypesToDisplay`
+  lists them, and Slam, 111, +0xc86 for barbarians, trolls, ogres and race 90, after the skills):
+  with nothing waiting on the zone and `RecastTimeout[9]` past, `CastSpell(9, 87 or 88)`; else
+  "You haven't recovered yet..." (12029, 0x10e). `CastSpell` sets that timer 10 s on for the
+  zone's answer, and `OP_MemorizeSpell` 3 for gem 9 the spell's recast less 720000 ms a rank of
+  the class's AA (`AltAdvManager_AdjustSpellRecastTimeByClassAbility`: a paladin's 200, a shadow
+  knight's 201). The skill names past 100 are `InitializeSkillData`'s: Slam 6604, Lay Hands 6605,
+  Harm Touch 6606.
 - **Fizzles and channeling are the zone's.** eqgame's own rolls, `SpellFizzled` (@004c712b, from
   `CastSpell`) and `CastingRequirementsMet` (@004c5a5d, from `DoPassageOfTime` at the cast's end),
   only run while `DAT_00798560` or `DAT_00798620` is set, and nothing in the exe ever sets them
@@ -3321,7 +3350,8 @@ details and the nearest spawns at the top left and the radar at the top right.
   only for skills 4, 5, 13, 14, 18, 24 and 43..47 (the casting skills, not a song's), and, but for
   a bard, "Cast Time: %1" (3107) in `%4.1f` seconds. With an AA or focus casting time modifier it's
   "Normal Cast Time: %1    Your Cast Time: %2" (3106), yours the cast time plus both, no less than
-  half (`GetAACastingTimeModifier`, see Alternate advancement; no focus items yet). The buff window passes no details: title and icon only. Every
+  half (`GetAACastingTimeModifier`, see Alternate advancement; `GetFocusCastingTimeModifier`, see
+  Spells). The buff window passes no details: title and icon only. Every
   caller toggles: with the item display up (`IsActivated`, CItemDisplayWnd +0x140) it closes
   whatever it shows. Alt+click (`GetKeyboardFlags` 4) and the right button held (`WndNotification`
   0x17) on a book slot (`DisplaySpellInfo`, `DisplaySpellDetails` @0043525a), a gem

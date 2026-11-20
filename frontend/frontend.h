@@ -342,6 +342,11 @@ private:
 	void DrawBuffTooltips(Canvas &canvas, int mouse_x, int mouse_y); // Alt held over the buff window
 	bool BuffSpellInfo(const std::string &control, const std::string &window); // a buff's spell shown; false: not a buff
 	void ActionsClick(const std::string &control); // an Actions window button, clicked or on a hot button
+	// What a hot button's DoHotButton (or click) returned, done: its refusal said, an item's slot
+	// right clicked, a pet window, gem or book button, or Actions window button clicked. False for none.
+	bool HotButtonAction(const WindowButton &action);
+	// CInvSlot::HandleRButtonUp on an inventory slot's item (a bag, a note, food, a click effect).
+	void ItemSlotRightClick(int slot, bool shift, bool ctrl, bool alt);
 	// CEverQuest::RightClickedOnPlayer: a corpse's loot, a banker's bank, a merchant's shop, or else
 	// /consider (of our target).
 	void RightClickedOnPlayer(uint16_t spawn);
