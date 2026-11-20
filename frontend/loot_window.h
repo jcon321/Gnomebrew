@@ -55,6 +55,8 @@ public:
 		std::function<float(uint16_t)> height;              // a spawn's ModelHeightOffset
 		std::function<bool()> dead;                         // ActorInfo's DeathTimer running
 		std::function<void()> make_visible;                 // EQ_Character::MakeMeVisible
+		std::function<bool()> zone_waiting; // DAT_007d0254, DAT_007d0258: the zone's answer to anything waited on
+		std::function<bool()> on_vehicle;   // ActorInfo's AttachedEntity: standing on a boat
 	};
 
 	void Attach(WindowManager &windows, ZoneSession &zone, GameWindowState &state, const GameValues &values, Host host);
@@ -64,7 +66,8 @@ public:
 	bool Waiting() const { return m_corpse != 0 && !m_open; } // asked, no answer yet
 	bool Busy() const { return m_busy > 0; }               // a slot asked for and not answered
 	uint16_t Corpse() const { return m_corpse; }           // pinstActiveCorpse
-	// CEverQuest_LootCorpse: false when it doesn't ask (too far, something else going on).
+	// CEverQuest_LootCorpse: false when it doesn't ask (too far, on a boat, the zone's answer to
+	// something else waited on, camping, dead, deity 20000).
 	bool LootCorpse(uint16_t corpse);
 	void ZoneEvent(const ZoneSession::Event &event);
 	void Deactivate(); // ask the zone to end it

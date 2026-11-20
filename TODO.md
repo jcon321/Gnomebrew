@@ -131,14 +131,16 @@ no rules of its own.
      against a server yet (the test character hasn't killed anything of its own to loot). /loot
      (@004fb5ae) loots our target (eqstr 13201 with none). /lootnodrop sets whether a
      NO DROP item asks first (`LootNoDrop`). Dead (DeathTimer), camping and deity 20000 don't ask;
-     asking makes us visible (MakeMeVisible). Still to do: the
-     items in a corpse's bags (shown only to GMs and on player corpses past the eighth:
-     `msg_send_corpse_con` @004df3ab and `CLootWnd::ProcessLootContainer` @00426a15, with
-     `msg_send_corpse_notes` @004df1f5 and `processLootNotes` @004268e3), the
-     PvP item (Loot_Request_Type 5), and `CEverQuest_LootCorpse`'s (@00547808) other refusals: with
-     an `AttachedEntity` (standing on a boat, which 39 knows as `ZoneView::Vehicle`) and while the
-     zone's answer to something else is waited on (`DAT_007d0258`, `DAT_007d0254`; ours checks only
-     its own request).
+     asking makes us visible (MakeMeVisible), and on a boat (`AttachedEntity`, `ZoneView::Vehicle`)
+     or while the zone's answer to anything is waited on (`ZoneAnswerWaiting`: `DAT_007d0258`,
+     `DAT_007d0254`) it doesn't ask. A bag on a player's corpse is one loot slot: the zone sends only
+     the top-level items (PvP looting, Loot_Request_Type 3 and 4, sends the bags' items too, each as
+     its own slot) and moves a bag's contents along with it when it's looted; PvP's one set item
+     (type 5) comes as any other, at slot 22. Every loot item, bags too, comes as
+     OP_LootItemPacket (0x4052), which TAKP's eqgame.dll hands to `msg_send_corpse_eq_equip`;
+     eqgame's container and note paths (0x4053 `msg_send_corpse_con` @004df3ab /
+     `CLootWnd::ProcessLootContainer` @00426a15, 0x4056 `msg_send_corpse_notes` @004df1f5 /
+     `processLootNotes` @004268e3) never run under EQMacEmu.
    - Trade and give windows: done (`frontend/trade_window.*`, eqgame's CTradeWnd and CGiveWnd): an
      item or coins on the cursor clicked onto a player or NPC in reach asks to trade
      (DropItemOrMoneyOnPlayer, OP_TradeRequest), the go-ahead opens the trade window with it in

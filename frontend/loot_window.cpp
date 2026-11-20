@@ -63,7 +63,8 @@ bool LootWindow::LootCorpse(uint16_t corpse)
 {
 	auto it = m_zone->Spawns().find(corpse);
 	if (it == m_zone->Spawns().end() || it->second.npc < 2 || m_corpse != 0 || m_busy != 0 ||
-	    m_zone->CampRemainingMs() != 0 || (m_host.dead && m_host.dead()) || m_zone->Profile().deity == 20000)
+	    m_zone->CampRemainingMs() != 0 || (m_host.dead && m_host.dead()) || m_zone->Profile().deity == 20000 ||
+	    (m_host.on_vehicle && m_host.on_vehicle()) || (m_host.zone_waiting && m_host.zone_waiting()))
 		return false;
 	// PlayerDistance(corpse, us, 1.2): up and down counts 1 / 1.2.
 	const ZoneSpawn &body = it->second;

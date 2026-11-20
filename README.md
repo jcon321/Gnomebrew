@@ -3231,15 +3231,21 @@ details and the nearest spawns at the top left and the radar at the top right.
   `CreateGroundObject` makes come the same way. `IsOkToTransact` waits on all of it.
 - **Looting** (`frontend/loot_window.*`, `CLootWnd`): the right button on a corpse is
   `CEverQuest_LootCorpse`: within `ModelHeightOffset * 1.6 + 14` (`PlayerDistance` with 1.2, up and
-  down counting 1/1.2) and with nothing else waiting it sends `OP_LootRequest` (0x404e, the corpse's
-  id); further it says 12390 and considers our target. `OP_MoneyOnCorpse` (0x4050:
+  down counting 1/1.2), not dead (`DeathTimer`), camping, deity 20000, on a boat (`AttachedEntity`)
+  or with the zone's answer to anything waited on (`DAT_007d0258`, `DAT_007d0254`), it sends
+  `OP_LootRequest` (0x404e, the corpse's id); further it says 12390 and considers our target. `OP_MoneyOnCorpse` (0x4050:
   response @0, platinum, gold, silver, copper @4..) is `DoLoot_handleLootCorpse`: 2 is 12070 ("not
   at this time"), 0 is 12073 ("someone is already looting"), 1 or 3 adds the coins (12072,
   `BuildMoneyText`'s "1 platinum, 2 gold and 3 copper", color 0x11d, wave 0x8a), kneels
   (stance 105) and opens the window with the corpse's name. TAKP's eqgame.dll hands each
   `OP_LootItemPacket` (0x4052, one `Item_Struct`) to `msg_send_corpse_eq_equip`, which puts it in
   the first free loot slot keeping its `equipSlot`, the corpse slot, for `OP_LootItem` (0x40a0, 12
-  bytes: corpse, us, that slot @4, auto loot @8). A left click asks for it onto the cursor, the
+  bytes: corpse, us, that slot @4, auto loot @8). Bags come the same way, so stock eqgame's
+  container and note handlers (0x4053 `msg_send_corpse_con`, 0x4056 `msg_send_corpse_notes`) never
+  run. A player's corpse shows only its top-level items (the zone's `MakeLootRequestPackets`): a
+  bag is one slot, and the zone moves what's in it along with it; only PvP looting (the zone's
+  `Loot_Request_Type` 3 and 4) lists the bags' items as slots of their own, and type 5 sends its
+  one set item at slot 22. A left click asks for it onto the cursor, the
   right button into the inventory; a NO DROP item from another's corpse asks first (2072, the
   confirmation dialog for 20 s; /lootnodrop 1 only for what we can't use, 2 never). The zone's
   `OP_LootItem` answer has the slot taken (-1: 1370). Done, the close box, Escape and walking off
