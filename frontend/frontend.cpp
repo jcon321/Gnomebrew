@@ -1,4 +1,5 @@
 #include "frontend.h"
+#include "babel.h"
 
 #include "actor_tags.h"
 #include "eqstr.h"
@@ -2243,8 +2244,13 @@ void FrontEnd::BuildZoneWindows()
 		std::string suffix = name + "_" + m_config.login_host.substr(0, 7) + ".ini";
 		m_ui_layout_path = m_config.ui_dir + "/UI_" + suffix;
 		IniFile ini;
-		if (ini.Load(m_ui_layout_path))
+		if (ini.Load(m_ui_layout_path)) {
 			m_windows.Load(ini);
+			// CChatManager::CChatManager: [ChatManager] ChatWindow0_FontStyle, the chat's font.
+			std::string font = ini.Get("ChatManager", "ChatWindow0_FontStyle", "*");
+			if (!font.empty() && font[0] != '*')
+				m_chat.SetFont(std::atoi(font.c_str()));
+		}
 		m_windows.Show("QuantityWnd", false); // only ever up for a stack
 		m_windows.Show("SpellBookWnd", false); // open only while it's activated
 		m_windows.Show("ConfirmationDialogBox", false);
@@ -2562,6 +2568,20 @@ void FrontEnd::SaveUiLayout()
 	IniFile ini;
 	ini.Load(m_ui_layout_path); // keep what we don't manage
 	m_windows.Store(ini);
+	if (!ini.Save(m_ui_layout_path))
+		Log("UI: couldn't write " + m_ui_layout_path);
+}
+
+void FrontEnd::SetChatFont(int font)
+{
+	// CChatWindow::SetChatFont, kept as CChatManager::Deactivate keeps it ([ChatManager]
+	// ChatWindow0_FontStyle in the UI ini).
+	m_chat.SetFont(font);
+	if (m_ui_layout_path.empty())
+		return;
+	IniFile ini;
+	ini.Load(m_ui_layout_path);
+	ini.Set("ChatManager", "ChatWindow0_FontStyle", std::to_string(m_chat.Font()));
 	if (!ini.Save(m_ui_layout_path))
 		Log("UI: couldn't write " + m_ui_layout_path);
 }
@@ -5101,7 +5121,16 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 				break;
 			std::string line;
 			int type = ChatType::Default;
-			if (ChannelLine(event.chat, m_zone.Profile().name, m_zone.Profile().languages, m_ui.eqstr, line, type))
+			// SpeakBabel by the speaker's skill and the bad word filter, then HearBabel by ours, for
+			// all but channels 6 and 14, unless we're a GM.
+			ZoneChat chat = event.chat;
+			if (chat.channel != 6 && chat.channel != 14 && m_zone.Self().gm == 0) {
+				auto random = [this] { return Rand(); };
+				int ours = chat.language < 32 ? m_zone.Profile().languages[chat.language] : 0;
+				chat.text = Babel::Speak(chat.text, chat.skill, m_filters.bad_words != 0, random);
+				chat.text = Babel::Hear(chat.text, ours, m_world.Gibberish(), random);
+			}
+			if (ChannelLine(chat, m_zone.Profile().name, m_zone.Profile().languages, m_ui.eqstr, line, type))
 				ChatOut(line, type);
 			if (event.chat.channel == 7 && event.chat.sender != m_zone.Profile().name)
 				AddNameToTellList(event.chat.sender);
@@ -5863,6 +5892,14 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 		// or down.
 		if (down && in_zone && ((m_zone.Profile().expansions & 4) || m_zone.Profile().gm))
 			m_aa_window.Toggle();
+		break;
+	case KeyMap::PageUp: // ExecuteCmd 0x55, 0x56: the active chat window a page up or down
+		if (down && in_zone)
+			m_chat.PageUp();
+		break;
+	case KeyMap::PageDown:
+		if (down && in_zone)
+			m_chat.PageDown();
 		break;
 	case KeyMap::ToggleRaidWin:
 		// ExecuteCmd 0x6d: pressed, with the raid's expansion; CRaidWnd::Activate or down.

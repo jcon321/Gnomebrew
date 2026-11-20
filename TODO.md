@@ -315,21 +315,27 @@ no rules of its own.
      close their windows.
 3. ~~**A real chat window**~~: done (`frontend/chat_window.*`, `chat_text.*`, `chat_commands.cpp`).
    Still to do:
-   - More chat windows and the channel map (eqgame's `CChatManager` @004100e2: `CreateChatWindow`
-     @00410c5a, `FreeChatWindow`, `LoadChatInis`, `SetChannelMap` and `GetChannelMap`,
-     `GetChatWindowIndexFromChannelID` @00411425 for which window each channel goes to,
-     `SetLockedActiveChatWindow`; all set from the right-click menu, `InitContextMenu` @0041179c
-     and `UpdateTellMenus` @00413439; there were no tabs in this era).
-   - The chat font size (`CChatWindow::SetChatFont` @00414b55, sizes 0..6, from /chatfontsize
-     @004fdb25 on the active window, eqstr 13270 otherwise), scrolling by pixels (5), and the chat
-     keys (`ScrollChatWindowUp` @00414ad9 and `Down` @00414b17 for page up and down; see 6).
-   - Languages: what's said in one comes through `SpeakBabel` (@00505cfd, by the speaker's skill
-     at +0x86 of the packet; it also runs the bad word filter, `BadWord` @00505b7f, when /filter's
-     `DAT_00798b24` is 0) and then `HearBabel` (@005063a9: with our skill in it under 100 and the
-     world's `DAT_0079976c` set, letters swapped at random, more the less we know, never inside
-     a link's 0x12 marks); and speaking one: /language (@004fd44a: "help", eqstr 13300, lists
-     those we know under 13260; a number picks one for the active chat window, +0x188; 13261
-     out of range; 13262 says the one in use) with `CEverQuest_GetCurrentLanguage` on what's sent.
+   - More chat windows, their window manager instances (one SIDL screen, several windows) and the
+     channel map: `CChatManager` @004100e2 (`CreateChatWindow` @00410c5a, 32 at most, named eqstr
+     6624 + the number; `FreeChatWindow`; `SetChannelMap`, 41 entries), `ProcessChatMessage`
+     @0041115f routing every printed line by its color type through
+     `GetChatWindowIndexFromChannelID` @00411425 (0x100..0x144 to entries 0..0x28, the rest 0x16);
+     kept in the UI ini's [ChatManager]: NumWindows, ChatWindow%d_Name, _Language,
+     _DefaultChannel, _ChatChannel, _TellTarget, _FontStyle, LockedActiveWindow, ChannelMap%d,
+     HitMode%d (`Deactivate` @00410871); all set from the window's menu, `InitContextMenu`
+     @0041179c (14 submenus, their items' eqstr ids pushed as CXStr, not read yet) and
+     `UpdateTellMenus` @00413439; there were no tabs in this era. The one window's font, language
+     and page keys are done (below).
+   - The chat font size is done (`ChatWindow::SetFont`: `CChatWindow::SetChatFont`'s 0..6, from
+     /chatfontsize @004fdb25, 13270 otherwise; [ChatManager] ChatWindow0_FontStyle in the UI ini),
+     and Page up and down (ExecuteCmd 0x55, 0x56: `ScrollChatWindowUp` and `Down`, a page of the
+     output's height less 8). Still to do: scrolling by pixels (5).
+   - Languages are done (`frontend/babel.*`: `SpeakBabel` by the speaker's skill at +0x86 and the
+     bad word filter, `BadWord`'s list, then `HearBabel` by ours when OP_LogServer's Gibberish
+     is set, for channels but 6 and 14, not as a GM; /language @004fd44a; what we send in
+     `CEverQuest_GetCurrentLanguage`'s language with our skill less Drunkness / 4). Still to do:
+     the other two SpeakBabel callers in HandleWorldMessage (language 0, skill 100: the bad word
+     filter on other text) and `msg_npc_say_text`'s HearBabel (@004e07b9) on an NPC's line.
    - `CEverquest_InterpretCmd` (@0054572f) looks a word up twice, first by each command's
      localized name (the table's second pointer, null in the exe as it ships) and then its own:
      nothing to do in English. A line starting with `;` is /chat's (35), where ours says it.

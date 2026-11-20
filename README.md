@@ -3637,7 +3637,38 @@ A rejected world login gets no error packet. The server just drops the connectio
   them, matching TAKP-YewV4's decryptors.
 - **Positions:** x and y are whole units and z is in tenths. `0x409f` MobUpdate batches up to 33
   15-byte updates after a u32 count.
-- **Chat:** `0x4107` ChannelMessage is 136 bytes plus the text, and the client sends `strlen + 141`.
+- **Chat:** `0x4107` ChannelMessage is 136 bytes plus the text, and the client sends `strlen + 141`:
+  language u16 @0x80, channel @0x82, the speaker's skill in the language @0x86. What we send is in
+  `CEverQuest_GetCurrentLanguage`'s language (the chat window's +0x188, an index into the languages
+  we know, which `CChatWindow::WndNotification` copies to `DAT_0079859a` as it sends; out of range
+  it's -1), at our skill in it less `Drunkness >> 2` (no less than 0; a GM's 100).
+- **Languages** (`frontend/babel.*`): `msg_new_text` (@004e25a1), English only, for any channel
+  but 6 and 14 and not as a GM, runs `SpeakBabel` (@00505cfd) by the speaker's skill and the bad
+  word filter (`DAT_00798b24`, /filter badword: 0 on), then `HearBabel` (@005063a9) by ours. With
+  the skill under 100 or the filter on, `SpeakBabel` first turns non-letters that would run into a
+  word into spaces (an apostrophe, one before a space, a digit beside another and the 16th of a run
+  are kept), then goes word by word (`CEverQuest_GrabFirstWord`, 15 characters at most, an item
+  tag whole): a bad word (`BadWord` @00505b7f: any of `bad_word_class("word")`'s 20 within it,
+  lower cased) becomes random letters with the filter on; otherwise a word of 7 letters at most
+  whose roll (`number_percent`) beats the skill is swapped (I, I' and my to me; let's and we'll to
+  we; they'll to them; it's and its to it; went to "did go"; a, am, an, to, or, do, the, and, are,
+  was, has, were and that dropped; 20 over the skill, of and is dropped, his to him, best to "more
+  better"), and each letter, on a roll over 40 and a second over 5 and over the skill + 10,
+  becomes a random vowel for a vowel or consonant for a consonant (more than 30 over the skill, any
+  of `'`'..'y'`), or a space inside a word on 99 or 100. The words are joined by spaces, the text's
+  last character kept if it isn't a letter or digit, and the first letter capitalized, so with the
+  filter on even a full-skill line comes out tidied. `HearBabel` does the letter changes alone
+  (on a roll of 51 or more) by our skill, only under 100 and when `OP_LogServer` +16 (Gibberish,
+  `DAT_0079976c`) is set, never inside an item tag. The letter tests are the CRT's `isalpha` and
+  `isdigit` (ctype masks 0x103 and 4, which TAKP's list names `UTF8_convertToUTF16` and
+  `isAlphaNumeric`). /language (@004fd44a): "help" (eqstr 13300) lists the languages we know under
+  13260 as `%d - %s`; a number picks one for the chat window (13261 out of range); then 13262
+  "Current Language is %1. (%2)", all in 0x111. The new UI's /language doesn't keep it.
+- **Chat font and paging:** `CChatWindow::SetChatFont` (@00414b55) puts the output in
+  `CXWndManager`'s font 0..6, parsed again and scrolled to the bottom; /chatfontsize (@004fdb25)
+  sets the active window's, or prints 13270 into it. `CChatManager` keeps it as [ChatManager]
+  `ChatWindow<n>_FontStyle` in the UI ini. ExecuteCmd 0x55 and 0x56 (Chat text, page up and down)
+  scroll the active window by its output's height less 8 (`ScrollChatWindowUp` and `Down`).
 - **Server messages:** `0x4236` FormattedMessage carries an `eqstr_en.txt` id and NUL-separated
   arguments.
 - **Camping:** `CEverQuest_Camp` (@00530c7b, from /camp, the Actions window's Camp and a hot button)

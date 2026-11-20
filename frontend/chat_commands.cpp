@@ -23,6 +23,7 @@ namespace
 		MakeRaidLeader, RaidInvite, RaidDecline, RaidAccept, RaidDisband, SetLootType, AddRaidLooter, RemoveRaidLooter,
 		RaidSay, RaidWindow, Channel, Loot, TargetTell, CharInfo, MoveLog, StopSong, Shield, Quit, Log, Keys, Dismount,
 		AlternateAdv, Pet, SoundDriver, Duel, Decline, Bazaar, Trader, Nothing, ParticleDensity, RTarget, Inspect,
+		ChatFontSize, Language,
 	};
 
 	struct CommandEntry
@@ -100,12 +101,12 @@ namespace
 		{"/fastdrop", 0, Command::FastDrop}, {"/trackplayers", 0, Command::None}, {"/help", 0, Command::None},
 		{"/lfg", 0, Command::Lfg}, {"/approval", 4, Command::None}, {"/sit", 0, Command::Sit},
 		{"/stand", 0, Command::Stand}, {"/book", 0, Command::Book}, {"/cast", 0, Command::Cast},
-		{"/doability", 0, Command::DoAbility}, {"/whotarget", 0, Command::WhoTarget}, {"/language", 0, Command::None},
+		{"/doability", 0, Command::DoAbility}, {"/whotarget", 0, Command::WhoTarget}, {"/language", 0, Command::Language},
 		{"/target", 0, Command::Target}, {"/camp", 0, Command::Camp}, {"/attack", 0, Command::Attack},
 		{"/invite", 0, Command::Invite}, {"/disband", 0, Command::Disband}, {"/note", 0, Command::None},
 		{"/wincolor", 0, Command::None}, {"/usercolor", 0, Command::UserColor}, {"/resetwindows", 0, Command::Nothing},
 		{"/mcicontrol", 0, Command::None}, {"/popmail", 0, Command::Nothing}, {"/audiodebug", 0, Command::None},
-		{"/dynamiclights", 0, Command::None}, {"/chatfontsize", 0, Command::None}, {"/lootnodrop", 0, Command::LootNoDrop},
+		{"/dynamiclights", 0, Command::None}, {"/chatfontsize", 0, Command::ChatFontSize}, {"/lootnodrop", 0, Command::LootNoDrop},
 		{"/reversesound", 0, Command::None}, {"/emotezone", 4, Command::None}, {"/invwinlabels", 0, Command::None},
 		{"/tracksort", 0, Command::None}, {"/trackfilter", 0, Command::None}, {"/mousespeed", 0, Command::None},
 		{"/gems", 0, Command::None}, {"/inspect", 0, Command::Inspect}, {"/serverfilter", 0, Command::ServerFilter},
@@ -1717,6 +1718,46 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 			break;
 		}
 		m_zone.Random(static_cast<uint32_t>(low), static_cast<uint32_t>(high));
+		break;
+	}
+	case Command::Language: {
+		// /language (@004fd44a): the languages we know (skill not 0) numbered from 1; "help" lists
+		// them under 13260, a number picks one for the chat window (13261 out of range), and then
+		// "Current Language is %1. (%2)" (13262), all in 0x111.
+		std::vector<int> known;
+		for (int i = 0; i < 32; ++i)
+			if (m_zone.Profile().languages[i] != 0)
+				known.push_back(i);
+		auto name = [&](int language) {
+			uint32_t id = LanguageNameId(language);
+			return id ? format(id, "", {}) : std::string();
+		};
+		if (!args.empty() && Lower(args) == Lower(format(13300, "help", {}))) {
+			ChatOut(format(13260, "Format: /language #", {}), 0x111);
+			for (size_t i = 0; i < known.size(); ++i)
+				ChatOut(std::to_string(i + 1) + " - " + name(known[i]), 0x111);
+		}
+		else if (!args.empty()) {
+			int pick = std::atoi(args.c_str()) - 1;
+			if (pick < 0 || pick >= static_cast<int>(known.size()))
+				ChatOut(format(13261, "Type /language help for a list of available languages.", {}), 0x111);
+			else
+				m_zone.SetChatLanguage(pick);
+		}
+		int current = m_zone.ChatLanguage();
+		std::string desc = current >= 0 && current < static_cast<int>(known.size()) ? name(known[current]) : "";
+		ChatOut(format(13262, "Current Language is %1. (%2)", {desc, std::to_string(current + 1)}), 0x111);
+		break;
+	}
+	case Command::ChatFontSize: {
+		// /chatfontsize (@004fdb25): 0..6 the active chat window's font (CChatWindow::SetChatFont);
+		// nothing or anything else, eqstr 13270 into it (AddOutputText).
+		int size = args.empty() ? -1 : std::atoi(args.c_str());
+		if (size < 0 || size > 6) {
+			m_chat.Add(format(13270, "Format: /chatfontsize 0-5 (0 = smallest)", {}), 0xffffff);
+			break;
+		}
+		SetChatFont(size);
 		break;
 	}
 	case Command::LootNoDrop: {

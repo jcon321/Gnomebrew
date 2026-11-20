@@ -440,6 +440,7 @@ struct ZoneChat
 {
 	uint16_t channel = 0;    // ChannelMessage_Struct chan_num: 0 guild, 2 group, 3 shout, 4 auction, 5 ooc, 7 tell, 8 say...
 	uint16_t language = 0;
+	uint16_t skill = 100;    // the speaker's skill in the language (+0x86)
 	std::string sender;
 	std::string target;
 	std::string text;
@@ -751,6 +752,10 @@ public:
 	// CEverQuest::SendNewText: OP_ChannelMessage on a channel (0 guild, 2 group, 3 shout, 4 auction,
 	// 5 ooc, 7 tell, 8 say), to `target` (a tell's recipient; for a say, the NPC we're talking to).
 	bool SendChannel(uint16_t channel, const std::string &target, const std::string &text);
+	// The chat window's language (CChatWindow+0x188, /language): an index into the languages we
+	// know (skill not 0), which SendChannel speaks in (CEverQuest_GetCurrentLanguage).
+	void SetChatLanguage(int index) { m_chat_language = index; }
+	int ChatLanguage() const { return m_chat_language; }
 	// CEverQuest::Emote: OP_Emote; the zone puts our name in front, so it starts with a space.
 	// `first` is Emote_Struct's u16 in front: 0 from /emote, 0xffff from a social (send_social).
 	bool Emote(const std::string &text, uint16_t first = 0);
@@ -1132,6 +1137,7 @@ private:
 	ZoneSpawn m_self;
 	uint16_t m_my_id = 0;
 	bool m_berserk = false;
+	int m_chat_language = 0;
 	// CheckDupLoreItems (@004f13d2) after items arrive (the inventory, OP_MerchantItemPacket, a
 	// theft): no lore item twice; DelLoreItemDup for one of them at keep_slot (keep_bag in its bag,
 	// -1 the slot itself).

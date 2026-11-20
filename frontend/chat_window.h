@@ -48,6 +48,13 @@ public:
 
 	// The links' color (User_71's).
 	void SetLinkColor(uint32_t rgb);
+	// CChatWindow::SetChatFont (@00414b55): the output in font 0..6 (CXWndManager's fonts), wrapped
+	// again and scrolled to the bottom; -1 until set (the XML's).
+	void SetFont(int font);
+	int Font() const { return m_font_index; }
+	// ScrollChatWindowUp and Down (@00414ad9, @00414b17): a page, the output's height less 8.
+	void PageUp();
+	void PageDown();
 	// The mouse, before the windows have it; `over`: the chat window is the top one under it. The
 	// link under the mouse is drawn lit, and one let go of where it was pressed comes back in
 	// `clicked` (true then).
@@ -98,6 +105,7 @@ private:
 	size_t m_wrapped = 0;       // lines (counting dropped ones) wrapped into m_rows so far
 	int m_wrap_width = -1;
 	int m_row_height = 14;
+	int m_font_index = -1;
 	int m_font = 14;
 	int m_weight = 0;
 	std::vector<std::string> m_history; // newest last

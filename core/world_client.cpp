@@ -352,6 +352,7 @@ void WorldSession::Pump(int timeout_ms, std::vector<Event> &events)
 			m_server_type = Read<uint32_t>(packet.data, 4);
 			m_auto_identify = Read<uint32_t>(packet.data, 8) != 0;
 			m_strict_names = Read<uint32_t>(packet.data, 12) != 0;
+			m_gibberish = Read<uint32_t>(packet.data, 16) != 0;
 			m_test_server = packet.data.size() >= 24 && Read<uint32_t>(packet.data, 20) != 0;
 			m_world_short_name = CString(packet.data, 32, 32);
 			Log("[world]    world short name '" + m_world_short_name + "'");

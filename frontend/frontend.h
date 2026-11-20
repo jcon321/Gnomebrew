@@ -298,6 +298,7 @@ private:
 	void BuildZoneWindows();
 	void SaveUiLayout();
 	void SaveCustom(); // CEverQuest_saveCustom: the hot buttons and the socials changed
+	void SetChatFont(int font); // CChatWindow::SetChatFont, kept in the UI ini
 	void SaveDebugSettings(); // the debug menu's, to my-client.ini's [Debug]
 	void HandleWindowClicks();
 	void DestroyHeld();            // the inventory's Destroy (CInventoryWnd_DestroyHeld)

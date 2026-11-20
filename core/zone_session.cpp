@@ -620,9 +620,23 @@ bool ZoneSession::SendChannel(uint16_t channel, const std::string &target, const
 	std::vector<uint8_t> body(141 + message.size(), 0);
 	memcpy(&body[0], target.c_str(), std::min<size_t>(target.size(), 63));
 	memcpy(&body[64], m_profile.name.c_str(), std::min<size_t>(m_profile.name.size(), 63));
-	uint16_t skill = 100; // common tongue, which everyone speaks fully
+	// CEverQuest_GetCurrentLanguage: the chat window's choice among the languages we know (an
+	// out of range one is -1); our skill in it less Drunkness / 4, no less than 0, and a GM's 100.
+	int16_t language = -1;
+	for (int i = 0, known = 0; i < 32; ++i)
+		if (m_profile.languages[i] != 0 && known++ == m_chat_language) {
+			language = static_cast<int16_t>(i);
+			break;
+		}
+	int skill = language >= 0 ? m_profile.languages[language] - (m_profile.drunk >> 2) : 0;
+	if (skill < 0)
+		skill = 0;
+	if (m_self.gm != 0)
+		skill = 100;
+	uint16_t skill16 = static_cast<uint16_t>(skill);
+	memcpy(&body[128], &language, 2);
 	memcpy(&body[130], &channel, 2);
-	memcpy(&body[134], &skill, 2);
+	memcpy(&body[134], &skill16, 2);
 	memcpy(&body[136], message.c_str(), message.size());
 	return Send(ZoneOp::ChannelMessage, body.data(), body.size(),
 		"OP_ChannelMessage " + std::to_string(channel) + (target.empty() ? "" : " to " + target) + ": " + message);
@@ -4028,6 +4042,7 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		e.chat.sender = CString(data, 64, 64);
 		e.chat.language = Read<uint16_t>(data, 128);
 		e.chat.channel = Read<uint16_t>(data, 130);
+		e.chat.skill = Read<uint16_t>(data, 134);
 		e.chat.text = CString(data, 136, 2048);
 		Log("[zone]    chat " + std::to_string(e.chat.channel) + " " + e.chat.sender + ": " + e.chat.text);
 		events.push_back(e);

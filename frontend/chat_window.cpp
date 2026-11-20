@@ -16,8 +16,9 @@ void ChatWindow::Attach(SidlWindow *window)
 	if (!m_window)
 		return;
 	if (SidlWindow::Control *output = Output()) {
-		m_font = SidlFontHeight(output->def->font);
-		m_weight = SidlFontWeight(output->def->font);
+		int font = m_font_index >= 0 ? m_font_index : output->def->font;
+		m_font = SidlFontHeight(font);
+		m_weight = SidlFontWeight(font);
 		output->draw_content = [this](Canvas &canvas, TextRenderer &text, const Rect &area) { DrawOutput(canvas, text, area); };
 	}
 	if (SidlWindow::Control *input = Input()) {
@@ -324,4 +325,34 @@ void ChatWindow::History(bool up)
 	else if (m_history_pos >= 0)
 		m_history_pos = m_history_pos + 1 < count ? m_history_pos + 1 : -1;
 	input->text = m_history_pos >= 0 ? m_history[m_history_pos] : "";
+}
+
+void ChatWindow::SetFont(int font)
+{
+	if (font < 0 || font > 6)
+		return;
+	m_font_index = font;
+	m_font = SidlFontHeight(font);
+	m_weight = SidlFontWeight(font);
+	m_wrap_width = -1; // SetSTMLText, CompleteParse: all of it again
+	if (SidlWindow::Control *output = Output())
+		output->scroll_pos = output->scroll_max = 0x7fffff; // to the bottom (VScrollMax)
+}
+
+void ChatWindow::PageUp()
+{
+	SidlWindow::Control *output = Output();
+	if (!output || !m_window)
+		return;
+	int rows = std::max((m_window->ContentRect(*output).h - 8) / std::max(m_row_height, 1), 1);
+	output->scroll_pos = std::max(output->scroll_pos - rows, 0);
+}
+
+void ChatWindow::PageDown()
+{
+	SidlWindow::Control *output = Output();
+	if (!output || !m_window)
+		return;
+	int rows = std::max((m_window->ContentRect(*output).h - 8) / std::max(m_row_height, 1), 1);
+	output->scroll_pos = std::min(output->scroll_pos + rows, std::max(output->scroll_max, 0));
 }
