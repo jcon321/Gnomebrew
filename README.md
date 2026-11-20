@@ -3139,7 +3139,7 @@ details and the nearest spawns at the top left and the radar at the top right.
   6000, a drink's sound 0x95, 12076/12079, and `OP_Consume` 0x4156 {slot, 999, -1, 1 or 2}); 38
   alcohol (Drunkness over 199: 12080; else 12081, Drunkness up by 40, or a roll r under the Alcohol
   Tolerance skill and under 96 makes it r * 40 / skill, to 200, `OP_DeleteCharge` 0x4147 {slot, -1,
-  -1}, 12079); 42 a poison; anything else its click effect: IsStackable 2 or more and EffectType2
+  -1}, 12079); 42 a poison (`CEverQues_ApplyPoison` @00545c08, below); anything else its click effect: IsStackable 2 or more and EffectType2
   (byte 279) not 0 or 2, a bard singing gets 12082 for kinds 1, 2 and 4, then `CastSpell(10, 0,
   item, slot)` and a potion's sound. eqgame takes one off the stack (Charges, byte 278) itself: the
   zone doesn't say. CastSpell's item branch: an item that isn't common or is type 20 does nothing;
@@ -3147,6 +3147,20 @@ details and the nearest spawns at the top left and the radar at the top right.
   EffectLevel1 (136); IsStackable under 2 does nothing; Effect2 the spell; Charges 0 is 182; no mana
   check; a potion (type 21) targets us for a targeted spell; no CastingTimeout of ours; OP_CastSpell
   {10, spell, the item's slot, target}.
+- **Applying a poison** (`CEverQues_ApplyPoison` @00545c08, `FrontEnd::ApplyPoison`): its
+  argument is the poison's item number (+0xd4), not its slot. Without Apply Poison (skill 6) eqstr
+  12383; standing sits us down (`ChangeStance` 110); any stance but sitting 12381; sitting, with
+  none going (`DAT_00798604`), no camp and nothing waited on (`DAT_007d0254`, `DAT_007d0258`),
+  12382 and the wait begins (`DAT_00798604` the time, `DAT_00798608` the item). Those lines are
+  `print_chat_dsp_chat_2`'s. `DoPassageOfTime` lets it go after 10 s, 7.5, 5 or 2.5 s with Poison
+  Mastery's ranks (AA 103, `GetAbility(0x67)`): the slot holding that item number is searched in
+  0..29 and the bags in them (`slot * 10 + 30 + n`, which gives 30..39 for the cursor's bag where
+  EQMacEmu has 330..339), and `OP_ApplyPoison` 0x41ba {i32 slot, i32} goes with both waits set to 1;
+  not found, 12497 in color 270. Any change of our stance while waiting says 12497 and ends it
+  (`ChangeStance`), as does entering a zone. The zone's answer (@004e1778) clears both waits, sets
+  `EQ_Main`+0xe64 to 1 (not known) and says 12905 (success at +4 not 0) or 12906, color 270;
+  EQMacEmu takes the poison with its own `OP_DeleteCharge`. Not checked live: the test characters
+  have no poison.
 - **Groups** (`frontend/group.*`). The zone's packets: `OP_GroupInvite` (0x203e, both ways;
   `GroupInvite_Struct` {invitee[64], inviter[64], a group's name[64] (empty), u8 PvP}, 193 bytes; a
   leader's goes out as `OP_GroupInvite2` 0x4040, which the zone hands on as 0x203e),

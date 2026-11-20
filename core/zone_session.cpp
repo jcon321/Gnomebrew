@@ -851,6 +851,14 @@ bool ZoneSession::Consume(int16_t slot, int type, bool by_hand)
 	return sent;
 }
 
+bool ZoneSession::ApplyPoison(int16_t slot)
+{
+	if (m_state != State::InZone)
+		return false;
+	int32_t body[2] = {slot, 0};
+	return Send(ZoneOp::ApplyPoison, body, sizeof(body), "OP_ApplyPoison " + std::to_string(slot));
+}
+
 bool ZoneSession::DeleteCharge(int16_t slot)
 {
 	if (m_state != State::InZone)
@@ -2909,6 +2917,14 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		events.push_back(e);
 		break;
 	}
+	case ZoneOp::ApplyPoison:
+		// The 0x41ba case of HandleWorldMessage (@004e1778): ApplyPoison_Struct's success.
+		if (data.size() >= 8) {
+			Event e{Event::Type::PoisonApplied};
+			e.value = Read<int32_t>(data, 4);
+			events.push_back(e);
+		}
+		break;
 	case ZoneOp::BindWound:
 		// The 0x4093 case of HandleWorldMessage: BindWound_Struct's type.
 		if (data.size() >= 3) {

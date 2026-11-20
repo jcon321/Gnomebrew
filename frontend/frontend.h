@@ -459,6 +459,11 @@ private:
 	void StunPassageOfTime(uint64_t now_ms);
 	// DoPassageOfTime's camp: called off once we aren't sitting, and the seconds left told.
 	void CampPassageOfTime();
+	// CEverQues_ApplyPoison (@00545c08): sitting down to apply a poison (its item number), and
+	// DoPassageOfTime's wait for it (10 s, Poison Mastery's ranks 7.5, 5 and 2.5) before
+	// OP_ApplyPoison goes with the slot it's found in.
+	void ApplyPoison(uint16_t item_id);
+	void PoisonPassageOfTime(uint64_t now_ms);
 	// The boats (vehicle.h). DoPassageOfTime, once a second: the boat under us is the profile's boat,
 	// and OP_BoardBoat goes as we get on; two seconds off one clears it, and OP_LeaveBoat goes.
 	// ProcessControls: off the boat we steer, we let go of its helm.
@@ -784,6 +789,9 @@ private:
 	bool m_dead = false;            // we died in this zone (EQPlayer::IDied's stance 120): nothing moves us
 	bool m_knocked_out = false;     // EQ_Character's StunnedState 3 (KnockedOut, until GetConscious)
 	int m_camp_seconds = 0;         // DAT_0063d8c4: the camp's seconds left at the last tick
+	uint64_t m_poison_ms = 0;       // DAT_00798604: when applying a poison began, 0 none
+	uint16_t m_poison_item = 0;     // DAT_00798608: the poison's item number
+	bool m_poison_waiting = false;  // DAT_007d0254 and DAT_007d0258 for OP_ApplyPoison's answer
 	uint64_t m_sat_ms = 0;          // ActorInfo's UnknownTimer5: when we last sat down (ChangeStance 110)
 	std::vector<uint8_t> m_rez_request; // msg_resurrect's packet, kept in the dialog (its +0x204)
 	std::set<uint16_t> m_hidden_corpses; // /hidecorpses' (ActorInfo IsInvisible)

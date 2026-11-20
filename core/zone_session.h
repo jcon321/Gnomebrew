@@ -609,6 +609,8 @@ public:
 			// coins, already in Profile(); text a stolen item's name, in Items() at its slot, or
 			// dropped when the slot's under 0).
 			BindWoundAnswered,
+			// OP_ApplyPoison's answer: value its success (0 failed).
+			PoisonApplied,
 			Begged,
 			Stolen,
 			OwnAnimation,   // value: OP_Animation for us (our own swings, as the zone has them), played once
@@ -918,6 +920,9 @@ public:
 	// EQ_Note::SendTextRequestMsg: OP_ReadBook {type, the item's file}.
 	bool ReadBook(uint8_t type, const std::string &file);
 	bool DeleteCharge(int16_t slot);
+	// DoPassageOfTime's poison applied (CEverQues_ApplyPoison's wait over): OP_ApplyPoison {slot, 0}.
+	// The zone answers with its success (Event PoisonApplied) and takes the poison (OP_DeleteCharge).
+	bool ApplyPoison(int16_t slot);
 	bool StopCasting(); // an empty OP_ManaChange: a bard's song stops (StopSpellCast)
 	// OP_SpellTextMessage from us: {our spawn id, text}, `size` bytes (0: strlen + 6, StopSpellCast's;
 	// ReportSuccessfulHit's tap sends 0x202); the zone passes it to those within 200.

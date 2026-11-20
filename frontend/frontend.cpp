@@ -917,6 +917,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		HungerAndThirst(now_ms);
 		StunPassageOfTime(now_ms);
 		CampPassageOfTime();
+		PoisonPassageOfTime(now_ms);
 		KnockoutPassageOfTime();
 		if (me.look_serial != m_my_look_serial || m_ranged_look) {
 			m_my_look_serial = me.look_serial;
@@ -2155,6 +2156,9 @@ void FrontEnd::EnterZoneScreen(bool zoning)
 	m_keys = HeldKeys{};
 	m_ui_hidden = false; // ProcessGameLoop: __ScreenMode 2 in the world
 	m_hunger_ms = 0;     // a new ActorInfo: its UnknownTimer4 at 0
+	m_poison_ms = 0;     // CEverQuest_EnterZone: DAT_00798604, DAT_00798608
+	m_poison_item = 0;
+	m_poison_waiting = false;
 	m_autorun = false;
 	m_jump_requested = m_crouch_sent = false;
 	m_main_loop_started = false;
@@ -3451,13 +3455,14 @@ void FrontEnd::OpenChatLine(const std::string &text)
 void FrontEnd::DoDrinkEatPoison(const ZoneItem &item, int16_t slot)
 {
 	// CInvSlot_DoDrinkEatPoison (@004223ca): by the item's type, food (14), drink (15), alcohol (38),
-	// a poison (42: not ours yet), else its click effect.
+	// a poison (42), else its click effect.
 	auto text = [this](uint32_t id, const char *fallback, const std::vector<std::string> &args = {}) {
 		return FormatEqString(m_ui.eqstr, id, fallback, args);
 	};
 	ZoneProfile &me = const_cast<ZoneProfile &>(m_zone.Profile());
 	switch (item.item_type) {
-	case 42: // CEverQues_ApplyPoison
+	case 42:
+		ApplyPoison(item.id);
 		return;
 	case 14:
 	case 15: {
@@ -3589,7 +3594,7 @@ void FrontEnd::YelledForHelp(uint16_t id)
 bool FrontEnd::ZoneAnswerWaiting() const
 {
 	return m_window_state.busy || m_spell_cast.Waiting() || m_merchant.Waiting() || m_train.Waiting() ||
-	       m_loot.Waiting() || m_ground.Waiting();
+	       m_loot.Waiting() || m_ground.Waiting() || m_poison_waiting;
 }
 
 void FrontEnd::SavePC()
@@ -4027,6 +4032,11 @@ void FrontEnd::ChangeStance(uint8_t stance)
 	if (m_zone.CampRemainingMs() != 0) { // any change of ours calls a camp off
 		m_zone.CancelCamp();
 		ChatOut(EqString(12290, "You abandon your preparations to camp."), 0x111);
+	}
+	if (m_poison_ms != 0) { // and a poison being applied
+		ChatOut(EqString(12497, "Your attempt to apply poison has been cancelled."), 0x111);
+		m_poison_ms = 0;
+		m_poison_item = 0;
 	}
 	m_zone.SetStance(stance);
 	if (m_zone_view) {
@@ -4842,6 +4852,75 @@ void FrontEnd::CampPassageOfTime()
 	m_camp_seconds = seconds; // DAT_0063d8c4
 }
 
+void FrontEnd::ApplyPoison(uint16_t item_id)
+{
+	// CEverQues_ApplyPoison: with the Apply Poison skill (6), standing sits us down; sitting, unless
+	// one's already going, we're camping or the zone's answer to something is waited on, the wait
+	// starts. Any other stance can't.
+	if (Skills::HasSkill(m_zone.Profile(), 6) == 0) {
+		ChatOut(EqString(12383, "You have no skill in the art of applying poisons."), 0x111);
+		return;
+	}
+	if (m_zone.Self().stance == 100)
+		ChangeStance(110);
+	if (m_zone.Self().stance != 110) {
+		ChatOut(EqString(12381, "You must be sitting to apply the poison."), 0x111);
+		return;
+	}
+	if (m_poison_ms != 0 || m_zone.CampRemainingMs() != 0 || ZoneAnswerWaiting() || m_abilities.Busy())
+		return;
+	ChatOut(EqString(12382, "You begin applying the poison."), 0x111);
+	m_poison_ms = std::max<uint64_t>(m_now_ms, 1);
+	m_poison_item = item_id;
+}
+
+void FrontEnd::PoisonPassageOfTime(uint64_t now_ms)
+{
+	// DoPassageOfTime: once the wait's over (and not while camping or waiting on the zone), the
+	// poison's slot among 0..29 and the bags in them (slot * 10 + 30 + n, as eqgame works it out:
+	// for the cursor's bag too) goes as OP_ApplyPoison and the zone's answer is waited on; gone,
+	// eqstr 12497. Either way the wait ends.
+	if (m_poison_ms == 0 || m_zone.CampRemainingMs() != 0 || ZoneAnswerWaiting() || m_abilities.Busy())
+		return;
+	uint64_t wait = 10000;
+	switch (m_zone.Profile().aa_ranks[103]) { // Poison Mastery
+	case 1: wait = 7500; break;
+	case 2: wait = 5000; break;
+	case 3: wait = 2500; break;
+	default: break;
+	}
+	if (now_ms < m_poison_ms)
+		m_poison_ms = now_ms;
+	if (now_ms - m_poison_ms <= wait)
+		return;
+	const auto &items = m_zone.Items();
+	int slot = -1;
+	for (int16_t s = 0; s < 30 && slot < 0; ++s) {
+		auto it = items.find(s);
+		if (it == items.end())
+			continue;
+		if (it->second.id == m_poison_item) {
+			slot = s;
+		} else if (it->second.item_class == 1) {
+			for (int n = 0; n < it->second.bag_slots; ++n) {
+				auto in = items.find(Inventory::BagSlot(s, n)); // ours keeps the cursor's bag at 330
+				if (in != items.end() && in->second.id == m_poison_item) {
+					slot = s * 10 + 30 + n;
+					break;
+				}
+			}
+		}
+	}
+	if (slot < 0) {
+		ChatOut(EqString(12497, "Your attempt to apply poison has been cancelled."), 270);
+	} else {
+		m_poison_waiting = true;
+		m_zone.ApplyPoison(static_cast<int16_t>(slot));
+	}
+	m_poison_ms = 0;
+	m_poison_item = 0;
+}
+
 void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 {
 	using Type = ZoneSession::Event::Type;
@@ -5348,6 +5427,11 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 		case Type::Begged:
 		case Type::Stolen:
 			m_abilities.ZoneEvent(event);
+			break;
+		case Type::PoisonApplied: // @004e1778: the wait let go, and how it went
+			m_poison_waiting = false;
+			ChatOut(event.value != 0 ? EqString(12905, "You successfully applied the poison.")
+			                         : EqString(12906, "You failed to apply the poison."), 270);
 			break;
 		case Type::SkillUp: // msg_skillimprove
 			ChatOut(FormatEqString(m_ui.eqstr, 12091, "You have become better at %1! (%2)",

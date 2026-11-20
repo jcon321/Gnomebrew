@@ -156,6 +156,8 @@ namespace ZoneOp
 	constexpr uint16_t ReadBook = 0x40ce;      // ours BookRequest_Struct {u8 type, the item's file\0}; the zone's {u8 type, its text}
 	// Eating, drinking and alcohol: see ZoneSession::Consume.
 	constexpr uint16_t Consume = 0x4156;       // Consume_Struct {i32 slot, i32 auto (999 by hand, -1 the client's own), i32 -1, i32 1 food or 2 drink}
+	// Applying a poison: see ZoneSession::ApplyPoison.
+	constexpr uint16_t ApplyPoison = 0x41ba;   // ApplyPoison_Struct {i32 slot, i32 success}: ours with 0, the zone's answer its result
 	// MoveItem_Struct {i32 slot, i32 -1, i32 -count}: a charge (or some of a stack) used up. Ours as
 	// we use one, the zone's when it takes one (Client::DeleteItemInInventory: always -1).
 	constexpr uint16_t DeleteCharge = 0x4147;
@@ -552,6 +554,7 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::TradeReset, "OP_TradeReset"},
 	{ZoneOp::ReadBook, "OP_ReadBook"},
 	{ZoneOp::Consume, "OP_Consume"},
+	{ZoneOp::ApplyPoison, "OP_ApplyPoison"},
 	{ZoneOp::DeleteCharge, "OP_DeleteCharge"},
 	{ZoneOp::Reward, "OP_Reward"},
 	{ZoneOp::ResetSkill, "OP_ResetSkill"},

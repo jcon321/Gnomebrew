@@ -218,10 +218,9 @@ no rules of its own.
      when low (`ProcessHungerandThirst`, `AutoEat`: every 46 s, a monk's 92 s, OP_Consume with -1,
      and the hunger, thirst and out-of-food messages, Innate Metabolism's longer wait): done,
      checked live ("You and your mount..." on a horse); a Bazaar trader neither eats nor is told.
-     Still to do: poisons
-     (`CEverQues_ApplyPoison` @00545c08, item type 42: ours returns at once; the zone's answer is
-     `OP_ApplyPoison`, 0x41ba, handled @004e1778: the wait let go, eqstr 12905 "You successfully
-     applied the poison." or 12906 by its success at +4, color 270), Alcohol Tolerance's skill-up
+     Poisons (item type 42, `CEverQues_ApplyPoison` @00545c08 and DoPassageOfTime's wait,
+     `FrontEnd::ApplyPoison`, `OP_ApplyPoison` and its answer @004e1778): done, not checked live
+     (no test character has a poison). Still to do: Alcohol Tolerance's skill-up
      (EQ_PC_CheckSkillImprove 66) and what drunkenness does. A charge or stack count the zone
      takes (`OP_DeleteCharge` from the zone) is done (37). Notes and books are read
      (EQ_Note::SendTextRequestMsg's OP_ReadBook; CNoteWnd's SetNote, checked live; CBookWnd's
@@ -988,7 +987,6 @@ no rules of its own.
         `DisplayName`.
     - Sent by EQMacEmu, handled by eqgame, dropped here (found by matching the packets the
       server builds against `ZoneSession`'s cases):
-      - `OP_ApplyPoison` (0x41ba): the answer to a poison applied (2).
       - `OP_DisciplineChange` (0x41f2, @004e3bc1): the discipline running (35).
       - `OP_MultiLineMsg` (0x4014): the text a line at a time (`ParseNextLine`), color 10 in the
         old UI; the new UI's path (color 0x145 at `LAB_004ecdca`) isn't traced.
@@ -1032,7 +1030,6 @@ no rules of its own.
     - `OP_Camp`'s 4 bytes of `DAT_007f95bc` when that's set (not known; ours sends none), and
       `CEverQuest_Camp`'s HP remembered (`DAT_0079875c`) and `DAT_00798744`, whose readers aren't
       traced.
-    - The poison's refusal while camping goes with the poison (2).
 43. **The front end's other screens** (eqmain.dll's `new_dll_main` @10025300). The start
     screen's ACCOUNT, CREDITS and OPTIONS and server select's NEWS say "not implemented"
     (`SISATEXT_NOT_IMPLEMENTED`), and server select's CHAT button isn't drawn:
@@ -1325,7 +1322,7 @@ no rules of its own.
 3. ~~The Player, Target and Chat windows (2, 3), which prove out the whole SIDL pipeline.~~
 4. ~~Nameplates and the target indicator (9, 10).~~
 5. ~~What the zone already sends and we drop, since it leaves our state wrong: `OP_DeleteCharge`
-   and `OP_Reward` (37), then disarm's answer (24).~~ The poison's answer (2) is left.
+   and `OP_Reward` (37), then disarm's answer (24). The poison's answer (2).~~
 6. ~~Camping's checks, countdown and calling off (40). The MOTD as we enter (3).~~
 7. ~~Keys and lockpicks on doors (41)~~, then ladders (22).
 8. Inspecting and the player notes window (29), the tracking window (24), breath and drowning
