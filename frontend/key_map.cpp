@@ -26,7 +26,7 @@ namespace KeyMap
 			{MouseLook, 6539, "Toggle mouse look", Movement | Camera, false},
 			{AutoAttack, 6510, "Autoattack", Commands, true},
 			{Consider, 6512, "Consider", Commands, true},
-			{Duck, 6506, "Duck", Movement, false},
+			{Duck, 6506, "Duck", Movement, true},
 			{Hail, 6529, "Say hail", Chat, true},
 			{Inventory, 6585, "Toggle inventory window", UI, true},
 			{Tell, 6530, "Send tell", Chat, true},

@@ -639,7 +639,7 @@ namespace render
 	}
 
 	bool ZoneScene::FloorBelow(const Vec3 &from, float depth, float &floor_z, float *exposure, uint16_t *actor,
-		bool actors) const
+		bool actors, Vec3 *normal) const
 	{
 		thread_local std::vector<uint32_t> nearby;
 		Candidates(from.x, from.y, from.x, from.y, nearby);
@@ -654,6 +654,12 @@ namespace render
 				on = testing;
 				if (exposure)
 					*exposure = triangle_exposure;
+				if (normal) {
+					Vec3 n = Cross(triangle[1] - triangle[0], triangle[2] - triangle[0]);
+					float length = Length(n);
+					n = length > 0 ? n * (1 / length) : Vec3{0, 0, 1};
+					*normal = n.z < 0 ? n * -1.0f : n;
+				}
 			}
 		};
 		for (uint32_t t : nearby)

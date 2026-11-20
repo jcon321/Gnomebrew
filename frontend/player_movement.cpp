@@ -108,16 +108,20 @@ bool PlayerMovement::Step(const MoveControls &controls, float ms, const render::
 	// Sneaking (IsSneaking) forward goes at the sneak modifier of the walk speed, back and beside at
 	// half of it, water or not. A horse doesn't sneak.
 	bool sneaking = m_sneak_modifier > 0 && !m_mounted;
+	// Crouched (stance 111), not sneaking: half the walk speed forward and back.
+	bool crouched = !sneaking && Crouching();
 	float speed = 0;
 	if (controls.forward && !controls.back) {
 		if (sneaking)
 			speed = m_sneak_modifier * m_walk_speed + modifier;
+		else if (crouched)
+			speed = m_walk_speed * 0.5f + modifier;
 		else
 			speed = (controls.run ? m_run_speed : m_walk_speed) + (swimming ? m_swim_skill * 0.01f : 0) + modifier;
 		speed = rooted ? 0 : speed < 0 ? 0.01f : speed;
 	}
 	else if (controls.back && !controls.forward) {
-		speed = (sneaking ? -m_walk_speed * 0.5f : swimming ? 0 : -m_walk_speed) - modifier;
+		speed = (sneaking || crouched ? -m_walk_speed * 0.5f : swimming ? 0 : -m_walk_speed) - modifier;
 		speed = rooted ? 0 : speed > 0 ? -0.01f : speed;
 	}
 	float ticks = std::min(ms * 0.02f, 3.0f);
@@ -166,25 +170,27 @@ bool PlayerMovement::Step(const MoveControls &controls, float ms, const render::
 	}
 	// DoMainLoop: for half a second, moving forward jumps at once, pushed along the heading, and
 	// standing still crouches; then the crouch stands back up and jumps straight up. Backing up
-	// calls it off (the real client leaves us crouched; we stand, having no duck key yet).
+	// calls it off and leaves us crouched (ducking). A jump stands a duck up.
 	bool jumped = false;
 	if (m_jump_armed) {
 		bool push = false;
 		if (m_clock_ms - m_jump_armed_ms < JumpWindUpMs) {
 			if (m_speed > 0) {
-				m_jump_armed = m_crouching = false;
+				m_jump_armed = m_crouching = m_ducking = false;
 				jumped = m_on_ground;
 				push = true;
 			}
-			else if (m_speed < 0)
+			else if (m_speed < 0) {
+				m_ducking = m_ducking || m_crouching;
 				m_jump_armed = m_crouching = false;
+			}
 			else
 				m_crouching = true;
 		}
 		else {
 			m_jump_armed = false;
-			jumped = m_crouching && m_on_ground;
-			m_crouching = false;
+			jumped = (m_crouching || m_ducking) && m_on_ground;
+			m_crouching = m_ducking = false;
 		}
 		if (jumped) {
 			m_velocity.z += 1.65f * JumpHeightModifier;
@@ -253,10 +259,15 @@ void PlayerMovement::Tick(float t, const render::ZoneScene &scene)
 	render::Vec3 before = m_feet;
 	render::Vec3 lift{0, 0, m_height * BodyHeight + StepHeight()};
 	render::Vec3 center = Sweep(m_feet + lift, m_velocity * t, scene);
+	// CanIFitHere where the move took us, or it's undone and the motion stopped.
+	if (!CanIFitHere(center - lift, scene, false)) {
+		center = before + lift;
+		m_velocity = {0, 0, 0};
+	}
 	render::Vec3 feet = center - lift;
 	// DoFloorCheck: AttachedEntity is the boat the drop lands on, if any.
 	float floor_z;
-	if (!FloorUnder(center, scene, floor_z, &m_vehicle)) {
+	if (!FloorUnder(center, scene, floor_z, &m_vehicle, &m_floor_normal)) {
 		// Nothing below at all: off the edge of the world. Stay put.
 		feet = before;
 		m_velocity.x = m_velocity.y = 0;
@@ -386,8 +397,50 @@ render::Vec3 PlayerMovement::Sweep(const render::Vec3 &start, render::Vec3 move,
 	return center;
 }
 
+bool PlayerMovement::CanIFitHere(const render::Vec3 &feet, const render::ZoneScene &scene, bool standing)
+{
+	if (m_mounted)
+		return true; // a ridden horse's room (its ModelHeightOffset * 3) isn't ours yet
+	const float body = m_height * BodyHeight;
+	const render::Vec3 center = feet + render::Vec3{0, 0, body}; // Position.z
+	float floor_z;
+	if (!FloorUnder(center - render::Vec3{0, 0, 0.5f}, scene, floor_z))
+		return false;
+	constexpr float Top = 32767.0f, Radius = 0.5f;
+	float fraction;
+	m_ceiling = scene.SphereHit(center, render::Vec3{center.x, center.y, Top}, Radius, fraction)
+	                ? center.z + (Top - center.z) * fraction + Radius
+	                : Top + Radius;
+	float needed = !standing && Crouching() ? body : body + body;
+	if (needed + floor_z + 0.5f < m_ceiling) {
+		if (m_stand_latched && m_stand_latch_ms < m_clock_ms && floor_z + body + body + 0.5f < m_ceiling) {
+			m_stand_latched = false;
+			m_stand_latch_ms = 0;
+			m_ducking = false; // ChangeStance(100)
+		}
+		if (needed <= m_ceiling - floor_z)
+			return true;
+	}
+	else {
+		m_stand_latched = true;
+		m_stand_latch_ms = m_clock_ms + 2000;
+	}
+	return false;
+}
+
+bool PlayerMovement::StandUp(const render::ZoneScene &scene)
+{
+	if (!m_ducking)
+		return true;
+	const float body = m_height * BodyHeight;
+	if (!CanIFitHere(m_feet, scene, true) || m_ceiling - (m_feet.z + body) < body)
+		return false;
+	m_ducking = false;
+	return true;
+}
+
 bool PlayerMovement::FloorUnder(const render::Vec3 &center, const render::ZoneScene &scene, float &floor_z,
-	uint16_t *vehicle) const
+	uint16_t *vehicle, render::Vec3 *normal) const
 {
 	// GetPlayerFloorHeight: a sphere a quarter of the ModelHeightOffset across, dropped from half a
 	// unit over the lifted center; the floor is where its bottom comes to rest (a boat's deck too:
@@ -396,8 +449,11 @@ bool PlayerMovement::FloorUnder(const render::Vec3 &center, const render::ZoneSc
 	render::Vec3 from = center + render::Vec3{0, 0, 0.5f};
 	render::Vec3 to = from - render::Vec3{0, 0, 1000};
 	float fraction;
-	if (!scene.SphereHit(from, to, radius, fraction, nullptr, true, vehicle))
+	render::Vec3 hit_normal{0, 0, 1};
+	if (!scene.SphereHit(from, to, radius, fraction, &hit_normal, true, vehicle))
 		return false;
+	if (normal)
+		*normal = hit_normal.z < 0 ? hit_normal * -1.0f : hit_normal;
 	floor_z = from.z - 1000 * fraction - radius + 0.001f;
 	return true;
 }

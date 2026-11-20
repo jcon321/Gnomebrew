@@ -1391,7 +1391,11 @@ the rejection).
   (`1.65 * JumpHeightModifier`, 1.35, plus a push of 1 along the heading) and sends `OP_Jump`. A
   press on the ground arms a jump 1.5 s after the last one, for half a second: moving forward jumps
   at once (`L03`); standing still crouches first (`ChangeStance` 111, `L08`, sent as
-  `OP_SpawnAppearance`), then jumps straight up (`L04`); backing up calls it off. A press must
+  `OP_SpawnAppearance`), then jumps straight up (`L04`); backing up calls it off and leaves us
+  crouched (`DAT_007985f8` cleared in stance 111). Duck (ExecuteCmd 10, in control of ourselves,
+  not as races 142, 143 or a ridden horse 216, nor while a jump winds up) changes standing to
+  ducking (111) and back (`ZoneView::Duck`, `StandUp`). Crouched, `ProcessControls` moves us at
+  half the walk speed forward and back, as sneaking does, and a jump stands us up. A press must
   never be read on a frame where no time passed. The Windows loop timed frames with
   `GetTickCount64`, whose 16 ms steps did that at vsync rates, so it uses `steady_clock`.
   Sitting, `ProcessControls` takes no movement keys or Space and the right button doesn't turn us
@@ -1416,6 +1420,27 @@ the rejection).
   never touch the velocity (`MovementSpeedX/Y`): pressed against a ledge we run in place, and a jump
   or `DoSwimJump` carries us over once the sphere clears it. Ours: up to three slides in a corner
   (eqgame does one), and keeping the feet on the floor walking down slopes and steps.
+  `CDisplay::CanIFitHere` (@0050453a) then checks where the move took us, or it's undone and
+  `MovementSpeedX/Y/Z` go to 0: the floor (`GetPlayerFloorHeight` from 0.5 under `Position.z`,
+  the body's center) and the ceiling (`GetCeilingHeight` @004b3b8a: a 0.5 sphere swept up from
+  the center to 32767, kept as `ZCeiling`) must leave the body room, twice the `MHO` (once
+  ducking) plus 0.5. No room sets `DAT_00798572` with `DAT_00798574` 2 s on; with it set and past
+  then, room to stand stands a duck up (`ChangeStance(100)`). `EQPlayer::ChangeStance` from 111
+  to 100 checks it standing and also wants `ZCeiling` an `MHO` over the center, else stays
+  ducking. Ours skips it on a horse (eqgame gives a ridden horse `MHO * 3`).
+- **Tilt** (`CDisplay_SetPlayerPitchType` @004a2cdd, from `CreatePlayerActor` and every
+  `EQPlayer::ChangeStance`; `SurfacePitchType`, `SurfaceTilt` in `frontend/spawn_actor.cpp`): it
+  sets the actor's `t3dSetActorSurfacePitchType` (actor +0x10c), which eqgfx's
+  `updateActorOrientationAfterCollision` (@10001b60) applies after each floor collision from the
+  floor's normal `n`: 1 upright, 2 pitched by `asin` of the rise along the heading (side
+  `s = n x (cos h, sin h, 0)` normalized; pitch `asin(s.x * n.y - s.y * n.x)`), 3 also rolled by
+  `asin(s.z)`; with no floor met, upright. `t3dCalculateCoefficientsFromHeadingPitchRoll` makes it
+  the heading about z, the pitch about y negated, then the roll about x. Lying (115) and dead
+  (120) are type 3; by race, 3 for 22, 31, 36-38, 57, 80, 84, 91, 129, 145, 149, 201, 203, 223,
+  233, 244, 246, 259, 276, 281, 302, 316, 326, 327, and 2 for 14, 16, 41-43, 48-50, 63, 76, 83,
+  87, 107, 119-122, 124, 135, 158, 196, 199, 200, 206, 216, 217, 221, 232, 241, 245, 273, 280,
+  282, 287, 297, 304, 305, 314, 319, 321; the rest 1. Our floor normal is the floor drop's
+  sphere contact; a spawn's is the floor triangle's under it.
 - **Water** (`render/zone_regions.cpp`): `<zone>.wld`'s BSP tree (0x21) finds the region (0x22) a point
   is in (`t3dGetRegionNumberFromWorldAndXYZ`: back when `n . p < -d`), and the region groups (0x29) say
   what regions are. A group's type is its name, or its user data when the name is under 20 characters
@@ -1512,8 +1537,9 @@ the rejection).
   moves it. Gravity pulls unless the spawn flies or levitates (`flymode`, byte 100: 3, the NPC default, floats
   only in water), and the feet stay on the floor (`MovePlayer`, `CheckForUnderFloor`). We stop a spawn 5 s
   after its last update, since the server only updates spawns in range.
-- **What they play** (`CDisplay::ProcessAnimation`): idle, with a fidget one time in four each second (pets
-  one in a hundred); shuffling (`P03`) while turning on the spot; walking, or running once faster than the
+- **What they play** (`CDisplay::ProcessAnimation`, for us too): idle, with a fidget one time in
+  four each second (pets one in a hundred; none for anyone while our auto attack, `__Attack`, is
+  on; sitting, the sitting idle `P07` and fidget `O03` once sat down); shuffling (`P03`) while turning on the spot; walking, or running once faster than the
   walk speed, at `1 + velocity / 2`; swimming or treading water; jumping and falling. Stances play
   `EQPlayer::ChangeStance`'s transitions (sitting down is `P02`, standing up the same backwards, `L08`
   ducks, `D05` lies down), corpses lie dead, and `OP_Animation` plays the server's attacks, casting and
@@ -2295,6 +2321,16 @@ details and the nearest spawns at the top left and the radar at the top right.
   sets +0xc84 for trolls, Iksar and Froglok; `UnknownTimer5` is when `ChangeStance(110)` sat us
   down), "You are bleeding to death!" (12685) knocked out, and `GetConscious`. The zone's
   `OP_HPUpdate` sets our HP over it.
+- **The mana tick** (`EQ_Character::DoMeditation` @004c3def, after the HP's and before
+  `ProcessAffects`, `FrontEnd::DoMeditation`): nothing at full mana; 1 fed and watered (0 with
+  hunger or thirst at 0), 2 sitting; for any class but a bard, fed, sitting or
+  `IsCharacterMeditating` (@004c36a1: not attacking, on a horse whose `MovementSpeed` is 0) and
+  with Meditate (`HasSkill` 31), 3, 4 past 1, plus a fifteenth of the skill past 14; then
+  `GetAbility` 224 (Mental Clarity) and 1 with 119 (Body and Mind Rejuvenation), 1 past level 61
+  and past 63, 1 with a buff of SPA 101, and SPA 15's total up to 15; 65 at most, added to
+  `Mana`. `EQ_PC_CheckSkillImprove` (@004d0c0e), which it and others call, is empty in this
+  eqgame. Language `DAT_00799770` 1 (Korean) adds 10 sitting or 6 under level 21. The zone's mana
+  packets set it over ours.
 - **A group member's death** (`ReportDeath`): `pinstGroup` keeps their spawn, now a corpse, with
   `HpCurrent` -11, so the group window shows their name over an empty gauge until a player of
   that name comes in (`msg_eq_netplayer`), the group changes or the next zone.

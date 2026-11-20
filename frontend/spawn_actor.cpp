@@ -176,7 +176,8 @@ void SpawnActor::Physics(float t, const ZoneScene &scene, bool floor)
 	// MovePlayer keeps the feet on the floor; CheckForUnderFloor brings them back up onto it.
 	float step_up = std::max(1.0f, m_height * 0.4f);
 	float floor_z;
-	bool found = scene.FloorBelow({m_feet.x, m_feet.y, m_feet.z + step_up}, 1000, floor_z, nullptr, &m_vehicle, !m_boat);
+	bool found = scene.FloorBelow({m_feet.x, m_feet.y, m_feet.z + step_up}, 1000, floor_z, nullptr, &m_vehicle, !m_boat,
+		&m_floor_normal);
 	if (!found) {
 		// Nothing below at all (off the zone's mesh): the server's height stands.
 		if (gravity)
@@ -340,7 +341,7 @@ void SpawnActor::ProcessAnimation(const ZoneSpawn &spawn, const CharacterModel &
 			m_random = m_random * 1664525u + 1013904223u;
 			int roll = static_cast<int>((m_random >> 8) % 100) + 1;
 			m_fidget_ms = now_ms;
-			if (!IsStandingAnimation(m_animation))
+			if (!IsStandingAnimation(m_animation) || auto_attack)
 				return;
 			if (roll <= (spawn.pet_owner != 0 ? 99 : 75))
 				id = Anim::Idle;
@@ -475,4 +476,45 @@ uint64_t SpawnActor::AnimationTime(const CharacterModel &model) const
 	if (m_reversed)
 		t = std::max(length - (m_end == End::Loop ? 1 : 0) - t, 0.0);
 	return static_cast<uint64_t>(t);
+}
+
+int SurfacePitchType(int race, uint8_t stance)
+{
+	if (stance == 115 || stance == 120)
+		return 3;
+	switch (race) {
+	case 22: case 31: case 36: case 37: case 38: case 57: case 80: case 84: case 91: case 129: case 145: case 149:
+	case 201: case 203: case 223: case 233: case 244: case 246: case 259: case 276: case 281: case 302: case 316:
+	case 326: case 327:
+		return 3;
+	case 14: case 16: case 41: case 42: case 43: case 48: case 49: case 50: case 63: case 76: case 83: case 87:
+	case 107: case 119: case 120: case 121: case 122: case 124: case 135: case 158: case 196: case 199: case 200:
+	case 206: case 216: case 217: case 221: case 232: case 241: case 245: case 273: case 280: case 282: case 287:
+	case 297: case 304: case 305: case 314: case 319: case 321:
+		return 2;
+	default:
+		return 1;
+	}
+}
+
+render::Quat SurfaceTilt(int type, float heading, const render::Vec3 &n)
+{
+	if (type < 2)
+		return {};
+	// The floor's side axis (normal x heading), and the slope's rise along the heading (pitch) and,
+	// for type 3, the side axis's rise (roll).
+	float h = render::HeadingToRadians(heading);
+	float ch = std::cos(h), sh = std::sin(h);
+	float a = -sh * n.z, b = ch * n.z, f = sh * n.x - ch * n.y;
+	float length = a * a + b * b + f * f;
+	if (length != 0) {
+		float inverse = 1 / std::sqrt(length);
+		a *= inverse;
+		b *= inverse;
+		f *= inverse;
+	}
+	float rise = a * n.y - b * n.x;
+	float pitch = rise == 0 ? 0 : std::asin(std::clamp(rise, -1.0f, 1.0f));
+	float roll = type == 3 && f != 0 ? std::asin(std::clamp(f, -1.0f, 1.0f)) : 0;
+	return render::AxisAngle({0, 1, 0}, -pitch) * render::AxisAngle({1, 0, 0}, roll);
 }

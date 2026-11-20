@@ -101,6 +101,8 @@ public:
 	void SetFallDamage(std::function<int(float fall)> take) { m_fall_damage = std::move(take); }
 	// What our buffs add to our speed (eqspa_movement_rate's MovementSpeedModifier).
 	void SetSpeedModifier(float modifier) { m_movement.SetSpeedModifier(modifier); }
+	// __Attack, which ProcessAnimation reads: no fidgets for anyone while it's on.
+	void SetAutoAttack(bool on) { m_auto_attack = on; }
 	void SetSneakModifier(float modifier) { m_movement.SetSneakModifier(modifier); }
 	// The sound the doors, we and the spawns make (none when unset).
 	void SetSound(audio::EqSound *sound) { m_sound = sound; }
@@ -110,7 +112,11 @@ public:
 	// drag being held, which keeps the chase camera where it's put while moving.
 	bool Move(const MoveControls &controls, uint64_t now_ms, bool looking);
 	bool Placed() const { return m_placed; }
-	bool Crouching() const { return m_movement.Crouching(); } // a standing jump winding up
+	bool Crouching() const { return m_movement.Crouching(); } // stance 111: a jump winding up or ducking
+	bool JumpWindingUp() const { return m_movement.JumpWindingUp(); }
+	void Duck() { m_movement.Duck(); }                      // ExecuteCmd 10 standing
+	bool StandUp() { return m_movement.StandUp(m_zone); }   // and ducking: false with no room
+	void StopDucking() { m_movement.StopDucking(); }
 	bool Swimming() const { return m_movement.Swimming(); }    // ActorInfo SwimmingWaterType over 4
 	// EQPlayer::ChangeStance's animations for us: 110 sitting (P02), 105 kneeling (P05) and 115
 	// lying (D05, held as a death is) go down and stay there; 100 from them gets up (kneeling's
@@ -588,6 +594,10 @@ private:
 	std::string m_stand_animation; // what getting up plays backwards
 	bool m_standing_up = false;
 	float m_eye_drop = 0; // how far below standing our head is now (sitting down, getting up)
+	double m_idle_ms = 0, m_fidget_ms = 0; // ProcessAnimation's clock for us, and its last roll (+0x180)
+	uint32_t m_fidget_random = 0x2468aceu; // number_percent's for our fidgets
+	bool m_auto_attack = false;            // __Attack: no fidgets (ProcessAnimation)
+	uint8_t m_stance = 100;                // our StandingState as SetStance last had it
 	bool m_dead = false;
 
 	// Other spawns: models shared by everyone who looks the same, built once they're in range.
@@ -617,6 +627,7 @@ private:
 		bool player = false;
 		uint8_t level = 1;
 		bool dead = false;   // a corpse: missiles stop steering at it
+		uint8_t stance = 100; // StandingState, for its tilt (SurfacePitchType)
 		float walk_speed = 0, run_speed = 0; // the spawn's (a horse's, for its rider)
 		// A rider on its horse: drawn at the horse's RIDER_DAG, `attach`, not on its feet.
 		bool attached = false;

@@ -688,6 +688,11 @@ render::Transform ZoneView::MyPlacement() const
 		return m_rider_placement;
 	render::Transform placement;
 	placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(m_heading));
+	// Tilted to the floor as CDisplay_SetPlayerPitchType has eqgfx do for our race and stance.
+	if (m_appearance && m_movement.OnGround() && !m_horse)
+		placement.rotation = placement.rotation *
+		                     SurfaceTilt(SurfacePitchType(m_appearance->race, m_dead ? 120 : m_stance), m_heading,
+		                         m_movement.FloorNormal());
 	placement.translation = m_feet + render::Vec3{0, 0, m_model ? m_model->OriginOverFeet() : 0};
 	return placement;
 }
@@ -890,6 +895,7 @@ void ZoneView::Push(float force, float heading, float pitch)
 
 void ZoneView::SetStance(uint8_t stance)
 {
+	m_stance = stance;
 	std::string pose = stance == 110 ? "P02" : stance == 105 ? "P05" : stance == 115 ? "D05" : "";
 	if (pose == m_pose)
 		return;
@@ -1030,6 +1036,35 @@ void ZoneView::ChooseAnimation(float ms)
 			animation = m_model->HasAnimation("P09") ? "P09" : "P01";
 		m_standing_up = false;
 	}
+	// CDisplay::ProcessAnimation standing (or sat down) still: the idle, P01 (P07 sitting), and once
+	// a second, number_percent over 75, a fidget played out once, O01 (O03 sitting); none while
+	// auto attack's on (__Attack) or while what plays isn't a standing animation (isStandingAnimation),
+	// as sitting down plays out. Moving starts the second over (+0x180 = 0).
+	m_idle_ms += ms;
+	const bool still = speed == 0 && m_movement.Strafe() == 0 && !m_horse && m_movement.OnGround() &&
+	                   !m_movement.Swimming() && !m_movement.Crouching() && !m_standing_up;
+	if (still && (animation.empty() || animation == "P02") && m_model) {
+		const bool sitting = animation == "P02";
+		const char *idle = sitting ? "P07" : "P01", *fidget = sitting ? "O03" : "O01";
+		const bool sat_down = !sitting || m_animation == "P07" || m_animation == "O03" ||
+		                      (m_animation == "P02" && m_animation_ms >= m_model->AnimationMs("P02") - 1);
+		if (sat_down && m_model->HasAnimation(idle)) {
+			if (m_animation == fidget && m_animation_ms + ms < m_model->AnimationMs(fidget))
+				animation = fidget;
+			else {
+				animation = idle;
+				if (m_idle_ms - m_fidget_ms > 1000) {
+					m_fidget_ms = m_idle_ms;
+					m_fidget_random = m_fidget_random * 1664525u + 1013904223u;
+					int roll = static_cast<int>((m_fidget_random >> 8) % 100) + 1;
+					if (roll > 75 && !m_auto_attack && m_animation == idle && m_model->HasAnimation(fidget))
+						animation = fidget;
+				}
+			}
+		}
+	}
+	else if (!still)
+		m_fidget_ms = 0;
 	if (animation.empty()) {
 		if (speed > 0)
 			animation = speed >= m_movement.RunSpeed() ? "L02" : "L01";
@@ -1072,6 +1107,12 @@ void ZoneView::ChooseAnimation(float ms)
 				time = static_cast<uint64_t>(length) - 1 - time;
 			m_eye_drop = std::max(m_model->HeadZ() - m_model->HeadZAt(time, animation, false), 0.0f);
 		}
+	}
+	else if (m_model && (animation == "P07" || animation == "O03")) {
+		// Sat down: our head where the sitting idle or fidget has it.
+		double length = m_model->AnimationMs(animation);
+		uint64_t time = length > 0 ? static_cast<uint64_t>(std::fmod(m_animation_ms, length)) : 0;
+		m_eye_drop = std::max(m_model->HeadZ() - m_model->HeadZAt(time, animation, true), 0.0f);
 	}
 }
 
@@ -2035,6 +2076,7 @@ void ZoneView::UpdateSpawns(const std::map<uint16_t, ZoneSpawn> &spawns, uint16_
 		view.player = spawn.npc == 0;
 		view.level = spawn.level;
 		view.dead = spawn.npc == 2 || spawn.npc == 3;
+		view.stance = spawn.stance;
 		view.walk_speed = spawn.walk_speed;
 		view.run_speed = spawn.run_speed;
 		auto mount = m_mounts.find(id);
@@ -2114,6 +2156,7 @@ void ZoneView::UpdateSpawns(const std::map<uint16_t, ZoneSpawn> &spawns, uint16_
 		float ms = view.last_ms && now_ms > view.last_ms ? static_cast<float>(now_ms - view.last_ms) : 0;
 		view.last_ms = now_ms;
 		float size = spawn->size > 0 ? spawn->size : (render::IsPlayerRace(spawn->race) ? render::RaceHeight(spawn->race) : 6);
+		view.actor.auto_attack = m_auto_attack;
 		view.actor.Update(*spawn, size, m_info.gravity, now_ms);
 		view.light = spawn->light;
 		view.warm = spawn->body_type != 3 && spawn->body_type != 5 && spawn->body_type != 8 && spawn->body_type != 12;
@@ -2248,6 +2291,7 @@ void ZoneView::PoseSpawn(SpawnView &view, const ZoneSpawn &spawn, uint64_t now_m
 	float ms = view.last_ms && now_ms > view.last_ms ? static_cast<float>(now_ms - view.last_ms) : 0;
 	view.last_ms = now_ms;
 	float size = spawn.size > 0 ? spawn.size : (render::IsPlayerRace(spawn.race) ? render::RaceHeight(spawn.race) : 6);
+	view.actor.auto_attack = m_auto_attack;
 	view.actor.Update(spawn, size, m_info.gravity, now_ms);
 	view.light = spawn.light;
 	view.warm = spawn.body_type != 3 && spawn.body_type != 5 && spawn.body_type != 8 && spawn.body_type != 12;
@@ -2299,6 +2343,12 @@ void ZoneView::DrawSpawns(uint64_t now_ms)
 			continue;
 		render::Transform placement;
 		placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(view.actor.Heading()));
+		// Tilted to the floor under it as its race (or lying, or dead) has eqgfx do.
+		render::Vec3 floor_normal;
+		if (view.actor.FloorNormal(floor_normal))
+			placement.rotation = placement.rotation *
+			                     SurfaceTilt(SurfacePitchType(view.race, view.dead ? 120 : view.stance),
+			                         view.actor.Heading(), floor_normal);
 		placement.translation = view.Feet() + render::Vec3{0, 0, model.OriginOverFeet()};
 		if (view.attached)
 			placement = view.attach;

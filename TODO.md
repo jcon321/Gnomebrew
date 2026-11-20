@@ -261,13 +261,18 @@ no rules of its own.
      the book) and we move off at once, getting up playing out all the same. In first person the
      view goes down and up with our head. Kneeling (105: P05, up by P05 backwards) and lying (115,
      feign death: D05 held, up by P02 backwards) are ChangeStance's too, and nothing but standing
-     or crouching moves us. Being stunned (`OP_Stun`) and knocked out are done (24). Still to do:
-     sitting's idle and fidgets (P07, the sitting fidget), meditating's regen
-     (`EQ_Character::DoMeditation` @004c3def, `IsCharacterMeditating` @004c36a1), Duck (ExecuteCmd
-     10, see 6) with `CDisplay::CanIFitHere` standing us back up (22), the body's tilt
-     (`CDisplay_SetPlayerPitchType` @004a2cdd, from `CreatePlayerActor` and `ChangeStance`). The
-     zone freezing us (a charm's `OP_FreezeClientControl`, `OP_UnfreezeClientControl` and
-     `OP_ReturnClientControl`) is done (37).
+     or crouching moves us. Being stunned (`OP_Stun`) and knocked out are done (24). Our model's
+     idle and fidget (`CDisplay::ProcessAnimation`: P01 and O01 standing, P07 and O03 once sat
+     down, a fidget once a second one time in four, none with auto attack on, which goes for
+     every spawn), the 6 s tick's mana (`EQ_Character::DoMeditation`, `IsCharacterMeditating`:
+     `FrontEnd::DoMeditation`), Duck (ExecuteCmd 10: `ZoneView::Duck`, `StandUp`; crouched at half
+     the walk speed, a jump standing us up, a wind-up backed out of leaving us ducked) and the
+     body's tilt (`CDisplay_SetPlayerPitchType`'s types and eqgfx's
+     `updateActorOrientationAfterCollision`: `SurfacePitchType`, `SurfaceTilt`, for us and every
+     spawn) are done. Still to do: a spawn created lying (stance 115 from the start) stands until
+     its stance changes (`SpawnActor`'s transition only plays on a change). The zone freezing us
+     (a charm's `OP_FreezeClientControl`, `OP_UnfreezeClientControl` and `OP_ReturnClientControl`)
+     is done (37).
    - Hotbuttons: the Actions window's buttons and socials go on them and come off by holding
      them, and they're kept in `<char>_<server>.ini` (`frontend/game_windows.*`). Clicked or by
      key (Hot1..10) they do what their button does: Attack, Range, the combat skills and the
@@ -414,8 +419,6 @@ no rules of its own.
        box and `loadOptions` set it too), eqstr 12372 "Mouse control deactivated." or 12373
        "Mouse control activated.  Use right mouse button.". `CEverQuest_RMouseDown` copies it to
        `__MouseLook`, so off, the right button no longer turns us; ours always does.
-     - 10, Duck: not as races 142, 143 or 216 nor with `DAT_007985f8` set, standing (100) or
-       ducking (111) only; `ChangeStance` to the other, and `CanIFitHere` (22) to get up.
      - 14, Use centerscreen: with the chat line closed, the middle of the screen clicked:
        `CEverQuest_ClickedPlayer` there is `LeftClickedOnPlayer` and, with no target or an NPC's
        (Type 1), `RightClickedOnPlayer` too; nobody there, `CEverQuest_ClickedSwitch`.
@@ -1115,8 +1118,9 @@ no rules of its own.
     `ZoneScene::SphereHit`): the actor's sphere (`CreatePlayerActor`'s radius) lifted by the step
     height sweeps the move and slides once more along the surface, then `GetPlayerFloorHeight`'s
     sphere drop and `PutPlayerOnFloor`. Still to do:
-    - `CanIFitHere`: the move is undone where floor to ceiling (`GetCeilingHeight`) is under twice
-      the `ModelHeightOffset` + 0.5, and a duck stands back up when there's room again.
+    - `CanIFitHere` (done, `PlayerMovement::CanIFitHere`) for a ridden horse: its room is three
+      times its `ModelHeightOffset` (ours skips the check mounted), and an actor's own height
+      (EQPlayer+0xf8) when it has one.
     - `DoFloorCheck` with no floor below keeps the last one and we fall; we stay put instead.
     - MovePlayer's other branch for a horse we ride (no lift; our horse moves as we do, lifted, its
       sphere twice ours; the boats' part is 39), and `MovementSpeedZ` held to -1 when the move didn't

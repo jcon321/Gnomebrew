@@ -12,9 +12,11 @@
 
 #include "frontend.h"
 #include "inventory.h"
+#include "skills.h"
 #include "spell_file.h"
 #include "zone_names.h"
 
+#include <algorithm>
 #include <cstring>
 
 namespace
@@ -219,6 +221,49 @@ uint16_t FrontEnd::HitPointsTick()
 	return conscious ? killer : 0;
 }
 
+bool FrontEnd::IsCharacterMeditating() const
+{
+	// EQ_Character::IsCharacterMeditating (@004c36a1): not attacking, on a horse that isn't moving.
+	return !m_attack && m_mounts.MountOf(m_zone.MySpawnId()) != 0 && m_zone_view &&
+	       m_zone_view->Movement().speed == 0;
+}
+
+void FrontEnd::DoMeditation()
+{
+	// EQ_Character::DoMeditation (@004c3def), for us: nothing at full mana; 1 fed and watered (0
+	// starving or parched), 2 sitting; not a bard, sitting (or IsCharacterMeditating) with
+	// Meditate, 3, 4 past 1 skill, and a fifteenth of the skill past 14 more
+	// (EQ_PC_CheckSkillImprove is empty in this eqgame); Mental Clarity's ranks (AA 224) and 1 with
+	// Body and Mind Rejuvenation (119); 1 past 61 and past 63; 1 with a buff of SPA 101; SPA 15's
+	// total up to 15; 65 at most. DAT_00799770's (the language's) +10 sitting or +6 under 21 is
+	// Korean's only.
+	ZoneProfile &me = m_zone.EditProfile();
+	int max = m_game_values.MaxMana();
+	if (max <= me.mana)
+		return;
+	const bool sitting = m_zone.Self().stance == 110;
+	const bool fed = me.hunger > 0 && me.thirst > 0;
+	int regen = me.hunger == 0 || me.thirst == 0 ? 0 : 1;
+	if (sitting && fed)
+		regen = 2;
+	if (me.class_id != 8 && fed && (sitting || IsCharacterMeditating())) {
+		if (int skill = Skills::HasSkill(me, 31)) {
+			regen = skill > 1 ? 4 : 3;
+			if (skill > 14)
+				regen += skill / 15;
+		}
+	}
+	regen += me.aa_ranks[224];
+	if (me.aa_ranks[119] != 0)
+		regen += 1;
+	regen += (me.level > 61) + (me.level > 63);
+	if (m_buffs.HasAffect(101))
+		regen += 1;
+	regen += std::min(m_buffs.Total(15), 15);
+	regen = std::min(regen, 65);
+	me.mana = static_cast<int16_t>(me.mana + regen);
+}
+
 void FrontEnd::KnockoutPassageOfTime()
 {
 	// DoPassageOfTime for a player alive: at 0 HP or under with StunnedState under 3, KnockedOut;
@@ -240,8 +285,12 @@ void FrontEnd::KnockoutPassageOfTime()
 			ChatOut(EqString(12877, "You have been knocked unconscious!"), ChatType::Yellow);
 		}
 	}
-	// The 6 s tick, on the buffs' (they tick right after, ProcessAffects).
-	uint16_t killer = m_buffs.TickDue(m_now_ms) ? HitPointsTick() : 0;
+	// The 6 s tick, on the buffs' (they tick right after, ProcessAffects): HP, then DoMeditation.
+	uint16_t killer = 0;
+	if (m_buffs.TickDue(m_now_ms)) {
+		killer = HitPointsTick();
+		DoMeditation();
+	}
 	// Further on: under -10 HP (under 1 for deity 20000) with no DeathTimer, our own death, from the
 	// player whose DoT this frame's tick took us under with (else no one), no spell, skill 0x17,
 	// damage 0. The zone sends the dying no OP_Death when a client or the victim killed it, or a DoT

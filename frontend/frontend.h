@@ -509,6 +509,9 @@ private:
 	// and coming to (GetConscious). Returns the DoT's player when we were up as it started, else 0.
 	uint16_t HitPointsTick();
 	void AddHp(int32_t delta); // EQ_Character::ModifyCurHP: no higher than our maximum
+	// EQ_Character::DoMeditation (@004c3def): the 6 s tick's mana, after the HP's.
+	void DoMeditation();
+	bool IsCharacterMeditating() const; // EQ_Character::IsCharacterMeditating: still on a horse, not attacking
 	void GetConscious();       // EQPlayer::GetConscious
 	// msg_resurrect (@004e1f5f): the zone's question, ours only, in the confirmation dialog
 	// (category 2) for an hour unless it's already up; the answer goes back as OP_RezzAnswer.

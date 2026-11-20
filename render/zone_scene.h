@@ -75,8 +75,9 @@ namespace render
 		// exposed it is to the ambient light (its vertices' alpha, 1 without colors).
 		// `actor`: the solid spawn (SetActor) that floor is, 0 the zone's; without `actors`, those
 		// spawns aren't looked at (a boat's own floor).
+		// `normal`: that surface's unit normal, facing up.
 		bool FloorBelow(const Vec3 &from, float depth, float &floor_z, float *exposure = nullptr, uint16_t *actor = nullptr,
-			bool actors = true) const;
+			bool actors = true, Vec3 *normal = nullptr) const;
 		// The first solid surface on the segment from `from` to `to`, as a fraction of its length,
 		// and that surface's unit normal (facing `from`). `doors`: the doors count too.
 		bool SegmentHit(const Vec3 &from, const Vec3 &to, float &fraction, Vec3 *normal = nullptr, bool doors = true) const;

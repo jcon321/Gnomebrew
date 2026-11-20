@@ -995,6 +995,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		if (m_buffs.Frame(now_ms))
 			m_mounts.Tick(); // ProcessAffects' SPA 113
 		if (m_zone_view) {
+			m_zone_view->SetAutoAttack(m_attack);
 			m_zone_view->SetSpeedModifier(m_buffs.SpeedModifier(m_zone.Self().run_speed, m_game_values.running));
 			// EQPlayer::InitSneakMod: half the walk speed sneaking, a rogue's 0.1 more a level past 50.
 			float sneak = 0;
@@ -3762,8 +3763,13 @@ void FrontEnd::ChangeStance(uint8_t stance)
 		ChatOut(EqString(12290, "You abandon your preparations to camp."), 0x111);
 	}
 	m_zone.SetStance(stance);
-	if (m_zone_view)
+	if (m_zone_view) {
 		m_zone_view->SetStance(stance);
+		if (stance != 111) {
+			m_zone_view->StopDucking();
+			m_crouch_sent = false;
+		}
+	}
 	if (stance == 110)
 		m_sat_ms = m_now_ms; // UnknownTimer5
 	if (was == 110)
@@ -5442,6 +5448,23 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 	case KeyMap::Hail:
 		InterpretCommand("/hail");
 		break;
+	case KeyMap::Duck: {
+		// ExecuteCmd 10: in control of ourselves (not knocked out or dead, not stance 102), not as
+		// races 142, 143 or a horse (216, what we ride) nor while a jump winds up (DAT_007985f8);
+		// standing ducks (ChangeStance 111), ducking stands up where there's room (ChangeStance's
+		// CanIFitHere). The stance goes to the zone with the crouch (ProcessControls' check).
+		const ZoneSpawn &self = m_zone.Self();
+		if (!m_zone_view || m_knocked_out || m_dead || m_frozen || self.stance == 102)
+			break;
+		if (self.race == 142 || self.race == 143 || m_mounts.MountOf(m_zone.MySpawnId()) != 0 ||
+		    m_zone_view->JumpWindingUp())
+			break;
+		if (self.stance == 100)
+			m_zone_view->Duck();
+		else if (self.stance == 111)
+			m_zone_view->StandUp();
+		break;
+	}
 	case KeyMap::TargetMe: {
 		// ExecuteCmd 22: ourselves, or with ourselves the target already, our pet: the first spawn
 		// that's ours and not a temporary pet (EQPlayer+0x15c), if there is one. Not without control

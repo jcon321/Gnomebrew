@@ -91,7 +91,17 @@ public:
 	// EQPlayer::IWasHit's push: added to our motion (per tick, world space).
 	void Push(const render::Vec3 &push) { m_velocity = m_velocity + push; }
 	bool OnGround() const { return m_on_ground; }
-	bool Crouching() const { return m_crouching; } // a standing jump winding up (stance 111)
+	const render::Vec3 &FloorNormal() const { return m_floor_normal; } // where the last floor drop met it
+	// Stance 111: a standing jump winding up, or ducking (ExecuteCmd 10, or a wind-up called off by
+	// backing up, which DoMainLoop leaves crouched).
+	bool Crouching() const { return m_crouching || m_ducking; }
+	bool Ducking() const { return m_ducking; }
+	bool JumpWindingUp() const { return m_jump_armed; } // DAT_007985f8
+	void Duck() { m_ducking = true; }
+	// EQPlayer::ChangeStance from 111 to 100: only where CanIFitHere standing, with the ceiling at
+	// least the ModelHeightOffset over the body's center; false (still ducking) otherwise.
+	bool StandUp(const render::ZoneScene &scene);
+	void StopDucking() { m_ducking = false; } // any other stance
 	float RunSpeed() const { return m_run_speed; }
 	float Height() const { return m_height; }
 	float Radius() const; // the actor's collision sphere, and where it is
@@ -120,10 +130,18 @@ private:
 	void Tick(float ticks, const render::ZoneScene &scene);
 	void UpdateEnvironment(const render::ZoneScene &scene);
 	bool CanSwimJump(const render::ZoneScene &scene) const;
+	// CDisplay::CanIFitHere (@0050453a) for the body over `feet`: the floor under it
+	// (GetPlayerFloorHeight from half a unit under the body's center) and the ceiling over it
+	// (GetCeilingHeight: a 0.5 sphere swept up from the center to 32767, ZCeiling) leave the body
+	// room (twice the ModelHeightOffset; once ducking unless `standing`) and 0.5 more. No room
+	// latches a stand-up (DAT_00798572) for 2 s on (DAT_00798574); room standing with it latched
+	// and past then stands a duck up.
+	bool CanIFitHere(const render::Vec3 &feet, const render::ZoneScene &scene, bool standing);
 	float StepHeight() const; // how far over the body MovePlayer lifts the sphere
 	render::Vec3 Sweep(const render::Vec3 &center, render::Vec3 move, const render::ZoneScene &scene) const;
 	// `vehicle`: the solid spawn the floor is, 0 the zone's.
-	bool FloorUnder(const render::Vec3 &center, const render::ZoneScene &scene, float &floor_z, uint16_t *vehicle = nullptr) const;
+	bool FloorUnder(const render::Vec3 &center, const render::ZoneScene &scene, float &floor_z, uint16_t *vehicle = nullptr,
+		render::Vec3 *normal = nullptr) const;
 
 	render::Vec3 m_feet;
 	float m_heading = 0;
@@ -150,6 +168,11 @@ private:
 	float m_jump_armed_ms = 0; // when the press armed one
 	bool m_jump_armed = false;
 	bool m_crouching = false;
+	bool m_ducking = false;
+	render::Vec3 m_floor_normal{0, 0, 1};
+	float m_ceiling = 0;               // ActorInfo's ZCeiling, CanIFitHere's last
+	bool m_stand_latched = false;      // DAT_00798572
+	float m_stand_latch_ms = 0;        // DAT_00798574
 	// The regions last seen at the feet, body and eyes (MovePlayer redoes them when they change).
 	int m_feet_region = -2, m_body_region = -2, m_head_region = -2;
 	render::Environment m_feet_environment = render::Environment::Dry;

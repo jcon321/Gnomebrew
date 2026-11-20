@@ -33,9 +33,19 @@ namespace render
 	class ZoneScene;
 }
 
+// CDisplay_SetPlayerPitchType (@004a2cdd), from CreatePlayerActor and EQPlayer::ChangeStance: how
+// eqgfx tilts an actor to the floor under it (t3dSetActorSurfacePitchType): 1 upright, 2 pitched
+// along the slope, 3 pitched and rolled with it. Lying (115) and dead (120) are 3; else by race.
+int SurfacePitchType(int race, uint8_t stance);
+// eqgfx's updateActorOrientationAfterCollision (@10001b60), after an actor's floor drop: the tilt
+// of a `type` actor heading `heading` on a floor whose unit normal (facing up) is `normal`, to
+// apply after its heading (t3dSetActorLocation's pitch about y, then roll about x).
+render::Quat SurfaceTilt(int type, float heading, const render::Vec3 &normal);
+
 class SpawnActor
 {
 public:
+	bool auto_attack = false; // __Attack, ours: ProcessAnimation picks no fidget while it's on
 	// Every frame, with the spawn as the server last sent it, before Step. `height` is its size,
 	// `gravity` the zone's (per tick, squared).
 	void Update(const ZoneSpawn &spawn, float height, float gravity, uint64_t now_ms);
@@ -66,6 +76,13 @@ public:
 
 	const render::Vec3 &Feet() const { return m_feet; }
 	float Heading() const { return m_heading; }
+	// The floor the actor stands on, for its tilt (updateActorOrientationAfterCollision); false
+	// off the ground (upright).
+	bool FloorNormal(render::Vec3 &normal) const
+	{
+		normal = m_floor_normal;
+		return m_on_ground && m_has_floor;
+	}
 	int Animation() const { return m_animation; } // the animation number (render::Anim)
 	float AnimationRate() const { return m_rate; }
 	// Where the track is, for CharacterModel::Draw: backwards for a reversed one, held at the end.
@@ -119,6 +136,7 @@ private:
 	uint8_t m_fly_mode = 0;
 	bool m_has_floor = true; // anything below at all: without, the server's height stands
 	bool m_on_ground = false;
+	render::Vec3 m_floor_normal{0, 0, 1}; // the floor's under the feet (FloorBelow)
 	bool m_settled = false; // on the floor and not moving: nothing to do until the next update
 	int m_body_region = -2, m_feet_region = -2;
 	render::Environment m_body_environment = render::Environment::Dry;
