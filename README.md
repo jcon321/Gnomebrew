@@ -3352,10 +3352,29 @@ details and the nearest spawns at the top left and the radar at the top right.
     Worn AC is four thirds for all but the casters. `GetClassACBonus` adds a monk's by weight, a
     rogue's and beastlord's by AGI, and an Iksar's by level.
   - **ATK** (`CalcATKValue`): `(offense + compute_tohit) * 1000 / 744` with the primary's skill, hand
-    to hand without a weapon.
+    to hand without a weapon. `offense` adds the buffs' ATK (`TotalSpellAffects(2, 0)`, buffs only)
+    and the worn items' effects' (`CalculateSpellEffectModifier(2)`, to 250); with spell 2434 on us
+    (`HasSpellEffect(0x982)`, a buff's level) 100 moves from the buffs' side to the items'.
+  - **Spell effects in the totals:** `TotalSpellAffects(spa, 1)` adds to the buffs' total the worn
+    items' effects (slots 1..21, a type 2 effect whose spell has a duration), which every stat,
+    resist, `old_ac`, `Max_HP` and `Max_Mana` use (`GameValues::SpellTotal`). `Max_Mana` takes the
+    items' mana through `AntiTwinkAdj` as the stats do.
+  - **Drunkenness** (`Drunkness`): from 56, `(Drunkness - 40) / 16` more STR (berserk's bonus only
+    under 56), more STA and less DEX; any at all multiplies WIS and INT by `1 - Drunkness * 0.005`,
+    0.2 at least; past 20 (`Drunkness / 2`) `compute_tohit` (berserk's bonus only up to 20) and
+    `compute_defense` are times `(110 - Drunkness / 2) / 100`, 1 at most.
   - **Resists:** `basesave_*` by race (and a monk's disease and poison by level from 51), the worn
     items', and the class bonuses (a warrior's half level to magic; monk, ranger, beastlord,
-    paladin, shadow knight and rogue more each level from 50), to 500.
+    paladin, shadow knight and rogue more each level from 50), to 500. The Resistant Discipline
+    (ActorInfo+0x31c, which `OP_DisciplineChange`, 0x41f2, sets: 30) adds 3 to each, 4 past level
+    34, one more past 40 and one a level past 45, five at most.
+  - **Lore duplicates** (`CheckDupLoreItems` @004f13d2, `ZoneSession::CheckDupLoreItems`): after the
+    inventory (`HandleCompressedItems`), an `OP_MerchantItemPacket` (0x4031's `msg_snd_ieq`) and a
+    theft (`msg_steal`), each item of ours in turn, worn 1..21, general 22..29, then the cursor (a
+    bag's items before the bag), runs `DelLoreItemDup` (@004f1266): a lore item (its lore text
+    starting `*`) takes every other copy out of the inventory and its bags (not its own place) and
+    every copy out of the bank and its bags, a bag going with all in it. Only the client's copies
+    go; the zone isn't told.
   - **Weight** (`cur_encumbrance`): the cursor, worn and general slots and their bags (less weight
     reduction), and the coins (less the coin bags 17201..17230). It's red over our STR.
 - **Skills window** (`CSkillsWnd`): `Activate` (@0043287a) lists skills 0..99 that

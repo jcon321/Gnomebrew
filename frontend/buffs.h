@@ -73,6 +73,8 @@ public:
 	bool RemoveAffect(int spa, bool notify = false);
 	// EQ_Character::GetPCSpellAffect: whether a buff has the effect.
 	bool HasAffect(int spa) const;
+	// EQ_Character::HasSpellEffect: a buff of this spell on us (its level not 0).
+	bool HasSpell(int spell) const;
 
 	const ZoneBuff &Slot(int slot) const;
 	// IsValidAffect: a buff there of a spell we know.

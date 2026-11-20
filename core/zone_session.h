@@ -1018,6 +1018,9 @@ public:
 	// OP_BerserkStart and OP_BerserkEnd (ActorInfo+0x42c): berserk until the zone says otherwise
 	// or we leave the zone.
 	bool Berserk() const { return m_berserk; }
+	// OP_DisciplineChange (ActorInfo+0x31c): the discipline active (30 Resistant), 0 none, until
+	// the zone says otherwise or we leave the zone.
+	int32_t ActiveDiscipline() const { return m_discipline; }
 	ZoneSpawn &EditSelf() { return m_self; } // what the client sets of itself without telling the zone
 	uint16_t MySpawnId() const { return m_my_id; }
 	uint16_t MyPetId() const { return m_self.pet_id; } // our ActorInfo's PetID; 0xffff none
@@ -1129,6 +1132,12 @@ private:
 	ZoneSpawn m_self;
 	uint16_t m_my_id = 0;
 	bool m_berserk = false;
+	// CheckDupLoreItems (@004f13d2) after items arrive (the inventory, OP_MerchantItemPacket, a
+	// theft): no lore item twice; DelLoreItemDup for one of them at keep_slot (keep_bag in its bag,
+	// -1 the slot itself).
+	void CheckDupLoreItems();
+	void DelLoreItemDup(int16_t keep_slot, int keep_bag, const ZoneItem &item);
+	int32_t m_discipline = 0;
 	// What we had on as UpdateAppearance last saw it (from OP_CharInventory on): the slots it tells.
 	void WornLook(uint16_t material[9], uint32_t color[9]) const;
 	uint16_t m_worn_material[9] = {};

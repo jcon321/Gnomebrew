@@ -39,8 +39,7 @@ no rules of its own.
 2. **Display-only windows**, showing what the server already sends:
    - ~~Player window~~ and ~~target window~~: done (`frontend/game_values.*`, gauges in `sidl.cpp`).
      Targeting ourselves: F1 and clicking our model in the chase view. The XP and AA gauges
-     (EQTypes 4, 5) are OP_ExpUpdate's and OP_AAExpUpdate's 0..330 * 3.03031. Still to do: max mana
-     leaves out items' worn effects and `AntiTwinkAdj` for items with a recommended level.
+     (EQTypes 4, 5) are OP_ExpUpdate's and OP_AAExpUpdate's 0..330 * 3.03031.
    - Group: done (`frontend/group.*`, the zone's OP_GroupInvite, OP_GroupCancelInvite,
      OP_GroupFollow and OP_GroupUpdate in `ZoneSession`): msg_wldgroup's actions,
      CheckForGroupChanges on each profile, CEverQuest_doInvite and doUnInvite, CEverQuest_Invite,
@@ -86,11 +85,13 @@ no rules of its own.
      items, the next food and drink; `GameValues::Stat`, `Resist`), AC, ATK and weight (`GameValues::Ac`, `Atk`, `Weight`), money, the class picture, item icons in the slots, the Alt. Adv. row from 51, Done, and the
      Skills button opening the skills window (`frontend/game_windows.*`), and items picked up, put
      down, split through the quantity window and put away on the character view (`core/inventory.*`).
-     Still to do: for stats, resists, AC and ATK, items' worn effects, ATK's buffs,
-     the Resistant Discipline, and drunkenness but for STR; Alt. Advance, icons in the hot button
-     window's weapon slots; lore duplicates (`CheckDupLoreItems` @004f13d2, `DelLoreItemDup`
-     @004f1266) on an item arriving by trade (msg_trade_final_ieq), theft (msg_steal), the zone
-     (msg_snd_ieq) or the start (`CEverQuest::msgStartIcon` @004e0a6d, `msgStartInotes` @004e0d29).
+     The worn items' effects (`GameValues::SpellTotal`, TotalSpellAffects with the items), ATK's
+     buffs and worn ATK, the Resistant Discipline (`OP_DisciplineChange`) and drunkenness (STR, STA,
+     DEX, WIS, INT, to-hit and defense) count, and lore duplicates go (`ZoneSession::CheckDupLoreItems`,
+     `DelLoreItemDup`) after the inventory, `OP_MerchantItemPacket` and a theft. Still to do: Alt.
+     Advance, icons in the hot button window's weapon slots; `msg_trade_final_ieq`'s (0x413e) and
+     `msgStartIcon`'s and `msgStartInotes`' lore checks if their packets ever come (EQMacEmu sends
+     a trade's items as `OP_MerchantItemPacket` and the start as `OP_CharInventory`).
    - Coins: done (`Inventory::MoveMoney`, CEverQuest_MoveMoney, OP_MoveCoin): a money button with
      nothing on the cursor asks how many through the quantity window and puts them on the cursor
      (A_DragItem's cell 143 + CursorMoneyType, the count across its bottom), with coins on it takes

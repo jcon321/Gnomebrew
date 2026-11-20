@@ -11,11 +11,12 @@
 //           and how much we can carry, 28 the target's name, 29 the target's HP percent, 45..59
 //           our buffs' names
 // Others draw an empty gauge and keep a label's own text.
-// Our buffs count (TotalSpellAffects) in the stats, the resists, AC and max mana, as eqgame adds
-// them, and our AAs (core/alt_adv.h) in the stats, the resists, their caps, max HP and max mana.
-// Being berserk (OP_BerserkStart) counts in STR and ATK, being drunk in STR. What none of these
-// count yet: items' worn effects, being drunk (but STR), and the skill caps (GetSkillLimit: the
-// zone keeps our skills to them).
+// Our buffs and the worn items' effects count (TotalSpellAffects with the items) in the stats, the
+// resists, AC, max HP and max mana, as eqgame adds them, and our AAs (core/alt_adv.h) in the stats,
+// the resists, their caps, max HP and max mana. Being berserk (OP_BerserkStart) counts in STR and
+// ATK; being drunk in STR, STA, DEX, WIS, INT, to-hit and defense; the Resistant Discipline in the
+// resists. What none of these count yet: the skill caps (GetSkillLimit: the zone keeps our skills
+// to them).
 
 #include "../core/alt_adv.h"
 #include "sidl.h"
@@ -61,7 +62,8 @@ public:
 	const ZoneSpawn *Pet() const;    // our pet: our ActorInfo's PetID (ZoneSession::MyPetId), if it's here
 
 	// EQ_Character::Max_Mana (@004b9483): level and INT or WIS (EQ_Character::Int and Wis, as Stat
-	// has them), plus the worn items' mana and the buffs' (97, to 500).
+	// has them), plus the worn items' mana (AntiTwinkAdj) and the buffs' and worn effects' (97, to
+	// 500).
 	int MaxMana() const;
 	// Our AltAdvManager character: class, level, expansions, points and ranks.
 	AltAdv::Character AltAdvCharacter() const;
@@ -108,8 +110,7 @@ public:
 	// rank, our buffs (that resist's effect, 46..50, and 111 all of them), a warrior's half level
 	// to magic, and the classes' bonuses: a monk's fire, a ranger's fire and cold, a beastlord's
 	// cold and disease, a paladin's and a shadow knight's disease, a rogue's and a shadow knight's
-	// poison, more each level from 50. Not the Resistant Discipline's (an active discipline of 30,
-	// which we don't keep yet).
+	// poison, more each level from 50, and the Resistant Discipline's (OP_DisciplineChange's 30).
 	int Resist(int eq_type, int &base) const;
 	// EQ_Character::cur_encumbrance (@004bbb78): what the cursor, worn and general slots and the
 	// bags in them weigh (less a bag's weight reduction), and the coins, a fortieth of a pound
@@ -134,6 +135,13 @@ public:
 	// (STR * 2 - 150) / 3 for STR over 74 (DEX for archery and throwing), and a ranger's level * 4
 	// - 216 above 54.
 	int Atk() const;
+
+	// EQ_Character::TotalSpellAffects(spa, 1): our buffs' total of an effect and the worn items'
+	// effects' (a type 2 effect on a worn item), as a short; 0 without buffs.
+	int SpellTotal(int spa) const;
+	// compute_tohit's and compute_defense's drunkenness: past 20 (Drunkness / 2) the value times
+	// (110 - that) / 100, no more than itself.
+	int DrunkFactor(int value) const;
 
 	// EQ_Character::KunarkClass (@004bc06a): a class's name, or its title from level 51.
 	static std::string ClassTitle(const EqStr *eqstr, int class_id, int level);

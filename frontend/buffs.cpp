@@ -350,6 +350,14 @@ bool Buffs::HasAffect(int spa) const
 	return false;
 }
 
+bool Buffs::HasSpell(int spell) const
+{
+	for (const ZoneBuff &b : m_slots)
+		if (b.type != 0 && b.spell == spell)
+			return b.level != 0;
+	return false;
+}
+
 bool Buffs::RemoveAffect(int spa, bool notify)
 {
 	for (int slot = 0; slot < Slots; ++slot) {

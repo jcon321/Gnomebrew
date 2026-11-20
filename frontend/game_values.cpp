@@ -164,6 +164,21 @@ int GameValues::Skill(int skill) const
 	return value;
 }
 
+int GameValues::SpellTotal(int spa) const
+{
+	return buffs ? static_cast<int16_t>(buffs->Total(spa) + buffs->WornTotal(spa)) : 0;
+}
+
+int GameValues::DrunkFactor(int value) const
+{
+	// compute_tohit and compute_defense past 20 (Drunkness / 2): (110 - that) hundredths, to 1.
+	int drunk = zone ? zone->Profile().drunk / 2 : 0;
+	if (drunk <= 20)
+		return value;
+	double factor = std::min((110 - drunk) * 0.01, 1.0);
+	return static_cast<int16_t>(value * factor);
+}
+
 int GameValues::AntiTwinkAdj(const ZoneItem &item, int value) const
 {
 	if (!zone || value == 0)
@@ -220,8 +235,14 @@ int GameValues::Stat(int eq_type, int &base) const
 		else if ((p.drunk - 40) / 16 > 0)
 			value += (p.drunk - 40) / 16;
 	}
-	if (buffs)
-		value += static_cast<int16_t>(buffs->Total(spa));
+	// EQ_Character::Sta and Dex: from 56 drunk, (Drunkness - 40) / 16 more STA and less DEX.
+	if ((eq_type == 6 || eq_type == 7) && p.drunk > 55 && (p.drunk - 40) / 16 > 0)
+		value += eq_type == 6 ? (p.drunk - 40) / 16 : -((p.drunk - 40) / 16);
+	value += SpellTotal(spa);
+	// EQ_Character::Wis and Int: any drunkenness takes WIS and INT down by half a percent a point,
+	// to a fifth at most.
+	if ((eq_type == 9 || eq_type == 10) && p.drunk != 0)
+		value = static_cast<int>(value * std::max(1.0 - p.drunk * 0.005, 0.2));
 	if (eq_type == 8)
 		value = static_cast<int>(value * EncumFactor());
 	return AltAdv::CapStat(ch, value, index);
@@ -295,16 +316,23 @@ int GameValues::Resist(int eq_type, int &base) const
 	default: return 0;
 	}
 	int value = base;
+	// The Resistant Discipline (the zone's OP_DisciplineChange of 30): 3, 4 past level 34, one
+	// more past 40 and one a level past 45, five at most.
+	if (zone->ActiveDiscipline() == 30) {
+		value += level > 34 ? 4 : 3;
+		if (level > 40)
+			value += 1;
+		if (level > 45)
+			value += std::min(level - 45, 5);
+	}
 	for (const auto &[slot, item] : zone->Items())
 		if (slot >= FirstWornSlot && slot <= LastWornSlot && item.item_class == 0)
 			value += AntiTwinkAdj(item, item.*field);
 	value += FoodAndDrink(zone->Items(), field);
 	AltAdv::Character ch = AltAdvCharacter();
 	value += AltAdv::InnateBonus(ch, index);
-	if (buffs) {
-		int spa = eq_type == 12 ? 48 : eq_type == 13 ? 49 : eq_type == 14 ? 46 : eq_type == 15 ? 47 : 50;
-		value += static_cast<int16_t>(buffs->Total(spa) + buffs->Total(111));
-	}
+	int spa = eq_type == 12 ? 48 : eq_type == 13 ? 49 : eq_type == 14 ? 46 : eq_type == 15 ? 47 : 50;
+	value += static_cast<int16_t>(SpellTotal(spa) + SpellTotal(111));
 	value += bonus;
 	// CalculateMaxStatAA2: no more than 500; unlike the stats, no least
 	return AltAdv::CapStat(ch, value, index);
@@ -441,8 +469,8 @@ int GameValues::Ac(bool with_buffs) const
 	ac = std::max(ac + static_cast<int16_t>(bonus), 0);
 	int defense = Skill(15);
 	ac += caster ? defense / 2 : defense / 3;
-	if (with_buffs && buffs)
-		ac += static_cast<int16_t>(buffs->Total(1)) / (caster ? 3 : 4);
+	if (with_buffs)
+		ac += SpellTotal(1) / (caster ? 3 : 4);
 	if (agi > 70)
 		ac += agi / 20;
 	ac = static_cast<int16_t>(std::max(ac, 0));
@@ -457,7 +485,9 @@ int GameValues::Ac(bool with_buffs) const
 		int most = level < 7 ? 35 : level < 20 ? 55 : level < 40 ? 70 : 80;
 		agi_bonus = (most - std::max(200 - agi, 0) / 5) * 2 / 3;
 	}
-	int compute_defense = std::max(agi_bonus + static_cast<int16_t>(std::max(defense, 0) * 400 / 225), 1);
+	int compute_defense = static_cast<int16_t>(agi_bonus + static_cast<int16_t>(std::max(defense, 0) * 400 / 225));
+	compute_defense = DrunkFactor(compute_defense);
+	compute_defense = std::max(compute_defense, 1);
 
 	return (ac + compute_defense) * 1000 / 847;
 }
@@ -475,8 +505,12 @@ int GameValues::Atk() const
 	// compute_tohit: berserk adds level * 2 / 5 while Drunkness / 2 is 20 or under. Past that eqgame
 	// puts something of the drunkenness in its place (an __ftol of a value the decompile loses).
 	int tohit = Skill(33) + 7 + Skill(skill);
-	if (me.drunk / 2 <= 20 && zone->Berserk())
-		tohit += me.level * 2 / 5;
+	if (me.drunk / 2 <= 20) {
+		if (zone->Berserk())
+			tohit += me.level * 2 / 5;
+	}
+	else
+		tohit = DrunkFactor(tohit);
 	tohit = std::max(tohit, 1);
 
 	int base = 0;
@@ -484,6 +518,16 @@ int GameValues::Atk() const
 	int offense = Skill(skill);
 	if (stat > 74)
 		offense += (stat * 2 - 150) / 3;
+	// The buffs' ATK (TotalSpellAffects 2 without the worn items) and the worn items' (their own
+	// CalculateSpellEffectModifier, to 250); with spell 2434 on us (HasSpellEffect 0x982), 100 of
+	// it moves from the buffs' to the items'.
+	int buff_atk = buffs ? static_cast<int16_t>(buffs->Total(2)) : 0;
+	int worn_atk = buffs ? static_cast<int16_t>(buffs->WornTotal(2)) : 0;
+	if (buffs && buffs->HasSpell(2434)) {
+		worn_atk += 100;
+		buff_atk -= 100;
+	}
+	offense += std::min(worn_atk, 250) + buff_atk;
 	if (me.class_id == 4 && me.level > 54) // ranger
 		offense += me.level * 4 - 216;
 	offense = std::max(offense, 1);
@@ -523,8 +567,12 @@ int GameValues::MaxMana() const
 		stat = (stat - 200) / 2 + 200;
 	if (stat - 100 > 0)
 		stat += (stat - 100) * 3 / 2;
-	int spell_mana = buffs ? std::min<int>(static_cast<int16_t>(buffs->Total(97)), 500) : 0;
-	int mana = level * 15 + static_cast<int16_t>(level * 15) * stat / 200 + spell_mana + WornSum(items, &ZoneItem::mana);
+	int spell_mana = std::min(SpellTotal(97), 500);
+	int item_mana = 0; // the worn items' (AntiTwinkAdj, as the stats')
+	for (const auto &[slot, item] : items)
+		if (slot >= FirstWornSlot && slot <= LastWornSlot && item.item_class == 0)
+			item_mana += AntiTwinkAdj(item, item.mana);
+	int mana = level * 15 + static_cast<int16_t>(level * 15) * stat / 200 + spell_mana + item_mana;
 	return std::max(static_cast<int16_t>(mana), static_cast<int16_t>(0));
 }
 
@@ -568,8 +616,8 @@ int GameValues::MaxHp(bool with_buffs) const
 			items += AntiTwinkAdj(item, item.hp);
 	int hp = levels + sta * levels / 300 + std::max(items, 0);
 	hp += AltAdv::MaxHpBonus(AltAdvCharacter(), hp); // Max_HP(0)'s AltAdvManager_CalculateMaxHPAA
-	if (with_buffs && buffs)
-		hp += static_cast<int16_t>(buffs->Total(69));
+	if (with_buffs)
+		hp += SpellTotal(69);
 	hp += 5;
 	return std::min(hp, 0x7fff);
 }

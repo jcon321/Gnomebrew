@@ -500,6 +500,7 @@ void ZoneSession::Reset(const std::string &character)
 	m_self = ZoneSpawn{};
 	m_my_id = 0;
 	m_berserk = false;
+	m_discipline = 0;
 	m_worn_known = false;
 	m_hp = m_max_hp = 0;
 	m_items.clear();
@@ -2596,6 +2597,10 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 	case ZoneOp::BerserkEnd:
 		m_berserk = opcode == ZoneOp::BerserkStart;
 		break;
+	case ZoneOp::DisciplineChange:
+		if (data.size() >= 4)
+			m_discipline = Read<int32_t>(data, 0);
+		break;
 	case ZoneOp::GMLastName:
 	case ZoneOp::GMNameChange: {
 		// HandleWorldMessage's 0x416e (CDisplay_UpdateNameSprite @004e4651) and 0x40cb: the spawn
@@ -2921,8 +2926,10 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 				ZoneItem item = ParseItem(data, 12);
 				e.text = item.name;
 				e.value = item.slot;
-				if (item.slot >= 0)
+				if (item.slot >= 0) {
 					m_items[item.slot] = item;
+					CheckDupLoreItems(); // msg_steal
+				}
 			}
 			break;
 		default:
@@ -2974,6 +2981,7 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 				m_items[item.slot] = item;
 			}
 			Log("[zone]    inventory: " + std::to_string(m_items.size()) + " items");
+			CheckDupLoreItems(); // CEverQuest::HandleCompressedItems' msg_snd_ieq
 			WornLook(m_worn_material, m_worn_color); // what the zone already showed us in
 			m_worn_known = true;
 		}
@@ -2987,6 +2995,8 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		if (data.size() >= ItemSize) {
 			ZoneItem item = ParseItem(data, 0);
 			m_items[item.slot] = item;
+			if (opcode == ZoneOp::MerchantItemPacket)
+				CheckDupLoreItems(); // 0x4031's msg_snd_ieq
 			UpdateAppearance(); // msg_snd_ieq
 		}
 		break;
@@ -4347,4 +4357,81 @@ void ZoneSession::Pump(int timeout_ms, std::vector<Event> &events)
 			events.push_back({Event::Type::LoggedOut});
 		}
 	}
+}
+
+namespace
+{
+	// eqgame's 30 inventory pointers (EQ_Character+0xd78) as the zone numbers them: worn 1..21,
+	// general 22..29, the cursor; a bag's items in 250 + (general - 22) * 10 + n (330 + n on the
+	// cursor). The bank's 8 (+0x20b4) are 2000..2007, their bags' 2030 + bank * 10 + n.
+	int16_t BagSlot(int16_t slot, int n)
+	{
+		if (slot == 0)
+			return static_cast<int16_t>(330 + n);
+		if (slot >= 22 && slot <= 29)
+			return static_cast<int16_t>(250 + (slot - 22) * 10 + n);
+		if (slot >= 2000 && slot <= 2007)
+			return static_cast<int16_t>(2030 + (slot - 2000) * 10 + n);
+		return -1;
+	}
+}
+
+void ZoneSession::DelLoreItemDup(int16_t keep_slot, int keep_bag, const ZoneItem &item)
+{
+	// DelLoreItemDup (@004f1266): a lore item ('*' first in its lore text) takes every other of the
+	// same item out of the inventory and its bags (not where it is, nor what's at its own slot),
+	// and every one from the bank and its bags; a bag taken goes with all in it.
+	if (item.lore.empty() || item.lore[0] != '*')
+		return;
+	const uint16_t id = item.id;
+	auto erase_bag = [&](int16_t slot) {
+		m_items.erase(slot);
+		for (int n = 0; n < 10; ++n)
+			if (int16_t in = BagSlot(slot, n); in >= 0)
+				m_items.erase(in);
+	};
+	auto sweep = [&](int16_t slot, bool bank) {
+		auto it = m_items.find(slot);
+		if (it == m_items.end())
+			return;
+		for (int n = 0; n < 10; ++n) {
+			int16_t in = BagSlot(slot, n);
+			auto inside = in >= 0 ? m_items.find(in) : m_items.end();
+			if (inside != m_items.end() && inside->second.id == id && (bank || slot != keep_slot || n != keep_bag))
+				m_items.erase(inside);
+		}
+		it = m_items.find(slot);
+		if (it != m_items.end() && it->second.id == id && (bank || slot != keep_slot))
+			erase_bag(slot);
+	};
+	for (int16_t slot = 1; slot <= 29; ++slot)
+		sweep(slot, false);
+	sweep(0, false);
+	for (int16_t slot = 2000; slot <= 2007; ++slot)
+		sweep(slot, true);
+}
+
+void ZoneSession::CheckDupLoreItems()
+{
+	// CheckDupLoreItems (@004f13d2): each item of ours in turn (a bag's items before the bag), the
+	// first of a lore item keeping it.
+	auto check = [&](int16_t slot) {
+		if (!m_items.count(slot))
+			return;
+		for (int n = 0; n < 10; ++n) {
+			int16_t in = BagSlot(slot, n);
+			auto inside = in >= 0 ? m_items.find(in) : m_items.end();
+			if (inside != m_items.end()) {
+				ZoneItem item = inside->second;
+				DelLoreItemDup(slot, n, item);
+			}
+		}
+		if (auto it = m_items.find(slot); it != m_items.end()) {
+			ZoneItem item = it->second;
+			DelLoreItemDup(slot, -1, item);
+		}
+	};
+	for (int16_t slot = 1; slot <= 29; ++slot)
+		check(slot);
+	check(0);
 }
