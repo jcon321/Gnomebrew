@@ -1,4 +1,5 @@
 #include "sidl.h"
+#include "edit_box.h"
 #include "item_tags.h"
 #include "tga.h"
 #include "xml.h"
@@ -1467,30 +1468,8 @@ void SidlWindow::DrawControl(int index, Canvas &canvas, TextRenderer &text, Sidl
 		text.DrawWrapped(canvas, c, control.text, height, control.text_color, weight);
 	}
 	else if (def.type == "Editbox") {
-		// The end of the text, as much as fits, with the caret after it. An item tag shows its name,
-		// in the link color (CEditWnd::RenderEditWindowText).
-		const Rect &c = control.client;
-		std::vector<ItemTag> tags;
-		std::string all = ShowItemTags(control.text, &tags);
-		size_t from = 0;
-		std::string shown = all;
-		TextSize size = text.Measure(shown.empty() ? "W" : shown, height, weight);
-		while (!shown.empty() && size.w > c.w - 6) {
-			from += std::max<size_t>(1, shown.size() / 8);
-			shown = all.substr(std::min(from, all.size()));
-			size = text.Measure(shown.empty() ? "W" : shown, height, weight);
-		}
-		int y = c.y + (c.h - size.h) / 2;
-		int x = c.x + 2;
-		for (const ItemTagPiece &piece : SplitAtItemTags(tags, std::min(from, all.size()), all.size())) {
-			std::string run = all.substr(piece.begin, piece.end - piece.begin);
-			text.Draw(canvas, x, y, run, height, piece.tag >= 0 ? control.link_color : control.text_color, weight);
-			x += text.Measure(run, height, weight).w;
-		}
-		if (index == m_focus && (now_ms / 500) % 2 == 0) {
-			int x = c.x + 2 + (shown.empty() ? 0 : size.w);
-			canvas.Fill({x, y, 1, size.h}, control.text_color);
-		}
+		// RenderEditWindowText and DrawCaret (edit_box.h).
+		EditBox::Draw(control, canvas, text, height, weight, index == m_focus, now_ms);
 	}
 	else if (def.type == "STMLbox" && control.draw_content) {
 		control.draw_content(canvas, text, ContentRect(control));
@@ -1744,8 +1723,18 @@ std::string SidlWindow::Press(const InputEvent &event)
 			continue;
 		bool inside = HitTest(control, event.x, event.y);
 		if (type == "Editbox") {
-			if (inside && event.type == InputEvent::Type::MouseDown && control.enabled)
+			// CEditWnd::HandleLButtonDown (the focus and the caret), HandleMouseMove with the button
+			// down (the selection).
+			if (inside && event.type == InputEvent::Type::MouseDown && control.enabled) {
 				m_focus = i;
+				m_edit_drag = !control.def->multiline;
+				if (m_edit_drag)
+					EditBox::Press(control, event.x, event.shift);
+			}
+			else if (event.type == InputEvent::Type::MouseMove && m_edit_drag && m_focus == i)
+				EditBox::Drag(control, event.x);
+			else if (event.type == InputEvent::Type::MouseUp)
+				m_edit_drag = false;
 			continue;
 		}
 		switch (event.type) {
@@ -1838,17 +1827,21 @@ bool SidlWindow::OnKey(const InputEvent &event)
 	if (m_focus < 0 || !Shown(m_controls[m_focus]) || !m_controls[m_focus].enabled)
 		return false;
 	Control &control = m_controls[m_focus];
-	if (event.type == InputEvent::Type::Char) {
-		if (event.ch >= 0x20 && event.ch < 0x7f && control.text.size() < control.max_chars)
-			control.text += static_cast<char>(event.ch);
-		return true;
+	// A multi-line box types at its end (no caret of its own yet).
+	if (control.def->multiline) {
+		if (event.type == InputEvent::Type::Char) {
+			if (event.ch >= 0x20 && event.ch < 0x7f && control.text.size() < control.max_chars)
+				control.text += static_cast<char>(event.ch);
+			return true;
+		}
+		if (event.type == InputEvent::Type::Key && event.key == InputEvent::Key::Backspace) {
+			if (!control.text.empty())
+				control.text.pop_back();
+			return true;
+		}
+		return false;
 	}
-	if (event.type == InputEvent::Type::Key && event.key == InputEvent::Key::Backspace) {
-		if (!control.text.empty())
-			control.text.pop_back();
-		return true;
-	}
-	return false;
+	return EditBox::Key(control, event);
 }
 
 bool SidlWindow::OnWheel(int x, int y, int notches)

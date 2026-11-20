@@ -124,6 +124,7 @@ add_library(eqfrontend STATIC
     frontend/game_values.cpp
     frontend/game_windows.cpp
     frontend/containers.cpp
+    frontend/edit_box.cpp
     frontend/bank_window.cpp
     frontend/merchant_window.cpp
     frontend/train_window.cpp

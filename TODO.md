@@ -15,12 +15,13 @@ no rules of its own.
    - Lock for windows that can't be locked (CXWnd 0x13, always allowed here).
    - Edit boxes (`CEditWnd`, @005a1ed0 on): the keys go to one of five (the chat window's, the
      social editor's, the quantity window's, the color picker's and the friends window's:
-     `FrontEnd`'s focus group), and text goes in only at the end. Not ours: the caret moved by the
-     keys and the mouse (`HandleKeyboardMsg` @005a3010, `HandleLButtonDown`, `GetCaretPt`,
-     `EnsureCaretVisible`), a selection (`SetSel`, `ReplaceSelection`), the clipboard
-     (`processClipboardText` @005583fe from `EverQuest_wndproc`), `FilterInputStr` and
-     `AlphaNumericOnly`, masked text (`GetMaskedText`), item links typed as tags (`AddItemTag`,
-     `ProcessEditWindowTags`), a multi-line box's scrolling, and the IME.
+     `FrontEnd`'s focus group). A single-line box's caret and selection are done
+     (`frontend/edit_box.*`: HandleKeyboardMsg's Backspace, Delete, Shift+Delete and Shift with
+     the arrows, Home and End; HandleLButtonDown, Shift+click and the drag; ReplaceSelection with
+     FilterInputStr's markers kept out; the selection drawn inverse and the caret blinking).
+     `processClipboardText` is voice dictation: eqgame has no paste. Still to do: a multi-line
+     box's caret and scrolling (it types at its end), the price boxes' AlphaNumericOnly 3
+     (`edit_filter`, not set yet), masked text (`GetMaskedText`), and the IME.
    - STML boxes (`CStmlWnd`; ours take `<BR>`, `<P>`, `<c "#RRGGBB">`, `&lt;` and `&gt;`): tables
      (`ParseHtmlTable` @00584540), links and their pages (`HandleMouseClickOnText` @00587540,
      `LoadPage` @005889b0, the history and `NavigateBackInBrowserHistory`), the named colors and

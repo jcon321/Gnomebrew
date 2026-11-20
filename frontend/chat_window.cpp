@@ -1,4 +1,5 @@
 #include "chat_window.h"
+#include "edit_box.h"
 
 #include <algorithm>
 
@@ -246,8 +247,10 @@ void ChatWindow::Close()
 void ChatWindow::OnChar(uint32_t ch)
 {
 	SidlWindow::Control *input = Input();
-	if (input && ch >= 0x20 && ch < 0x7f && input->text.size() < MaxInput)
-		input->text += static_cast<char>(ch);
+	if (input && ch >= 0x20 && ch < 0x7f) {
+		input->max_chars = MaxInput;
+		EditBox::ReplaceSelection(*input, std::string(1, static_cast<char>(ch)), true);
+	}
 }
 
 void ChatWindow::AddItemTag(uint16_t id, const std::string &name)
@@ -285,15 +288,9 @@ bool ChatWindow::OnKey(const InputEvent &event, std::string &line)
 		input->text.clear();
 		Close();
 		return true;
-	case InputEvent::Key::Backspace:
-		// A tag goes whole.
-		if (input->text.size() >= 2 && input->text.back() == ItemTags::Marker) {
-			size_t open = input->text.rfind(ItemTags::Marker, input->text.size() - 2);
-			input->text.erase(open == std::string::npos ? input->text.size() - 1 : open);
-		}
-		else if (!input->text.empty())
-			input->text.pop_back();
-		return true;
+	case InputEvent::Key::Backspace: // a tag goes whole (EditBox)
+		input->max_chars = MaxInput;
+		return EditBox::Key(*input, event);
 	case InputEvent::Key::Up:
 	case InputEvent::Key::Down: {
 		// Back through what was sent, newest first; past the newest, an empty line.
@@ -308,7 +305,9 @@ bool ChatWindow::OnKey(const InputEvent &event, std::string &line)
 		return true;
 	}
 	default:
-		return false;
+		// Delete, and the caret keys with Shift (CEditWnd::HandleKeyboardMsg).
+		input->max_chars = MaxInput;
+		return EditBox::Key(*input, event);
 	}
 }
 

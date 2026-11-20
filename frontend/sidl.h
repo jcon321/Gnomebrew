@@ -288,6 +288,18 @@ public:
 		// an item's on the cursor: CInventoryWnd::HandleLButtonUp).
 		bool clickable = false;
 		size_t max_chars = 64; // Editbox
+		// Editbox (CEditWnd, edit_box.h): the selection [edit_start, edit_end) in the shown text (an
+		// item tag counting as its name), the caret at its end or its start (+0x208), the text as the
+		// box last saw it (a change from outside is SetText's: the caret to its end), the first
+		// shown character, where each shown character starts as last drawn, and the input filter
+		// (AlphaNumericOnly: 0 any but a tag's marker, 1 and 2 letters and digits, 3 and 4 digits).
+		int edit_start = 0, edit_end = 0;
+		bool edit_caret_end = true;
+		std::string edit_seen;
+		bool edit_synced = false;
+		int edit_offset = 0;
+		mutable std::vector<int> edit_x;
+		int edit_filter = 0;
 		uint32_t link_color = 0xff00ff; // Editbox: its item tags' (item_tags.h)
 		std::string animation; // StaticAnimation: another animation in place of its own; "" its own
 		// InvSlot: what's in it, a cell of a grid animation (an item's icon, A_DragItem), over the
@@ -558,6 +570,7 @@ private:
 	const SidlDefinitions *m_defs = nullptr;
 	SidlValues *m_values = nullptr;
 	std::vector<Control> m_controls;
+	bool m_edit_drag = false; // an edit box's selection being dragged
 	int m_focus = -1;
 	// A scrollbar part held down: which control, which part; for the thumb, where it was grabbed.
 	int m_scroll_control = -1;

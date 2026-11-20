@@ -1,0 +1,46 @@
+#pragma once
+
+// eqgame's CEditWnd (@005a1ed0 on), for a single-line edit box (the chat's input, the quantity
+// window's, the friends window's...):
+//   - the selection: SidlScreen and SidlPiece (+0x100, +0x104), indexes into the text as it shows
+//     (an item tag counting as its name; ConvertIndexPrintableToTagged turns them into the tagged
+//     text's), and +0x208, which end the caret is at;
+//   - HandleKeyboardMsg (@005a3010), with the keyboard flags (Shift 1, Ctrl 2, Alt 4): a character
+//     (and Space) replaces the selection (ReplaceSelection @005a3f00, through FilterInputStr
+//     @005a3e30, no further than the box's limit); Backspace takes the selection, or the character
+//     (or the tag) before the caret; Delete the selection or what's after the caret, and Shift+Delete
+//     everything (SetText ""); Shift with Left, Right, Home and End moves the caret, a tag at a
+//     time, dropping the selection (without Shift they're the game's keys, its turning);
+//   - HandleLButtonDown (@005a3660): the caret where the mouse went down (SelectableCharFromPoint
+//     @005a2660), with Shift the selection from the other end to there; HandleMouseMove
+//     (@005a3770) while the button's down drags the selection out;
+//   - RenderEditWindowText (@005a2c00) and CalculateTextOffset (@005a4300): from the first shown
+//     character, which follows the caret; a selection on a box of the text's color, its text in the
+//     inverse; DrawCaret (@005a2f40): a line in the text's color, shown 512 ms of every 1024 while
+//     the box has the focus.
+// Not here: a multi-line box's caret, selection and scrolling (they type at the end), GetMaskedText's
+// password boxes (none in game), the IME, and a clipboard (processClipboardText @005583fe is the
+// voice dictation's text: eqgame has no paste).
+
+#include "sidl.h"
+
+class Canvas;
+class TextRenderer;
+
+namespace EditBox
+{
+	// SetText's, when the text changed from outside since the box last saw it: the caret to its end.
+	void Sync(SidlWindow::Control &box);
+	int Caret(const SidlWindow::Control &box);
+	// ReplaceSelection: `text` (already tagged, an item tag allowed) in the selection's place,
+	// filtered when `filter`, if the box's limit lets it.
+	void ReplaceSelection(SidlWindow::Control &box, const std::string &text, bool filter);
+	// HandleKeyboardMsg for a key or a character: true when the box took it.
+	bool Key(SidlWindow::Control &box, const InputEvent &event);
+	// HandleLButtonDown and HandleMouseMove (the button down) at window pixels.
+	void Press(SidlWindow::Control &box, int x, bool shift);
+	void Drag(SidlWindow::Control &box, int x);
+	// RenderEditWindowText and DrawCaret.
+	void Draw(const SidlWindow::Control &box, Canvas &canvas, TextRenderer &text, int height, int weight, bool focused,
+		uint64_t now_ms);
+}
