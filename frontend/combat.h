@@ -32,7 +32,13 @@
 //              (12114), "You have been slain by %1!" (12107), "%1 died." (12112), falling (-4),
 //              choking (-5), burning (-6) and the unseen hand's (no killer we know): 0x115 our death,
 //              0x116 the rest (told as the blow is). An NPC killing itself says nothing.
-// The hit modes (pinstCChatManager's MyHitsMode and the rest) are their 0, the whole line. /filter's
+// The hit modes (the chat window menu's Hit Modes, pinstCChatManager's +0x1d8.., the UI ini's
+// [ChatManager] HitMode0..5) say how a melee hit or miss is told (HandleMyHitsMode @00500f86 and the
+// five after it): 0 the whole line, 1 abbreviated, 2 the damage alone ("miss", 12156, for a miss), any
+// other not at all; the whole line still goes to the log. Abbreviated: our hits "%1 %2 for %3" (2130:
+// the verb, the victim, the damage), hits on us "%1 %2 for %3" (2108: the attacker, the verb), others'
+// "%1 %2 %3 for %4" (2128); our misses "missed %1" (15039, the victim), misses of us "%1 missed"
+// (15040), others' "%1 missed %2" (15041). The environment's and spells' lines aren't. /filter's
 // switches (ChatFilters) say which misses and hits are told, and whether others' damage shields are.
 // A melee hit on us (EQPlayer::IWasHit) takes off our invisibility (SPA 12, 28, 29 buffs) and pushes
 // us along the hit's heading by its force.
@@ -59,6 +65,11 @@ public:
 	{
 		std::string text;
 		int type; // the chat color type
+		// A melee hit or miss: which hit mode it's told by (0 our hits, 1 our misses, 2 hits on us,
+		// 3 misses of us, 4 others' hits, 5 others' misses; -1 none), and its parts.
+		int hit_mode = -1;
+		std::string attacker, verb, victim;
+		int32_t damage = 0;
 	};
 	struct Sound
 	{
@@ -89,6 +100,9 @@ public:
 	// A spell's damage (over 0, detrimental) on `victim`: the end of ReportSuccessfulHit, its sounds
 	// and our standing up (its animation is SpellCasting's).
 	void SpellHurt(uint16_t victim, int32_t damage, const ZoneSession &zone, Report &report);
+
+	// What a hit mode (`mode`) makes of a melee line: false when it isn't told.
+	bool HitModeText(const Line &line, int mode, std::string &text) const;
 
 	// SetDefaultDamageDescByRace: the verb a race attacks with bare handed (eqstr id).
 	static uint32_t RaceVerb(int race, bool plural);

@@ -327,13 +327,6 @@ no rules of its own.
      right-click menu, `InitContextMenu` @0041179c, `UpdateContextMenus` @00412f9b and
      `UpdateTellMenus` @00413439, with its picks from `CChatWindow::WndNotification`; Rename
      Window through `CTextEntryWnd`, `frontend/text_entry.*`). Still to do:
-     - Hit Modes (15038): the menu's five submenus (ids 0x190..0x1c4: Normal 15034, Abbreviated
-       15035, Number Only 15036 or Miss Only 15037) setting `CChatManager`'s eight modes (kept as
-       HitMode0..7, which we read and write back), and the combat lines they change:
-       `HandleMyHitsMode` (@00500f86: Abbreviated is eqstr 2130 "%1 %2 for %3", Number Only the
-       damage alone), `HandleOtherHitsMeMode` (@00501077), `HandleOtherHitsOtherMode` (@00501168),
-       `HandleMyMissesMode` (@0050125b), `HandleOtherMissesMeMode` (@005012f8),
-       `HandleOtherMissesOtherMode` (@00501395), from `frontend/combat.cpp`'s lines.
      - The chat channel items (Filters' and Channel's Chat Channel, ids 0x70.. and 0xcf..) are
        disabled: they list the chat server's channels (`ChannelManager`), which we don't have.
      - The language menu's ids and /language number the languages we know by their place in that
@@ -632,7 +625,8 @@ no rules of its own.
       0xff: 12897 and the answer);
     - AllowedToAttack's server PvP types and the water;
     - /filter's client side: the chat channels and the bad word filter
-      (msg_new_text's `SpeakBabel`, see 3; `bad_word_class` @005054e4), and the hit modes
+      (msg_new_text's `SpeakBabel`, see 3; `bad_word_class` @005054e4), and the old UI's hit modes
+      (only when DAT_008092d8, the new UI, is off; the new UI's are the chat menu's Hit Modes, done)
       (/hitsmode @00500373: `HandleMyHitsMode` @00500f86, `HandleOtherHitsMeMode`,
       `HandleOtherHitsOtherMode` and the three misses ones from `DoPassageOfTime`, each with its
       `[Defaults]` Mode, X, Y, Count, FontSize, ShowBG, BGWidth, ShowHeader and AlwaysDraw; eqstr

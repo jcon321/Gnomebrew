@@ -18,7 +18,26 @@ namespace
 	constexpr int ChannelFirst = 200, ChannelLast = 0xd9;   // a default channel
 	constexpr int LanguageFirst = 300, LanguageLast = 0x14b; // the known language's place in the list + 300
 	constexpr int ReplyFirst = 500, RaidFirst = 0x226, FriendFirst = 0x28a, TellLast = 0x2ed;
+	constexpr int HitModeFirst = 400, HitModeLast = 0x1c4; // 400 + 10 * the hit mode + its value
 	constexpr int MessageColor = 10; // AddOutputText's color for what the picks say
+
+	// Hit Modes' six (the chat manager's hit modes 0..5), and each one's three values: Normal,
+	// Abbreviated, and Number Only for a hit or Miss Only for a miss.
+	struct Named
+	{
+		uint32_t id;
+		const char *text;
+	};
+	constexpr Named HitModeNames[] = {{15014, "Your Hits"}, {15015, "Your Misses"}, {15016, "You Being Hit"},
+		{15017, "You Being Missed"}, {15018, "Others Hits"}, {15019, "Others MIsses"}};
+	Named HitModeValue(int mode, int value)
+	{
+		if (value == 0)
+			return {15034, "Normal"};
+		if (value == 1)
+			return {15035, "Abbreviated"};
+		return mode % 2 == 1 ? Named{15037, "Miss Only"} : Named{15036, "Number Only"};
+	}
 }
 
 void FrontEnd::SetChatDefaults()
@@ -62,6 +81,9 @@ void FrontEnd::BuildChatMenus()
 	m_chat_menus.reply = add();
 	m_chat_menus.friends = add();
 	m_chat_menus.raid = add();
+	for (int &menu : m_chat_menus.hit_mode)
+		menu = add();
+	m_chat_menus.hit_modes = add();
 	m_chat_menus.root = add();
 	m_windows.menu_opening = [this](const std::string &screen) { UpdateChatMenus(screen); };
 	m_chats.SetMenu(m_chat_menus.root);
@@ -147,6 +169,19 @@ void FrontEnd::UpdateChatMenus(const std::string &screen)
 	m_windows.SetMenu(m_chat_menus.friends, std::move(friends));
 	m_windows.SetMenu(m_chat_menus.raid, std::move(raid));
 
+	// Hit Modes, nothing checked (UpdateContextMenus leaves them be).
+	std::vector<Item> hit_modes;
+	for (int mode = 0; mode < 6; ++mode) {
+		std::vector<Item> values;
+		for (int value = 0; value < 3; ++value) {
+			Named named = HitModeValue(mode, value);
+			values.push_back(item(EqString(named.id, named.text), HitModeFirst + 10 * mode + value));
+		}
+		m_windows.SetMenu(m_chat_menus.hit_mode[mode], std::move(values));
+		hit_modes.push_back(submenu(EqString(HitModeNames[mode].id, HitModeNames[mode].text), m_chat_menus.hit_mode[mode]));
+	}
+	m_windows.SetMenu(m_chat_menus.hit_modes, std::move(hit_modes));
+
 	m_windows.SetMenu(m_chat_menus.root, {
 		submenu(EqString(6643, "Window"), WindowManager::WindowMenu), separator,
 		item(EqString(6644, "New Chat Window"), NewWindowId), item(EqString(3140, "Rename Window"), RenameId),
@@ -155,7 +190,8 @@ void FrontEnd::UpdateChatMenus(const std::string &screen)
 		submenu(EqString(3148, "Tell a friend..."), m_chat_menus.friends, any_friend),
 		submenu(EqString(3149, "Tell a raidmember..."), m_chat_menus.raid, any_raid), separator,
 		submenu(EqString(6645, "Filters"), m_chat_menus.filters), submenu(EqString(6646, "Channel"), m_chat_menus.channel),
-		submenu(EqString(6647, "Language"), m_chat_menus.language)});
+		submenu(EqString(6647, "Language"), m_chat_menus.language),
+		submenu(EqString(15038, "Hit Modes"), m_chat_menus.hit_modes)});
 }
 
 void FrontEnd::ChatMenuPick(const WindowManager::MenuPick &pick)
@@ -232,6 +268,16 @@ void FrontEnd::ChatMenuPick(const WindowManager::MenuPick &pick)
 		default: window->channel = 19; window->chat_channel = id - 0xcf; break; // 0xcf..0xd8
 		}
 		say(pick.text + EqString(3138, " is now the default channel for this window."));
+		SaveUiLayout();
+	}
+	else if (id >= HitModeFirst && id <= HitModeLast) {
+		// The hit mode, said as "<which> <value>" in 0x111.
+		int mode = (id - HitModeFirst) / 10, value = (id - HitModeFirst) % 10;
+		if (mode > 5 || value > 2)
+			return;
+		m_chats.SetHitMode(mode, value);
+		Named named = HitModeValue(mode, value);
+		ChatOut(EqString(HitModeNames[mode].id, HitModeNames[mode].text) + " " + EqString(named.id, named.text), 0x111);
 		SaveUiLayout();
 	}
 	else if (id >= ReplyFirst && id <= TellLast) {

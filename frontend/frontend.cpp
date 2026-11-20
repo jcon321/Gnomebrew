@@ -3063,12 +3063,13 @@ void FrontEnd::EqLog(const std::string &text)
 	}
 }
 
-void FrontEnd::ChatOut(const std::string &text, int type)
+void FrontEnd::ChatOut(const std::string &text, int type, bool log)
 {
-	// print_chat_dsp_chat: DoPercentConvert first.
+	// print_chat_dsp_chat: DoPercentConvert first; its third argument says whether eqlog has it.
 	std::string line = PercentConvert(text);
 	m_chats.Add(line, m_chat_colors.Get(type), type); // ProcessChatMessage: to its kind's window
-	EqLog(line);
+	if (log)
+		EqLog(line);
 }
 
 void FrontEnd::SetTarget(uint16_t id, bool command)
@@ -4331,8 +4332,18 @@ void FrontEnd::AutoAttackOff(uint32_t said)
 
 void FrontEnd::ApplyCombat(const Combat::Report &report)
 {
-	for (const Combat::Line &line : report.lines)
-		ChatOut(line.text, line.type);
+	for (const Combat::Line &line : report.lines) {
+		if (line.hit_mode < 0) {
+			ChatOut(line.text, line.type);
+			continue;
+		}
+		// HandleMyHitsMode and the rest: the line as the chat manager's hit mode for it has it (not
+		// logged), and the whole line logged.
+		std::string shown;
+		if (m_combat.HitModeText(line, m_chats.HitMode(line.hit_mode), shown))
+			ChatOut(shown, line.type, false);
+		EqLog(line.text);
+	}
 	if (report.target != 0 && m_game_values.target == 0)
 		SetTarget(report.target);
 	if (report.my_damage != 0)

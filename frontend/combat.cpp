@@ -372,10 +372,48 @@ void Combat::ReportHit(const ZoneCast &hit, bool told, const ZoneSession &zone, 
 	}
 	if (told && !text.empty()) {
 		text[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(text[0])));
-		report.lines.push_back({text, line_color});
+		Line line{text, line_color};
+		if (type < SpellType) {
+			switch (line_color) {
+			case MyHits: line.hit_mode = 0; break;
+			case MyMisses: line.hit_mode = 1; break;
+			case HitsOnMe: line.hit_mode = 2; break;
+			case MissesOnMe: line.hit_mode = 3; break;
+			case OthersHits: line.hit_mode = 4; break;
+			default: line.hit_mode = 5; break; // OthersMisses
+			}
+			line.attacker = attacker_name;
+			line.verb = verb;
+			line.victim = victim_name;
+			line.damage = damage;
+		}
+		report.lines.push_back(std::move(line));
 	}
 	if (damage > 0)
 		Hurt(hit.target, damage, animation == NoAnimation ? 13 : animation, zone, report); // D02 unless the environment's
+}
+
+bool Combat::HitModeText(const Line &line, int mode, std::string &text) const
+{
+	const std::string damage = std::to_string(line.damage);
+	const bool miss = line.hit_mode % 2 == 1;
+	if (mode == 0)
+		text = line.text;
+	else if (mode == 1) {
+		switch (line.hit_mode) {
+		case 0: text = Text(2130, "%1 %2 for %3", {line.verb, line.victim, damage}); break;
+		case 1: text = Text(15039, "missed %1", {line.victim}); break;
+		case 2: text = Text(2108, "%1 %2 for %3", {line.attacker, line.verb, damage}); break;
+		case 3: text = Text(15040, "%1 missed", {line.attacker}); break;
+		case 4: text = Text(2128, "%1 %2 %3 for %4", {line.attacker, line.verb, line.victim, damage}); break;
+		default: text = Text(15041, "%1 missed %2", {line.attacker, line.victim}); break;
+		}
+	}
+	else if (mode == 2)
+		text = miss ? Text(12156, "miss") : damage;
+	else
+		return false;
+	return true;
 }
 
 void Combat::Hurt(uint16_t id, int32_t damage, int animation, const ZoneSession &zone, Report &report)

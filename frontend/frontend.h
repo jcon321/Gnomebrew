@@ -62,6 +62,7 @@
 #include "zone_view.h"
 #include "widgets.h"
 
+#include <array>
 #include <ctime>
 #include <functional>
 #include <map>
@@ -361,7 +362,7 @@ private:
 	void FaceSpawn(uint16_t id); // EQPlayer::FacePlayer
 	void WorldClick(int x, int y); // CEverQuest_LMouseUp on the world (window pixels) // CEverQuest_IsOkToTransact: no window that deals with someone up
 	void AddZoneLog(const std::string &text, uint32_t color); // a line of chat in this color
-	void ChatOut(const std::string &text, int type);          // in a chat color type (ChatType)
+	void ChatOut(const std::string &text, int type, bool log = true); // in a chat color type (ChatType); log: eqlog it too
 	void EqLog(const std::string &text);                      // eqlog: a chat line to the log, while /log is on
 	// TurnCharacterNameSpritesOn / TurnNPCNameSpritesOn: the names over the heads of the spawns
 	// drawn last frame (and ours), for the zone view's next Render to draw.
@@ -678,7 +679,8 @@ private:
 	struct ChatMenus
 	{
 		int root = -1, filters = -1, melee = -1, spells = -1, channel = -1, language = -1, reply = -1, friends = -1,
-		    raid = -1, chat_filter = -1, chat_channel = -1;
+		    raid = -1, chat_filter = -1, chat_channel = -1, hit_modes = -1;
+		std::array<int, 6> hit_mode{-1, -1, -1, -1, -1, -1}; // Hit Modes' six (+0x17c, +0x184.. +0x1a4)
 	} m_chat_menus;
 	void BuildChatMenus();
 	void UpdateChatMenus(const std::string &screen); // UpdateContextMenus and UpdateTellMenus

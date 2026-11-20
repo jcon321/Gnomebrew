@@ -443,7 +443,11 @@ eqgame's `OP_MoveItem`.
     0xcf.. 19; the window's checked; "<item>" + 3138); Language (6647: the languages we know, id 300
     + its place in that list, which is what the window keeps, checked; 3133 "Language set to %1";
     the main window's also writes `DefaultLanguage`, ours in my-client.ini's [Defaults]); Hit Modes
-    (15038, not ours yet). The chat channel items need the chat server and stay disabled.
+    (15038: Your Hits, Your Misses, You Being Hit, You Being Missed, Others Hits, Others MIsses,
+    15014..15019, each with Normal 15034, Abbreviated 15035, and Number Only 15036 for a hit or
+    Miss Only 15037 for a miss, ids 400 + 10 * the mode + 0..2; nothing checked; a pick sets the
+    chat manager's mode, +0x1d8.., and says "<mode> <value>" in 0x111). The chat channel items need
+    the chat server and stay disabled.
   - **[ChatManager]** in the UI ini (`CChatManager::Deactivate` @00410871 writes it; the
     constructor reads it, a value starting `*` meaning none): NumWindows (the slots past the main
     one), LockedActiveWindow, ChatWindow<n>_Language (`@42` for a freed slot, which the
@@ -802,7 +806,9 @@ checking layout and flow without Windows. `--replay` plays a packet log back ins
 `settings` after SECONDS reads `OUTDIR/my-client.ini` first, such as its `[Filters]`;
 `chatwindows` opens the main chat window's menu, makes a new window, filters tells there and
 injects one, sends Worn Off there, sets its channel to Group, locks it (Always Chat Here), renames
-it through the text entry, opens its input with Enter, prints [ChatManager] as saved, closes it
+it through the text entry, opens its input with Enter, injects our melee hits and misses on the
+nearest NPC and its on us before and after setting four of the Hit Modes (printing each line),
+prints [ChatManager] as saved, closes it
 and makes another, printing the windows (title, channel, language, lines) at each step;
 `multiline` makes the book's Page0 editable and prints its lines, selection and scroll after
 Shift+Home, Shift+Left, Shift+End, clicks on a row and right of one, a drag across rows and typing
@@ -2206,7 +2212,15 @@ details and the nearest spawns at the top left and the radar at the top right.
   `Combat::RaceVerb` has the table). Colors: `0x109` our hits, `0x10a` hits on us, `0x117`
   others', `0x10b` our misses, `0x10c` misses of us, `0x118` others'. The line's first letter is
   made upper case; an NPC's hit on itself isn't told. The new UI prints them through the hit modes
-  (`HandleMyHitsMode` and the rest), whose 0 is the whole line.
+  (`HandleMyHitsMode` @00500f86, `HandleOtherHitsMeMode` @00501077, `HandleOtherHitsOtherMode`
+  @00501168, `HandleMyMissesMode` @0050125b, `HandleOtherMissesMeMode` @005012f8,
+  `HandleOtherMissesOtherMode` @00501395; the chat manager's modes 0..5, set from the chat window's
+  Hit Modes menu): 0 the whole line, 1 abbreviated, 2 the damage alone or "miss" (12156), anything
+  else nothing. Abbreviated: our hits 2130 "%1 %2 for %3" (verb, victim, damage), hits on us 2108
+  "%1 %2 for %3" (attacker, verb, damage), others' 2128 "%1 %2 %3 for %4"; our misses 15039 "missed
+  %1" (victim), misses of us 15040 "%1 missed" (attacker), others' 15041 "%1 missed %2". The
+  shortened line isn't logged; the whole one is (eqlog) whatever the mode. The environment's and
+  spells' damage lines don't go through them.
 - **/split** (`CEverQuest_DoSplit` @00537476): only in a group (else 12328) and not while the
   zone's answer to something is waited on; four numbers (`GrabFirstWord` three times, `atol` the
   rest), all under 1 the usage (12329..12331), each no more than we have (12332..12335); then

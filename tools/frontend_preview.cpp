@@ -1176,11 +1176,54 @@ namespace
 		h.Key(InputEvent::Key::Escape);
 		choose("Chat 1", {"Filters", "Tell"});
 		printf("[preview] Chat 1 says: %s\n", last_line(1).c_str());
+		// Hit Modes: melee lines (OP_Damage) between us and the nearest NPC, in each mode.
+		{
+			const ZoneSession &zone = frontend.Zone();
+			uint16_t me = zone.MySpawnId(), npc = 0;
+			float best = 0;
+			for (const auto &[id, spawn] : zone.Spawns()) {
+				float d = std::hypot(spawn.x - zone.Self().x, spawn.y - zone.Self().y);
+				if (spawn.npc == 1 && id != me && (!npc || d < best))
+					npc = id, best = d;
+			}
+			auto hit = [&](uint16_t from, uint16_t to, int32_t damage) {
+				uint8_t body[24] = {};
+				memcpy(&body[0], &to, 2);
+				memcpy(&body[2], &from, 2);
+				body[4] = 1; // 1H slashing
+				memcpy(&body[8], &damage, 4);
+				inject_to.InjectReplayPacket(ZoneOp::Damage, body, sizeof(body));
+				h.RunUntil([] { return false; }, 100);
+				printf("[preview]   %d -> %d for %d: %s\n", from, to, damage, last_line(0).c_str());
+			};
+			if (menu(ChatManager::MainScreen)) {
+				int r = row(0, "Hit Modes");
+				if (r >= 0) {
+					move(windows.MenuRowRect(0, r));
+					printf("[preview] Hit Modes: %s\n", rows(1).c_str());
+				}
+				windows.CloseMenus();
+			}
+			printf("[preview] npc %d at %.0f\n", npc, best);
+			auto hits = [&] {
+				hit(me, npc, 12);
+				hit(me, npc, 0);
+				hit(npc, me, 7);
+				hit(npc, me, -2);
+			};
+			hits();
+			for (auto [which, value] : {std::pair{"Your Hits", "Abbreviated"}, {"Your Misses", "Abbreviated"},
+			         {"You Being Hit", "Number Only"}, {"You Being Missed", "Miss Only"}}) {
+				choose(ChatManager::MainScreen, {"Hit Modes", which, value});
+				printf("[preview] main says: %s\n", last_line(0).c_str());
+			}
+			hits();
+		}
 		frontend.SaveUiLayoutForTests();
 		IniFile ini;
 		if (ini.Load(frontend.UiLayoutPath()))
 			for (const char *key : {"NumWindows", "LockedActiveWindow", "ChatWindow1_Language", "ChatWindow1_DefaultChannel",
-			         "ChatWindow1_Name", "ChatWindow0_Name", "ChannelMap1", "ChannelMap39", "HitMode0"})
+			         "ChatWindow1_Name", "ChatWindow0_Name", "ChannelMap1", "ChannelMap39", "HitMode0", "HitMode1", "HitMode2", "HitMode3"})
 				printf("[preview] [ChatManager] %s=%s\n", key, ini.Get("ChatManager", key, "(none)").c_str());
 		choose("Chat 1", {"Window", "Close"});
 		state("closed");
