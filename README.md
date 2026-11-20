@@ -136,6 +136,7 @@ CombatMusic=1
 LootNoDrop=0
 FastDrop=0
 InspectOthers=TRUE
+ShowInspectMessage=TRUE
 
 [Filters]
 DamageShields=0
@@ -239,6 +240,8 @@ WeatherSounds=1
   `InspectOthers` is `/inspect on|off` (`DAT_007cf28c`): whether the right button on a player
   inspects them. eqgame reads it in `CEverQuest::CEverQuest`: on with no key (and `TRUE` written),
   or for a value starting `T`, `t` or `1`; /inspect writes `TRUE` or `FALSE` as it changes.
+  `ShowInspectMessage` (`DAT_007cf208`, read the same way) says "%1 is looking at your
+  equipment..." (eqstr 1404) when another player inspects us.
 - `[Filters]` are `/filter`'s switches and `/serverfilter`, kept as they change (eqgame keeps them in
   `eqOptions1.opt` and `eqOptions2.opt`): `DamageShields` and `NpcSpells` 0 shown, 1 hidden; `PcSpells`
   0 all, 1 off, 2 the group's; `BardSongs` 0 all, 1 ours, 2 the group's, 3 off; `GuildSay` through
@@ -746,7 +749,7 @@ build/eqclient -u USER -p PASS [options]
 
 ```
 build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|train|ground|commands|group|duel|bazaar|raid|guild|skills|aa]]
-build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez|cameras|packets|friends|chatwindows|multiline]]
+build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez|cameras|packets|friends|chatwindows|multiline|inspect]]
 ```
 
 This drives the real front-end code with scripted input and writes PNG snapshots. Text is
@@ -812,7 +815,10 @@ prints [ChatManager] as saved, closes it
 and makes another, printing the windows (title, channel, language, lines) at each step;
 `multiline` makes the book's Page0 editable and prints its lines, selection and scroll after
 Shift+Home, Shift+Left, Shift+End, clicks on a row and right of one, a drag across rows and typing
-past the bottom; `mounts`
+past the bottom; `inspect` injects someone's `OP_InspectRequest` (twice inside a second) and
+ours, `OP_InspectAnswer`s for a far spawn, a near one (put by us) and ourselves, clicks a slot and
+Done, types our text and presses Enter and Done, then `/note` alone and twice with text, printing
+the window, our text and the notes box at each step (it writes `notes.txt` in EQDIR); `mounts`
 prints each horse (its speeds, Rider, whether it's drawn), who rides what and the chat for SECONDS,
 and each second where another's rider and horse are and what they play, with the old models,
 `mountsluclin` with the human Luclin models and `mountshorse` with them and the horse models; on
@@ -2284,6 +2290,42 @@ details and the nearest spawns at the top left and the radar at the top right.
   `DAT_007cf28c` and writes `[Defaults] InspectOthers` (`TRUE` or `FALSE`); anything else says
   13210 and 13211. Then, every time, 13212 (able to inspect by right-clicking) or 13213 (not).
   `RightClickedOnPlayer` reads the flag before `CEverQuest_doInspect`.
+- **Inspecting** (`frontend/inspect_window.*`). `CEverQuest::RightClickedOnPlayer` (@00532949)
+  ends, after whatever its branches did (those that return aside), with `CEverQuest_doInspect`
+  (@0054390e) when `pinstCDisplay->CursorItemSet` is 0, `DAT_007cf28c` is on and our deity isn't
+  20000; a click on ourselves skips every branch and goes straight there. doInspect takes only a
+  player (+0xa8, Type, 0): `PlayerDistance` 20 or more says 12378, else `OP_InspectRequest` 0x40b5
+  {u16 their id, u16 ours} (EQMacEmu's `Inspect_Struct` {TargetID, PlayerID}; the zone sends it on
+  to TargetID as it is). `msg_req_inspect` (@004e769d) answers at most once a second
+  (`DAT_007f6f68`): 1404 in 0x111 when the asker isn't us and `DAT_007cf208` is on, then
+  `OP_InspectAnswer` 0x40b6, 0x6d0 bytes: {u16 the asker, u16 us, char[22][64] the names of what's
+  in `EQ_Character`+0xd78.. (the cursor, then worn slots 1..21), u16[22] their icons (+0xb6; 0xffff
+  none), char[256] our inspect text (`DAT_007f69fa`), char[32] `pinstPCData->LastName + 0x20` (the
+  profile's bytes 102..133)}; the zone sends it to its first field. The old UI's answer
+  (`DAT_008092d8` 0) fills `EQ_Main`+0xeb0; the new UI's is `msg_inspect` (@00420efe): the spawn
+  at +2 (none: nothing), over 20 away 1402 in 0x111, else the window's title 1401 ("You are
+  inspecting %1."), also said in color 10 for anyone but us, `INSW_Edit` editable only for us
+  (+0x51) with the text at +0x5b0, and one `EQ_Equipment` per name (strcpy'd, its icon at +0xb6).
+  `CInvSlotMgr::UpdateSlots` shows them in EQTypes 8000..8029 (`pinstCInspectWnd` + 0x140 + (type
+  - 8000) * 4); the default skin's `InvSlot1..21` are 8001..8021, so the cursor's entry 0 is never
+  shown. `CInvSlot::HandleLButtonUp` and `HandleRButtonUp` return at once for 8000..8030, before
+  the Alt check. `CheckInspectionDistance` (@00421112) closes it once a second if they're over 20
+  away; `PlayerBeingDeleted` when they go. Enter in the box (notification 6) and `Deactivate`
+  (Done, the close box) run `AcceptInspectText` (@004211c1): inspecting ourselves, the box's text
+  becomes ours and `CEverQuest_saveCustom` keeps it as `[InspectText] Text` in
+  `<char>_<server>.ini` (no value when empty; `loadCustomFromINI` skips a value starting `*`). The
+  box's limit is 254 characters in English (`DAT_00799770` 0), else 84. Checked in the preview's
+  `inspect` replay test (the packets injected), not live.
+- **/note** (@004fbb72) and the notes window (`CPlayerNotesWnd` @0042e779, `frontend/player_notes.*`).
+  The window reads up to 10000 bytes of `notes.txt` in the game's folder into `PlayerNotesInput`
+  (limit 10000) when the UI is made. /note alone opens it (`Activate`; eqstr 13224 without the
+  window); with text it's `AppendText` (@0042ea6c): `ctime`'s line with its `\n` made a space,
+  `"[" + that + "]"`, then `" %s\n"` of the text with its item links taken out (a 0x12 followed by
+  `'0'`: 8 characters there and the next 0x12; a 0x12 followed by anything else makes eqgame
+  search for ever, which ours skips), all after the box's text; 10000 or more says 13224, else the
+  box takes it and `SaveNotes` (@0042e9cd) writes the whole box to `notes.txt` (`"w"`). Enter in
+  the box puts a `\n` in (`WndNotification` 6, `ReplaceSelection`); closing it saves. The old UI's
+  /note appends `"[%s] %s\n"` to the file and says 13223.
 - **/particledensity** (@004ff0b3): the line in capitals; a number (`is_number` @004f3739: a sign,
   then digits) from 0 to 3 is the level, else its first three letters `OFF`, `LOW`, `MED` or `HIG`
   are 0..3, else "Please choose either OFF, LOW, MED, or HIGH." (a literal in the exe). The level

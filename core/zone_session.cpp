@@ -851,6 +851,37 @@ bool ZoneSession::Consume(int16_t slot, int type, bool by_hand)
 	return sent;
 }
 
+bool ZoneSession::InspectRequest(uint16_t target)
+{
+	if (m_state != State::InZone)
+		return false;
+	uint16_t body[2] = {target, m_my_id};
+	return Send(ZoneOp::InspectRequest, body, sizeof(body), "OP_InspectRequest " + std::to_string(target));
+}
+
+bool ZoneSession::InspectAnswer(uint16_t to, const std::string &text)
+{
+	if (m_state != State::InZone)
+		return false;
+	constexpr size_t Size = 0x6d0, Names = 4, Icons = 0x584, Text = 0x5b0, Rest = 0x6b0;
+	std::vector<uint8_t> body(Size, 0);
+	std::memcpy(body.data(), &to, 2);
+	std::memcpy(body.data() + 2, &m_my_id, 2);
+	for (int slot = 0; slot < 22; ++slot) {
+		uint16_t icon = 0xffff;
+		if (auto it = m_items.find(static_cast<int16_t>(slot)); it != m_items.end()) {
+			std::memcpy(body.data() + Names + slot * 64, it->second.name.data(), std::min<size_t>(it->second.name.size(), 63));
+			icon = it->second.icon;
+		}
+		std::memcpy(body.data() + Icons + slot * 2, &icon, 2);
+	}
+	std::memcpy(body.data() + Text, text.data(), std::min<size_t>(text.size(), 255));
+	if (m_profile_bytes.size() >= 102 + 32) // LastName + 0x20 of pinstPCData: the profile's 102
+		for (size_t i = 0; i < 31 && m_profile_bytes[102 + i]; ++i)
+			body[Rest + i] = m_profile_bytes[102 + i];
+	return Send(ZoneOp::InspectAnswer, body.data(), body.size(), "OP_InspectAnswer " + std::to_string(to));
+}
+
 bool ZoneSession::ApplyPoison(int16_t slot)
 {
 	if (m_state != State::InZone)
@@ -2917,6 +2948,23 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		events.push_back(e);
 		break;
 	}
+	case ZoneOp::InspectRequest:
+		// HandleWorldMessage's 0x40b5 (msg_req_inspect): Inspect_Struct's player, who asks.
+		if (data.size() >= 4) {
+			Event e{Event::Type::InspectRequested};
+			e.id = Read<uint16_t>(data, 2);
+			events.push_back(e);
+		}
+		break;
+	case ZoneOp::InspectAnswer:
+		// 0x40b6 (CInspectWnd_Activate, the new UI's msg_inspect).
+		if (data.size() >= 0x6b0) {
+			Event e{Event::Type::Inspected};
+			e.id = Read<uint16_t>(data, 2);
+			e.data.assign(data.begin(), data.end());
+			events.push_back(e);
+		}
+		break;
 	case ZoneOp::ApplyPoison:
 		// The 0x41ba case of HandleWorldMessage (@004e1778): ApplyPoison_Struct's success.
 		if (data.size() >= 8) {

@@ -24,8 +24,9 @@ no rules of its own.
      `SelectableCharFromPoint` by row, Shift+Home and Shift+End on a line, `GetCaretPt`'s line-end
      caret, `CalculateScrollRange` and `EnsureCaretVisible`), and `SetEditable(false)` (the book's
      pages). `processClipboardText` is voice dictation: eqgame has no paste. Still to do: masked
-     text (`GetMaskedText`), the IME, and the windows with multi-line boxes to type in (the
-     inspect window's bio, the guild MOTD, the bug and feedback windows), none of them built yet.
+     text (`GetMaskedText`), the IME, and the windows with multi-line boxes to type in that aren't
+     built yet (the guild MOTD, the bug and feedback windows). The inspect window's bio and the
+     player notes (29) are.
      FilterInputStr's AlphaNumericOnly (`edit_filter`: 1 and 2 letters, 3 digits, the Bazaar search's
      price boxes, 4 letters and digits) is done.
    - STML boxes (`CStmlWnd`; ours take `<BR>`, `<P>`, `<c "#RRGGBB">`, `&lt;` and `&gt;`): tables
@@ -737,30 +738,18 @@ no rules of its own.
       pet window's (`CPetInfoWnd::Update`), Stalwart Endurance and the ability recast (above), and
       Permanent Illusion in a decaying buff's value (`Buffs::Value` passes no rank);
     - not checked live: the PoP pages trainable (61 and up with the Planes of Power), a GM's "(ID#n)".
-29. **Friends, ignore, inspect and notes.**
-    - Friends and ignore: done (`frontend/friends.*`): `CFriendsWnd`, /friends, /ignore, /who all
-      friend (OP_FriendsWho), `[Friends]` and `[Ignored]` in the character's ini, and
-      `CEverQuest_BeingIgnored` on channel messages, emotes, /random rolls and /consent's answer.
-      Still to do: 0x4243's ignore check (EQMacEmu never sends it).
-    - Inspecting, none of it ours yet:
-      - /inspect (@004fb87f) is done: it only turns it on or off (`FrontEnd`'s
-        `m_inspect_others`, `[Defaults] InspectOthers`), and nothing reads it yet.
-      - With it on, nothing on the cursor and our deity not 20000, `RightClickedOnPlayer` ends
-        with `CEverQuest_doInspect` (@0054390e) after its /consider: too far says eqstr 12378
-        ("%1 is too far away to inspect.  Get closer."), else `OP_InspectRequest` (0x40b5).
-      - Someone inspecting us (`msg_req_inspect` @004e769d, 0x40b5 from the zone): "%1 is looking
-        at your equipment..." (1404) and our answer, `OP_InspectAnswer` (0x40b6), with what we
-        wear and our inspect text.
-      - Their answer (0x40b6, `CInspectWnd_Activate` @004e781c, `msg_inspect` @00420efe): 1402 too
-        far, else "You are inspecting %1." (1401) and the inspect window (`CInspectWnd` @00420e01,
-        screen `InspectWnd`: the worn slots, the text in `INSW_Edit`, `DoneButton`), closed by
-        walking off (`CheckInspectionDistance` @00421112) or the spawn going
-        (`PlayerBeingDeleted` @00421238). Our own text is edited there and kept
-        (`AcceptInspectText` @004211c1, `CEverQuest_saveCustom`).
-    - The player notes window (`CPlayerNotesWnd` @0042e779, screen `PlayerNotesWindow` with
-      `PlayerNotesInput`, read from and saved to `notes.txt`: `SaveNotes` @0042e9cd on closing):
-      /note (@004fbb72) alone opens it, with text `AppendText` (@0042ea6c) adds the line under the
-      date and time (eqstr 13224 when the file can't be written).
+29. ~~**Friends, ignore, inspect and notes.**~~ Done (`frontend/friends.*`, `frontend/inspect_window.*`,
+    `frontend/player_notes.*`): `CFriendsWnd`, /friends, /ignore, /who all friend (OP_FriendsWho),
+    `[Friends]` and `[Ignored]` in the character's ini, `CEverQuest_BeingIgnored`; /inspect,
+    `CEverQuest_doInspect` from `RightClickedOnPlayer`, `msg_req_inspect`'s answer, the inspect window
+    (`msg_inspect`, `CheckInspectionDistance`, `PlayerBeingDeleted`, `AcceptInspectText` into
+    `[InspectText] Text`) and `[Defaults] ShowInspectMessage`; `CPlayerNotesWnd` and /note with
+    `notes.txt`. Still to do:
+    - 0x4243's ignore check (EQMacEmu never sends it).
+    - Inspecting live against two clients: only checked with injected packets in the preview.
+    - `RightClickedOnPlayer`'s TargetType returns (0xb, 0x41, 0x43, 0x3c, races under 0x8cd) before
+      /consider and the inspect.
+    - `CursorItemSet` for the inspect: ours checks only an item on the cursor, not a button or coins.
 30. ~~**Pets.**~~ Done (`frontend/pet_window.*`, `ZoneSession::PetCommand`, `MyPetId`): the owner's
     ActorInfo `PetID` (`EQPlayer::EQPlayer`, `~EQPlayer`, `OP_Charm`'s `updatePetTargetInfo`),
     SpawnAppearance 25 and 27, the pet window (`CPetInfoWnd`: `Update`, `WndNotification`,
@@ -896,7 +885,7 @@ no rules of its own.
       dialog (`CEverQuest_Surname` @0053d8de, eqstr 10004), `OP_Surname` from `ProcessYes`, and the
       zone's answer (0x41c4, @004e46d5): 1374 rejected, or 1375 "Congratulations, %1 %2, your
       surname was approved." with the name over our head.
-    - /language (under 3), /facepick (23), /note (29), /hitsmode and /clearhits and
+    - /language (under 3), /facepick (23), /hitsmode and /clearhits and
       the three tracking commands (24), /chatfontsize (3), /help, /mp3, /music, /loadskin,
       /bugreport, /feedback, /petition, /report and /gems (34), /shownpcnames (9).
     - /hotbutton (@004ff36a): `[Name] <Color> [Text]` makes a social of that name, color and
@@ -1325,6 +1314,6 @@ no rules of its own.
    and `OP_Reward` (37), then disarm's answer (24). The poison's answer (2).~~
 6. ~~Camping's checks, countdown and calling off (40). The MOTD as we enter (3).~~
 7. ~~Keys and lockpicks on doors (41)~~, then ladders (22).
-8. Inspecting and the player notes window (29), the tracking window (24), breath and drowning
+8. ~~Inspecting and the player notes window (29)~~, the tracking window (24), breath and drowning
    (34).
 9. ~~The stale Keyboard page rows (5), and the do-nothing commands that say "not supported" (35).~~

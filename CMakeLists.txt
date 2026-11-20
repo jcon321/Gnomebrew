@@ -145,6 +145,8 @@ add_library(eqfrontend STATIC
     frontend/melee_attack.cpp
     frontend/death.cpp
     frontend/friends.cpp
+    frontend/inspect_window.cpp
+    frontend/player_notes.cpp
     frontend/duel.cpp
     frontend/bazaar_window.cpp
     frontend/bazaar_search.cpp

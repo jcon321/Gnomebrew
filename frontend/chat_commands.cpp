@@ -23,7 +23,7 @@ namespace
 		MakeRaidLeader, RaidInvite, RaidDecline, RaidAccept, RaidDisband, SetLootType, AddRaidLooter, RemoveRaidLooter,
 		RaidSay, RaidWindow, Channel, Loot, TargetTell, CharInfo, MoveLog, StopSong, Shield, Quit, Log, Keys, Dismount,
 		AlternateAdv, Pet, SoundDriver, Duel, Decline, Bazaar, Trader, Nothing, ParticleDensity, RTarget, Inspect,
-		ChatFontSize, Language,
+		ChatFontSize, Language, Note,
 	};
 
 	struct CommandEntry
@@ -103,7 +103,7 @@ namespace
 		{"/stand", 0, Command::Stand}, {"/book", 0, Command::Book}, {"/cast", 0, Command::Cast},
 		{"/doability", 0, Command::DoAbility}, {"/whotarget", 0, Command::WhoTarget}, {"/language", 0, Command::Language},
 		{"/target", 0, Command::Target}, {"/camp", 0, Command::Camp}, {"/attack", 0, Command::Attack},
-		{"/invite", 0, Command::Invite}, {"/disband", 0, Command::Disband}, {"/note", 0, Command::None},
+		{"/invite", 0, Command::Invite}, {"/disband", 0, Command::Disband}, {"/note", 0, Command::Note},
 		{"/wincolor", 0, Command::None}, {"/usercolor", 0, Command::UserColor}, {"/resetwindows", 0, Command::Nothing},
 		{"/mcicontrol", 0, Command::None}, {"/popmail", 0, Command::Nothing}, {"/audiodebug", 0, Command::None},
 		{"/dynamiclights", 0, Command::None}, {"/chatfontsize", 0, Command::ChatFontSize}, {"/lootnodrop", 0, Command::LootNoDrop},
@@ -1286,6 +1286,10 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 		ChatOut("Particle Cloud Density is currently: " + word, ChatType::Default);
 		break;
 	}
+	case Command::Note:
+		// /note (@004fbb72), the new UI's: nothing opens the notes window, else the text's added.
+		m_notes.Command(args);
+		break;
 	case Command::Inspect: {
 		// /inspect (@004fb87f): "on" or "off" sets whether the right button on a player inspects them
 		// (DAT_007cf28c, [Defaults] InspectOthers), anything else says the format; then the setting.

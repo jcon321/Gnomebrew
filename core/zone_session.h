@@ -611,6 +611,10 @@ public:
 			BindWoundAnswered,
 			// OP_ApplyPoison's answer: value its success (0 failed).
 			PoisonApplied,
+			// OP_InspectRequest for us (msg_req_inspect): id who asks. OP_InspectAnswer
+			// (msg_inspect): id who it's of (+2), data the whole packet (InspectAnswer's layout).
+			InspectRequested,
+			Inspected,
 			Begged,
 			Stolen,
 			OwnAnimation,   // value: OP_Animation for us (our own swings, as the zone has them), played once
@@ -920,6 +924,12 @@ public:
 	// EQ_Note::SendTextRequestMsg: OP_ReadBook {type, the item's file}.
 	bool ReadBook(uint8_t type, const std::string &file);
 	bool DeleteCharge(int16_t slot);
+	// CEverQuest_doInspect: OP_InspectRequest {their id, ours}; the zone hands it to them.
+	bool InspectRequest(uint16_t target);
+	// msg_req_inspect's answer, OP_InspectAnswer (0x6d0 bytes) to the one who asked: {u16 them,
+	// u16 us, char names[22][64], u16 icons[22], char text[256], char[32] (pinstPCData's
+	// LastName + 0x20)}, the names and icons of what's in slots 0 (the cursor) .. 21.
+	bool InspectAnswer(uint16_t to, const std::string &text);
 	// DoPassageOfTime's poison applied (CEverQues_ApplyPoison's wait over): OP_ApplyPoison {slot, 0}.
 	// The zone answers with its success (Event PoisonApplied) and takes the poison (OP_DeleteCharge).
 	bool ApplyPoison(int16_t slot);
@@ -1022,6 +1032,7 @@ public:
 	ZoneProfile &EditProfile() { return m_profile; }
 	const ZoneInfo &Info() const { return m_info; }
 	const std::map<uint16_t, ZoneSpawn> &Spawns() const { return m_spawns; }
+	std::map<uint16_t, ZoneSpawn> &EditSpawnsForTests() { return m_spawns; } // the preview's
 	// Our own spawn from OP_ZoneEntry (ServerZoneEntry_Struct): appearance, size, position.
 	// Set before the ZoneInfo event.
 	const ZoneSpawn &Self() const { return m_self; }

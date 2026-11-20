@@ -46,6 +46,8 @@
 #include "raid_window.h"
 #include "pet_window.h"
 #include "friends.h"
+#include "inspect_window.h"
+#include "player_notes.h"
 #include "duel.h"
 #include "bazaar_search.h"
 #include "bazaar_window.h"
@@ -188,6 +190,9 @@ public:
 	BazaarWindow &BazaarForTests() { return m_bazaar; }
 	BazaarSearch &BazaarSearchForTests() { return m_bazaar_search; }
 	ZoneSession &ZoneForTests() { return m_zone; } // the preview's injected packets
+	InspectWindow &InspectForTests() { return m_inspect; }
+	// RightClickedOnPlayer, as the right button on a spawn in the world does.
+	void RightClickForTests(uint16_t spawn) { RightClickedOnPlayer(spawn); }
 	const LoadingScreen &Loading() const { return m_loading; }
 	bool LostConnectionShown() const { return m_lost.shown; }
 	void LoseConnectionForTests(bool not_responding) { ShowLostConnection(not_responding); }
@@ -356,8 +361,11 @@ private:
 	// CInvSlot::HandleRButtonUp on an inventory slot's item (a bag, a note, food, a click effect).
 	void ItemSlotRightClick(int slot, bool shift, bool ctrl, bool alt);
 	// CEverQuest::RightClickedOnPlayer: a corpse's loot, a banker's bank, a merchant's shop, or else
-	// /consider (of our target).
+	// /consider (of our target); then the inspect (InspectClicked).
 	void RightClickedOnPlayer(uint16_t spawn);
+	// RightClickedOnPlayer's CEverQuest_doInspect, when nothing's on the cursor, /inspect is on and
+	// our deity isn't 20000.
+	void InspectClicked(uint16_t spawn);
 	bool IsOkToTransact() const;
 	void FaceSpawn(uint16_t id); // EQPlayer::FacePlayer
 	void WorldClick(int x, int y); // CEverQuest_LMouseUp on the world (window pixels) // CEverQuest_IsOkToTransact: no window that deals with someone up
@@ -819,6 +827,8 @@ private:
 	RaidWindow m_raid_window; // CRaidWnd and CRaidOptionsWnd
 	PetWindow m_pet_window;   // CPetInfoWnd, /pet
 	Friends m_friends;        // CFriendsWnd, /friends, /ignore, __FriendsList and __IgnoreList
+	InspectWindow m_inspect;  // CInspectWnd, doInspect, msg_req_inspect, our inspect text
+	PlayerNotes m_notes;      // CPlayerNotesWnd, /note, notes.txt
 	Duel m_duel;              // /duel, /decline, msg_duel
 	BazaarWindow m_bazaar;    // CBazaarWnd: /trader
 	BazaarSearch m_bazaar_search; // CBazaarSearchWnd: /bazaar

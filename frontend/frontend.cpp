@@ -142,6 +142,9 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 				// CEverQuest::CEverQuest: on with no key, or for a value starting T, t or 1.
 				std::string inspect = ini.Get("Defaults", "InspectOthers");
 				m_inspect_others = inspect.empty() || inspect[0] == 'T' || inspect[0] == 't' || inspect[0] == '1';
+				// DAT_007cf208, the same way.
+				std::string message = ini.Get("Defaults", "ShowInspectMessage");
+				m_inspect.show_message = message.empty() || message[0] == 'T' || message[0] == 't' || message[0] == '1';
 			}
 			m_trade_with = number("Defaults", "PlayerTrade", 2, 0, 2);
 			m_sound_realism = number("Sound", "SoundRealism", 0, 0, 20);
@@ -977,6 +980,8 @@ void FrontEnd::Update(uint64_t now_ms)
 		m_raid_window.Frame(now_ms);
 		m_pet_window.Frame(now_ms);
 		m_friends.Frame();
+		m_inspect.Frame(now_ms);
+		m_notes.Frame();
 		m_bazaar.Frame();
 		m_bazaar_search.Frame();
 		m_aa_window.Frame(now_ms);
@@ -2156,6 +2161,7 @@ void FrontEnd::EnterZoneScreen(bool zoning)
 	m_keys = HeldKeys{};
 	m_ui_hidden = false; // ProcessGameLoop: __ScreenMode 2 in the world
 	m_hunger_ms = 0;     // a new ActorInfo: its UnknownTimer4 at 0
+	m_inspect.Reset();
 	m_poison_ms = 0;     // CEverQuest_EnterZone: DAT_00798604, DAT_00798608
 	m_poison_item = 0;
 	m_poison_waiting = false;
@@ -2201,7 +2207,8 @@ namespace
 		{"MerchantWnd", false}, {"LootWnd", false}, {"TradeWnd", false}, {"GiveWnd", false},
 		{"SkillsSelectWindow", false}, {"NoteWindow", false}, {"BookWindow", false}, {"TrainWindow", false},
 		{RaidWindow::Screen, false}, {RaidWindow::OptionsScreen, false}, {AAWindow::Screen, false},
-		{BazaarWindow::Screen, false}, {BazaarSearch::Screen, false},
+		{BazaarWindow::Screen, false}, {BazaarSearch::Screen, false}, {InspectWindow::Screen, false},
+		{PlayerNotes::Screen, false},
 	};
 
 	// The selector's buttons (EQUI_SelectorWnd.xml) and the windows they open and close.
@@ -2347,6 +2354,22 @@ void FrontEnd::BuildZoneWindows()
 	friends_host.who = [this](const std::string &text) { Who(text); };
 	friends_host.contact = [this](const std::string &text) { OpenChat(text); };
 	m_friends.Attach(m_windows, std::move(friends_host));
+	InspectWindow::Host inspect_host;
+	inspect_host.text = [this](uint32_t id, const std::vector<std::string> &args, const std::string &fallback) {
+		return FormatEqString(m_ui.eqstr, id, fallback, args);
+	};
+	inspect_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
+	inspect_host.save = [this] { SaveCustom(); };
+	m_inspect.Attach(m_windows, m_zone, m_game_values, std::move(inspect_host));
+	PlayerNotes::Host notes_host;
+	notes_host.text = [this](uint32_t id, const std::string &fallback) { return EqString(id, fallback); };
+	notes_host.chat = [this](const std::string &text) { ChatOut(text, 0x111); };
+	notes_host.now = [] {
+		std::time_t t = std::time(nullptr);
+		const char *s = std::ctime(&t);
+		return std::string(s ? s : "");
+	};
+	m_notes.Attach(m_windows, m_ui.eq_dir, std::move(notes_host));
 	BazaarWindow::Host bazaar_host;
 	bazaar_host.color = [this](int type) { return m_chat_colors.Get(type); };
 	bazaar_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
@@ -2371,6 +2394,7 @@ void FrontEnd::BuildZoneWindows()
 			LoadSocials(custom, m_window_state);
 			m_abilities.Load(custom);
 			m_friends.Load(custom);
+			m_inspect.Load(custom);
 		}
 	}
 	// CDisplay_ActivateMainUI activates the compass if it was up; Toggle Compass (Alt+D) opens and
@@ -2597,6 +2621,7 @@ void FrontEnd::SaveCustom()
 	StoreSocials(ini, m_window_state);
 	m_abilities.Store(ini);
 	m_friends.Store(ini);
+	m_inspect.Store(ini);
 	if (!ini.Save(m_hot_buttons_path))
 		Log("UI: couldn't write " + m_hot_buttons_path);
 }
@@ -2747,7 +2772,8 @@ void FrontEnd::HandleWindowClicks()
 {
 	// Nothing goes on the cursor over an item or coins (CCursorAttachment::IsOkToActivate).
 	for (const auto &hold : m_windows.TakeHolds())
-		if (!m_zone.Items().count(Inventory::Cursor) && !Inventory::CursorMoneyType(m_zone.Profile())) {
+		if (hold.window != InspectWindow::Screen && !m_zone.Items().count(Inventory::Cursor) &&
+		    !Inventory::CursorMoneyType(m_zone.Profile())) {
 			// CInvSlot::HandleLButtonHeld: an inventory slot's item hot button (0..29).
 			if (int slot = InvSlotAt(m_windows, hold.window, hold.control); slot >= 0) {
 				AttachItemSlot(m_windows, m_window_state, slot);
@@ -2756,6 +2782,9 @@ void FrontEnd::HandleWindowClicks()
 			GameWindowHold(m_windows, m_window_state, hold.window, hold.control);
 		}
 	for (const auto &click : m_windows.TakeRightClicks()) {
+		// The inspect window's slots (8000..8030) take nothing (CInvSlot::HandleRButtonUp).
+		if (click.window == InspectWindow::Screen)
+			continue;
 		if (m_spell_book.RightClick(click.window, click.control))
 			continue;
 		if (m_bazaar_search.RightClick(click.window, click.control)) // CListWnd's 3 on a result
@@ -2816,6 +2845,9 @@ void FrontEnd::HandleWindowClicks()
 		if (click.window == "SkillsSelectWindow" && m_abilities.Click(click.window, click.control, m_now_ms))
 			continue;
 		if (m_color_picker.Click(click.window, click.control))
+			continue;
+		// The inspect window's Done; its slots do nothing, Alt or not (CInvSlot::HandleLButtonUp).
+		if (m_inspect.Click(click.window, click.control))
 			continue;
 		// The Options window's keyboard page, and the question about its defaults.
 		if (m_options.Click(click.window, click.control, m_now_ms))
@@ -4129,8 +4161,13 @@ bool FrontEnd::IsOkToTransact() const
 
 void FrontEnd::RightClickedOnPlayer(uint16_t spawn)
 {
-	if (!IsOkToTransact() || spawn == m_zone.MySpawnId())
+	if (!IsOkToTransact())
 		return;
+	// Ourselves goes straight to the inspect.
+	if (spawn == m_zone.MySpawnId()) {
+		InspectClicked(spawn);
+		return;
+	}
 	auto it = m_zone.Spawns().find(spawn);
 	if (it == m_zone.Spawns().end())
 		return;
@@ -4206,6 +4243,16 @@ void FrontEnd::RightClickedOnPlayer(uint16_t spawn)
 	// Anything else: _consider with nothing typed, which considers our target (not who was clicked).
 	if (!dead)
 		InterpretCommand("/consider");
+	InspectClicked(spawn);
+}
+
+void FrontEnd::InspectClicked(uint16_t spawn)
+{
+	// RightClickedOnPlayer's end: CEverQuest_doInspect with nothing on the cursor, /inspect on and
+	// our deity not 20000.
+	if (m_zone.Items().count(Inventory::Cursor) || !m_inspect_others || m_zone.Profile().deity == 20000)
+		return;
+	m_inspect.DoInspect(spawn);
 }
 
 void FrontEnd::VehiclePassageOfTime(uint64_t now_ms)
@@ -5428,6 +5475,12 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 		case Type::Stolen:
 			m_abilities.ZoneEvent(event);
 			break;
+		case Type::InspectRequested:
+			m_inspect.Requested(event.id, m_now_ms);
+			break;
+		case Type::Inspected:
+			m_inspect.Answered(event);
+			break;
 		case Type::PoisonApplied: // @004e1778: the wait let go, and how it went
 			m_poison_waiting = false;
 			ChatOut(event.value != 0 ? EqString(12905, "You successfully applied the poison.")
@@ -5470,6 +5523,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			m_duel.Despawned(event.id, event.text); // HandleWorldMessage's 0x4029: the duel's end
 			m_mounts.SpawnRemoved(event.id); // ~EQPlayer's Dismount2
 			m_hidden_corpses.erase(event.id);
+			m_inspect.SpawnRemoved(event.id); // ~EQPlayer: CInspectWnd::PlayerBeingDeleted
 			if (event.id == m_game_values.target) {
 				SetAutoAttack(false);
 				m_game_values.target = 0;
@@ -6212,6 +6266,8 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 	SidlWindow *color_picker = m_windows.Find(ColorPicker::Screen);
 	SidlWindow *friends = m_windows.Find(Friends::Screen);
 	SidlWindow *text_entry = m_windows.Find(TextEntry::Screen);
+	SidlWindow *inspect = m_windows.Find(InspectWindow::Screen);
+	SidlWindow *notes = m_windows.Find(PlayerNotes::Screen);
 	// The chat's links light under the mouse, and a click on one asks the zone about it.
 	ItemTag link;
 	if (event.IsMouse() && !m_mouse_turn && !m_mouse_pan) {
@@ -6228,13 +6284,15 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			                             : pressed == ColorPicker::Screen ? color_picker
 			                             : pressed == Friends::Screen     ? friends
 			                             : pressed == TextEntry::Screen   ? text_entry
+			                             : pressed == InspectWindow::Screen ? inspect
+			                             : pressed == PlayerNotes::Screen ? notes
 			                                                              : nullptr;
 			int pressed_chat = m_chats.IndexOf(pressed);
 			if (pressed_editor && pressed_editor->Typing()) {
 				for (int i = 0; i < m_chats.Count(); ++i)
 					if (ChatManager::Window *chat = m_chats.At(i))
 						chat->chat->Close();
-				for (SidlWindow *other : {social_editor, quantity, color_picker, friends, text_entry})
+				for (SidlWindow *other : {social_editor, quantity, color_picker, friends, text_entry, inspect, notes})
 					if (other && other != pressed_editor)
 						other->Focus("");
 			}
@@ -6246,7 +6304,7 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 					for (int i = 0; i < m_chats.Count(); ++i)
 						if (ChatManager::Window *chat = m_chats.At(i); chat && i != pressed_chat)
 							chat->chat->Close();
-					for (SidlWindow *other : {social_editor, quantity, color_picker, friends, text_entry})
+					for (SidlWindow *other : {social_editor, quantity, color_picker, friends, text_entry, inspect, notes})
 						if (other)
 							other->Focus("");
 				}
@@ -6258,6 +6316,8 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 	                     : quantity && quantity->Typing()           ? quantity
 	                     : color_picker && color_picker->Typing() ? color_picker
 	                     : friends && friends->Typing()           ? friends
+	                     : inspect && inspect->Typing()           ? inspect
+	                     : notes && notes->Typing()               ? notes
 	                                                              : social_editor;
 	bool editing = editor && editor->Typing();
 	switch (event.type) {
@@ -6384,6 +6444,11 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 		return;
 	// Into the text entry's box (its notification 6): OK, if it's enabled.
 	if (editing && event.key == InputEvent::Key::Enter && editor == text_entry && m_text_entry.Enter())
+		return;
+	// Into the inspect window's box: AcceptInspectText; into the notes, a new line (their 6).
+	if (editing && event.key == InputEvent::Key::Enter && editor == inspect && m_inspect.Enter())
+		return;
+	if (editing && event.key == InputEvent::Key::Enter && editor == notes && m_notes.Enter())
 		return;
 	if (editing && event.key == InputEvent::Key::Enter && m_bazaar_search.Enter())
 		return;

@@ -1232,6 +1232,152 @@ namespace
 		return 0;
 	}
 
+	int InspectTest(FrontEnd &frontend, Harness &h)
+	{
+		const ZoneSession &zone = frontend.Zone();
+		WindowManager &windows = frontend.Windows();
+		ZoneSession &inject_to = frontend.ZoneForTests();
+		size_t chat_seen = frontend.Chat().Lines().size();
+		auto chat = [&] {
+			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
+				printf("[preview] chat: %s\n", frontend.Chat().Lines()[chat_seen].text.c_str());
+		};
+		auto run = [&](int ms) {
+			h.RunUntil([] { return false; }, ms);
+			chat();
+		};
+		auto type = [&](const std::string &line) {
+			printf("[preview] typing %s\n", line.c_str());
+			h.Key(InputEvent::Key::Enter);
+			h.Type(line);
+			h.Key(InputEvent::Key::Enter);
+			run(300);
+		};
+		auto press = [&](const char *screen, const char *control) {
+			const SidlWindow *wnd = windows.Find(screen);
+			const SidlWindow::Control *c = wnd ? wnd->Find(control) : nullptr;
+			if (!c) {
+				printf("[preview] no %s\n", control);
+				return;
+			}
+			Rect area = frontend.ScreenArea();
+			int x = area.x + c->rect.x + c->rect.w / 2, y = area.y + c->rect.y + std::min(c->rect.h / 2, 30);
+			printf("[preview] click %s\n", control);
+			frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+			frontend.OnEvent({InputEvent::Type::MouseDown, x, y});
+			frontend.OnEvent({InputEvent::Type::MouseUp, x, y});
+			run(300);
+		};
+		auto state = [&] {
+			const SidlWindow *wnd = windows.Find(InspectWindow::Screen);
+			if (!wnd) {
+				printf("[preview] no InspectWnd\n");
+				return;
+			}
+			const SidlWindow::Control *edit = wnd->Find(InspectWindow::EditId);
+			std::string slots;
+			for (int n = 1; n < InspectWindow::Slots; ++n)
+				if (const SidlWindow::Control *c = wnd->Find("InvSlot" + std::to_string(n)); c && c->cell >= 0)
+					slots += " " + std::to_string(n) + "=" + c->tooltip + "(" + std::to_string(c->cell) + ")";
+			printf("[preview] inspect: shown %d, title \"%s\", edit \"%s\" editable %d, slots:%s; ours \"%s\"\n",
+				windows.Shown(InspectWindow::Screen) ? 1 : 0, wnd->Root().text.c_str(), edit ? edit->text.c_str() : "-",
+				edit && edit->editable ? 1 : 0, slots.c_str(), frontend.InspectForTests().Text().c_str());
+		};
+		auto answer = [&](uint16_t of, const std::string &text, std::vector<std::pair<int, std::string>> items) {
+			std::vector<uint8_t> body(0x6d0, 0);
+			uint16_t me = zone.MySpawnId();
+			memcpy(&body[0], &me, 2);
+			memcpy(&body[2], &of, 2);
+			for (int n = 0; n < 22; ++n) {
+				uint16_t icon = 0xffff;
+				memcpy(&body[0x584 + n * 2], &icon, 2);
+			}
+			for (auto &[slot, name] : items) {
+				memcpy(&body[4 + slot * 64], name.c_str(), name.size());
+				uint16_t icon = static_cast<uint16_t>(500 + slot * 3);
+				memcpy(&body[0x584 + slot * 2], &icon, 2);
+			}
+			memcpy(&body[0x5b0], text.c_str(), text.size());
+			printf("[preview] OP_InspectAnswer of %u\n", of);
+			inject_to.InjectReplayPacket(ZoneOp::InspectAnswer, body.data(), body.size());
+			run(400);
+		};
+		h.Key(InputEvent::Key::F11); // the debug menu out of the way
+		run(500);
+		// Someone else, the nearest other spawn, and one far off.
+		uint16_t near_id = 0, far_id = 0;
+		float near_d = 1e9f, far_d = 0;
+		for (const auto &[id, s] : zone.Spawns()) {
+			if (id == zone.MySpawnId())
+				continue;
+			float d = zone.SpawnDistance(id);
+			if (d < near_d)
+				near_d = d, near_id = id;
+			if (d > far_d)
+				far_d = d, far_id = id;
+		}
+		printf("[preview] near %u (%.1f), far %u (%.1f)\n", near_id, near_d, far_id, far_d);
+		auto move_near = [&] { // the near one by us
+			ZoneSpawn &them = inject_to.EditSpawnsForTests().at(near_id);
+			const ZoneProfile &me = zone.Profile();
+			them.x = me.x + 5;
+			them.y = me.y;
+			them.z = me.z;
+		};
+		// msg_req_inspect: them asking, twice inside a second (one answer), and us.
+		for (uint16_t from : {near_id, near_id, zone.MySpawnId()}) {
+			uint16_t req[2] = {zone.MySpawnId(), from};
+			printf("[preview] OP_InspectRequest from %u\n", from);
+			inject_to.InjectReplayPacket(ZoneOp::InspectRequest, req, sizeof(req));
+			run(from == zone.MySpawnId() ? 1100 : 200);
+		}
+		answer(far_id, "far away", {});
+		state();
+		move_near();
+		printf("[preview] near now %.1f\n", zone.SpawnDistance(near_id));
+		answer(near_id, "Hello from them", {{1, "Silver Earring"}, {13, "Rusty Short Sword"}, {0, "On the cursor"}});
+		move_near();
+		state();
+		h.Snapshot("i1-inspect-them");
+		press(InspectWindow::Screen, "InvSlot13");
+		move_near();
+		state();
+		press(InspectWindow::Screen, "DoneButton");
+		state();
+		// Ourselves: right click, then the zone's answer; type into the box and Done.
+		frontend.RightClickForTests(zone.MySpawnId());
+		run(200);
+		answer(zone.MySpawnId(), "", {{2, "Cloth Cap"}});
+		state();
+		press(InspectWindow::Screen, InspectWindow::EditId);
+		h.Type("My bio");
+		run(200);
+		h.Key(InputEvent::Key::Enter); // AcceptInspectText
+		run(200);
+		state();
+		h.Type(" more");
+		run(200);
+		press(InspectWindow::Screen, "DoneButton");
+		state();
+		// The notes.
+		type("/note");
+		printf("[preview] notes shown %d\n", windows.Shown(PlayerNotes::Screen) ? 1 : 0);
+		auto box = [&] {
+			if (const SidlWindow *wnd = windows.Find(PlayerNotes::Screen))
+				if (const SidlWindow::Control *c = wnd->Find(PlayerNotes::InputId))
+					printf("[preview] notes box: %zu bytes\n", c->text.size());
+		};
+		box();
+		type("/note first line");
+		box();
+		type("/note second line");
+		if (const SidlWindow *wnd = windows.Find(PlayerNotes::Screen))
+			if (const SidlWindow::Control *c = wnd->Find(PlayerNotes::InputId))
+				printf("[preview] notes box: \"%s\"\n", c->text.c_str());
+		h.Snapshot("i2-notes");
+		return 0;
+	}
+
 	int FriendsTest(FrontEnd &frontend, Harness &h, const std::string &out_dir)
 	{
 		const ZoneSession &zone = frontend.Zone();
@@ -3535,7 +3681,7 @@ int main(int argc, char **argv)
 	if (!replay && argc != 3 && argc != 6 && argc != 7) {
 		fprintf(stderr,
 			"usage: %s EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create]]\n"
-			"       %s EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|packets]]\n",
+			"       %s EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|packets|inspect]]\n",
 			argv[0], argv[0]);
 		return 2;
 	}
@@ -3586,6 +3732,7 @@ int main(int argc, char **argv)
 	bool pet_test = argc == 7 && std::string(argv[6]) == "pet";
 	bool death_test = argc == 7 && (std::string(argv[6]) == "death" || std::string(argv[6]) == "rez");
 	bool friends_test = argc == 7 && std::string(argv[6]) == "friends";
+	bool inspect_test = argc == 7 && std::string(argv[6]) == "inspect";
 	bool chat_windows_test = argc == 7 && std::string(argv[6]) == "chatwindows";
 	bool multiline_test = argc == 7 && std::string(argv[6]) == "multiline";
 	bool boats_test = argc == 7 && std::string(argv[6]) == "boats";
@@ -3671,6 +3818,8 @@ int main(int argc, char **argv)
 			return DeathTest(frontend, h, seconds, std::string(argv[6]) == "rez");
 		if (friends_test)
 			return FriendsTest(frontend, h, argv[2]);
+		if (inspect_test)
+			return InspectTest(frontend, h);
 		if (chat_windows_test)
 			return ChatWindowsTest(frontend, h);
 		if (multiline_test)

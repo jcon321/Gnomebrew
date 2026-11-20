@@ -123,6 +123,8 @@ namespace
 			"0 asks first, -1 never drops it. Kept on exit."},
 		{"Defaults", "InspectOthers", "TRUE",
 			"/inspect on|off: TRUE lets the right button on a player inspect them, FALSE doesn't."},
+		{"Defaults", "ShowInspectMessage", "TRUE",
+			"TRUE says \"<name> is looking at your equipment...\" when someone inspects you."},
 		{"Defaults", "FastItemDestroy", "0",
 			"The General page's Fast Item Destroy: 1 destroys what's on the cursor without asking."},
 		{"Defaults", "GuildInvites", "1",
