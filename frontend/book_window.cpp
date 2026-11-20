@@ -14,6 +14,11 @@ void BookWindow::Attach(WindowManager &windows, TextRenderer &text)
 {
 	m_windows = &windows;
 	m_text = &text;
+	// CBookWnd's constructor: the pages show text only (CEditWnd::SetEditable(false)).
+	if (SidlWindow *wnd = windows.Find(Screen))
+		for (const char *page : {"Page0", "Page1"})
+			if (SidlWindow::Control *box = wnd->Find(page))
+				box->editable = false;
 }
 
 bool BookWindow::Check(const std::string &which, const std::string &title)

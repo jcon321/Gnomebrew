@@ -1,7 +1,7 @@
 #pragma once
 
-// eqgame's CEditWnd (@005a1ed0 on), for a single-line edit box (the chat's input, the quantity
-// window's, the friends window's...):
+// eqgame's CEditWnd (@005a1ed0 on), for an edit box (the chat's input, the quantity window's, the
+// friends window's...):
 //   - the selection: SidlScreen and SidlPiece (+0x100, +0x104), indexes into the text as it shows
 //     (an item tag counting as its name; ConvertIndexPrintableToTagged turns them into the tagged
 //     text's), and +0x208, which end the caret is at;
@@ -18,9 +18,19 @@
 //     character, which follows the caret; a selection on a box of the text's color, its text in the
 //     inverse; DrawCaret (@005a2f40): a line in the text's color, shown 512 ms of every 1024 while
 //     the box has the focus.
-// Not here: a multi-line box's caret, selection and scrolling (they type at the end), GetMaskedText's
-// password boxes (none in game), the IME, and a clipboard (processClipboardText @005583fe is the
-// voice dictation's text: eqgame has no paste).
+// A multi-line box (Style_Multiline: CEditWnd's style 0x10000) is laid out in lines by
+// CTextureFont::WrapTextToWidth (@005a4b00: a line breaks after its last space, or before the
+// character that overflowed, and at a '\n'), drawn from its top less its scroll position (VScrollPos);
+// SelectableCharFromPoint takes the row from y, Shift+Home and Shift+End go to the caret's line's
+// start and end, and GetCaretPt shows a caret at a wrapped line's start at the end of the line
+// before when uk1[1] says so (a click right of the left edge, Right and End set it; Left and Home
+// clear it). CalculateScrollRange (@005a4230) keeps the position within the lines' height past the
+// box's, and EnsureCaretVisible (@005a44a0, after every key and click) scrolls the caret's line in.
+// Up and Down go to the window (notification 0x15, the chat's history), and Enter too (6): the
+// style that would type a '\n' (0x40000) isn't set on any box in this eqgame. A box that's not
+// editable (SetEditable(false): the book's pages) takes no focus, caret or keys.
+// Not here: GetMaskedText's password boxes (none in game), the IME, and a clipboard
+// (processClipboardText @005583fe is the voice dictation's text: eqgame has no paste).
 
 #include "sidl.h"
 
@@ -40,8 +50,8 @@ namespace EditBox
 	// HandleKeyboardMsg for a key or a character: true when the box took it.
 	bool Key(SidlWindow::Control &box, const InputEvent &event);
 	// HandleLButtonDown and HandleMouseMove (the button down) at window pixels.
-	void Press(SidlWindow::Control &box, int x, bool shift);
-	void Drag(SidlWindow::Control &box, int x);
+	void Press(SidlWindow::Control &box, int x, int y, bool shift);
+	void Drag(SidlWindow::Control &box, int x, int y);
 	// RenderEditWindowText and DrawCaret.
 	void Draw(const SidlWindow::Control &box, Canvas &canvas, TextRenderer &text, int height, int weight, bool focused,
 		uint64_t now_ms);

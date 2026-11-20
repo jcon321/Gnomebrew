@@ -3,7 +3,7 @@
 // outline boxes of an estimated Arial size, since GDI isn't available.
 //
 //   frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|shop|train|ground|commands|group|skills]]
-//   frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|packets]]
+//   frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|packets|chatwindows|multiline]]
 //
 // Without a login server it snapshots the start screen, a dialog and the login
 // screen. With one it also logs in and snapshots server select and the play result.
@@ -102,6 +102,14 @@ namespace
 			frontend.Render(canvas, NowMs());
 			std::string path = out_dir + "/" + name + ".png";
 			printf("[preview] %s %s\n", WritePng(path, pixels, w, h) ? "wrote" : "FAILED", path.c_str());
+		}
+
+		void Render() // a frame drawn and thrown away (what's laid out as it draws)
+		{
+			int w = frontend.ScreenWidth(), h = frontend.ScreenHeight();
+			pixels.assign(static_cast<size_t>(w) * h, 0);
+			Canvas canvas(pixels.data(), w, h, w);
+			frontend.Render(canvas, NowMs());
 		}
 
 		void Click(int x, int y) // in the current screen's layout
@@ -939,6 +947,96 @@ namespace
 	// emote and a /random from someone ignored left out (and heard again once they're not); /who all
 	// friend; the friends window: its lists, a name typed into the ignore page's box and Enter, a row
 	// selected and Delete, the Who and Contact buttons.
+	// A multi-line edit box (CEditWnd with style 0x10000): the book window's Page0 made editable
+	// for the test, its text wrapped into lines, Shift+Home and Shift+End on a line, clicks on a
+	// row (and past a line's end), a drag across lines, typing past the bottom (the box follows
+	// the caret), and the page as the book has it (not editable: no focus).
+	int MultilineTest(FrontEnd &frontend, Harness &h)
+	{
+		WindowManager &windows = frontend.Windows();
+		h.Key(InputEvent::Key::F11); // the debug menu out of the way
+		windows.Show("BookWindow", true);
+		windows.Raise("BookWindow");
+		h.RunUntil([] { return false; }, 200);
+		SidlWindow *book = windows.Find("BookWindow");
+		SidlWindow::Control *page = book ? book->Find("Page0") : nullptr;
+		if (!page) {
+			printf("[preview] no Page0\n");
+			return 1;
+		}
+		printf("[preview] Page0 editable %d, typing %d\n", page->editable, book->Typing());
+		page->editable = true;
+		page->max_chars = 2000;
+		page->text = "The quick brown fox jumps over the lazy dog and keeps on running.\nA second paragraph.";
+		book->Focus("Page0");
+		h.Render();
+		auto state = [&](const char *when) {
+			h.Render();
+			std::string lines;
+			for (size_t i = 0; i < page->edit_lines.size(); ++i)
+				lines += (i ? "," : "") + std::to_string(page->edit_lines[i]);
+			printf("[preview] %s: lines [%s], selection %d..%d (caret at %s, line end %d), scroll %d of %d\n", when,
+				lines.c_str(), page->edit_start, page->edit_end, page->edit_caret_end ? "end" : "start",
+				page->edit_line_end, page->scroll_pos, page->scroll_max);
+		};
+		auto key = [&](int scan, bool shift) {
+			InputEvent e;
+			e.type = InputEvent::Type::Key;
+			e.scan = scan;
+			e.shift = shift;
+			book->OnKey(e);
+			h.Render();
+		};
+		auto mouse = [&](InputEvent::Type type, int x, int y, bool shift = false) {
+			InputEvent e{type, x, y};
+			e.shift = shift;
+			windows.OnMouse(e, NowMs());
+			h.Render();
+		};
+		state("set");
+		key(0xc7, true); // Shift+Home: the start of the last line
+		state("Shift+Home");
+		key(0xcb, true); // Shift+Left, into the line before
+		key(0xc7, true);
+		state("Shift+Left, Shift+Home");
+		key(0xcf, true); // Shift+End: that line's end (the next line's start, shown at this one's end)
+		state("Shift+End");
+		const Rect &c = page->client;
+		int h1 = page->edit_line_h;
+		mouse(InputEvent::Type::MouseDown, c.x + 20, c.y + h1 + h1 / 2);
+		mouse(InputEvent::Type::MouseUp, c.x + 20, c.y + h1 + h1 / 2);
+		state("click on row 1, 20 in");
+		mouse(InputEvent::Type::MouseDown, c.Right() - 1, c.y + h1 / 2);
+		mouse(InputEvent::Type::MouseUp, c.Right() - 1, c.y + h1 / 2);
+		state("click right of row 0's text");
+		mouse(InputEvent::Type::MouseDown, c.x + 5, c.y + h1 / 2);
+		mouse(InputEvent::Type::MouseMove, c.x + 40, c.y + 2 * h1 + h1 / 2);
+		mouse(InputEvent::Type::MouseUp, c.x + 40, c.y + 2 * h1 + h1 / 2);
+		state("drag from row 0 to row 2");
+		h.Snapshot("e1-multiline-selection");
+		book->Focus("Page0");
+		// To the end and type lines past the bottom.
+		page->edit_start = page->edit_end = static_cast<int>(page->text.size());
+		for (int i = 0; i < 40; ++i) {
+			InputEvent ch;
+			ch.type = InputEvent::Type::Char;
+			for (char c2 : std::string(" more words")) {
+				ch.ch = static_cast<uint32_t>(c2);
+				book->OnKey(ch);
+			}
+			h.Render();
+		}
+		h.RunUntil([] { return false; }, 100);
+		state("typed past the bottom");
+		h.Snapshot("e2-multiline-scrolled");
+		page->editable = false;
+		book->Focus("");
+		mouse(InputEvent::Type::MouseDown, c.x + 20, c.y + h1 / 2);
+		mouse(InputEvent::Type::MouseUp, c.x + 20, c.y + h1 / 2);
+		printf("[preview] not editable: typing %d\n", book->Typing());
+		return 0;
+	}
+
 	// The chat windows (CChatManager): the main one's menu, a new window, a filter sending tells
 	// there, a rename through the text entry, Always Chat Here, a default channel, what the UI ini
 	// keeps, and closing it.
@@ -3446,6 +3544,7 @@ int main(int argc, char **argv)
 	bool death_test = argc == 7 && (std::string(argv[6]) == "death" || std::string(argv[6]) == "rez");
 	bool friends_test = argc == 7 && std::string(argv[6]) == "friends";
 	bool chat_windows_test = argc == 7 && std::string(argv[6]) == "chatwindows";
+	bool multiline_test = argc == 7 && std::string(argv[6]) == "multiline";
 	bool boats_test = argc == 7 && std::string(argv[6]) == "boats";
 	bool aa_test = argc == 7 && std::string(argv[6]) == "aa";
 	bool guild_test = argc == 7 && std::string(argv[6]) == "guild";
@@ -3531,6 +3630,8 @@ int main(int argc, char **argv)
 			return FriendsTest(frontend, h, argv[2]);
 		if (chat_windows_test)
 			return ChatWindowsTest(frontend, h);
+		if (multiline_test)
+			return MultilineTest(frontend, h);
 		if (boats_test)
 			return BoatsTest(frontend, h, seconds);
 		if (cameras_test)

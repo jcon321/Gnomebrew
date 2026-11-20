@@ -322,6 +322,25 @@ Right-click a window off its buttons, slots, gems and edit boxes for eqgame's wi
   255 written back as 255), and Accept, which reads the boxes and gives the color to the window
   that asked (its BGTint) as the picker goes.
 
+Edit boxes (`CEditWnd`, `frontend/edit_box.*`) keep a selection in the text as it shows (an item
+tag counts as its name). `SelectableCharFromPoint` (@005a2660) puts a click before the first
+character whose extent from its line's start passes the mouse, at its line's start left of the box,
+and at a tag's start inside a tag. A multi-line box (Style_Multiline, style 0x10000; the SIDL sets
+nothing else) is wrapped by `CTextureFont::WrapTextToWidth` (@005a4b00): characters go on until
+one takes the line past the client width, and the line breaks after its last space (which stays on
+it) or before that character; a `\n` ends a line. Its rows go down from the client's top less
+`VScrollPos`; a click's row comes from y (below the last: the text's end; above: 0), and right of
+the box it's the next line's start. Shift+Home and Shift+End go to the caret's line's start and
+end (`SelectableCharFromPoint` at the client's left and right on the caret's row; the end is the
+next line's start, a `\n` included). `GetCaretPt` (@005a3a00) shows a caret sitting at a wrapped
+line's start at the end of the line before while uk1[1] is set: a click right of the left edge,
+Right and End set it, Left and Home clear it. `CalculateScrollRange` (@005a4230) keeps
+`VScrollPos` within the lines' height past the box's, and `EnsureCaretVisible` (@005a44a0), after
+every key and click, scrolls the caret's row in. Up and Down go to the window (notification 0x15)
+and so does Enter (6): the style that types a `\n` (0x40000) isn't set on any box in this eqgame.
+`SetEditable(false)` (@005a4560, `CBookWnd`'s pages) leaves a box that only shows its text: no
+focus, caret or keys.
+
 Hot buttons work as eqgame's do: hold the left button on any button of the Actions window, on any
 of its pages, for 3/4 of a second and a copy of it follows the cursor; click a hot button to put it
 there (whatever was there goes onto the cursor instead). Hold a hot button to take it off onto the
@@ -723,7 +742,7 @@ build/eqclient -u USER -p PASS [options]
 
 ```
 build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|train|ground|commands|group|duel|bazaar|raid|guild|skills|aa]]
-build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez|cameras|packets|friends|chatwindows]]
+build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez|cameras|packets|friends|chatwindows|multiline]]
 ```
 
 This drives the real front-end code with scripted input and writes PNG snapshots. Text is
@@ -784,7 +803,10 @@ checking layout and flow without Windows. `--replay` plays a packet log back ins
 `chatwindows` opens the main chat window's menu, makes a new window, filters tells there and
 injects one, sends Worn Off there, sets its channel to Group, locks it (Always Chat Here), renames
 it through the text entry, opens its input with Enter, prints [ChatManager] as saved, closes it
-and makes another, printing the windows (title, channel, language, lines) at each step; `mounts`
+and makes another, printing the windows (title, channel, language, lines) at each step;
+`multiline` makes the book's Page0 editable and prints its lines, selection and scroll after
+Shift+Home, Shift+Left, Shift+End, clicks on a row and right of one, a drag across rows and typing
+past the bottom; `mounts`
 prints each horse (its speeds, Rider, whether it's drawn), who rides what and the chat for SECONDS,
 and each second where another's rider and horse are and what they play, with the old models,
 `mountsluclin` with the human Luclin models and `mountshorse` with them and the horse models; on

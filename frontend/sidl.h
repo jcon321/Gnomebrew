@@ -300,6 +300,21 @@ public:
 		int edit_offset = 0;
 		mutable std::vector<int> edit_x;
 		int edit_filter = 0;
+		// CEditWnd::SetEditable (its SomeFlag): false, a box that shows text only (a book's
+		// pages): no focus, caret or keys.
+		bool editable = true;
+		// uk1[1]: a caret at a wrapped line's start shows at the end of the line before (set by a
+		// click right of the left edge, Right and End; cleared by Left and Home).
+		bool edit_line_end = false;
+		bool edit_follow = false; // EnsureCaretVisible on the next draw
+		// A multi-line box (Style_Multiline, CEditWnd's style 0x10000) as last drawn: where each
+		// line starts in the shown text (CTextureFont::WrapTextToWidth), where each of its
+		// characters starts (and its end), the lines' height and the client's top.
+		mutable std::vector<int> edit_lines;
+		mutable std::vector<std::vector<int>> edit_line_x;
+		mutable int edit_line_h = 0, edit_top = 0;
+		mutable std::string edit_wrapped; // the shown text they were wrapped from
+		mutable int edit_wrap_w = -1;
 		uint32_t link_color = 0xff00ff; // Editbox: its item tags' (item_tags.h)
 		std::string animation; // StaticAnimation: another animation in place of its own; "" its own
 		// InvSlot: what's in it, a cell of a grid animation (an item's icon, A_DragItem), over the

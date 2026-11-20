@@ -20,8 +20,12 @@ no rules of its own.
      (`frontend/edit_box.*`: HandleKeyboardMsg's Backspace, Delete, Shift+Delete and Shift with
      the arrows, Home and End; HandleLButtonDown, Shift+click and the drag; ReplaceSelection with
      FilterInputStr's markers kept out; the selection drawn inverse and the caret blinking).
-     `processClipboardText` is voice dictation: eqgame has no paste. Still to do: a multi-line
-     box's caret and scrolling (it types at its end), masked text (`GetMaskedText`), and the IME.
+     A multi-line box's caret, selection and scrolling are done too (`WrapTextToWidth`'s lines,
+     `SelectableCharFromPoint` by row, Shift+Home and Shift+End on a line, `GetCaretPt`'s line-end
+     caret, `CalculateScrollRange` and `EnsureCaretVisible`), and `SetEditable(false)` (the book's
+     pages). `processClipboardText` is voice dictation: eqgame has no paste. Still to do: masked
+     text (`GetMaskedText`), the IME, and the windows with multi-line boxes to type in (the
+     inspect window's bio, the guild MOTD, the bug and feedback windows), none of them built yet.
      FilterInputStr's AlphaNumericOnly (`edit_filter`: 1 and 2 letters, 3 digits, the Bazaar search's
      price boxes, 4 letters and digits) is done.
    - STML boxes (`CStmlWnd`; ours take `<BR>`, `<P>`, `<c "#RRGGBB">`, `&lt;` and `&gt;`): tables
