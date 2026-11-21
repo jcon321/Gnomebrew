@@ -997,9 +997,10 @@ void FrontEnd::Update(uint64_t now_ms)
 			m_windows.Show("ConfirmationDialogBox", false);
 		}
 		// Another question's time running out is its No (CConfirmationDialog::Draw's ProcessNo).
-		if (m_question.open && (now_ms >= m_question.until_ms || !m_windows.Shown("ConfirmationDialogBox")))
+		if (m_question.open && ((m_question.until_ms && now_ms >= m_question.until_ms) || !m_windows.Shown("ConfirmationDialogBox")))
 			AnswerInGame(false);
 		m_options.Frame(now_ms);
+		m_alarm.Frame(); // CAlarmWnd::ProcessAlarmTrigger
 		m_spell_book.Frame(now_ms);
 		m_spell_cast.Frame(now_ms);
 		m_abilities.Frame(now_ms);
@@ -2214,7 +2215,7 @@ namespace
 		{RaidWindow::Screen, false}, {RaidWindow::OptionsScreen, false}, {AAWindow::Screen, false},
 		{BazaarWindow::Screen, false}, {BazaarSearch::Screen, false}, {InspectWindow::Screen, false},
 		{PlayerNotes::Screen, false}, {Tracking::Screen, false}, {"BreathWindow", false},
-		{BugReport::Screen, false}, {Feedback::Screen, false},
+		{BugReport::Screen, false}, {Feedback::Screen, false}, {AlarmWindow::Screen, false},
 	};
 
 	// The selector's buttons (EQUI_SelectorWnd.xml) and the windows they open and close.
@@ -2410,6 +2411,22 @@ void FrontEnd::BuildZoneWindows()
 	feedback_host.name = [this] { return m_zone.Profile().name; };
 	feedback_host.send = [this](const std::vector<uint8_t> &body) { m_zone.SendFeedback(body); };
 	m_feedback.Attach(m_windows, std::move(feedback_host));
+	AlarmWindow::Host alarm_host;
+	alarm_host.text = [this](uint32_t id, const std::vector<std::string> &args, const std::string &fallback) {
+		return FormatEqString(m_ui.eqstr, id, fallback, args);
+	};
+	alarm_host.show_setting = [this] {
+		IniFile ini;
+		return ini.Load(m_config.settings_ini) ? ini.Get("Defaults", "ShowAlarmWindow") : std::string();
+	};
+	alarm_host.save_setting = [this](const std::string &value) { SaveSetting("Defaults", "ShowAlarmWindow", value); };
+	alarm_host.wave = [this](int wave) {
+		if (m_sound)
+			m_sound->PlayWave(wave);
+	};
+	alarm_host.tell = [this](const std::string &text) { TellInGame(text); };
+	alarm_host.now = [] { return std::time(nullptr); };
+	m_alarm.Attach(m_windows, std::move(alarm_host));
 	Tracking::Host tracking_host;
 	tracking_host.text = [this](uint32_t id, const std::vector<std::string> &args, const std::string &fallback) {
 		return FormatEqString(m_ui.eqstr, id, fallback, args);
@@ -2745,16 +2762,16 @@ void FrontEnd::DestroyHeld()
 	m_destroy_until_ms = m_now_ms + 10000;
 }
 
-bool FrontEnd::AskInGame(const std::string &text, uint32_t timeout_ms, std::function<void(bool)> answer)
+bool FrontEnd::AskInGame(const std::string &text, uint32_t timeout_ms, std::function<void(bool)> answer, bool ok_only)
 {
 	SidlWindow *dialog = m_windows.Find("ConfirmationDialogBox");
 	if (!dialog || m_windows.Shown("ConfirmationDialogBox"))
 		return false;
 	for (const char *id : {"Yes_Button", "No_Button"})
 		if (SidlWindow::Control *button = dialog->Find(id))
-			button->visible = true;
+			button->visible = !ok_only;
 	if (SidlWindow::Control *ok = dialog->Find("OK_Button"))
-		ok->visible = false;
+		ok->visible = ok_only;
 	if (SidlWindow::Control *output = dialog->Find("TextOutput")) {
 		output->text = text;
 		output->scroll_pos = 0;
@@ -2764,9 +2781,21 @@ bool FrontEnd::AskInGame(const std::string &text, uint32_t timeout_ms, std::func
 	m_windows.Show("ConfirmationDialogBox", true);
 	m_windows.Raise("ConfirmationDialogBox");
 	m_question.open = true;
-	m_question.until_ms = m_now_ms + timeout_ms;
+	m_question.until_ms = timeout_ms ? m_now_ms + timeout_ms : 0;
 	m_question.answer = std::move(answer);
 	return true;
+}
+
+void FrontEnd::TellInGame(const std::string &text)
+{
+	if (m_question.open)
+		AnswerInGame(false);
+	if (m_destroy_until_ms) {
+		m_destroy_until_ms = 0;
+		m_windows.Show("ConfirmationDialogBox", false);
+	}
+	m_spell_book.CancelConfirmation();
+	AskInGame(text, 0, nullptr, true);
 }
 
 void FrontEnd::AnswerInGame(bool yes)
@@ -2963,7 +2992,7 @@ void FrontEnd::HandleWindowClicks()
 		    m_raid_window.Click(click.window, click.control) || m_aa_window.Click(click.window, click.control) ||
 		    m_pet_window.Click(click.window, click.control) || m_friends.Click(click.window, click.control) ||
 		    m_text_entry.Click(click.window, click.control) || m_bug_report.Click(click.window, click.control) ||
-		    m_feedback.Click(click.window, click.control))
+		    m_feedback.Click(click.window, click.control) || m_alarm.Click(click.window, click.control))
 			continue;
 		// CInventoryWnd::WndNotification: the Alt. Adv. button opens the AA window, or closes it.
 		if (click.window == "InventoryWindow" && click.control == "IW_AltAdvBtn") {
@@ -5346,6 +5375,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 		case Type::InZone:
 			m_zoning = false;
 			m_report_allowed = true; // HandleWorldMessage's OP_SendExpZonein
+			m_alarm.Activate();      // CDisplay_ActivateMainUI
 			m_guild.InZone();
 			FindMyVehicle();
 			// HandleWorldMessage's OP_SendExpZonein: still looking for a group, say so here too.
@@ -6414,6 +6444,7 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 	SidlWindow *notes = m_windows.Find(PlayerNotes::Screen);
 	SidlWindow *bug_report = m_windows.Find(BugReport::Screen);
 	SidlWindow *feedback = m_windows.Find(Feedback::Screen);
+	SidlWindow *alarm = m_windows.Find(AlarmWindow::Screen);
 	// The chat's links light under the mouse, and a click on one asks the zone about it.
 	ItemTag link;
 	if (event.IsMouse() && !m_mouse_turn && !m_mouse_pan) {
@@ -6434,13 +6465,14 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			                             : pressed == PlayerNotes::Screen ? notes
 			                             : pressed == BugReport::Screen ? bug_report
 			                             : pressed == Feedback::Screen ? feedback
+			                             : pressed == AlarmWindow::Screen ? alarm
 			                                                              : nullptr;
 			int pressed_chat = m_chats.IndexOf(pressed);
 			if (pressed_editor && pressed_editor->Typing()) {
 				for (int i = 0; i < m_chats.Count(); ++i)
 					if (ChatManager::Window *chat = m_chats.At(i))
 						chat->chat->Close();
-				for (SidlWindow *other : {social_editor, quantity, color_picker, friends, text_entry, inspect, notes, bug_report, feedback})
+				for (SidlWindow *other : {social_editor, quantity, color_picker, friends, text_entry, inspect, notes, bug_report, feedback, alarm})
 					if (other && other != pressed_editor)
 						other->Focus("");
 			}
@@ -6452,7 +6484,7 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 					for (int i = 0; i < m_chats.Count(); ++i)
 						if (ChatManager::Window *chat = m_chats.At(i); chat && i != pressed_chat)
 							chat->chat->Close();
-					for (SidlWindow *other : {social_editor, quantity, color_picker, friends, text_entry, inspect, notes, bug_report, feedback})
+					for (SidlWindow *other : {social_editor, quantity, color_picker, friends, text_entry, inspect, notes, bug_report, feedback, alarm})
 						if (other)
 							other->Focus("");
 				}
@@ -6468,6 +6500,7 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 	                     : notes && notes->Typing()               ? notes
 	                     : bug_report && bug_report->Typing()     ? bug_report
 	                     : feedback && feedback->Typing()         ? feedback
+	                     : alarm && alarm->Typing()               ? alarm
 	                                                              : social_editor;
 	bool editing = editor && editor->Typing();
 	switch (event.type) {

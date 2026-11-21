@@ -132,6 +132,9 @@ namespace
 			"16 red, 32 light blue, added together."},
 		{"Defaults", "ShowInspectMessage", "TRUE",
 			"TRUE says \"<name> is looking at your equipment...\" when someone inspects you."},
+		{"Defaults", "ShowAlarmWindow", "true",
+			"true shows the alarm window as you first enter the world; its Never show again checkbox\n"
+			"writes false (OK or Cancel)."},
 		{"Defaults", "FastItemDestroy", "0",
 			"The General page's Fast Item Destroy: 1 destroys what's on the cursor without asking."},
 		{"Defaults", "GuildInvites", "1",

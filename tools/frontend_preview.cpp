@@ -1424,6 +1424,81 @@ namespace
 		return 0;
 	}
 
+	// The alarm window up as we enter, OK with 1 hour and 75 minutes, /played; then a 0 minute alarm
+	// (OK pressed again from here) going off, its dialog, and Never show again saved.
+	int AlarmTest(FrontEnd &frontend, Harness &h, const std::string &out_dir)
+	{
+		WindowManager &windows = frontend.Windows();
+		size_t chat_seen = frontend.Chat().Lines().size();
+		auto chat = [&] {
+			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
+				printf("[preview] chat: %s\n", frontend.Chat().Lines()[chat_seen].text.c_str());
+		};
+		auto run = [&](int ms) {
+			h.RunUntil([] { return false; }, ms);
+			chat();
+		};
+		auto press = [&](const char *screen, const char *control) {
+			const SidlWindow *wnd = windows.Find(screen);
+			const SidlWindow::Control *c = wnd ? wnd->Find(control) : nullptr;
+			if (!c) {
+				printf("[preview] no %s\n", control);
+				return;
+			}
+			Rect area = frontend.ScreenArea();
+			int x = area.x + c->rect.x + c->rect.w / 2, y = area.y + c->rect.y + std::min(c->rect.h / 2, 30);
+			printf("[preview] click %s\n", control);
+			frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+			frontend.OnEvent({InputEvent::Type::MouseDown, x, y});
+			frontend.OnEvent({InputEvent::Type::MouseUp, x, y});
+			run(300);
+		};
+		auto box = [&](const char *id) -> SidlWindow::Control * {
+			SidlWindow *wnd = windows.Find(AlarmWindow::Screen);
+			return wnd ? wnd->Find(id) : nullptr;
+		};
+		auto dialog = [&] {
+			const SidlWindow *wnd = windows.Find("ConfirmationDialogBox");
+			const SidlWindow::Control *text = wnd ? wnd->Find("TextOutput") : nullptr;
+			const SidlWindow::Control *ok = wnd ? wnd->Find("OK_Button") : nullptr;
+			const SidlWindow::Control *yes = wnd ? wnd->Find("Yes_Button") : nullptr;
+			printf("[preview] dialog shown %d, OK %d, Yes %d: %s\n", windows.Shown("ConfirmationDialogBox") ? 1 : 0,
+				ok && ok->visible ? 1 : 0, yes && yes->visible ? 1 : 0, text ? text->text.c_str() : "");
+		};
+		h.Key(InputEvent::Key::F11);
+		run(500);
+		printf("[preview] alarm window shown %d\n", windows.Shown(AlarmWindow::Screen) ? 1 : 0);
+		h.Snapshot("alarm");
+		press(AlarmWindow::Screen, "ALRW_HoursEditbox");
+		h.Type("1x23");
+		press(AlarmWindow::Screen, "ALRW_MinutesEditbox");
+		h.Type("75");
+		printf("[preview] hours '%s', minutes '%s'\n", box("ALRW_HoursEditbox")->text.c_str(), box("ALRW_MinutesEditbox")->text.c_str());
+		press(AlarmWindow::Screen, "ALRW_OkButton");
+		printf("[preview] alarm window shown %d, armed %d, %d s left\n", windows.Shown(AlarmWindow::Screen) ? 1 : 0,
+			frontend.AlarmForTests().Armed() ? 1 : 0, frontend.AlarmForTests().SecondsLeft());
+		printf("[preview] > /played\n");
+		h.Key(InputEvent::Key::Enter);
+		h.Type("/played");
+		h.Key(InputEvent::Key::Enter);
+		run(500);
+		box("ALRW_HoursEditbox")->text.clear();
+		box("ALRW_MinutesEditbox")->text = "0";
+		box("ALRW_NeverShowAgainCheckbox")->checked = true;
+		frontend.AlarmForTests().Click(AlarmWindow::Screen, "ALRW_OkButton");
+		printf("[preview] a 0 minute alarm: armed %d\n", frontend.AlarmForTests().Armed() ? 1 : 0);
+		run(1500);
+		printf("[preview] after 1.5 s: armed %d\n", frontend.AlarmForTests().Armed() ? 1 : 0);
+		dialog();
+		h.Snapshot("alarm-ended");
+		press("ConfirmationDialogBox", "OK_Button");
+		dialog();
+		IniFile ini;
+		ini.Load(out_dir + "/my-client.ini");
+		printf("[preview] ShowAlarmWindow=%s\n", ini.Get("Defaults", "ShowAlarmWindow").c_str());
+		return 0;
+	}
+
 	int TrackingTest(FrontEnd &frontend, Harness &h)
 	{
 		WindowManager &windows = frontend.Windows();
@@ -3986,7 +4061,7 @@ int main(int argc, char **argv)
 	FrontEndConfig config;
 	config.ui_dir = argv[2];
 	// "settings": the plain replay, reading OUTDIR/my-client.ini (its [Filters] and the rest).
-	if (replay && argc >= 7 && (std::string(argv[6]) == "options" || std::string(argv[6]) == "settings"))
+	if (replay && argc >= 7 && (std::string(argv[6]) == "options" || std::string(argv[6]) == "settings" || std::string(argv[6]) == "alarm"))
 		config.settings_ini = std::string(argv[2]) + "/my-client.ini"; // the keymap's saves
 	bool stop_at_charselect = argc == 7 && std::string(argv[6]) == "charselect";
 	bool explore = argc == 7 && std::string(argv[6]) == "explore";
@@ -4020,6 +4095,7 @@ int main(int argc, char **argv)
 	bool inspect_test = argc == 7 && std::string(argv[6]) == "inspect";
 	bool tracking_test = argc == 7 && std::string(argv[6]) == "tracking";
 	bool breath_test = argc == 7 && std::string(argv[6]) == "breath";
+	bool alarm_test = argc == 7 && std::string(argv[6]) == "alarm";
 	bool ladder_test = argc == 7 && std::string(argv[6]) == "ladder";
 	bool chat_windows_test = argc == 7 && std::string(argv[6]) == "chatwindows";
 	bool multiline_test = argc == 7 && std::string(argv[6]) == "multiline";
@@ -4112,6 +4188,8 @@ int main(int argc, char **argv)
 			return TrackingTest(frontend, h);
 		if (breath_test)
 			return BreathTest(frontend, h);
+		if (alarm_test)
+			return AlarmTest(frontend, h, argv[2]);
 		if (ladder_test)
 			return LadderTest(frontend, h);
 		if (chat_windows_test)

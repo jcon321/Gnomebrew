@@ -797,12 +797,12 @@ no rules of its own.
     - ~~Breath~~: done (`FrontEnd::BreathPassageOfTime`, `CBreathWnd`, `CanIBreathe`,
       `MaxAirSupply`, `ProcessAirSupply` and drowning's `ApplyDamage`; `AirSupply` from each
       profile). Still to do: checking it in water live.
-    - Alarm (`CAlarmWnd` @00403bc2, screen `AlarmWnd`: `ALRW_HoursEditbox`, `ALRW_MinutesEditbox`,
-      `ALRW_NeverShowAgainCheckbox`, Ok and Cancel; shown by `CDisplay_ActivateMainUI` unless told
-      never to). `ProcessAlarmTrigger` (@00403f34) plays a wave and puts eqstr 6685 "Your session
-      (%1 hours and %2 minutes) has ended." in the confirmation dialog; /played's time left reads
-      it, and the time left window (`CTimeLeftWnd` @00437c5b, a label drawn `%d:%02d:%02d`,
-      `updateTimerDisplay` @00437e49) counts it down.
+    - ~~Alarm~~: done (`frontend/alarm_window.*`: `CAlarmWnd`'s Activate, WndNotification,
+      SaveAlarmWindowVisibilitySetting and ProcessAlarmTrigger; /played's 6684). Still to do: the
+      time left window (`CTimeLeftWnd` @00437c5b, `updateTimerDisplay` @00437e49), made only when
+      `DAT_00807dcc` (eqmain.dll's login block + 0x5a8) is above 0: find where eqmain fills it
+      first. The in-game confirmation dialog has an owner per window; `TellInGame` takes it over
+      from `AskInGame`'s, Destroy's and the spellbook's questions, not the loot or ground items'.
     - Help: /help (@004f92f5, the table's kinds and localized names) is done. Still to do: the
       help window's page (`CHelpWnd_SetFile` @0041f6ef: `CStmlWnd_LoadPage` of the help file, with
       the links and tables of 1; the help window opens empty) on Toggle help (ExecuteCmd 104).

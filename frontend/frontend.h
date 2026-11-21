@@ -49,6 +49,7 @@
 #include "inspect_window.h"
 #include "player_notes.h"
 #include "bug_report.h"
+#include "alarm_window.h"
 #include "tracking.h"
 #include "duel.h"
 #include "bazaar_search.h"
@@ -194,6 +195,7 @@ public:
 	ZoneSession &ZoneForTests() { return m_zone; } // the preview's injected packets
 	InspectWindow &InspectForTests() { return m_inspect; }
 	Tracking &TrackingForTests() { return m_tracking; }
+	AlarmWindow &AlarmForTests() { return m_alarm; }
 	void SetAirForTests(int air) { m_air = air; }
 	// RightClickedOnPlayer, as the right button on a spawn in the world does.
 	void RightClickForTests(uint16_t spawn) { RightClickedOnPlayer(spawn); }
@@ -332,7 +334,11 @@ private:
 	uint64_t m_destroy_until_ms = 0; // the confirmation dialog asking about Destroy, until then (0: it isn't)
 	// CConfirmationDialog::Activate in the game for a question whose answer goes to `answer`
 	// (ProcessYes and ProcessNo): false, and nothing asked, when the dialog's up already.
-	bool AskInGame(const std::string &text, uint32_t timeout_ms, std::function<void(bool)> answer);
+	// `ok_only`: OK alone (category 0x1d). A timeout of 0 never runs out.
+	bool AskInGame(const std::string &text, uint32_t timeout_ms, std::function<void(bool)> answer, bool ok_only = false);
+	// CConfirmationDialog::Activate(0x1d, 0, text): OK alone, no timeout; a question up already
+	// goes as No first (ours: AskInGame's, Destroy's and the spellbook's).
+	void TellInGame(const std::string &text);
 	void AnswerInGame(bool yes);
 	struct InGameQuestion
 	{
@@ -848,6 +854,7 @@ private:
 	PlayerNotes m_notes;      // CPlayerNotesWnd, /note, notes.txt
 	BugReport m_bug_report;   // CBugReportWnd, /bugreport
 	Feedback m_feedback;      // CFeedbackWnd, /feedback
+	AlarmWindow m_alarm;      // CAlarmWnd and its alarm
 	bool m_report_allowed = false; // DAT_00798550 1: /report not used since OP_SendExpZonein
 	Tracking m_tracking;      // CTrackingWnd, /trackplayers, /tracksort, /trackfilter, DoPassageOfTime's tracking
 	Duel m_duel;              // /duel, /decline, msg_duel

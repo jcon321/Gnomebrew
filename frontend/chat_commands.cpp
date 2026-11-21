@@ -1063,7 +1063,7 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 	case Command::Played: {
 		// /played (@004f4f97, display_played): the birthday, the time played (the profile's
 		// minutes, a minute added for each one since), this session (since the client started).
-		// Then the alarm's time left, when there's one (there's no alarm window yet).
+		// Then the alarm's time left, while it's armed (CAlarmWnd's DAT_008090a4).
 		ChatOut(format(12968, "%1's birthdate: %2.", {me.name, CTime(me.birthday).substr(0, 24)}), ChatType::Default);
 		uint32_t played = m_zone.MinutesPlayed();
 		ChatOut(format(12975, "Total time playing %1: %2", {me.name,
@@ -1071,6 +1071,8 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 			ChatType::Default);
 		ChatOut(format(6683, "This session: %1", {SecondsString(m_ui.eqstr, static_cast<int>(std::time(nullptr) - m_started_at))}),
 			ChatType::Default);
+		if (m_alarm.Armed())
+			ChatOut(format(6684, "Time until alarm: %1", {SecondsString(m_ui.eqstr, m_alarm.SecondsLeft())}), ChatType::Default);
 		break;
 	}
 	case Command::Motd:

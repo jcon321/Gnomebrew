@@ -508,6 +508,12 @@ void SpellBook::ConfirmDelete(int slot, uint64_t now_ms)
 	m_confirm_until_ms = now_ms + ConfirmMs;
 }
 
+void SpellBook::CancelConfirmation()
+{
+	if (m_confirm_slot >= 0)
+		CloseConfirmation();
+}
+
 void SpellBook::CloseConfirmation()
 {
 	m_confirm_slot = -1;

@@ -140,6 +140,7 @@ TrackPlayers=TRUE
 TrackSortType=NORMAL
 TrackFilterType=0
 ShowInspectMessage=TRUE
+ShowAlarmWindow=true
 
 [Filters]
 DamageShields=0
@@ -248,7 +249,9 @@ WeatherSounds=1
   `GROUP`) and `TrackSortType` (`NORMAL`, `DISTANCE`, `CONSIDER`, `RDISTANCE`, `RCONSIDER`) are
   /trackplayers' and /tracksort's, written as they change; `TrackFilterType` is the ranger's hidden
   NPC colors (1 green, 2 blue, 4 white, 8 yellow, 16 red, 32 light blue), read only (/trackfilter
-  doesn't write it).
+  doesn't write it). `ShowAlarmWindow` (`true` with no key; shown for a value starting `t`, `T` or
+  `1`) puts the alarm window up as we first enter the world; its Never show again box writes
+  `false` on OK or Cancel.
 - `[Filters]` are `/filter`'s switches and `/serverfilter`, kept as they change (eqgame keeps them in
   `eqOptions1.opt` and `eqOptions2.opt`): `DamageShields` and `NpcSpells` 0 shown, 1 hidden; `PcSpells`
   0 all, 1 off, 2 the group's; `BardSongs` 0 all, 1 ours, 2 the group's, 3 off; `GuildSay` through
@@ -819,6 +822,9 @@ then what's sent and what the server lists. `explore` goes into explore mode, tu
 camera, prints the name tags, clicks the other character, walks forward, and leaves with Escape. It's for
 checking layout and flow without Windows. `--replay` plays a packet log back instead (no server;
 `settings` after SECONDS reads `OUTDIR/my-client.ini` first, such as its `[Filters]`;
+`alarm` (with `OUTDIR/my-client.ini`) prints the alarm window as we enter, types into its boxes,
+presses OK and /played, then arms a 0 minute alarm with Never show again checked, prints its
+dialog and presses OK, and prints `ShowAlarmWindow` as saved;
 `chatwindows` opens the main chat window's menu, makes a new window, filters tells there and
 injects one, sends Worn Off there, sets its channel to Group, locks it (Always Chat Here), renames
 it through the text entry, opens its input with Enter, injects our melee hits and misses on the
@@ -2436,6 +2442,26 @@ details and the nearest spawns at the top left and the radar at the top right.
   down, 20 at most, each with a `\n`) and `"\n===================================\n"`; cut to 0x2004
   characters, sent as `OP_Report` (0x425a) with its 0, then 12944 with the line (0xf). EQMacEmu
   splits it at the two `|`. The old UI's sends the 10 lines of `DAT_007b9190` but `"@"` ones.
+- **The alarm** (`CAlarmWnd` @00403bc2, `frontend/alarm_window.*`, screen `AlarmWnd`). The
+  constructor sets both boxes to digits only (`AlphaNumericOnly` 3, CEditWnd+0x210) and the hours'
+  limit to 2; it calls `SetMaxChars` on the hours box a second time where the minutes' was meant,
+  so the minutes keep their own limit. `Activate` (@00403d13), from `CDisplay_ActivateMainUI`,
+  shows it once a run (`DAT_00807414`) when `[Defaults] ShowAlarmWindow` (eqclient.ini, default
+  `"true"`) starts with `t`, `T` or `1`. OK (`WndNotification` @00403dc9) reads each box with
+  `sscanf("%d")` (none or under 0 is 0; minutes over 59 carry into the hours), keeps them
+  (`DAT_00807df4`, `DAT_00807e00`), and arms the alarm (`DAT_0080640c`) for `time()` + (hours * 60
+  + minutes) * 60 (`DAT_008090a4`); OK and Cancel then write `ShowAlarmWindow` (`"false"` if Never
+  show again is checked, else `"true"`, `SaveAlarmWindowVisibilitySetting` @00403d93) and hide it.
+  `ProcessAlarmTrigger` (@00403f34, its `OnProcessFrame`) plays wave 0x8d once the time's past and
+  puts eqstr 6685 "Your session (%1 hours and %2 minutes) has ended." (the `itoa`'d hours and
+  minutes) in the confirmation dialog, category 0x1d (OK only) with no timeout, and disarms it.
+  /played (`display_played` @004f4e19) ends with 6684 "Time until alarm: %1"
+  (`formatTimeFromSeconds` of what's left) while it's armed. The time left window
+  (`CTimeLeftWnd` @00437c5b, a label at the top right of 640x480 on Z layer 999,
+  `updateTimerDisplay` @00437e49: `"%d:%02d:%02d"` every 500 ms, green, yellow under 30 minutes,
+  red under 1) is made only when `DAT_00807dcc` is above 0, a session length eqmain.dll hands over
+  in its login block (0x807824 + 0x5a8); where eqmain gets it isn't traced. Checked in the
+  preview's `alarm` replay test.
 - **/particledensity** (@004ff0b3): the line in capitals; a number (`is_number` @004f3739: a sign,
   then digits) from 0 to 3 is the level, else its first three letters `OFF`, `LOW`, `MED` or `HIG`
   are 0..3, else "Please choose either OFF, LOW, MED, or HIGH." (a literal in the exe). The level

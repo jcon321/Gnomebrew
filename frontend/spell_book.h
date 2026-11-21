@@ -112,6 +112,9 @@ public:
 	int MemorizeGauge() const;
 	int ScribeGauge() const;
 
+	// Its delete question, if it's up, closed as No (another dialog taking its place).
+	void CancelConfirmation();
+
 private:
 	const SpellInfo *Spell(int id) const;
 	std::string Text(uint32_t id, const std::string &fallback, const std::vector<std::string> &args = {}) const;
