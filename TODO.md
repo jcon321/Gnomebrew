@@ -1144,14 +1144,13 @@ no rules of its own.
     - `CDisplay::MoveLocalPlayerToSafeCoords` (@004b459c): `DoMainLoop`'s way out when the
       vehicle still can't be set ("Still can't set vehicle"), a floor height found or the safe
       point.
-    - Ladders: `CDisplay::GetOnActor` (@00504202, from `GetClickedActor`) for a click on a zone
-      object typed 6 (`SpriteCallBack`: its name starts `LADDER`). Farther than 25 from it says
-      eqstr 12008 "You are too far away from the ladder, get closer."; else, standing above 70% of
-      its height, we're put its radius + 0.5 in front of it (behind when `CanIFitHere` says the
-      front won't do), turned to it, stopped, and marked climbing (ActorInfo+0x189 = 6), which
-      `ProcessAnimation` (animation 23) and `DoTeleportB` read; one already climbing has its
-      heading snapped to the ladder. How climbing then moves us (and gets us off) isn't traced.
-      Ours only plays a climber's steps (`frontend/actor_sound.cpp`).
+    - Ladders: done (`PlayerMovement::GetOnLadder`, `ZoneView::ClickLadder`, `CDisplay::GetOnActor`
+      @00504202 and the climb's state 6 in process_physics and MovePlayer). Still to do: check it
+      against the TAKP client. As ported, the push GetOnActor gives us (along the heading, at the
+      ladder) runs into the ladder's own mesh, which ends the climb at once and drops us down it,
+      fall damage and all; whether eqgfx's collision takes the ladder actor (t3dCollideSphere) isn't
+      known. Ours picks a ladder by its scaled bounding sphere, not its mesh (`t3dGetClickedActor`),
+      and plays no climbing animation (`ProcessAnimation`'s 23 by MovementSpeedZ while climbing).
     - `MoveToZone_2`'s (@005460b5, see 24) other lines: under `EQWorldData::GetMinLevel`
       (@00523f42) of the zone, eqstr 12385 "Your will is not strong enough to leave the material
       plane."; a zone with no index 12386 "That zone is currently down, moving you to safe point
@@ -1299,7 +1298,7 @@ no rules of its own.
 5. ~~What the zone already sends and we drop, since it leaves our state wrong: `OP_DeleteCharge`
    and `OP_Reward` (37), then disarm's answer (24). The poison's answer (2).~~
 6. ~~Camping's checks, countdown and calling off (40). The MOTD as we enter (3).~~
-7. ~~Keys and lockpicks on doors (41)~~, then ladders (22).
+7. ~~Keys and lockpicks on doors (41), then ladders (22).~~
 8. ~~Inspecting and the player notes window (29), the tracking window (24), breath and drowning
    (34).~~
 9. ~~The stale Keyboard page rows (5), and the do-nothing commands that say "not supported" (35).~~

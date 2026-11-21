@@ -329,6 +329,7 @@ namespace render
 				object.position = transform.translation;
 				object.scale = placement.scale;
 				object.radius = known->second;
+				object.heading = placement.rotation.x;
 				if (StartsWithNoCase(placement.actor, "LADDER"))
 					object.type = 6;
 				else if (StartsWithNoCase(placement.actor, "ISLANDPALM"))

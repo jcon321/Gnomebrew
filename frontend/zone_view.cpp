@@ -1428,6 +1428,54 @@ ZoneDoors::Use ZoneView::ClickDoor(int x, int y, const ZoneDoors::Held &held, ui
 	return m_doors.Click(door, center, m_height, held, id, item, skill);
 }
 
+int ZoneView::ClickLadder(int x, int y)
+{
+	if (!m_loaded || !m_error.empty())
+		return -1;
+	render::Vec3 from = m_renderer->CurrentCamera().position;
+	render::Vec3 direction = m_renderer->ViewRay(static_cast<float>(x), static_cast<float>(y));
+	float best = FarPlane();
+	float door_distance;
+	if (m_zone.DoorHit(from, direction, best, door_distance) >= 0)
+		best = door_distance;
+	const render::ZoneObject *ladder = nullptr;
+	for (const render::ZoneObject &object : m_zone.Objects()) {
+		if (object.type != 6)
+			continue;
+		// The ray against the actor's bounding sphere.
+		float r = object.radius * object.scale;
+		render::Vec3 to = object.position - from;
+		float along = to.x * direction.x + to.y * direction.y + to.z * direction.z;
+		if (along < 0)
+			continue;
+		float miss2 = (to.x * to.x + to.y * to.y + to.z * to.z) - along * along;
+		if (miss2 > r * r)
+			continue;
+		float hit = along - std::sqrt(std::max(r * r - miss2, 0.0f));
+		if (hit < best) {
+			best = hit;
+			ladder = &object;
+		}
+	}
+	float fraction;
+	if (!ladder || m_zone.SegmentHit(from, from + direction * std::max(best, 0.0f), fraction, nullptr, false))
+		return -1;
+	return GetOnLadder(*ladder);
+}
+
+int ZoneView::GetOnLadder(const render::ZoneObject &ladder)
+{
+	int result = m_movement.GetOnLadder(ladder, m_zone);
+	if (result == 0 || result == 3) {
+		m_feet = m_movement.Feet();
+		m_heading = m_movement.Heading();
+		m_server_position = {m_feet.y, m_feet.x, m_feet.z + m_height / 5 * 3.125f};
+	}
+	if (result == 0) // Pitch -75: a 512th's units, from where the camera starts out
+		m_pitch = std::clamp((m_cam->view == CameraView::Chase ? -12.0f : 0.0f) - 75.0f * 360 / 512, -80.0f, 60.0f);
+	return result;
+}
+
 bool ZoneView::CanSee(const render::Vec3 &from, const render::Vec3 &to) const
 {
 	float fraction;

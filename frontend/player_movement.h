@@ -45,6 +45,7 @@
 namespace render
 {
 	class ZoneScene;
+	struct ZoneObject;
 }
 
 struct MoveControls
@@ -99,6 +100,14 @@ public:
 	bool JumpWindingUp() const { return m_jump_armed; } // DAT_007985f8
 	// EQPlayer::SetNoGrav(2) from EQ_Character::Levitate (LevitationState 2): no gravity, and no
 	// jumps (ProcessControls arms one only with LevitationState 0); RemovePCAffectex turns it back.
+	// CDisplay::GetOnActor (@00504202) for a ladder (a zone object of type 6) and us: 0 on it, 1 too
+	// far (eqstr 12008), 2 not above 70% of it or no room either side (nothing), 3 already
+	// climbing (the heading snapped to it). On it: ActorInfo+0x189 = 6, Climbing().
+	int GetOnLadder(const render::ZoneObject &ladder, const render::ZoneScene &scene);
+	// ActorInfo+0x189 6: process_physics leaves gravity out and lets the pitch push us up or down
+	// (as on the ground, but with the rise kept); MovePlayer clears it once the collision moves us
+	// from where that took us (we bumped into something).
+	bool Climbing() const { return m_climbing; }
 	void SetLevitating(bool on) { m_levitating = on; }
 	bool Levitating() const { return m_levitating; }
 	void Duck() { m_ducking = true; }
@@ -174,6 +183,7 @@ private:
 	bool m_crouching = false;
 	bool m_ducking = false;
 	bool m_levitating = false;
+	bool m_climbing = false; // ActorInfo+0x189 == 6
 	render::Vec3 m_floor_normal{0, 0, 1};
 	float m_ceiling = 0;               // ActorInfo's ZCeiling, CanIFitHere's last
 	bool m_stand_latched = false;      // DAT_00798572

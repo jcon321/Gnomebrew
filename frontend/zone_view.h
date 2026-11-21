@@ -174,6 +174,14 @@ public:
 	// can use it (EQSwitch::UseSwitch). `held` is what goes with the click (ZoneDoors::Held); `id`,
 	// `item` and `skill` are for OP_ClickDoor.
 	ZoneDoors::Use ClickDoor(int x, int y, const ZoneDoors::Held &held, uint8_t &id, uint16_t &item, int16_t &skill) const;
+	// CEverQuest_ClickedObject's GetClickedActor(..., 1): the ladder (a zone object of type 6) under
+	// the cursor, nearer than any door and with the zone not in front, by its scaled bounding
+	// sphere; then GetOnActor (PlayerMovement::GetOnLadder's result, -1 no ladder). On it, our pitch
+	// goes to eqgame's -75 (of 512, down).
+	int ClickLadder(int x, int y);
+	bool Climbing() const { return m_movement.Climbing(); }
+	int GetOnLadder(const render::ZoneObject &ladder); // GetOnActor, without the pick
+	const render::ZoneScene &SceneForTests() const { return m_zone; }
 	// CastRay: nothing of the zone's between two points (render space); true until it's loaded.
 	bool CanSee(const render::Vec3 &from, const render::Vec3 &to) const;
 

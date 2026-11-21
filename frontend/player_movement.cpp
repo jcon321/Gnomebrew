@@ -58,6 +58,7 @@ void PlayerMovement::Place(const render::Vec3 &feet, float heading, float height
 	m_slippery = m_was_swimming = false;
 	m_zone_line.clear();
 	m_vehicle = 0;
+	m_climbing = false; // DoTeleportB, MoveLocalPlayerToSafeCoords
 }
 
 void PlayerMovement::Carry(const VehicleMove &move)
@@ -219,12 +220,21 @@ void PlayerMovement::Tick(float t, const render::ZoneScene &scene)
 	// process_physics: gravity, then damping and the push along the heading (and in water, up
 	// or down the way we look).
 	bool swimming = Swimming();
-	if (!m_levitating) // IsAffectedByGravity
+	bool climbing = m_climbing;
+	if (climbing) {
+		// On a ladder: no gravity.
+	}
+	else if (!m_levitating) // IsAffectedByGravity
 		m_velocity.z -= m_gravity * t;
 	else if (m_velocity.z < 0 && !swimming)
 		m_velocity.z = 0; // levitating, nothing pulls us down
 	float friction = AirFriction, control = 0, rise_friction = AirFriction, rise_control = 0;
-	if (swimming) {
+	if (climbing) {
+		// process_physics' 0x189 == 6: the push 0.8 of itself, the rise too; 0.625 of the motion kept.
+		friction = rise_friction = GroundFriction;
+		control = rise_control = GroundControl;
+	}
+	else if (swimming) {
 		bool thick = m_body_environment == render::Environment::Slime || m_body_environment == render::Environment::Lava ||
 		             m_body_environment == render::Environment::VWater;
 		friction = thick ? 0.94f : 0.95f;
@@ -262,7 +272,13 @@ void PlayerMovement::Tick(float t, const render::ZoneScene &scene)
 	// ledge we keep pushing at it, and a jump or a swim jump carries us over once we clear it.
 	render::Vec3 before = m_feet;
 	render::Vec3 lift{0, 0, m_height * BodyHeight + StepHeight()};
+	render::Vec3 wanted = m_feet + lift + m_velocity * t;
 	render::Vec3 center = Sweep(m_feet + lift, m_velocity * t, scene);
+	// MovePlayer: the collision put us more than a thousandth from where the motion took us (the
+	// actor's location after process_physics), and the climb is over.
+	if (climbing && (std::fabs(center.x - wanted.x) >= 0.001f || std::fabs(center.y - wanted.y) >= 0.001f ||
+	                 std::fabs(center.z - wanted.z) >= 0.001f))
+		m_climbing = false;
 	// CanIFitHere where the move took us, or it's undone and the motion stopped.
 	if (!CanIFitHere(center - lift, scene, false)) {
 		center = before + lift;
@@ -468,4 +484,48 @@ float PlayerMovement::TakeLanding(bool &in_water)
 	in_water = m_landing_wet;
 	m_landing = 0;
 	return landing;
+}
+
+int PlayerMovement::GetOnLadder(const render::ZoneObject &ladder, const render::ZoneScene &scene)
+{
+	// t3dGetActorLocation's (y, x, z, heading) is the placement's, in WLD terms as our feet are;
+	// t3dGetScaledActorBoundingRadius its radius (what GetOnActor takes for its height).
+	float lx = ladder.position.x, ly = ladder.position.y, lz = ladder.position.z, lh = ladder.heading;
+	float height = ladder.radius * ladder.scale;
+	if (m_climbing) {
+		// Already on one: the heading snapped to the ladder's (HeadingDiff of 256 the other way).
+		float d = std::fabs(lh - m_heading);
+		if (d > 256)
+			d = 512 - d;
+		m_heading = d >= 256 ? WrapHeading(lh + 256) : lh;
+		return 3;
+	}
+	// Our collision sphere's radius (at least 2) and half a unit.
+	float reach = std::max(Radius(), 2.0f) + 0.5f;
+	float offset = m_height * BodyHeight; // ModelHeightOffset
+	float center_z = m_feet.z + offset;   // Position.z
+	float top = lz + height;
+	if (std::hypot(m_feet.x - lx, m_feet.y - ly) > 25) // TrueDistance with no height
+		return 1;
+	if (!(height * 0.7f + lz < center_z))
+		return 2;
+	float z = offset > 1.5f ? top - offset : 1.5f; // eqgame's own 1.5 for a body under 1.5
+	float behind = WrapHeading(lh + 256);
+	render::Vec3 at = render::Vec3{lx, ly, z - offset} + Along(behind, reach);
+	float heading = lh;
+	if (!CanIFitHere(at, scene, true)) {
+		at = render::Vec3{lx, ly, z - offset} + Along(lh, reach);
+		if (!CanIFitHere(at, scene, true))
+			return 2;
+		heading = behind;
+	}
+	m_feet = at;
+	m_heading = heading;
+	// Pushed at it (MovementSpeedY and X along the heading), no rise, stopped, climbing.
+	m_velocity = Along(m_heading, reach + 2);
+	m_speed = 0;
+	m_climbing = true;
+	m_on_ground = false;
+	UpdateEnvironment(scene);
+	return 0;
 }

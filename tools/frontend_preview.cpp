@@ -1232,6 +1232,57 @@ namespace
 		return 0;
 	}
 
+	int LadderTest(FrontEnd &frontend, Harness &h)
+	{
+		size_t chat_seen = frontend.Chat().Lines().size();
+		auto chat = [&] {
+			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
+				printf("[preview] chat: %s\n", frontend.Chat().Lines()[chat_seen].text.c_str());
+		};
+		ZoneView *view = frontend.ZoneScene();
+		if (!view)
+			return 1;
+		const render::ZoneObject *ladder = nullptr;
+		for (const render::ZoneObject &o : view->SceneForTests().Objects())
+			if (o.type == 6) {
+				ladder = &o;
+				break;
+			}
+		if (!ladder) {
+			printf("[preview] no ladder in this zone\n");
+			return 0;
+		}
+		float r = ladder->radius * ladder->scale;
+		printf("[preview] ladder %s at %.1f %.1f %.1f heading %.1f radius %.1f\n", ladder->actor.c_str(), ladder->position.x,
+			ladder->position.y, ladder->position.z, ladder->heading, r);
+		auto where = [&](const char *what) {
+			ZoneMovement m = view->Movement();
+			printf("[preview] %s: at %.1f %.1f %.1f (server x y z) heading %.1f, climbing %d\n", what, m.x, m.y, m.z,
+				m.heading, view->Climbing() ? 1 : 0);
+		};
+		h.Key(InputEvent::Key::F11);
+		h.RunUntil([] { return false; }, 500);
+		// Far away, then beside its top.
+		printf("[preview] get on from here: %d\n", view->GetOnLadder(*ladder));
+		chat();
+		view->MoveToSafePoint(ladder->position.y, ladder->position.x + 30, ladder->position.z + r + 5);
+		h.RunUntil([] { return false; }, 300);
+		where("30 off");
+		printf("[preview] get on: %d\n", view->GetOnLadder(*ladder));
+		view->MoveToSafePoint(ladder->position.y + 3, ladder->position.x, ladder->position.z + r);
+		h.RunUntil([] { return false; }, 300);
+		where("by its top");
+		printf("[preview] get on: %d\n", view->GetOnLadder(*ladder));
+		where("got on");
+		h.Snapshot("l1-ladder");
+		for (int i = 0; i < 6; ++i) {
+			h.RunUntil([] { return false; }, 250);
+			where(("after " + std::to_string((i + 1) * 250) + " ms").c_str());
+		}
+		chat();
+		return 0;
+	}
+
 	int BreathTest(FrontEnd &frontend, Harness &h)
 	{
 		WindowManager &windows = frontend.Windows();
@@ -3816,7 +3867,7 @@ int main(int argc, char **argv)
 	if (!replay && argc != 3 && argc != 6 && argc != 7) {
 		fprintf(stderr,
 			"usage: %s EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create]]\n"
-			"       %s EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|packets|inspect|tracking|breath]]\n",
+			"       %s EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|packets|inspect|tracking|breath|ladder]]\n",
 			argv[0], argv[0]);
 		return 2;
 	}
@@ -3870,6 +3921,7 @@ int main(int argc, char **argv)
 	bool inspect_test = argc == 7 && std::string(argv[6]) == "inspect";
 	bool tracking_test = argc == 7 && std::string(argv[6]) == "tracking";
 	bool breath_test = argc == 7 && std::string(argv[6]) == "breath";
+	bool ladder_test = argc == 7 && std::string(argv[6]) == "ladder";
 	bool chat_windows_test = argc == 7 && std::string(argv[6]) == "chatwindows";
 	bool multiline_test = argc == 7 && std::string(argv[6]) == "multiline";
 	bool boats_test = argc == 7 && std::string(argv[6]) == "boats";
@@ -3961,6 +4013,8 @@ int main(int argc, char **argv)
 			return TrackingTest(frontend, h);
 		if (breath_test)
 			return BreathTest(frontend, h);
+		if (ladder_test)
+			return LadderTest(frontend, h);
 		if (chat_windows_test)
 			return ChatWindowsTest(frontend, h);
 		if (multiline_test)

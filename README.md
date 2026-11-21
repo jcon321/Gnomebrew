@@ -756,7 +756,7 @@ build/eqclient -u USER -p PASS [options]
 
 ```
 build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|train|ground|commands|group|duel|bazaar|raid|guild|skills|aa]]
-build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez|cameras|packets|friends|chatwindows|multiline|inspect|tracking|breath]]
+build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez|cameras|packets|friends|chatwindows|multiline|inspect|tracking|breath|ladder]]
 ```
 
 This drives the real front-end code with scripted input and writes PNG snapshots. Text is
@@ -830,7 +830,8 @@ opens the tracking window, tries /tracksort as a non-ranger, then as a ranger ru
 filter and /trackplayers choice and a filter button (printing the rows and their colors), tracks the
 first row for 6 s and presses Done; `breath` makes the zone no-air for 12 s, then nearly out of air
 for 4 s, printing the breath window, gauge, air and HP each step (the drowning's OP_EnvDamage
-and its line); `mounts`
+and its line); `ladder` takes the zone's first ladder, tries GetOnActor from afar and 30 off,
+then from beside its top, printing where we are and whether we're climbing for 1.5 s; `mounts`
 prints each horse (its speeds, Rider, whether it's drawn), who rides what and the chat for SECONDS,
 and each second where another's rider and horse are and what they play, with the old models,
 `mountsluclin` with the human Luclin models and `mountshorse` with them and the horse models; on
@@ -2054,6 +2055,29 @@ details and the nearest spawns at the top left and the radar at the top right.
   called by `TakeFallDamage`, `ProcessEnvironment` and `ProcessAirSupply` (types -4, -10, -5, no
   attacker), and the others are in the offline cast's end. `OP_Stun` is `StunMe`, which leaves the
   cast alone; the zone interrupts a stunned cast itself.
+- **Ladders** (`PlayerMovement::GetOnLadder`, `ZoneView::ClickLadder`). A left click on the world
+  with no spawn and no switch under it is `CEverQuest_ClickedObject`, whose
+  `CDisplay::GetClickedActor(..., 1)` (@004b008a) calls `CDisplay::GetOnActor` (@00504202) on the
+  actor hit. Only a zone object `SpriteCallBack` typed 6 (`t3dGetActorUserData`: its name starts
+  `LADDER`) counts. Its `t3dGetActorLocation` (y, x, z, heading: the placement's, heading its
+  rotation about z) and `t3dGetScaledActorBoundingRadius` r (what GetOnActor uses as its height)
+  give: already climbing (ActorInfo+0x189 6), our heading snapped to the ladder's (`HeadingDiff`
+  of 256 to its opposite); else farther than 25 across the ground (`TrueDistance` with 0, no
+  height) from (y, x, z + r) says eqstr 12008; else, with our Position.z (feet +
+  ModelHeightOffset) over `z + r * 0.7`, our center goes to `z + r - ModelHeightOffset` (1.5 when
+  that offset is 1.5 or less) at our collision sphere's radius (`t3dGetSphereRadius`, 2 at least)
+  + 0.5 from the ladder toward its heading + 256, facing its heading, or failing `CanIFitHere`
+  toward its heading facing the other way (neither: nothing); then `UpdatePlayerActor`,
+  MovementSpeedY and X along our heading times that reach + 2, MovementSpeedZ and MovementSpeed 0,
+  Pitch -75 (of 512), 0x189 = 6, ActorInfo+0x190 and +0x1c4 0, and the floor height under us. A
+  click lower down does nothing. While 0x189 is 6, `process_physics` (@0054d964) skips gravity and
+  damps as on the ground (0.625 kept, the push 0.8) but keeps the pitch's rise (0.8), so forward
+  looking up or down climbs; `CDisplay::MovePlayer` clears it once the collision puts us more than
+  0.001 from where the physics took us (the actor's location after `process_physics` against the
+  swept position), and `DoTeleportB` and `MoveLocalPlayerToSafeCoords` clear it.
+  `ProcessAnimation` (@004dad79) plays the climb by MovementSpeedZ while it's 6. In ours the push
+  hits the ladder's own mesh at once, so the climb ends and we drop down it (checked in the
+  preview's `ladder` test in South Qeynos' LADDER14); the real client isn't checked.
 - **Breath and drowning** (`FrontEnd::BreathPassageOfTime`, `CanIBreathe`, `MaxAirSupply`).
   `EQ_Character::CanIBreathe` (@004c0dab): yes with the head's environment (ActorInfo's
   `IsSwimmingUnderwater`) under 5 outside a no-air zone (`EQWorldData::IsNoAirZone` @00523f31,

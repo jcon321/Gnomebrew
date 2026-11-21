@@ -4230,6 +4230,9 @@ void FrontEnd::WorldClick(int x, int y)
 		AddZoneLog(EqString(1462, "You can't reach that, get closer."), ZoneYellow);
 		break;
 	case ZoneDoors::Use::Nothing:
+		// No switch: CEverQuest_ClickedObject, which gets on a ladder (CDisplay::GetOnActor).
+		if (m_zone_view->ClickLadder(x, y) == 1)
+			ChatOut(EqString(12008, "You are too far away from the ladder, get closer."), 0x111);
 		break;
 	}
 }

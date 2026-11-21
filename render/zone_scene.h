@@ -52,6 +52,7 @@ namespace render
 		Vec3 position;
 		float scale = 1;
 		float radius = 0;  // the definition's bounding radius (t3dComputeActorDefinitionBoundingRadius), unscaled
+		float heading = 0; // the placement's rotation about z, 0..512 (t3dGetActorLocation's heading)
 		int type = 4;
 	};
 
