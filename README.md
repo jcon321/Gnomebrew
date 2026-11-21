@@ -822,7 +822,9 @@ then what's sent and what the server lists. `explore` goes into explore mode, tu
 camera, prints the name tags, clicks the other character, walks forward, and leaves with Escape. It's for
 checking layout and flow without Windows. `--replay` plays a packet log back instead (no server;
 `settings` after SECONDS reads `OUTDIR/my-client.ini` first, such as its `[Filters]`;
-`alarm` (with `OUTDIR/my-client.ini`) prints the alarm window as we enter, types into its boxes,
+`help` opens the help window as we entered, prints its page, history and links, scrolls to the
+fourth link, hovers and clicks it, then presses Back and Contents; `alarm` (with
+`OUTDIR/my-client.ini`) prints the alarm window as we enter, types into its boxes,
 presses OK and /played, then arms a 0 minute alarm with Never show again checked, prints its
 dialog and presses OK, and prints `ShowAlarmWindow` as saved;
 `chatwindows` opens the main chat window's menu, makes a new window, filters tells there and
@@ -972,7 +974,15 @@ loads the same files:
   when it's moved or resized. Static animations draw under the other pieces; otherwise pieces
   stack in the order they're listed.
 - Title bars (`Style_Titlebar`) use the template's `Titlebar` pieces, between the side borders.
-- STML is drawn as plain text: `<BR>` breaks the line and other tags are dropped.
+- STML (`CStmlWnd::ParseSTML` @005826a0): `<BR>` and `<P>` break the line, a run of whitespace
+  is one space, `<c "#RRGGBB">` colors what follows until `</c>`, `&lt;`, `&gt;` and `&amp;` are
+  their characters, and other tags are dropped. `<a HREF="...">` up to `</a>` is a link; an href
+  starting `FILE:///` (any case) is a page, the rest of it, which a click loads
+  (`HandleMouseClickOnText` @00587540 on the press, `HandleStmlAction`'s 0, `CStmlWnd_LoadPage`).
+  `<BODY>`'s `TEXT`, `LINK`, `VLINK`, `ALINK`, `MLINK` and `BGCOLOR` set +0x164..+0x174 and +0x160,
+  which `ResetStmlWindowState` (@00582450) starts as white, cyan, magenta, navy, blue and black: a
+  link draws in LINK's color, MLINK's under the mouse, ALINK's while pressed there (ours takes
+  `#RRGGBB` values; VLINK and BGCOLOR aren't used).
 - SIDL `Font` numbers index the seven fonts `CDisplay::InitNewUI` makes, 0 to 6: Arial 10, 12, 14,
   15, 16, 20 and 24 (the heights Zeal's font hook sees for each), with 3 (15px) as the schema
   default.
@@ -2462,6 +2472,20 @@ details and the nearest spawns at the top left and the radar at the top right.
   red under 1) is made only when `DAT_00807dcc` is above 0, a session length eqmain.dll hands over
   in its login block (0x807824 + 0x5a8); where eqmain gets it isn't traced. Checked in the
   preview's `alarm` replay test.
+- **The help window** (`frontend/help_window.*`, screen `HelpWindow`; TAKP's symbol list calls its
+  constructor `CContainerWnd::CContainerWnd` @0041f57b, and its `WndNotification` @0041f7c4
+  `ScreenWindow_handle`). `CDisplay_ActivateMainUI` calls `CHelpWnd_SetFile` (@0041f6ef) with
+  `help\help.html` each time the game's UI goes up: the name is kept (+0x14c) and
+  `CStmlWnd_LoadPage` (@005889b0) reads the file from the game's folder (a UTF-8 BOM skipped) into
+  `Display` with `SetSTMLText`, which adds it to the box's history: the place (+0x198) one on, the
+  entries past it dropped (`AddStmlHistoryEntry` @00588be0); a file that won't open changes
+  nothing. A link in it loads its page the same way. `BackButton` (disabled by the constructor)
+  is `NavigateBackInBrowserHistory` (@00589080: the place back one and its text shown again
+  without touching the history), then enabled while `CanNavigateBackInHistory` (the place above
+  0); `Contents` loads the kept name again. `OnProcessFrame` (@0041f85a) sets `BackButton` the
+  same way every 250 ms. Toggle help (ExecuteCmd 0x68) loads `help\help.html` again and shows
+  it when it's closed, else closes it. The 18 pages in `help\` use only `<BR>`, `<c>`, `<a href="file:///help/...">`
+  and `<body link="#ffff00" mlink="#ffffcc">`. Checked in the preview's `help` replay test.
 - **/particledensity** (@004ff0b3): the line in capitals; a number (`is_number` @004f3739: a sign,
   then digits) from 0 to 3 is the level, else its first three letters `OFF`, `LOW`, `MED` or `HIG`
   are 0..3, else "Please choose either OFF, LOW, MED, or HIGH." (a literal in the exe). The level

@@ -1499,6 +1499,88 @@ namespace
 		return 0;
 	}
 
+	// The help window as we enter: its page, a link clicked, Back, Contents.
+	int HelpTest(FrontEnd &frontend, Harness &h)
+	{
+		WindowManager &windows = frontend.Windows();
+		HelpWindow &help = frontend.HelpForTests();
+		auto display = [&]() -> SidlWindow::Control * {
+			SidlWindow *wnd = windows.Find(HelpWindow::Screen);
+			return wnd ? wnd->Find("Display") : nullptr;
+		};
+		auto click_at = [&](int x, int y) {
+			frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+			frontend.OnEvent({InputEvent::Type::MouseDown, x, y});
+			frontend.OnEvent({InputEvent::Type::MouseUp, x, y});
+			h.RunUntil([] { return false; }, 400);
+		};
+		auto press = [&](const char *control) {
+			const SidlWindow *wnd = windows.Find(HelpWindow::Screen);
+			const SidlWindow::Control *c = wnd ? wnd->Find(control) : nullptr;
+			if (!c) {
+				printf("[preview] no %s\n", control);
+				return;
+			}
+			Rect area = frontend.ScreenArea();
+			printf("[preview] click %s\n", control);
+			click_at(area.x + c->rect.x + c->rect.w / 2, area.y + c->rect.y + c->rect.h / 2);
+		};
+		auto state = [&](const char *what) {
+			SidlWindow::Control *d = display();
+			const SidlWindow *wnd = windows.Find(HelpWindow::Screen);
+			const SidlWindow::Control *back = wnd ? wnd->Find("BackButton") : nullptr;
+			std::string start = d ? d->text.substr(0, 60) : "";
+			for (char &c : start)
+				if (c == '\n' || c == '\r')
+					c = ' ';
+			printf("[preview] %s: place %d of %zu, back %d, %zu links (link %06x, mlink %06x), %zu rows: %s\n", what,
+				help.Place(), help.Pages(), back && back->enabled ? 1 : 0, d ? d->stml_links.size() : 0,
+				d ? d->stml_link_rgb : 0, d ? d->stml_mlink_rgb : 0, d ? d->stml_rows.size() : 0, start.c_str());
+		};
+		h.Key(InputEvent::Key::F11);
+		windows.Show(HelpWindow::Screen, true);
+		windows.Raise(HelpWindow::Screen);
+		h.RunUntil([] { return false; }, 400);
+		h.Render();
+		state("as we entered");
+		h.Snapshot("help");
+		// The fourth link (2.1 Arriving In Norrath), under the mouse, then clicked.
+		SidlWindow::Control *d = display();
+		if (d) // scrolled to the row with the fourth link
+			for (size_t r = 0; r < d->stml_rows.size(); ++r)
+				for (const auto &run : d->stml_rows[r])
+					if (run.link == 3 && d->scroll_pos == 0) {
+						d->scroll_pos = static_cast<int>(r);
+						printf("[preview] scrolled to row %zu of %zu (a page %d)\n", r, d->stml_rows.size(), d->scroll_page);
+					}
+		h.Render();
+		if (d && !d->stml_hits.empty())
+			for (const auto &hit : d->stml_hits)
+				if (hit.link == 3)
+					d->stml_hits = {hit};
+		if (!d || d->stml_hits.empty()) {
+			printf("[preview] too few links drawn (%zu)\n", d ? d->stml_hits.size() : 0);
+			return 1;
+		}
+		SidlWindow::StmlHit hit = d->stml_hits[0];
+		Rect area = frontend.ScreenArea();
+		int x = area.x + hit.rect.x + hit.rect.w / 2, y = area.y + hit.rect.y + hit.rect.h / 2;
+		frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+		printf("[preview] over link %d (%s): hover %d\n", hit.link, d->stml_links[hit.link].c_str(), d->link_hover);
+		h.Snapshot("help-hover");
+		click_at(x, y);
+		h.Render();
+		state("after the link");
+		h.Snapshot("help-link");
+		press("BackButton");
+		h.Render();
+		state("after Back");
+		press("Contents");
+		h.Render();
+		state("after Contents");
+		return 0;
+	}
+
 	int TrackingTest(FrontEnd &frontend, Harness &h)
 	{
 		WindowManager &windows = frontend.Windows();
@@ -4096,6 +4178,7 @@ int main(int argc, char **argv)
 	bool tracking_test = argc == 7 && std::string(argv[6]) == "tracking";
 	bool breath_test = argc == 7 && std::string(argv[6]) == "breath";
 	bool alarm_test = argc == 7 && std::string(argv[6]) == "alarm";
+	bool help_test = argc == 7 && std::string(argv[6]) == "help";
 	bool ladder_test = argc == 7 && std::string(argv[6]) == "ladder";
 	bool chat_windows_test = argc == 7 && std::string(argv[6]) == "chatwindows";
 	bool multiline_test = argc == 7 && std::string(argv[6]) == "multiline";
@@ -4190,6 +4273,8 @@ int main(int argc, char **argv)
 			return BreathTest(frontend, h);
 		if (alarm_test)
 			return AlarmTest(frontend, h, argv[2]);
+		if (help_test)
+			return HelpTest(frontend, h);
 		if (ladder_test)
 			return LadderTest(frontend, h);
 		if (chat_windows_test)

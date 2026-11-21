@@ -50,6 +50,7 @@
 #include "player_notes.h"
 #include "bug_report.h"
 #include "alarm_window.h"
+#include "help_window.h"
 #include "tracking.h"
 #include "duel.h"
 #include "bazaar_search.h"
@@ -196,6 +197,7 @@ public:
 	InspectWindow &InspectForTests() { return m_inspect; }
 	Tracking &TrackingForTests() { return m_tracking; }
 	AlarmWindow &AlarmForTests() { return m_alarm; }
+	HelpWindow &HelpForTests() { return m_help_window; }
 	void SetAirForTests(int air) { m_air = air; }
 	// RightClickedOnPlayer, as the right button on a spawn in the world does.
 	void RightClickForTests(uint16_t spawn) { RightClickedOnPlayer(spawn); }
@@ -855,6 +857,7 @@ private:
 	BugReport m_bug_report;   // CBugReportWnd, /bugreport
 	Feedback m_feedback;      // CFeedbackWnd, /feedback
 	AlarmWindow m_alarm;      // CAlarmWnd and its alarm
+	HelpWindow m_help_window; // CHelpWnd and its pages
 	bool m_report_allowed = false; // DAT_00798550 1: /report not used since OP_SendExpZonein
 	Tracking m_tracking;      // CTrackingWnd, /trackplayers, /tracksort, /trackfilter, DoPassageOfTime's tracking
 	Duel m_duel;              // /duel, /decline, msg_duel

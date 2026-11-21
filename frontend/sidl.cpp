@@ -459,20 +459,53 @@ const SidlPiece *SidlDefinitions::Piece(const std::string &item) const
 
 namespace
 {
+	// A tag's attribute value: `name=` then a quoted or bare word, from the tag as written.
+	std::string StmlAttribute(const std::string &tag, const std::string &lower, const char *name)
+	{
+		std::string key = std::string(name) + "=";
+		size_t at = 0;
+		while ((at = lower.find(key, at)) != std::string::npos) {
+			if (at == 0 || lower[at - 1] == ' ' || lower[at - 1] == '\t')
+				break;
+			at += key.size();
+		}
+		if (at == std::string::npos)
+			return "";
+		at += key.size();
+		if (at < tag.size() && tag[at] == '"') {
+			size_t end = tag.find('"', at + 1);
+			return tag.substr(at + 1, end == std::string::npos ? std::string::npos : end - at - 1);
+		}
+		size_t end = tag.find_first_of(" \t", at);
+		return tag.substr(at, end == std::string::npos ? std::string::npos : end - at);
+	}
+
+	struct StmlLinks
+	{
+		std::vector<std::string> pages;
+		uint32_t link = 0x00ffff, mlink = 0x0000ff, alink = 0x000080;
+	};
+
 	// STML's lines (<BR> and <P> break them), each as runs of text in one color: <c "#RRGGBB">
-	// colors what follows until its </c>. Other tags are dropped. As CStmlWnd::ParseSTML
-	// (@005826a0), a run of whitespace is one space, and none starts a line.
-	std::vector<std::vector<SidlWindow::StmlRun>> ParseStml(const std::string &stml, uint32_t color)
+	// colors what follows until its </c>, <a href="..."> makes what follows until its </a> a
+	// link (ParseSTML's HREF: a FILE:/// one's page is the rest of it), and <body>'s TEXT, LINK,
+	// MLINK and ALINK set the colors ("#RRGGBB" only). Other tags are dropped. As
+	// CStmlWnd::ParseSTML (@005826a0), a run of whitespace is one space, and none starts a line.
+	std::vector<std::vector<SidlWindow::StmlRun>> ParseStml(const std::string &stml, uint32_t color, StmlLinks *links = nullptr)
 	{
 		std::vector<std::vector<SidlWindow::StmlRun>> lines(1);
 		std::vector<uint32_t> colors{color};
+		int link = -1;
 		bool after_space = false;
+		auto hex = [](const std::string &value, uint32_t fallback) {
+			return !value.empty() && value[0] == '#' ? static_cast<uint32_t>(strtoul(value.c_str() + 1, nullptr, 16) & 0xffffff) : fallback;
+		};
 		auto add = [&](const std::string &text) {
 			auto &line = lines.back();
-			if (!line.empty() && line.back().color == colors.back())
+			if (!line.empty() && line.back().color == colors.back() && line.back().link == link)
 				line.back().text += text;
 			else
-				line.push_back({text, colors.back()});
+				line.push_back({text, colors.back(), link});
 			after_space = false;
 		};
 		for (size_t i = 0; i < stml.size(); ++i) {
@@ -485,9 +518,26 @@ namespace
 				size_t end = stml.find('>', i);
 				if (end == std::string::npos)
 					break;
-				std::string tag = ToLowerCopy(stml.substr(i + 1, end - i - 1));
+				std::string written = stml.substr(i + 1, end - i - 1);
+				std::string tag = ToLowerCopy(written);
 				if (tag == "br" || tag == "br/" || tag == "p")
 					lines.emplace_back();
+				else if (links && tag.size() > 2 && tag[0] == 'a' && (tag[1] == ' ' || tag[1] == '\t')) {
+					std::string href = StmlAttribute(written, tag, "href");
+					links->pages.push_back(ToLowerCopy(href.substr(0, 8)) == "file:///" ? href.substr(8) : std::string());
+					link = static_cast<int>(links->pages.size()) - 1;
+				}
+				else if (tag == "/a")
+					link = -1;
+				else if (tag.rfind("body", 0) == 0 && (tag.size() == 4 || tag[4] == ' ' || tag[4] == '\t')) {
+					if (std::string text = StmlAttribute(written, tag, "text"); !text.empty())
+						colors.front() = hex(text, colors.front());
+					if (links) {
+						links->link = hex(StmlAttribute(written, tag, "link"), links->link);
+						links->mlink = hex(StmlAttribute(written, tag, "mlink"), links->mlink);
+						links->alink = hex(StmlAttribute(written, tag, "alink"), links->alink);
+					}
+				}
 				else if (tag == "/c" && colors.size() > 1)
 					colors.pop_back();
 				else if (tag.size() > 2 && tag[0] == 'c' && tag[1] == ' ') {
@@ -529,7 +579,7 @@ namespace
 				row_w = 0;
 			}
 			for (auto &piece : word) {
-				if (!row.empty() && row.back().color == piece.color)
+				if (!row.empty() && row.back().color == piece.color && row.back().link == piece.link)
 					row.back().text += piece.text;
 				else
 					row.push_back(std::move(piece));
@@ -544,7 +594,7 @@ namespace
 				size_t end = space == std::string::npos ? run.text.size() : space + 1;
 				std::string piece = run.text.substr(pos, end - pos);
 				word_w += text.Measure(piece, height, weight).w;
-				word.push_back({piece, run.color});
+				word.push_back({piece, run.color, run.link});
 				pos = end;
 				if (space != std::string::npos)
 					flush();
@@ -873,6 +923,10 @@ bool SidlWindow::InteractiveAt(int x, int y) const
 			return true;
 		if (type == "TabBox" && HitTest(control, x, y) && TabAt(control, x, y) >= 0)
 			return true;
+		if (type == "STMLbox" && Shown(control))
+			for (const StmlHit &hit : control.stml_hits)
+				if (hit.rect.Contains(x, y))
+					return true;
 	}
 	return false;
 }
@@ -1525,6 +1579,34 @@ bool SidlWindow::OverColumnSeparator() const
 
 std::string SidlWindow::Press(const InputEvent &event)
 {
+	// An STML box's links (HandleMouseClickOnText): the one under the mouse lit, a press on one
+	// held, and the button coming up on that same one clicks it.
+	for (Control &control : m_controls) {
+		if (control.def->type != "STMLbox" || control.stml_links.empty())
+			continue;
+		int under = -1;
+		if (Shown(control) && !m_minimized)
+			for (const StmlHit &hit : control.stml_hits)
+				if (hit.rect.Contains(event.x, event.y)) {
+					under = hit.link;
+					break;
+				}
+		if (event.type == InputEvent::Type::MouseMove)
+			control.link_hover = under;
+		else if ((event.type == InputEvent::Type::MouseDown || event.type == InputEvent::Type::DoubleClick) && under >= 0) {
+			control.link_pressed = under;
+			return "";
+		}
+		else if (event.type == InputEvent::Type::MouseUp && control.link_pressed >= 0) {
+			int pressed = control.link_pressed;
+			control.link_pressed = -1;
+			if (under == pressed && pressed < static_cast<int>(control.stml_links.size())) {
+				control.link_clicked = control.stml_links[pressed];
+				return control.def->screen_id;
+			}
+			return "";
+		}
+	}
 	// A sizable list's column separators (CListWnd+0x13c): the mouse over one (HandleMouseMove), a
 	// press on it starts dragging it and is no click on the list (HandleLButtonDown), the mouse
 	// moving within the list while dragged moves it by how far it is from its middle
@@ -1961,20 +2043,35 @@ void SidlWindow::DrawStml(const Control &control, Canvas &canvas, TextRenderer &
 		control.stml_width = area.w;
 		control.stml_color = color;
 		control.stml_rows.clear();
+		StmlLinks links;
 		if (!control.text.empty())
-			for (const auto &line : ParseStml(control.text, color))
+			for (const auto &line : ParseStml(control.text, color, &links))
 				WrapStml(text, line, area.w, height, weight, control.stml_rows);
+		control.stml_links = std::move(links.pages);
+		control.stml_link_rgb = links.link;
+		control.stml_mlink_rgb = links.mlink;
+		control.stml_alink_rgb = links.alink;
 	}
 	int row_h = std::max(text.Measure("Wg", height, weight).h, 1);
 	int rows = static_cast<int>(control.stml_rows.size());
 	control.scroll_page = std::max(area.h / row_h, 1);
 	control.scroll_max = std::max(rows - control.scroll_page, 0);
+	control.stml_hits.clear();
 	int y = area.y;
 	for (int i = std::clamp(control.scroll_pos, 0, control.scroll_max); i < rows && y < area.Bottom(); ++i, y += row_h) {
 		int x = area.x;
 		for (const auto &run : control.stml_rows[i]) {
-			text.Draw(canvas, x, y, run.text, height, run.color, weight);
-			x += text.Measure(run.text, height, weight).w;
+			// A link in LINK's color; under the mouse MLINK's, pressed there ALINK's (DrawInRect).
+			uint32_t rgb = run.color;
+			if (run.link >= 0)
+				rgb = run.link == control.link_pressed && run.link == control.link_hover ? control.stml_alink_rgb
+				      : run.link == control.link_hover                                    ? control.stml_mlink_rgb
+				                                                                          : control.stml_link_rgb;
+			text.Draw(canvas, x, y, run.text, height, rgb, weight);
+			int w = text.Measure(run.text, height, weight).w;
+			if (run.link >= 0)
+				control.stml_hits.push_back({{x, y, w, row_h}, run.link});
+			x += w;
 		}
 	}
 }

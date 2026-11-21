@@ -260,6 +260,13 @@ public:
 	{
 		std::string text;
 		uint32_t color;
+		int link = -1; // the box's link it's part of (<a href>), or -1
+	};
+	// Where a link's run was drawn last, for the mouse.
+	struct StmlHit
+	{
+		Rect rect;
+		int link;
 	};
 
 	struct Control
@@ -271,7 +278,9 @@ public:
 		Rect title;  // the title bar, when it has one
 		int parent = -1;
 		std::vector<int> children;
-		std::string text; // STMLbox: STML (<BR> line breaks, <c "#RRGGBB"> colors; other tags are dropped)
+		// STMLbox: STML (<BR> line breaks, <c "#RRGGBB"> colors, <a href> links, <body>'s link
+		// colors; other tags are dropped)
+		std::string text;
 		// What shows when the mouse rests on it (CXWnd's ToolTipText): its TooltipReference to start
 		// with (CSidlManager_CreateXWndFromTemplate), and whatever the window sets (an item's name).
 		std::string tooltip;
@@ -411,6 +420,16 @@ public:
 		mutable std::string stml_text;
 		mutable int stml_width = -1;
 		mutable uint32_t stml_color = 0;
+		// Its links as parsed: each one's page (an href's path after FILE:///, "" for any other),
+		// and <body>'s LINK, MLINK (under the mouse) and ALINK (pressed) colors, CStmlWnd's
+		// ResetStmlWindowState cyan, blue and navy until it sets them; where each link was drawn.
+		mutable std::vector<std::string> stml_links;
+		mutable uint32_t stml_link_rgb = 0x00ffff, stml_mlink_rgb = 0x0000ff, stml_alink_rgb = 0x000080;
+		mutable std::vector<StmlHit> stml_hits;
+		int link_hover = -1, link_pressed = -1;
+		// The page of the link last clicked (CStmlWnd::HandleMouseClickOnText, then
+		// HandleStmlAction's LoadPage): the box's ScreenID comes back as a click with it set.
+		std::string link_clicked;
 		int tab = 0; // TabBox: the page showing (its children are its pages)
 		// Draws the content of a control the window doesn't fill itself (a chat window's text),
 		// inside ContentRect, after the frame and under the children.

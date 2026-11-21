@@ -29,12 +29,13 @@ no rules of its own.
      player notes (29) are.
      FilterInputStr's AlphaNumericOnly (`edit_filter`: 1 and 2 letters, 3 digits, the Bazaar search's
      price boxes, 4 letters and digits) is done.
-   - STML boxes (`CStmlWnd`; ours take `<BR>`, `<P>`, `<c "#RRGGBB">`, `&lt;` and `&gt;`): tables
-     (`ParseHtmlTable` @00584540), links and their pages (`HandleMouseClickOnText` @00587540,
-     `LoadPage` @005889b0, the history and `NavigateBackInBrowserHistory`), the named colors and
-     alignment of `ParseColorValue` (@00581650) and `ParseAlignmentValue`, the other entities
-     (`InitializeHtmlEntityMappings` @00581b20). Nothing we show needs them until the help window
-     (34) does.
+   - STML boxes (`CStmlWnd`; ours take `<BR>`, `<P>`, `<c "#RRGGBB">`, `&lt;`, `&gt;`, `&amp;`,
+     `<a href="FILE:///...">` links and `<body>`'s TEXT, LINK, MLINK and ALINK): tables
+     (`ParseHtmlTable` @00584540), the other kinds of link (`HandleStmlAction`'s 3, 5 and 6:
+     `_BLANK` targets open a new STML window, `WNDNOTIFY`, `SOVREPORT`), VLINK's visited links,
+     `<title>` (`ParseHtmlTitle` @00584220), the named colors and alignment of `ParseColorValue`
+     (@00581650) and `ParseAlignmentValue`, the other entities (`InitializeHtmlEntityMappings`
+     @00581b20). Nothing we show needs them.
    - Lists (`CListWnd`): a column's separator dragged on the lists that allow it (+0x13c: the AA
      window's and the raid window's; `SidlWindow::Press`, `SeparatorRect`, ShiftColumnSeparator's
      10 least, the resize cursor) is done. `LoadIniListWnd` and `StoreIniListWnd` only ever run
@@ -803,9 +804,10 @@ no rules of its own.
       `DAT_00807dcc` (eqmain.dll's login block + 0x5a8) is above 0: find where eqmain fills it
       first. The in-game confirmation dialog has an owner per window; `TellInGame` takes it over
       from `AskInGame`'s, Destroy's and the spellbook's questions, not the loot or ground items'.
-    - Help: /help (@004f92f5, the table's kinds and localized names) is done. Still to do: the
-      help window's page (`CHelpWnd_SetFile` @0041f6ef: `CStmlWnd_LoadPage` of the help file, with
-      the links and tables of 1; the help window opens empty) on Toggle help (ExecuteCmd 104).
+    - ~~Help~~: done (/help; the help window, `frontend/help_window.*`: `CHelpWnd_SetFile`,
+      `CStmlWnd_LoadPage`, the box's history, Back and Contents, links). Still to do: its page keys
+      (vtbl 0x68, `GameInstance_handleKeyboardInput` @0041f731: Page Up and Page Down, with only
+      the first of its three flags set, scroll `Display` by 98 pixels; ours scroll by rows).
     - Music player (`MusicPlayerWnd` @004285e3: `SongSelector`, `SongTimer`, `Volume`, and Add,
       Delete, Clear, Play, Pause, Stop, Back, Next, Random and Save buttons;
       `HandleMusicPlayerWndNotification` @0042898d; its file picker `CFileSelectionWnd` @0041af9a)

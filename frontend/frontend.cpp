@@ -1001,6 +1001,7 @@ void FrontEnd::Update(uint64_t now_ms)
 			AnswerInGame(false);
 		m_options.Frame(now_ms);
 		m_alarm.Frame(); // CAlarmWnd::ProcessAlarmTrigger
+		m_help_window.Frame(now_ms);
 		m_spell_book.Frame(now_ms);
 		m_spell_cast.Frame(now_ms);
 		m_abilities.Frame(now_ms);
@@ -2427,6 +2428,7 @@ void FrontEnd::BuildZoneWindows()
 	alarm_host.tell = [this](const std::string &text) { TellInGame(text); };
 	alarm_host.now = [] { return std::time(nullptr); };
 	m_alarm.Attach(m_windows, std::move(alarm_host));
+	m_help_window.Attach(m_windows, m_ui.eq_dir);
 	Tracking::Host tracking_host;
 	tracking_host.text = [this](uint32_t id, const std::vector<std::string> &args, const std::string &fallback) {
 		return FormatEqString(m_ui.eqstr, id, fallback, args);
@@ -2992,7 +2994,8 @@ void FrontEnd::HandleWindowClicks()
 		    m_raid_window.Click(click.window, click.control) || m_aa_window.Click(click.window, click.control) ||
 		    m_pet_window.Click(click.window, click.control) || m_friends.Click(click.window, click.control) ||
 		    m_text_entry.Click(click.window, click.control) || m_bug_report.Click(click.window, click.control) ||
-		    m_feedback.Click(click.window, click.control) || m_alarm.Click(click.window, click.control))
+		    m_feedback.Click(click.window, click.control) || m_alarm.Click(click.window, click.control) ||
+		    m_help_window.Click(click.window, click.control))
 			continue;
 		// CInventoryWnd::WndNotification: the Alt. Adv. button opens the AA window, or closes it.
 		if (click.window == "InventoryWindow" && click.control == "IW_AltAdvBtn") {
@@ -5375,7 +5378,8 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 		case Type::InZone:
 			m_zoning = false;
 			m_report_allowed = true; // HandleWorldMessage's OP_SendExpZonein
-			m_alarm.Activate();      // CDisplay_ActivateMainUI
+			m_help_window.SetFile(HelpWindow::File); // CDisplay_ActivateMainUI
+			m_alarm.Activate();
 			m_guild.InZone();
 			FindMyVehicle();
 			// HandleWorldMessage's OP_SendExpZonein: still looking for a group, say so here too.
@@ -6224,6 +6228,18 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 	case KeyMap::ToggleOptionsWin: toggle("OptionsWindow"); break;
 	case KeyMap::ToggleSelectorWin: toggle("SelectorWindow"); break;
 	case KeyMap::ToggleCompassWin: toggle("CompassWindow"); break;
+	case KeyMap::ToggleHelpWin:
+		// ExecuteCmd 0x68: closed, CHelpWnd_SetFile("help\\help.html") and Activate; open, Deactivate.
+		if (down && in_zone) {
+			if (!m_windows.Shown(HelpWindow::Screen)) {
+				m_help_window.SetFile(HelpWindow::File);
+				m_windows.Show(HelpWindow::Screen, true);
+				m_windows.Raise(HelpWindow::Screen);
+			}
+			else
+				m_windows.Show(HelpWindow::Screen, false);
+		}
+		break;
 	case KeyMap::ToggleAltAdvWin:
 		// ExecuteCmd 0x62: pressed, with Luclin (the profile's Expansions 4) or as a GM; CAAWnd::Activate
 		// or down.
