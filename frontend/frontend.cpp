@@ -2214,6 +2214,7 @@ namespace
 		{RaidWindow::Screen, false}, {RaidWindow::OptionsScreen, false}, {AAWindow::Screen, false},
 		{BazaarWindow::Screen, false}, {BazaarSearch::Screen, false}, {InspectWindow::Screen, false},
 		{PlayerNotes::Screen, false}, {Tracking::Screen, false}, {"BreathWindow", false},
+		{BugReport::Screen, false}, {Feedback::Screen, false},
 	};
 
 	// The selector's buttons (EQUI_SelectorWnd.xml) and the windows they open and close.
@@ -2376,6 +2377,39 @@ void FrontEnd::BuildZoneWindows()
 		return std::string(s ? s : "");
 	};
 	m_notes.Attach(m_windows, m_ui.eq_dir, std::move(notes_host));
+	BugReport::Host bug_host;
+	bug_host.text = [this](uint32_t id, const std::string &fallback) { return EqString(id, fallback); };
+	bug_host.position = [this](float &y, float &x, float &z) {
+		if (!m_zone_view)
+			return false;
+		const ZoneMovement &at = m_zone_view->Movement();
+		y = at.y;
+		x = at.x;
+		z = at.z;
+		return true;
+	};
+	bug_host.target = [this](BugReport::Target &target) {
+		const ZoneSpawn *spawn = nullptr;
+		if (m_game_values.target && m_game_values.target == m_zone.MySpawnId())
+			spawn = &m_zone.Self();
+		else if (auto it = m_zone.Spawns().find(m_game_values.target); m_game_values.target && it != m_zone.Spawns().end())
+			spawn = &it->second;
+		if (!spawn)
+			return false;
+		target.id = spawn->id;
+		target.name = spawn->name;
+		target.display = spawn->DisplayName();
+		target.player = spawn->npc == 0;
+		return true;
+	};
+	bug_host.name = [this] { return m_zone.Profile().name; };
+	bug_host.minutes_played = [this] { return m_zone.MinutesPlayed(); };
+	bug_host.send = [this](const std::vector<uint8_t> &body) { m_zone.SendBug(body); };
+	m_bug_report.Attach(m_windows, std::move(bug_host));
+	Feedback::Host feedback_host;
+	feedback_host.name = [this] { return m_zone.Profile().name; };
+	feedback_host.send = [this](const std::vector<uint8_t> &body) { m_zone.SendFeedback(body); };
+	m_feedback.Attach(m_windows, std::move(feedback_host));
 	Tracking::Host tracking_host;
 	tracking_host.text = [this](uint32_t id, const std::vector<std::string> &args, const std::string &fallback) {
 		return FormatEqString(m_ui.eqstr, id, fallback, args);
@@ -2928,7 +2962,8 @@ void FrontEnd::HandleWindowClicks()
 		    m_merchant.Click(click.window, click.control, click.shift, click.ctrl) || m_train.Click(click.window, click.control) ||
 		    m_raid_window.Click(click.window, click.control) || m_aa_window.Click(click.window, click.control) ||
 		    m_pet_window.Click(click.window, click.control) || m_friends.Click(click.window, click.control) ||
-		    m_text_entry.Click(click.window, click.control))
+		    m_text_entry.Click(click.window, click.control) || m_bug_report.Click(click.window, click.control) ||
+		    m_feedback.Click(click.window, click.control))
 			continue;
 		// CInventoryWnd::WndNotification: the Alt. Adv. button opens the AA window, or closes it.
 		if (click.window == "InventoryWindow" && click.control == "IW_AltAdvBtn") {
@@ -5310,6 +5345,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			break;
 		case Type::InZone:
 			m_zoning = false;
+			m_report_allowed = true; // HandleWorldMessage's OP_SendExpZonein
 			m_guild.InZone();
 			FindMyVehicle();
 			// HandleWorldMessage's OP_SendExpZonein: still looking for a group, say so here too.
@@ -6376,6 +6412,8 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 	SidlWindow *text_entry = m_windows.Find(TextEntry::Screen);
 	SidlWindow *inspect = m_windows.Find(InspectWindow::Screen);
 	SidlWindow *notes = m_windows.Find(PlayerNotes::Screen);
+	SidlWindow *bug_report = m_windows.Find(BugReport::Screen);
+	SidlWindow *feedback = m_windows.Find(Feedback::Screen);
 	// The chat's links light under the mouse, and a click on one asks the zone about it.
 	ItemTag link;
 	if (event.IsMouse() && !m_mouse_turn && !m_mouse_pan) {
@@ -6394,13 +6432,15 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			                             : pressed == TextEntry::Screen   ? text_entry
 			                             : pressed == InspectWindow::Screen ? inspect
 			                             : pressed == PlayerNotes::Screen ? notes
+			                             : pressed == BugReport::Screen ? bug_report
+			                             : pressed == Feedback::Screen ? feedback
 			                                                              : nullptr;
 			int pressed_chat = m_chats.IndexOf(pressed);
 			if (pressed_editor && pressed_editor->Typing()) {
 				for (int i = 0; i < m_chats.Count(); ++i)
 					if (ChatManager::Window *chat = m_chats.At(i))
 						chat->chat->Close();
-				for (SidlWindow *other : {social_editor, quantity, color_picker, friends, text_entry, inspect, notes})
+				for (SidlWindow *other : {social_editor, quantity, color_picker, friends, text_entry, inspect, notes, bug_report, feedback})
 					if (other && other != pressed_editor)
 						other->Focus("");
 			}
@@ -6412,7 +6452,7 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 					for (int i = 0; i < m_chats.Count(); ++i)
 						if (ChatManager::Window *chat = m_chats.At(i); chat && i != pressed_chat)
 							chat->chat->Close();
-					for (SidlWindow *other : {social_editor, quantity, color_picker, friends, text_entry, inspect, notes})
+					for (SidlWindow *other : {social_editor, quantity, color_picker, friends, text_entry, inspect, notes, bug_report, feedback})
 						if (other)
 							other->Focus("");
 				}
@@ -6426,6 +6466,8 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 	                     : friends && friends->Typing()           ? friends
 	                     : inspect && inspect->Typing()           ? inspect
 	                     : notes && notes->Typing()               ? notes
+	                     : bug_report && bug_report->Typing()     ? bug_report
+	                     : feedback && feedback->Typing()         ? feedback
 	                                                              : social_editor;
 	bool editing = editor && editor->Typing();
 	switch (event.type) {

@@ -726,7 +726,8 @@ void SidlWindow::Reposition(const std::string &screen_id, int x, int y)
 
 void SidlWindow::Focus(const std::string &screen_id)
 {
-	Control *control = Find(screen_id);
+	// "" is no focus, even in a window with controls that have no ScreenID (the bug report's labels).
+	Control *control = screen_id.empty() ? nullptr : Find(screen_id);
 	m_focus = control ? static_cast<int>(control - m_controls.data()) : -1;
 }
 

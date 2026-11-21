@@ -165,6 +165,25 @@ void ChatWindow::DrawOutput(Canvas &canvas, TextRenderer &text, const Rect &area
 	}
 }
 
+std::string ChatWindow::ShownText() const
+{
+	std::string shown;
+	const SidlWindow::Control *output = Output();
+	if (!output || !m_window)
+		return shown;
+	Rect area = m_window->ContentRect(*output);
+	int first = std::max(output->scroll_pos, 0);
+	int y = area.y + 2;
+	int count = 0;
+	for (int i = first; i < static_cast<int>(m_rows.size()) && y + m_row_height <= area.Bottom() && count < 20;
+	     ++i, y += m_row_height, ++count) {
+		for (const Piece &piece : m_rows[i].pieces)
+			shown += piece.text;
+		shown += '\n';
+	}
+	return shown;
+}
+
 ChatWindow::LinkAt ChatWindow::LinkUnder(int x, int y) const
 {
 	const SidlWindow::Control *output = Output();

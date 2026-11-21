@@ -23,107 +23,113 @@ namespace
 		MakeRaidLeader, RaidInvite, RaidDecline, RaidAccept, RaidDisband, SetLootType, AddRaidLooter, RemoveRaidLooter,
 		RaidSay, RaidWindow, Channel, Loot, TargetTell, CharInfo, MoveLog, StopSong, Shield, Quit, Log, Keys, Dismount,
 		AlternateAdv, Pet, SoundDriver, Duel, Decline, Bazaar, Trader, Nothing, ParticleDensity, RTarget, Inspect,
-		ChatFontSize, Language, Note, TrackPlayers, TrackSort, TrackFilter,
+		ChatFontSize, Language, Note, TrackPlayers, TrackSort, TrackFilter, Help, BugReport, Feedback, Petition, Report,
 	};
 
 	struct CommandEntry
 	{
 		const char *name;
+		// Its localized name, an eqstr id (0 none: the name itself). CEverQuest_LoadStringTables puts
+		// the string at +8, and /help lists that (getCommandDescription).
+		uint32_t label;
 		int gm;          // the GM level it needs; 0 anyone
+		// /help's kind (+0x12): 1 normal, 2 emote, 3 guild, 4 voice, 6 chat; 0 and 5 aren't listed.
+		int kind;
 		Command command;
 	};
 
-	// eqgame's table at 0x609afc, all 277 in order (abbreviations depend on it).
+	// eqgame's table at 0x609af8 ({label, name, localized name, handler, GM level, kind}, 20 bytes
+	// each), all 277 in order (abbreviations depend on it).
 	constexpr CommandEntry Commands[] = {
-		{"/who", 0, Command::Who}, {"/consider", 0, Command::Consider}, {"/feedback", 0, Command::None},
-		{"/consent", 0, Command::Consent}, {"/played", 0, Command::Played}, {"/ignore", 0, Command::Ignore},
-		{"/anonymous", 0, Command::Anonymous}, {"/afk", 0, Command::Afk}, {"/filter", 0, Command::Filter},
-		{"/assist", 0, Command::Assist}, {"/duel", 0, Command::Duel}, {"/decline", 0, Command::Decline},
-		{"/split", 0, Command::Split}, {"/autosplit", 0, Command::AutoSplit}, {"/quit", 0, Command::Quit},
-		{"/stopsong", 0, Command::StopSong}, {"/friends", 0, Command::Friends}, {"/shield", 0, Command::Shield},
-		{"/shownames", 0, Command::ShowNames}, {"/shownpcnames", 10, Command::None}, {"/emote", 0, Command::Emote},
-		{":", 0, Command::Emote}, {"/say", 0, Command::Say}, {"'", 0, Command::Say}, {"/tell", 0, Command::Tell},
-		{"/msg", 0, Command::Tell}, {"/send", 0, Command::Tell}, {"/ttell", 0, Command::TargetTell}, {"/gsay", 0, Command::Group},
-		{"/shout", 0, Command::Shout}, {"/auction", 0, Command::Auction}, {"/ooc", 0, Command::Ooc},
-		{"/reply", 0, Command::Reply}, {"/channel", 0, Command::Channel}, {"/guildsay", 0, Command::Guild},
-		{"/guildinvite", 0, Command::GuildInvite}, {"/guildremove", 0, Command::GuildRemove},
-		{"/guilddelete", 0, Command::GuildDelete}, {"/guildstatus", 0, Command::GuildStatus},
-		{"/guildleader", 0, Command::GuildLeader}, {"/guildwar", 0, Command::GuildWar},
-		{"/guildpeace", 0, Command::GuildPeace}, {"/pet", 0, Command::Pet}, {"/petition", 0, Command::None},
-		{"/private", 1, Command::None}, {"/find", 1, Command::None}, {"/goto", 1, Command::None},
-		{"/becomenpc", 1, Command::None}, {"/searchcorpse", 1, Command::None}, {"/yell", 0, Command::Yell},
-		{"/motd", 0, Command::Motd}, {"/corpse", 0, Command::Corpse}, {"/me", 0, Command::Emote},
-		{"/location", 0, Command::Location}, {"/adriver", 0, Command::SoundDriver}, {"/sdriver", 0, Command::SoundDriver},
-		{"/chat", 0, Command::None}, {"/join", 0, Command::None}, {"/leave", 0, Command::None},
-		{"/leaveall", 0, Command::None}, {"/list", 0, Command::None}, {"/announce", 0, Command::None},
-		{"/1", 0, Command::None}, {"/2", 0, Command::None}, {"/3", 0, Command::None}, {"/4", 0, Command::None},
-		{"/5", 0, Command::None}, {"/6", 0, Command::None}, {"/7", 0, Command::None}, {"/8", 0, Command::None},
-		{"/9", 0, Command::None}, {"/10", 0, Command::None}, {"/autojoin", 0, Command::None}, {"/keys", 0, Command::Keys},
-		{"/mp3", 0, Command::None}, {"/smile", 0, Command::Social}, {"/hail", 0, Command::Hail}, {"/frown", 0, Command::Social},
-		{"/laugh", 0, Command::Social}, {"/cry", 0, Command::Social}, {"/chuckle", 0, Command::Social}, {"/hug", 0, Command::Social},
-		{"/poke", 0, Command::Social}, {"/bow", 0, Command::Social}, {"/bounce", 0, Command::Social}, {"/panic", 0, Command::Social},
-		{"/nod", 0, Command::Social}, {"/rofl", 0, Command::Social}, {"/wave", 0, Command::Social}, {"/cheer", 0, Command::Social},
-		{"/gesture", 0, Command::Social}, {"/rude", 0, Command::Social}, {"/flipoff", 0, Command::Social},
-		{"/bird", 0, Command::Social}, {"/finger", 0, Command::Social}, {"/agree", 0, Command::Social},
-		{"/amaze", 0, Command::Social}, {"/apologize", 0, Command::Social}, {"/applaud", 0, Command::Social},
-		{"/plead", 0, Command::Social}, {"/bite", 0, Command::Social}, {"/bleed", 0, Command::Social},
-		{"/blink", 0, Command::Social}, {"/blush", 0, Command::Social}, {"/boggle", 0, Command::Social},
-		{"/bonk", 0, Command::Social}, {"/bored", 0, Command::Social}, {"/brb", 0, Command::Social}, {"/burp", 0, Command::Social},
-		{"/bye", 0, Command::Social}, {"/cackle", 0, Command::Social}, {"/calm", 0, Command::Social}, {"/clap", 0, Command::Social},
-		{"/comfort", 0, Command::Social}, {"/congratulate", 0, Command::Social}, {"/cough", 0, Command::Social},
-		{"/cringe", 0, Command::Social}, {"/curious", 0, Command::Social}, {"/dance", 0, Command::Social},
-		{"/drool", 0, Command::Social}, {"/duck", 0, Command::Social}, {"/eye", 0, Command::Social}, {"/gasp", 0, Command::Social},
-		{"/giggle", 0, Command::Social}, {"/glare", 0, Command::Social}, {"/grin", 0, Command::Social},
-		{"/groan", 0, Command::Social}, {"/grovel", 0, Command::Social}, {"/happy", 0, Command::Social},
-		{"/hungry", 0, Command::Social}, {"/introduce", 0, Command::Social}, {"/jk", 0, Command::Social},
-		{"/kneel", 0, Command::Social}, {"/lost", 0, Command::Social}, {"/massage", 0, Command::Social},
-		{"/moan", 0, Command::Social}, {"/mourn", 0, Command::Social}, {"/peer", 0, Command::Social}, {"/point", 0, Command::Social},
-		{"/ponder", 0, Command::Social}, {"/puzzle", 0, Command::Social}, {"/raise", 0, Command::Social},
-		{"/ready", 0, Command::Social}, {"/roar", 0, Command::Social}, {"/salute", 0, Command::Social},
-		{"/shiver", 0, Command::Social}, {"/shrug", 0, Command::Social}, {"/sigh", 0, Command::Social},
-		{"/smirk", 0, Command::Social}, {"/snarl", 0, Command::Social}, {"/snicker", 0, Command::Social},
-		{"/stare", 0, Command::Social}, {"/tap", 0, Command::Social}, {"/tease", 0, Command::Social},
-		{"/thank", 0, Command::Social}, {"/thirsty", 0, Command::Social}, {"/veto", 0, Command::Social},
-		{"/welcome", 0, Command::Social}, {"/whine", 0, Command::Social}, {"/whistle", 0, Command::Social},
-		{"/yawn", 0, Command::Social}, {"/smack", 0, Command::Social}, {"/pat", 0, Command::Social},
-		{"/fidget", 0, Command::Social}, {"/flex", 0, Command::Social}, {"/nudge", 0, Command::Social},
-		{"/purr", 0, Command::Social}, {"/kiss", 0, Command::Social}, {"/time", 0, Command::Time},
-		{"/discipline", 0, Command::None}, {"/random", 0, Command::Random}, {"/summon", 3, Command::None},
-		{"/broadcast", 4, Command::None}, {"/lastname", 4, Command::None}, {"/zone", 3, Command::None},
-		{"/kick", 4, Command::None}, {"/kill", 3, Command::None}, {"/delcorpse", 8, Command::None},
-		{"/hideme", 3, Command::None}, {"/servers", 3, Command::None}, {"/height", 4, Command::None},
-		{"/exit", 0, Command::Quit}, {"/loot", 0, Command::Loot}, {"/roleplay", 0, Command::Roleplay},
-		{"/follow", 0, Command::Follow}, {"/report", 0, Command::None}, {"/surname", 0, Command::None},
-		{"/log", 0, Command::Log}, {"/toggletell", 3, Command::None}, {"/inquire", 3, Command::None},
-		{"/praise", 3, Command::None}, {"/warn", 3, Command::None}, {"/edit", 3, Command::None},
-		{"/voice", 0, Command::None}, {"/microphone", 0, Command::None}, {"/movelog", 0, Command::MoveLog},
-		{"/hidecorpses", 0, Command::HideCorpses}, {"/vrdelay", 0, Command::None}, {"/reverb", 0, Command::Nothing},
-		{"/fastdrop", 0, Command::FastDrop}, {"/trackplayers", 0, Command::TrackPlayers}, {"/help", 0, Command::None},
-		{"/lfg", 0, Command::Lfg}, {"/approval", 4, Command::None}, {"/sit", 0, Command::Sit},
-		{"/stand", 0, Command::Stand}, {"/book", 0, Command::Book}, {"/cast", 0, Command::Cast},
-		{"/doability", 0, Command::DoAbility}, {"/whotarget", 0, Command::WhoTarget}, {"/language", 0, Command::Language},
-		{"/target", 0, Command::Target}, {"/camp", 0, Command::Camp}, {"/attack", 0, Command::Attack},
-		{"/invite", 0, Command::Invite}, {"/disband", 0, Command::Disband}, {"/note", 0, Command::Note},
-		{"/wincolor", 0, Command::None}, {"/usercolor", 0, Command::UserColor}, {"/resetwindows", 0, Command::Nothing},
-		{"/mcicontrol", 0, Command::None}, {"/popmail", 0, Command::Nothing}, {"/audiodebug", 0, Command::None},
-		{"/dynamiclights", 0, Command::None}, {"/chatfontsize", 0, Command::ChatFontSize}, {"/lootnodrop", 0, Command::LootNoDrop},
-		{"/reversesound", 0, Command::None}, {"/emotezone", 4, Command::None}, {"/invwinlabels", 0, Command::None},
-		{"/tracksort", 0, Command::TrackSort}, {"/trackfilter", 0, Command::TrackFilter}, {"/mousespeed", 0, Command::None},
-		{"/gems", 0, Command::None}, {"/inspect", 0, Command::Inspect}, {"/serverfilter", 0, Command::ServerFilter},
-		{"/showspelleffects", 0, Command::None}, {"/combatmusic", 0, Command::CombatMusic}, {"/mixahead", 0, Command::None},
-		{"/guildmotd", 0, Command::GuildMotd}, {"/charinfo", 0, Command::CharInfo}, {"/safelock", 0, Command::None},
-		{"/alternateadv", 0, Command::AlternateAdv}, {"/targetgroupbuff", 0, Command::TargetGroupBuff}, {"/tgb", 0, Command::TargetGroupBuff},
-		{"/hotbutton", 0, Command::None}, {"/particledensity", 0, Command::ParticleDensity}, {"/facepick", 0, Command::None},
-		{"/dismount", 0, Command::Dismount}, {"/rtarget", 0, Command::RTarget}, {"/showgrass", 0, Command::None},
-		{"/alias", 0, Command::Nothing}, {"/hitsmode", 0, Command::None}, {"/clearhits", 0, Command::None},
-		{"/dopropertinting", 0, Command::None}, {"/makeleader", 0, Command::MakeLeader}, {"/viewport", 0, Command::None},
-		{"/clearchat", 0, Command::ClearChat}, {"/bazaar", 0, Command::Bazaar}, {"/trader", 0, Command::Trader},
-		{"/music", 0, Command::None}, {"/bugreport", 0, Command::None}, {"/loadskin", 0, Command::None},
-		{"/newui", 0, Command::None}, {"/webupdate", 0, Command::None}, {"/viewpetition", 0, Command::None},
-		{"/deletepetition", 0, Command::None}, {"/raidwindow", 0, Command::RaidWindow}, {"/makeraidleader", 0, Command::MakeRaidLeader},
-		{"/raidinvite", 0, Command::RaidInvite}, {"/raiddecline", 0, Command::RaidDecline}, {"/raidaccept", 0, Command::RaidAccept},
-		{"/raiddisband", 0, Command::RaidDisband}, {"/setloottype", 0, Command::SetLootType}, {"/addraidlooter", 0, Command::AddRaidLooter},
-		{"/removeraidlooter", 0, Command::RemoveRaidLooter}, {"/rsay", 0, Command::RaidSay}, {"/quit", 0, Command::Quit},
+		{"/who", 13950, 0, 1, Command::Who}, {"/consider", 13951, 0, 1, Command::Consider}, {"/feedback", 13953, 0, 1, Command::Feedback},
+		{"/consent", 13954, 0, 1, Command::Consent}, {"/played", 13955, 0, 1, Command::Played}, {"/ignore", 13956, 0, 1, Command::Ignore},
+		{"/anonymous", 13957, 0, 1, Command::Anonymous}, {"/afk", 13958, 0, 1, Command::Afk}, {"/filter", 13959, 0, 1, Command::Filter},
+		{"/assist", 13960, 0, 1, Command::Assist}, {"/duel", 13961, 0, 1, Command::Duel}, {"/decline", 13962, 0, 1, Command::Decline},
+		{"/split", 13963, 0, 1, Command::Split}, {"/autosplit", 13964, 0, 1, Command::AutoSplit}, {"/quit", 13965, 0, 1, Command::Quit},
+		{"/stopsong", 13966, 0, 1, Command::StopSong}, {"/friends", 13967, 0, 1, Command::Friends}, {"/shield", 14212, 0, 1, Command::Shield},
+		{"/shownames", 13968, 0, 1, Command::ShowNames}, {"/shownpcnames", 13969, 10, 0, Command::None}, {"/emote", 13970, 0, 1, Command::Emote},
+		{":", 13971, 0, 1, Command::Emote}, {"/say", 13972, 0, 1, Command::Say}, {"'", 13973, 0, 1, Command::Say}, {"/tell", 13974, 0, 1, Command::Tell},
+		{"/msg", 13975, 0, 1, Command::Tell}, {"/send", 13976, 0, 1, Command::Tell}, {"/ttell", 13977, 0, 1, Command::TargetTell}, {"/gsay", 13978, 0, 1, Command::Group},
+		{"/shout", 13979, 0, 1, Command::Shout}, {"/auction", 13980, 0, 1, Command::Auction}, {"/ooc", 13981, 0, 1, Command::Ooc},
+		{"/reply", 13982, 0, 1, Command::Reply}, {"/channel", 13983, 0, 1, Command::Channel}, {"/guildsay", 13984, 0, 3, Command::Guild},
+		{"/guildinvite", 13985, 0, 3, Command::GuildInvite}, {"/guildremove", 13986, 0, 3, Command::GuildRemove},
+		{"/guilddelete", 13987, 0, 3, Command::GuildDelete}, {"/guildstatus", 13988, 0, 3, Command::GuildStatus},
+		{"/guildleader", 13989, 0, 3, Command::GuildLeader}, {"/guildwar", 13990, 0, 3, Command::GuildWar},
+		{"/guildpeace", 13991, 0, 3, Command::GuildPeace}, {"/pet", 13992, 0, 1, Command::Pet}, {"/petition", 13993, 0, 1, Command::Petition},
+		{"/private", 13994, 1, 0, Command::None}, {"/find", 13995, 1, 0, Command::None}, {"/goto", 13996, 1, 0, Command::None},
+		{"/becomenpc", 13997, 1, 0, Command::None}, {"/searchcorpse", 13998, 1, 0, Command::None}, {"/yell", 13999, 0, 1, Command::Yell},
+		{"/motd", 14000, 0, 1, Command::Motd}, {"/corpse", 14001, 0, 1, Command::Corpse}, {"/me", 14002, 0, 1, Command::Emote},
+		{"/location", 14003, 0, 0, Command::Location}, {"/adriver", 14004, 0, 0, Command::SoundDriver}, {"/sdriver", 14005, 0, 0, Command::SoundDriver},
+		{"/chat", 14006, 0, 6, Command::None}, {"/join", 14007, 0, 6, Command::None}, {"/leave", 14008, 0, 6, Command::None},
+		{"/leaveall", 14009, 0, 6, Command::None}, {"/list", 14010, 0, 6, Command::None}, {"/announce", 14011, 0, 6, Command::None},
+		{"/1", 14012, 0, 6, Command::None}, {"/2", 14013, 0, 6, Command::None}, {"/3", 14014, 0, 6, Command::None}, {"/4", 14015, 0, 6, Command::None},
+		{"/5", 14016, 0, 6, Command::None}, {"/6", 14017, 0, 6, Command::None}, {"/7", 14018, 0, 6, Command::None}, {"/8", 14019, 0, 6, Command::None},
+		{"/9", 14020, 0, 6, Command::None}, {"/10", 14021, 0, 6, Command::None}, {"/autojoin", 14022, 0, 6, Command::None}, {"/keys", 7522, 0, 1, Command::Keys},
+		{"/mp3", 7530, 0, 1, Command::None}, {"/smile", 14023, 0, 2, Command::Social}, {"/hail", 14024, 0, 2, Command::Hail}, {"/frown", 14025, 0, 2, Command::Social},
+		{"/laugh", 14026, 0, 2, Command::Social}, {"/cry", 14027, 0, 2, Command::Social}, {"/chuckle", 14028, 0, 2, Command::Social}, {"/hug", 14029, 0, 2, Command::Social},
+		{"/poke", 14030, 0, 2, Command::Social}, {"/bow", 14031, 0, 2, Command::Social}, {"/bounce", 14032, 0, 2, Command::Social}, {"/panic", 14033, 0, 2, Command::Social},
+		{"/nod", 14034, 0, 2, Command::Social}, {"/rofl", 14035, 0, 2, Command::Social}, {"/wave", 14036, 0, 2, Command::Social}, {"/cheer", 14037, 0, 2, Command::Social},
+		{"/gesture", 14038, 0, 2, Command::Social}, {"/rude", 14039, 0, 2, Command::Social}, {"/flipoff", 14040, 0, 2, Command::Social},
+		{"/bird", 14041, 0, 2, Command::Social}, {"/finger", 14042, 0, 2, Command::Social}, {"/agree", 14043, 0, 2, Command::Social},
+		{"/amaze", 14044, 0, 2, Command::Social}, {"/apologize", 14045, 0, 2, Command::Social}, {"/applaud", 14046, 0, 2, Command::Social},
+		{"/plead", 14047, 0, 2, Command::Social}, {"/bite", 14048, 0, 2, Command::Social}, {"/bleed", 14049, 0, 2, Command::Social},
+		{"/blink", 14050, 0, 2, Command::Social}, {"/blush", 14051, 0, 2, Command::Social}, {"/boggle", 14052, 0, 2, Command::Social},
+		{"/bonk", 14053, 0, 2, Command::Social}, {"/bored", 14054, 0, 2, Command::Social}, {"/brb", 14055, 0, 2, Command::Social}, {"/burp", 14056, 0, 2, Command::Social},
+		{"/bye", 14057, 0, 2, Command::Social}, {"/cackle", 14058, 0, 2, Command::Social}, {"/calm", 14059, 0, 2, Command::Social}, {"/clap", 14060, 0, 2, Command::Social},
+		{"/comfort", 14061, 0, 2, Command::Social}, {"/congratulate", 14062, 0, 2, Command::Social}, {"/cough", 14063, 0, 2, Command::Social},
+		{"/cringe", 14064, 0, 2, Command::Social}, {"/curious", 14065, 0, 2, Command::Social}, {"/dance", 14066, 0, 2, Command::Social},
+		{"/drool", 14067, 0, 2, Command::Social}, {"/duck", 14068, 0, 2, Command::Social}, {"/eye", 14069, 0, 2, Command::Social}, {"/gasp", 14070, 0, 2, Command::Social},
+		{"/giggle", 14071, 0, 2, Command::Social}, {"/glare", 14072, 0, 2, Command::Social}, {"/grin", 14073, 0, 2, Command::Social},
+		{"/groan", 14074, 0, 2, Command::Social}, {"/grovel", 14075, 0, 2, Command::Social}, {"/happy", 14076, 0, 2, Command::Social},
+		{"/hungry", 14077, 0, 2, Command::Social}, {"/introduce", 14078, 0, 2, Command::Social}, {"/jk", 14079, 0, 2, Command::Social},
+		{"/kneel", 14080, 0, 2, Command::Social}, {"/lost", 14081, 0, 2, Command::Social}, {"/massage", 14082, 0, 2, Command::Social},
+		{"/moan", 14083, 0, 2, Command::Social}, {"/mourn", 14084, 0, 2, Command::Social}, {"/peer", 14085, 0, 2, Command::Social}, {"/point", 14086, 0, 2, Command::Social},
+		{"/ponder", 14087, 0, 2, Command::Social}, {"/puzzle", 14088, 0, 2, Command::Social}, {"/raise", 14089, 0, 2, Command::Social},
+		{"/ready", 14090, 0, 2, Command::Social}, {"/roar", 14091, 0, 2, Command::Social}, {"/salute", 14092, 0, 2, Command::Social},
+		{"/shiver", 14093, 0, 2, Command::Social}, {"/shrug", 14094, 0, 2, Command::Social}, {"/sigh", 14095, 0, 2, Command::Social},
+		{"/smirk", 14096, 0, 2, Command::Social}, {"/snarl", 14097, 0, 2, Command::Social}, {"/snicker", 14098, 0, 2, Command::Social},
+		{"/stare", 14099, 0, 2, Command::Social}, {"/tap", 14100, 0, 2, Command::Social}, {"/tease", 14101, 0, 2, Command::Social},
+		{"/thank", 14102, 0, 2, Command::Social}, {"/thirsty", 14103, 0, 2, Command::Social}, {"/veto", 14104, 0, 2, Command::Social},
+		{"/welcome", 14105, 0, 2, Command::Social}, {"/whine", 14106, 0, 2, Command::Social}, {"/whistle", 14107, 0, 2, Command::Social},
+		{"/yawn", 14108, 0, 2, Command::Social}, {"/smack", 14110, 0, 2, Command::Social}, {"/pat", 14111, 0, 2, Command::Social},
+		{"/fidget", 14112, 0, 2, Command::Social}, {"/flex", 14113, 0, 2, Command::Social}, {"/nudge", 14114, 0, 2, Command::Social},
+		{"/purr", 14115, 0, 2, Command::Social}, {"/kiss", 14116, 0, 0, Command::Social}, {"/time", 14117, 0, 1, Command::Time},
+		{"/discipline", 14118, 0, 1, Command::None}, {"/random", 14120, 0, 1, Command::Random}, {"/summon", 14121, 3, 0, Command::None},
+		{"/broadcast", 14122, 4, 0, Command::None}, {"/lastname", 14125, 4, 0, Command::None}, {"/zone", 14126, 3, 0, Command::None},
+		{"/kick", 14127, 4, 0, Command::None}, {"/kill", 14128, 3, 0, Command::None}, {"/delcorpse", 14129, 8, 0, Command::None},
+		{"/hideme", 14131, 3, 0, Command::None}, {"/servers", 14132, 3, 0, Command::None}, {"/height", 14133, 4, 0, Command::None},
+		{"/exit", 14134, 0, 1, Command::Quit}, {"/loot", 14135, 0, 1, Command::Loot}, {"/roleplay", 14136, 0, 1, Command::Roleplay},
+		{"/follow", 14137, 0, 1, Command::Follow}, {"/report", 14138, 0, 1, Command::Report}, {"/surname", 14139, 0, 1, Command::None},
+		{"/log", 14141, 0, 1, Command::Log}, {"/toggletell", 14142, 3, 0, Command::None}, {"/inquire", 14143, 3, 0, Command::None},
+		{"/praise", 14144, 3, 0, Command::None}, {"/warn", 14145, 3, 0, Command::None}, {"/edit", 14146, 3, 0, Command::None},
+		{"/voice", 14147, 0, 4, Command::None}, {"/microphone", 14148, 0, 4, Command::None}, {"/movelog", 14150, 0, 1, Command::MoveLog},
+		{"/hidecorpses", 14151, 0, 1, Command::HideCorpses}, {"/vrdelay", 14152, 0, 1, Command::None}, {"/reverb", 14153, 0, 1, Command::Nothing},
+		{"/fastdrop", 14154, 0, 1, Command::FastDrop}, {"/trackplayers", 14155, 0, 1, Command::TrackPlayers}, {"/help", 14156, 0, 1, Command::Help},
+		{"/lfg", 14157, 0, 1, Command::Lfg}, {"/approval", 14158, 4, 0, Command::None}, {"/sit", 14159, 0, 1, Command::Sit},
+		{"/stand", 14160, 0, 1, Command::Stand}, {"/book", 14161, 0, 1, Command::Book}, {"/cast", 14162, 0, 1, Command::Cast},
+		{"/doability", 14163, 0, 1, Command::DoAbility}, {"/whotarget", 14164, 0, 1, Command::WhoTarget}, {"/language", 14165, 0, 1, Command::Language},
+		{"/target", 14166, 0, 1, Command::Target}, {"/camp", 14167, 0, 1, Command::Camp}, {"/attack", 14168, 0, 1, Command::Attack},
+		{"/invite", 14169, 0, 1, Command::Invite}, {"/disband", 14170, 0, 1, Command::Disband}, {"/note", 14171, 0, 1, Command::Note},
+		{"/wincolor", 14172, 0, 5, Command::None}, {"/usercolor", 14173, 0, 1, Command::UserColor}, {"/resetwindows", 14174, 0, 0, Command::Nothing},
+		{"/mcicontrol", 14175, 0, 1, Command::None}, {"/popmail", 14176, 0, 0, Command::Nothing}, {"/audiodebug", 14177, 0, 1, Command::None},
+		{"/dynamiclights", 14178, 0, 1, Command::None}, {"/chatfontsize", 14179, 0, 1, Command::ChatFontSize}, {"/lootnodrop", 14180, 0, 1, Command::LootNoDrop},
+		{"/reversesound", 14181, 0, 1, Command::None}, {"/emotezone", 14182, 4, 0, Command::None}, {"/invwinlabels", 14183, 0, 1, Command::None},
+		{"/tracksort", 14184, 0, 1, Command::TrackSort}, {"/trackfilter", 14185, 0, 1, Command::TrackFilter}, {"/mousespeed", 14186, 0, 1, Command::None},
+		{"/gems", 14187, 0, 1, Command::None}, {"/inspect", 14188, 0, 1, Command::Inspect}, {"/serverfilter", 14189, 0, 1, Command::ServerFilter},
+		{"/showspelleffects", 14190, 0, 1, Command::None}, {"/combatmusic", 7526, 0, 1, Command::CombatMusic}, {"/mixahead", 7527, 0, 1, Command::None},
+		{"/guildmotd", 14191, 0, 3, Command::GuildMotd}, {"/charinfo", 14192, 0, 1, Command::CharInfo}, {"/safelock", 14193, 0, 1, Command::None},
+		{"/alternateadv", 14195, 0, 0, Command::AlternateAdv}, {"/targetgroupbuff", 14196, 0, 1, Command::TargetGroupBuff}, {"/tgb", 14197, 0, 1, Command::TargetGroupBuff},
+		{"/hotbutton", 14198, 0, 1, Command::None}, {"/particledensity", 14199, 0, 0, Command::ParticleDensity}, {"/facepick", 14200, 0, 0, Command::None},
+		{"/dismount", 14201, 0, 1, Command::Dismount}, {"/rtarget", 14202, 0, 1, Command::RTarget}, {"/showgrass", 14203, 0, 1, Command::None},
+		{"/alias", 14204, 0, 1, Command::Nothing}, {"/hitsmode", 14205, 0, 1, Command::None}, {"/clearhits", 14206, 0, 1, Command::None},
+		{"/dopropertinting", 14207, 0, 1, Command::None}, {"/makeleader", 5043, 0, 1, Command::MakeLeader}, {"/viewport", 14210, 0, 1, Command::None},
+		{"/clearchat", 3127, 0, 1, Command::ClearChat}, {"/bazaar", 4501, 0, 1, Command::Bazaar}, {"/trader", 4502, 0, 1, Command::Trader},
+		{"/music", 6676, 0, 1, Command::None}, {"/bugreport", 13952, 0, 1, Command::BugReport}, {"/loadskin", 3123, 0, 1, Command::None},
+		{"/newui", 14211, 0, 1, Command::None}, {"/webupdate", 14209, 0, 1, Command::None}, {"/viewpetition", 5056, 0, 1, Command::None},
+		{"/deletepetition", 5057, 0, 1, Command::None}, {"/raidwindow", 0, 0, 0, Command::RaidWindow}, {"/makeraidleader", 5089, 0, 0, Command::MakeRaidLeader},
+		{"/raidinvite", 5090, 0, 0, Command::RaidInvite}, {"/raiddecline", 5091, 0, 0, Command::RaidDecline}, {"/raidaccept", 5092, 0, 0, Command::RaidAccept},
+		{"/raiddisband", 5093, 0, 0, Command::RaidDisband}, {"/setloottype", 5097, 0, 0, Command::SetLootType}, {"/addraidlooter", 5098, 0, 0, Command::AddRaidLooter},
+		{"/removeraidlooter", 5099, 0, 0, Command::RemoveRaidLooter}, {"/rsay", 5110, 0, 0, Command::RaidSay}, {"/quit", 0, 0, 0, Command::Quit},
 	};
 
 
@@ -2186,6 +2192,77 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 			"Showing title, first, and last names.", "Showing first and guild names."};
 		int shown = m_config.show_names;
 		ChatOut(shown <= 4 ? format(13293 + shown, said[shown - 1], {}) : said[shown - 1], ChatType::Default);
+		break;
+	}
+	case Command::Help: {
+		// /help (@004f92f5): normal, emote, guild, voice or chat (eqstr 13120..13124, any case)
+		// lists the commands of that kind, "List of commands" (13131), a line of 80 '-', and each
+		// one's localized name after two spaces (getCommandDescription); anything else is the six
+		// lines of 13125..13130.
+		static const char *const kinds[] = {"normal", "emote", "guild", "voice", "chat"};
+		static const int kind_of[] = {1, 2, 3, 4, 6};
+		int kind = 0;
+		for (int i = 0; i < 5 && !kind; ++i)
+			if (Lower(args) == Lower(format(13120 + i, kinds[i], {})))
+				kind = kind_of[i];
+		if (!kind) {
+			static const char *const usage[] = {"Format: /help <class> Where class is one of normal, emote, or guild",
+				"Normal will display a list of all commands.", "Emote will display a list of all player emotes.",
+				"Guild will display a list of guild commands.", "Voice will display a list of voice control commands.",
+				"Chat will display a list of chat channel commands."};
+			for (int i = 0; i < 6; ++i)
+				ChatOut(format(13125 + i, usage[i], {}), ChatType::Default);
+			break;
+		}
+		ChatOut(format(13131, "List of commands", {}), ChatType::Default);
+		ChatOut(std::string(80, '-'), ChatType::Default);
+		for (const auto &entry : Commands)
+			if (entry.kind == kind)
+				ChatOut("  " + (entry.label ? EqString(entry.label, entry.name) : std::string(entry.name)), ChatType::Default);
+		break;
+	}
+	case Command::BugReport:
+		m_bug_report.Activate(); // /bugreport (@004fb35a): ResetPositionAndUIState
+		break;
+	case Command::Feedback:
+		m_feedback.Activate(); // /feedback (@004fb37c): CXWnd::ShowWindow
+		break;
+	case Command::Petition:
+		// /petition (@004f8dfc): nothing typed says 13106, as a monster (deity 20000) 13107; else
+		// send_petition (@0053685c): UserPetitions' OP_Petition (under 1024 characters only) and
+		// "You petition, '%1'" (12325, color 0) either way.
+		if (args.empty())
+			ChatOut(format(13106, "You may not submit a blank petition.  Try again.", {}), ChatType::Yellow);
+		else if (me.deity == 20000)
+			ChatOut(format(13107, "You may not petition as a monster.", {}), ChatType::Yellow);
+		else {
+			if (args.size() < 0x400)
+				m_zone.Petition(args);
+			ChatOut(format(12325, "You petition, '%1'", {args}), ChatType::White);
+		}
+		break;
+	case Command::Report: {
+		// /report (@004f3e8e): nothing typed says 12943. Once a zone (DAT_00798550, 1 from each
+		// OP_SendExpZonein, 2 once used), else 12945: OP_Report with "name|our name|" and each chat
+		// window's rows in view (collectUIElementsText), each after a line of '=', 0x2004
+		// characters at most; then 12944.
+		if (args.empty()) {
+			ChatOut(format(12943, "Format is: /report <name of person being reported>", {}), ChatType::Yellow);
+			break;
+		}
+		if (!m_report_allowed) {
+			ChatOut(format(12945, "You may only submit a report once per time that you zone. Thank you.", {}), ChatType::Yellow);
+			break;
+		}
+		m_report_allowed = false;
+		std::string text = args + "|" + me.name + "|";
+		for (int i = 0; i < m_chats.Count(); ++i)
+			if (const ChatManager::Window *chat = m_chats.At(i); chat && chat->chat)
+				text += chat->chat->ShownText() + "\n===================================\n";
+		if (text.size() + 1 > 0x2004)
+			text.resize(0x2004);
+		m_zone.Report(text);
+		ChatOut(format(12944, "Reporting last 10 lines in chat display concerning %1.", {args}), ChatType::Yellow);
 		break;
 	}
 	case Command::None:

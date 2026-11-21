@@ -69,6 +69,9 @@ public:
 		std::vector<ItemTag> links;
 	};
 	const std::deque<Line> &Lines() const { return m_lines; }
+	// CStmlWnd::ExtractTextFromStyledElements (@00586090) of the output: the rows in view, top
+	// down, each with a '\n', 20 at most (/report's collectUIElementsText).
+	std::string ShownText() const;
 
 private:
 	// A row's text in pieces at its links' ends: where each is drawn from its left, and how wide.

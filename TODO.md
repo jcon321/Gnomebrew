@@ -803,11 +803,9 @@ no rules of its own.
       (%1 hours and %2 minutes) has ended." in the confirmation dialog; /played's time left reads
       it, and the time left window (`CTimeLeftWnd` @00437c5b, a label drawn `%d:%02d:%02d`,
       `updateTimerDisplay` @00437e49) counts it down.
-    - Help (`CHelpWnd_SetFile` @0041f6ef: `CStmlWnd_LoadPage` of the help file, with the links and
-      tables of 1; the help window opens empty) on Toggle help (ExecuteCmd 104), and /help
-      (@004f92f5: normal, emote, guild, voice or chat lists the commands of that kind with each
-      one's eqstr from the table's fifth field, `getCommandDescription` @0050230c, under 13131;
-      anything else 13125..13130).
+    - Help: /help (@004f92f5, the table's kinds and localized names) is done. Still to do: the
+      help window's page (`CHelpWnd_SetFile` @0041f6ef: `CStmlWnd_LoadPage` of the help file, with
+      the links and tables of 1; the help window opens empty) on Toggle help (ExecuteCmd 104).
     - Music player (`MusicPlayerWnd` @004285e3: `SongSelector`, `SongTimer`, `Volume`, and Add,
       Delete, Clear, Play, Pause, Stop, Back, Next, Random and Save buttons;
       `HandleMusicPlayerWndNotification` @0042898d; its file picker `CFileSelectionWnd` @0041af9a)
@@ -826,23 +824,20 @@ no rules of its own.
       `CVideoModesWnd_RestoreOldMode` @0043bbe2; kept as `[VideoMode]` Width, Height,
       BitsPerPixel and RefreshRate) from the options' button and Toggle video mode window (106).
       Goes with 14.
-    - Bug report (`CBugReportWnd` @004097ea, screen `BugReportWindow`: the `BugTypes` combo box,
-      `TargetName` and `TargetButton`, the Crash, Dup and Flags check boxes, Send; `OP_Bug`,
-      0x40b3) from /bugreport (@004fb35a), and feedback (`CFeedbackWnd` @0041acaf:
-      `FBKW_FeedbackInput`, Send; `OP_Feedback`, 0x413c) from /feedback (@004fb37c).
-    - /petition (@004f8dfc: empty says eqstr 13106, as a monster 13107; `send_petition`
-      @0053685c says "You petition, '%1'" (12325) and sends it, `OP_Petition`) and /report
-      (@004f3e8e: no name says 12943; once a zone, else 12945; the chat's last lines,
-      `collectUIElementsText` @00413598, 0x2004 bytes at most, as `OP_Report` 0x425a, then 12944).
-    - The text entry window (`CTextEntryWnd` @004377db, screen `TextEntryWnd`: `Prompt`, `Entry`,
-      `Cancel`; `Callback` @00437a7f hands the text back), which the chat window's menu
-      (`CChatWindow::WndNotification`) and the soulmark window ask a name with.
+    - ~~Bug report and feedback~~: done (`frontend/bug_report.*`: `CBugReportWnd`'s
+      `ResetPositionAndUIState` and `WndNotification`, `OP_Bug`; `CFeedbackWnd`, `OP_Feedback`;
+      both checked live). Still to do: the target box with a target checked live (only the
+      no-target branch was).
+    - ~~/petition and /report~~: done (`send_petition`, `UserPetitions`, `OP_Petition`; once a
+      zone from `OP_SendExpZonein`, `collectUIElementsText`'s rows in view, `OP_Report`).
+    - ~~The text entry window~~: done (`frontend/text_entry.*`, `CTextEntryWnd`); the soulmark
+      window's use of it waits on 36.
     - The gems game (`CGemsGameWnd` @0041cd06, /gems @004fa556: a falling-blocks game on the
       spell gem art, with its high scores file; 31 functions to `UpdateGemsGameWindowUI`
       @0041e6f2).
 35. **The other slash commands** that still say they aren't supported, not under another item.
-    The table is at 0x609afc: 277 entries of {name, a localized name, the handler, the GM level,
-    its /help eqstr}. Ghidra missed the handlers only the table points at; they're read from the
+    The table is at 0x609af8: 277 entries of {label eqstr, name, localized name, the handler, the
+    GM level, the /help kind}. Ghidra missed the handlers only the table points at; they're read from the
     exe's disassembly. Done so far: /split (`CEverQuest_DoSplit`; it doesn't close the windows
     DoSplit puts away, `DAT_007914a4` and `DAT_007952f4`), /yell with `msg_yell`'s directions,
     /loot, /charinfo (`FullZoneName` of the bind), /ttell (@004f839a: the target's name to its
@@ -872,9 +867,8 @@ no rules of its own.
       dialog (`CEverQuest_Surname` @0053d8de, eqstr 10004), `OP_Surname` from `ProcessYes`, and the
       zone's answer (0x41c4, @004e46d5): 1374 rejected, or 1375 "Congratulations, %1 %2, your
       surname was approved." with the name over our head.
-    - /language (under 3), /facepick (23), /hitsmode and /clearhits and
-      /chatfontsize (3), /help, /mp3, /music, /loadskin,
-      /bugreport, /feedback, /petition, /report and /gems (34), /shownpcnames (9).
+    - /facepick (23), /hitsmode and /clearhits (3), /mp3, /music, /loadskin and /gems (34),
+      /shownpcnames (9).
     - /hotbutton (@004ff36a): `[Name] <Color> [Text]` makes a social of that name, color and
       first line in the first free one of the 120 (or the one of that name), `registerHotButton`
       @004ff251, and puts it on the cursor (`CCursorAttachment::Activate` type 4) for a hot

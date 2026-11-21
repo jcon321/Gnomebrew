@@ -48,6 +48,7 @@
 #include "friends.h"
 #include "inspect_window.h"
 #include "player_notes.h"
+#include "bug_report.h"
 #include "tracking.h"
 #include "duel.h"
 #include "bazaar_search.h"
@@ -845,6 +846,9 @@ private:
 	Friends m_friends;        // CFriendsWnd, /friends, /ignore, __FriendsList and __IgnoreList
 	InspectWindow m_inspect;  // CInspectWnd, doInspect, msg_req_inspect, our inspect text
 	PlayerNotes m_notes;      // CPlayerNotesWnd, /note, notes.txt
+	BugReport m_bug_report;   // CBugReportWnd, /bugreport
+	Feedback m_feedback;      // CFeedbackWnd, /feedback
+	bool m_report_allowed = false; // DAT_00798550 1: /report not used since OP_SendExpZonein
 	Tracking m_tracking;      // CTrackingWnd, /trackplayers, /tracksort, /trackfilter, DoPassageOfTime's tracking
 	Duel m_duel;              // /duel, /decline, msg_duel
 	BazaarWindow m_bazaar;    // CBazaarWnd: /trader

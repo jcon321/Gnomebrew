@@ -1691,6 +1691,26 @@ void ZoneSession::MoveLog()
 		Send(ZoneOp::MoveLog, nullptr, 0, "OP_MoveLog");
 }
 
+bool ZoneSession::SendBug(const std::vector<uint8_t> &body)
+{
+	return m_state == State::InZone && Send(ZoneOp::Bug, body.data(), body.size(), "OP_Bug");
+}
+
+bool ZoneSession::SendFeedback(const std::vector<uint8_t> &body)
+{
+	return m_state == State::InZone && Send(ZoneOp::Feedback, body.data(), body.size(), "OP_Feedback");
+}
+
+bool ZoneSession::Petition(const std::string &text)
+{
+	return m_state == State::InZone && Send(ZoneOp::Petition, text.c_str(), text.size() + 1, "OP_Petition");
+}
+
+bool ZoneSession::Report(const std::string &text)
+{
+	return m_state == State::InZone && Send(ZoneOp::Report, text.c_str(), text.size() + 1, "OP_Report");
+}
+
 void ZoneSession::Shield(uint16_t id)
 {
 	if (m_state == State::InZone)

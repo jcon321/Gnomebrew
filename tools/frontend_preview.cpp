@@ -248,6 +248,103 @@ namespace
 		return 0;
 	}
 
+	// /help, /petition and /report, and the bug report and feedback windows sent, against a server.
+	int ReportsTest(FrontEnd &frontend, Harness &h)
+	{
+		WindowManager &windows = frontend.Windows();
+		h.Key(InputEvent::Key::F11); // the debug menu out of the way
+		size_t chat_seen = frontend.Chat().Lines().size();
+		auto chat = [&](bool print = true) {
+			size_t n = 0;
+			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen, ++n)
+				if (print)
+					printf("[preview] chat: %s\n", frontend.Chat().Lines()[chat_seen].text.c_str());
+			return n;
+		};
+		auto run = [&](int ms) {
+			h.RunUntil([] { return false; }, ms);
+			chat();
+		};
+		auto type = [&](const std::string &line) {
+			printf("[preview] > %s\n", line.c_str());
+			h.Key(InputEvent::Key::Enter);
+			h.Type(line);
+			h.Key(InputEvent::Key::Enter);
+			run(700);
+		};
+		auto press = [&](const char *screen, const char *control) {
+			const SidlWindow *wnd = windows.Find(screen);
+			const SidlWindow::Control *c = wnd ? wnd->Find(control) : nullptr;
+			if (!c) {
+				printf("[preview] no %s\n", control);
+				return;
+			}
+			Rect area = frontend.ScreenArea();
+			int x = area.x + c->rect.x + c->rect.w / 2, y = area.y + c->rect.y + std::min(c->rect.h / 2, 30);
+			printf("[preview] click %s\n", control);
+			frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+			frontend.OnEvent({InputEvent::Type::MouseDown, x, y});
+			frontend.OnEvent({InputEvent::Type::MouseUp, x, y});
+			run(300);
+		};
+		auto text_of = [&](const char *screen, const char *control) {
+			const SidlWindow *wnd = windows.Find(screen);
+			const SidlWindow::Control *c = wnd ? wnd->Find(control) : nullptr;
+			return c ? c->text : std::string("(none)");
+		};
+		run(500);
+		for (const char *line : {"/help", "/help guild", "/help VOICE", "/help chat"})
+			type(line);
+		printf("[preview] > /help normal\n");
+		h.Key(InputEvent::Key::Enter);
+		h.Type("/help normal");
+		h.Key(InputEvent::Key::Enter);
+		h.RunUntil([] { return false; }, 700);
+		printf("[preview] /help normal: %zu lines\n", chat(false));
+		printf("[preview] > /help emote\n");
+		h.Key(InputEvent::Key::Enter);
+		h.Type("/help emote");
+		h.Key(InputEvent::Key::Enter);
+		h.RunUntil([] { return false; }, 700);
+		printf("[preview] /help emote: %zu lines\n", chat(false));
+		for (const char *line : {"/petition", "/petition Preview test petition, please ignore.", "/report",
+			"/report Nobody", "/report Nobody"})
+			type(line);
+		// The bug report: our place, a type, the target box with no target, text and Send.
+		type("/bugreport");
+		printf("[preview] bug report shown %d, loc %s %s %s, prompt %zu chars\n", windows.Shown(BugReport::Screen) ? 1 : 0,
+			text_of(BugReport::Screen, "LocX").c_str(), text_of(BugReport::Screen, "LocY").c_str(),
+			text_of(BugReport::Screen, "LocZ").c_str(), text_of(BugReport::Screen, "Prompt").size());
+		h.Snapshot("bug-report");
+		if (SidlWindow *wnd = windows.Find(BugReport::Screen))
+			if (SidlWindow::Control *types = wnd->Find("BugTypes"))
+				printf("[preview] bug types: %zu, chosen %d (%s)\n", types->choices.size(), types->choice,
+					types->choice >= 0 && types->choice < static_cast<int>(types->choices.size()) ? types->choices[types->choice].c_str() : "");
+		press(BugReport::Screen, "TargetButton");
+		if (SidlWindow *wnd = windows.Find(BugReport::Screen))
+			printf("[preview] target box checked %d with no target\n", wnd->Find("TargetButton")->checked ? 1 : 0);
+		press(BugReport::Screen, "CrashButton");
+		press(BugReport::Screen, "Edit");
+		h.Type("Preview test bug report, please ignore.");
+		printf("[preview] bug text: %s\n", text_of(BugReport::Screen, "Edit").c_str());
+		press(BugReport::Screen, "SendButton");
+		run(1500);
+		printf("[preview] bug report shown %d, text '%s'\n", windows.Shown(BugReport::Screen) ? 1 : 0,
+			text_of(BugReport::Screen, "Edit").c_str());
+		// Feedback: our name, text and Send; then Cancel with text.
+		type("/feedback");
+		printf("[preview] feedback shown %d, name %s\n", windows.Shown(Feedback::Screen) ? 1 : 0,
+			text_of(Feedback::Screen, "FBKW_UserName").c_str());
+		h.Snapshot("feedback");
+		press(Feedback::Screen, "FBKW_FeedbackInput");
+		h.Type("Preview test feedback, please ignore.");
+		press(Feedback::Screen, "FBKW_SendButton");
+		run(1500);
+		printf("[preview] feedback shown %d, text '%s'\n", windows.Shown(Feedback::Screen) ? 1 : 0,
+			text_of(Feedback::Screen, "FBKW_FeedbackInput").c_str());
+		return 0;
+	}
+
 	int CommandsTest(FrontEnd &frontend, Harness &h)
 	{
 		WindowManager &windows = frontend.Windows();
@@ -3903,6 +4000,7 @@ int main(int argc, char **argv)
 	bool shop = argc == 7 && std::string(argv[6]) == "shop";
 	bool ground = argc == 7 && std::string(argv[6]) == "ground";
 	bool commands = argc == 7 && std::string(argv[6]) == "commands";
+	bool reports_test = argc == 7 && std::string(argv[6]) == "reports";
 	bool passage = argc == 7 && std::string(argv[6]) == "passage";
 	bool group_test = argc == 7 && std::string(argv[6]) == "group";
 	bool duel_test = argc == 7 && std::string(argv[6]) == "duel";
@@ -6005,6 +6103,8 @@ int main(int argc, char **argv)
 				return GroundTest(frontend, h);
 			if (commands)
 				return CommandsTest(frontend, h);
+			if (reports_test)
+				return ReportsTest(frontend, h);
 			if (passage)
 				return PassageTest(frontend, h);
 			if (group_test)

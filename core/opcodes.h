@@ -302,6 +302,14 @@ namespace ZoneOp
 	constexpr uint16_t CorpsePosition = 0x4021;
 	// No body (/movelog yes): MSG_MOVELOG, a move to a less crowded server. EQMacEmu has no handler.
 	constexpr uint16_t MoveLog = 0x41e4;
+	// BugReport_Struct (3340 bytes): CBugReportWnd's Send (frontend/bug_report.h).
+	constexpr uint16_t Bug = 0x40b3;
+	// Feedback_Struct {char name[64], u8[43], char message[1024] @107} (1131 bytes): CFeedbackWnd's Send.
+	constexpr uint16_t Feedback = 0x413c;
+	// The petition's text and its 0 (UserPetitions: under 1024 characters): /petition.
+	constexpr uint16_t Petition = 0x400e;
+	// "name|our name|" and the chat windows' text, with its 0 (0x2004 bytes at most): /report.
+	constexpr uint16_t Report = 0x425a;
 	// Shielding_Struct {u16 spawn id}: a warrior's /shield of them.
 	constexpr uint16_t Shielding = 0x424b;
 	// Duels (frontend/duel.h). DuelChallenge_Struct {u16 target, u16 challenger}: /duel's challenge
@@ -632,6 +640,10 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::GMNameChange, "OP_GMNameChange"},
 	{ZoneOp::CorpsePosition, "OP_CorpsePosition"},
 	{ZoneOp::MoveLog, "OP_MoveLog"},
+	{ZoneOp::Bug, "OP_Bug"},
+	{ZoneOp::Feedback, "OP_Feedback"},
+	{ZoneOp::Petition, "OP_Petition"},
+	{ZoneOp::Report, "OP_Report"},
 	{ZoneOp::Shielding, "OP_Shielding"},
 	{ZoneOp::RequestDuel, "OP_RequestDuel"},
 	{ZoneOp::DuelResponse, "OP_DuelResponse"},

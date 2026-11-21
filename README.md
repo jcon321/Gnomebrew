@@ -392,7 +392,8 @@ eqgame's `OP_MoveItem`.
   /played, /motd, /afk, /anonymous, /shownames, /sit, /stand, /book, /cast, /camp, /clearchat,
   /random, /lootnodrop, /fastdrop, /autosplit, /roleplay, /targetgroupbuff (/tgb), /split, /yell,
   /consent, /duel, /decline, /trader, /bazaar, /loot, /ttell, /charinfo, /movelog, /stopsong, /shield, /quit (/exit), /log, /keys, /dismount,
-  /adriver, /sdriver, /attack, /combatmusic, /doability, /rtarget, /inspect, /particledensity, the
+  /adriver, /sdriver, /attack, /combatmusic, /doability, /rtarget, /inspect, /particledensity,
+  /help, /bugreport, /feedback, /petition, /report, the
   guild commands (see Guilds under In the zone),
   the raid commands (see Raids), /filter, /serverfilter and the socials (/smile, /wave and the
   other 86).
@@ -769,7 +770,11 @@ button, print the rows, sort by value both ways and by name, pick the first skil
 and Done; or `ground` to list
 what's on the ground, drop an item and pick it back up, and open a forge and close it; or
 `commands` to type /random, /lootnodrop, /fastdrop and socials (alone and at the nearest spawn),
-print the chat, and snapshot the compass as it turns; or `group`, with Claudebot in the zone through
+print the chat, and snapshot the compass as it turns; or `reports` to type /help with each kind
+(counting the normal and emote lists), /petition empty and with text, /report empty and twice,
+then open /bugreport (printing its place, types and prompt), check the target box with no target
+and Crash, type into it and Send, and do the same with /feedback, printing the server's answers
+(each sends a real petition, bug or feedback row); or `group`, with Claudebot in the zone through
 `eqclient -u clauderobot -p testpass1 --char Claudebot --zone 200 --group-invite Replaycaster
 --group-accept`, to stand by them, follow their invitation in the group window, click their gauge,
 type the /who lines, /follow them from 70 away (printing the gap each second) until Move back ends
@@ -2380,6 +2385,57 @@ details and the nearest spawns at the top left and the radar at the top right.
   box takes it and `SaveNotes` (@0042e9cd) writes the whole box to `notes.txt` (`"w"`). Enter in
   the box puts a `\n` in (`WndNotification` 6, `ReplaceSelection`); closing it saves. The old UI's
   /note appends `"[%s] %s\n"` to the file and says 13223.
+- **The command table** (0x609af8, 278 entries of 20 bytes, the last empty): {u32 label eqstr
+  (-1 none), name, localized name, handler, i16 GM level @0x10, i16 /help kind @0x12}.
+  `CEverQuest_LoadStringTables` (@005263c5) puts each label's string at +8 (left 0 when missing,
+  with a `COMMANDERROR` trace); `CEverquest_InterpretCmd` matches the typed word against the
+  localized names first, then the English ones. The labels are the English names but for
+  /clearchat's, "/clear" (3127), and /raidwindow and /quit (the second), which have none. Ours
+  matches the English names only, which picks the same command for every word.
+- **/help** (@004f92f5): the whole line against 13120..13124 ("normal", "emote", "guild",
+  "voice", "chat", `UTF8_stricmp`) picks kind 1, 2, 3, 4 or 6; then 13131 "List of commands", a
+  line of 80 '-', and `"  %s"` of each entry of that kind's `getCommandDescription` (@0050230c:
+  the localized name, else the name), all in 0x111. Anything else prints 13125..13130. Kind 1 is
+  113 commands, 2 the 92 socials, 3 the 9 guild ones, 4 /voice and /microphone, 6 the 17 chat
+  channel ones; kind 0 (GM commands, the raid's, a few others) and 5 (/wincolor) are never listed.
+- **/bugreport** (@004fb35a) and the bug report window (`CBugReportWnd` @004097ea,
+  `frontend/bug_report.*`, screen `BugReportWindow`). The new UI's /bugreport is
+  `ResetPositionAndUIState` (@00409b68): our `Position.y`, `.x` and `.z` kept (+0x174..+0x17c,
+  0s with no player) and shown in `LocX`, `LocY` and `LocZ` as `"%.1f"`, the four check boxes
+  cleared, `TargetName` emptied, shown. The constructor fills `BugTypes` from the table at
+  0x5fc120 ({id, name, prompt}, 11 entries: names 3165 Other, then 3155..3164 Video, Audio,
+  Pathing, Quest, Tradeskills, Spell stacking, Doors/Portals, Items, NPC, Dialogs; prompts 3176
+  and 3166..3175, all the same text), choosing the one with id 0, and sets `Edit`'s limit to 1023
+  (341 in another language). `WndNotification` (@00409d08): `BugTypes` puts its prompt in
+  `Prompt`; `TargetButton` checked keeps the target's id, name and Type 0 (none: unchecked again)
+  and shows `trimName`, unchecked empties `TargetName`; `CancelButton` closes it; `SendButton`
+  with text sends `OP_Bug` (0x40b3, `BugReport_Struct`, 3340 bytes: the type's name at 0, our name
+  at 64, the kept y, x, z at 160 and 0, the minutes played (`PCData`+0x1358) at 176, the target's
+  id at 188 and name at 192, the flags at 256 (Dup 1, Crash 2, Target 4, Flags 8), the text at
+  2312, 1024 at most), empties `Edit`, and closes it either way. `LocationButton` is never looked
+  up. EQMacEmu stores it in `bugs` and answers "Thank you for the bug submission, %s." Checked
+  live (the preview's `reports`).
+- **/feedback** (@004fb37c) and `CFeedbackWnd` (@0041acaf, screen `FeedbackWindow`): the
+  constructor puts our name in `FBKW_UserName`, limits `FBKW_FeedbackInput` to 1023 and hides it
+  (its `Activate` @0041add7 is `Show(0)`); /feedback is `CXWnd::ShowWindow` (@0041adc2).
+  `FBKW_SendButton` with text sends `OP_Feedback` (0x413c, 1131 bytes from `DAT_007f6afb`: our name,
+  empty strings at 64, 96 and 101, 0s at 105 and 106, the text at 107), empties the box and closes
+  it; with none it only closes. `FBKW_CancelButton` empties the box and closes. EQMacEmu answers
+  "Thank you, %s. Your feedback has been recieved." Checked live. The old UI's /bugreport and
+  /feedback (@00545dec) aren't ours.
+- **/petition** (@004f8dfc): nothing typed says 13106, deity 20000 13107 (both 0xf); else
+  `send_petition` (@0053685c), when not offline: `UserPetitions` (@004ef3f7) sends `OP_Petition`
+  (0x400e) with the text and its 0 only when it's under 1024 characters, then 12325 "You petition,
+  '%1'" in color 0 either way. EQMacEmu answers "Petition reporting is disabled on this server."
+  unless `Petitions:PetitionSystemActive` is on.
+- **/report** (@004f3e8e): nothing typed says 12943. `DAT_00798550` (Zeal's `in_game`) is 1 from
+  each `OP_SendExpZonein` (HandleWorldMessage's 0x40d8); /report sets it to 2, and anything else
+  says 12945 ("once per time that you zone"). The text is the line, `|`, our name, `|`, then
+  `collectUIElementsText` (@00413598) of `CChatManager`: for each chat window,
+  `CStmlWnd::ExtractTextFromStyledElements` (@00586090) of its output (the rows in view, top
+  down, 20 at most, each with a `\n`) and `"\n===================================\n"`; cut to 0x2004
+  characters, sent as `OP_Report` (0x425a) with its 0, then 12944 with the line (0xf). EQMacEmu
+  splits it at the two `|`. The old UI's sends the 10 lines of `DAT_007b9190` but `"@"` ones.
 - **/particledensity** (@004ff0b3): the line in capitals; a number (`is_number` @004f3739: a sign,
   then digits) from 0 to 3 is the level, else its first three letters `OFF`, `LOW`, `MED` or `HIG`
   are 0..3, else "Please choose either OFF, LOW, MED, or HIGH." (a literal in the exe). The level
