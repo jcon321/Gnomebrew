@@ -42,6 +42,9 @@ class ChatManager
 {
 public:
 	ChatManager();
+	// CDisplay_CleanGameUI's CChatWindow::CleanupChatWindows: every window gone, the main one's
+	// lines with it (Build makes them again).
+	void Cleanup();
 
 	static constexpr int MaxWindows = 32;
 	static constexpr int ChannelMaps = 41;

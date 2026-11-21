@@ -135,12 +135,17 @@ const Image *SidlTextures::Get(const std::string &name)
 	if (cached != m_cache.end())
 		return cached->second.get();
 
-	// The skin files are mixed case and Linux is case sensitive, so index the folder once.
+	// The skin files are mixed case and Linux is case sensitive, so index the folders once: the
+	// default's first, then the skin's over them.
 	if (!m_scanned) {
 		m_scanned = true;
-		std::error_code ec;
-		for (const auto &entry : std::filesystem::directory_iterator(m_dir, ec))
-			m_files[ToLowerCopy(entry.path().filename().string())] = entry.path().string();
+		for (const std::string *dir : {&m_default_dir, &m_dir}) {
+			if (dir->empty())
+				continue;
+			std::error_code ec;
+			for (const auto &entry : std::filesystem::directory_iterator(*dir, ec))
+				m_files[ToLowerCopy(entry.path().filename().string())] = entry.path().string();
+		}
 	}
 
 	std::unique_ptr<Image> image;
@@ -162,19 +167,39 @@ const Image *SidlTextures::Get(const std::string &name)
 
 // ---------------------------------------------------------------- definitions
 
+namespace
+{
+	// A folder's files by their lowercase names (the skins are mixed case; Linux isn't forgiving).
+	std::map<std::string, std::string> IndexFolder(const std::string &dir)
+	{
+		std::map<std::string, std::string> files;
+		std::error_code ec;
+		if (!dir.empty())
+			for (const auto &entry : std::filesystem::directory_iterator(dir, ec))
+				files[ToLowerCopy(entry.path().filename().string())] = entry.path().string();
+		return files;
+	}
+}
+
 bool SidlDefinitions::Load(const std::string &ui_dir, std::string &error)
 {
+	// One folder: a file missing is a warning, not a failure (the default skin is the last resort).
 	m_dir = ui_dir;
+	m_default_dir.clear();
+	m_files = IndexFolder(ui_dir);
+	m_default_files.clear();
 	m_animations.clear();
 	m_window_templates.clear();
 	m_frame_templates.clear();
+	m_slider_templates.clear();
+	m_button_templates.clear();
 	m_pieces.clear();
 	m_warnings.clear();
 
 	std::string text;
-	std::string equi = ui_dir + "/EQUI.xml";
-	if (!ReadFile(equi, text)) {
-		error = "Can't read " + equi;
+	std::string equi = FilePath("EQUI.xml");
+	if (equi.empty() || !ReadFile(equi, text)) {
+		error = "Can't read " + ui_dir + "/EQUI.xml";
 		return false;
 	}
 	auto root = ParseXml(text, error);
@@ -195,32 +220,153 @@ bool SidlDefinitions::Load(const std::string &ui_dir, std::string &error)
 	collect(*root);
 
 	for (const auto &file : includes)
-		if (ToLowerCopy(file) != "sidl.xml")
-			LoadFile(file);
+		if (ToLowerCopy(file) != "sidl.xml") {
+			std::string file_error;
+			if (!LoadFile(file, file_error))
+				m_warnings.push_back(file_error);
+		}
 	return true;
 }
 
-void SidlDefinitions::LoadFile(const std::string &file)
+bool SidlDefinitions::Load(const std::string &skin_dir, const std::string &default_dir, std::string &error)
+{
+	if (ToLowerCopy(skin_dir) == ToLowerCopy(default_dir))
+		return Load(default_dir, error);
+	m_dir = skin_dir;
+	m_default_dir = default_dir;
+	m_files = IndexFolder(skin_dir);
+	m_default_files = IndexFolder(default_dir);
+	m_animations.clear();
+	m_window_templates.clear();
+	m_frame_templates.clear();
+	m_slider_templates.clear();
+	m_button_templates.clear();
+	m_pieces.clear();
+	m_warnings.clear();
+
+	// processXmlIncludes: each <Include> read as EQUI.xml was, from the skin's folder or the default's.
+	std::string text;
+	std::string equi = FilePath("EQUI.xml");
+	if (equi.empty() || !ReadFile(equi, text)) {
+		error = "Can't read EQUI.xml in " + skin_dir + " or " + default_dir;
+		return false;
+	}
+	auto root = ParseXml(text, error);
+	if (!root) {
+		error = "EQUI.xml: " + error;
+		return false;
+	}
+	std::vector<std::string> includes;
+	std::function<void(const XmlNode &)> collect = [&](const XmlNode &node) {
+		for (const auto &child : node.children) {
+			if (child->name == "Include")
+				includes.push_back(child->text);
+			else
+				collect(*child);
+		}
+	};
+	collect(*root);
+	for (const auto &file : includes)
+		if (ToLowerCopy(file) != "sidl.xml" && !LoadFile(file, error))
+			return false;
+	return true;
+}
+
+std::string SidlDefinitions::FilePath(const std::string &file) const
+{
+	std::string key = ToLowerCopy(file);
+	if (auto it = m_files.find(key); it != m_files.end())
+		return it->second;
+	if (auto it = m_default_files.find(key); it != m_default_files.end())
+		return it->second;
+	return {};
+}
+
+bool SidlDefinitions::LoadFile(const std::string &file, std::string &error)
 {
 	std::string text;
-	std::string path = m_dir + "/" + file;
-	if (!ReadFile(path, text)) {
-		m_warnings.push_back("missing " + file);
-		return;
+	std::string path = FilePath(file);
+	if (path.empty() || !ReadFile(path, text)) {
+		error = "missing " + file;
+		return false;
 	}
-	LoadText(text, file);
+	return LoadText(text, file, error);
 }
 
 void SidlDefinitions::LoadText(const std::string &xml, const std::string &name)
 {
 	std::string error;
+	if (!LoadText(xml, name, error))
+		m_warnings.push_back(error);
+}
+
+bool SidlDefinitions::LoadText(const std::string &xml, const std::string &name, std::string &error)
+{
 	auto root = ParseXml(xml, error);
 	if (!root) {
-		m_warnings.push_back(name + ": " + error);
-		return;
+		error = name + ": " + error;
+		return false;
 	}
 	for (const auto &child : root->children)
 		ReadElement(*child);
+	return true;
+}
+
+// ---------------------------------------------------------------- skins
+
+std::string SidlSkinDirectory(const std::string &eq_dir, const std::string &name)
+{
+	auto find = [](const std::string &dir, const std::string &entry) {
+		std::error_code ec;
+		std::string want = ToLowerCopy(entry);
+		for (const auto &e : std::filesystem::directory_iterator(dir, ec))
+			if (ToLowerCopy(e.path().filename().string()) == want)
+				return e.path().string();
+		return dir + "/" + entry;
+	};
+	return find(find(eq_dir, "uifiles"), name);
+}
+
+bool LoadSidlSkin(const std::string &eq_dir, const std::string &name, SidlSkin &skin, std::string &message, std::string &error)
+{
+	std::string default_dir = SidlSkinDirectory(eq_dir, "default");
+	skin.name = name;
+	skin.fell_back = false;
+	skin.definitions = std::make_unique<SidlDefinitions>();
+	std::string skin_dir = SidlSkinDirectory(eq_dir, name);
+	bool is_default = ToLowerCopy(name) == "default";
+	if (skin.definitions->Load(skin_dir, default_dir, error)) {
+		skin.textures = std::make_unique<SidlTextures>(skin_dir, default_dir);
+		return true;
+	}
+	if (is_default)
+		return false;
+	// InitNewUI: "Error loading skin "%s", attempting to load default." into the line
+	// CDisplay_ActivateMainUI puts in the chat, and the default skin's files instead.
+	message = "Error loading skin \"" + name + "\", attempting to load default.";
+	std::string skin_error = error;
+	skin.fell_back = true;
+	skin.definitions = std::make_unique<SidlDefinitions>();
+	if (!skin.definitions->Load(default_dir, error)) {
+		error = skin_error + "; " + error;
+		return false;
+	}
+	error = skin_error;
+	skin.textures = std::make_unique<SidlTextures>(default_dir);
+	return true;
+}
+
+std::vector<std::string> SidlSkinNames(const std::string &eq_dir)
+{
+	std::vector<std::string> names;
+	std::error_code ec;
+	for (const auto &entry : std::filesystem::directory_iterator(SidlSkinDirectory(eq_dir, ""), ec)) {
+		std::string name = entry.path().filename().string();
+		if (entry.is_directory(ec) && !name.empty() && name[0] != '.')
+			names.push_back(name);
+	}
+	std::sort(names.begin(), names.end(), [](const std::string &a, const std::string &b) { return ToLowerCopy(a) < ToLowerCopy(b); });
+	return names;
 }
 
 void SidlDefinitions::ReadElement(const XmlNode &node)
@@ -608,6 +754,8 @@ bool SidlWindow::Build(const SidlDefinitions &defs, const std::string &screen_it
 {
 	m_defs = &defs;
 	m_controls.clear();
+	m_valid = true;
+	m_missing_children.clear();
 	m_focus = -1;
 	m_scroll_control = m_scroll_hover = -1;
 	m_scroll_part = m_scroll_hover_part = ScrollPart::None;
@@ -746,6 +894,7 @@ SidlWindow::Control *SidlWindow::Find(const std::string &screen_id)
 	for (auto &control : m_controls)
 		if (control.def->screen_id == screen_id)
 			return &control;
+	Missing(screen_id);
 	return nullptr;
 }
 
@@ -754,7 +903,17 @@ const SidlWindow::Control *SidlWindow::Find(const std::string &screen_id) const
 	for (const auto &control : m_controls)
 		if (control.def->screen_id == screen_id)
 			return &control;
+	Missing(screen_id);
 	return nullptr;
+}
+
+void SidlWindow::Missing(const std::string &screen_id) const
+{
+	if (!m_checking)
+		return;
+	m_valid = false;
+	if (std::find(m_missing_children.begin(), m_missing_children.end(), screen_id) == m_missing_children.end())
+		m_missing_children.push_back(screen_id);
 }
 
 void SidlWindow::Move(const std::string &screen_id, const Rect &rect)

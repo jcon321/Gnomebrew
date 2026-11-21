@@ -51,6 +51,10 @@ namespace
 			"The General MIDI bank for Music=sf2: in the EQ folder, or a full path. synthusr.sf2 if it's\n"
 			"missing."},
 
+		{"Defaults", "UISkin", "Default",
+			"The UI skin character select is drawn with: a folder of the EQ folder's uifiles, each file it\n"
+			"hasn't taken from uifiles/default (eqclient.ini's UISkin). In the game each character has its\n"
+			"own, the UI_<name>_<server>.ini's [Main] UISkin, which /loadskin and Load UI Skin set."},
 		{"Defaults", "LastCharSel", "0", "The character select slot to start on (0: the first). Kept as you select."},
 		{"Defaults", "ShowNamesLevel", "4",
 			"/shownames: 0 off, 1 first names, 2 with surnames, 3 with guilds, 4 everything (AA titles\n"

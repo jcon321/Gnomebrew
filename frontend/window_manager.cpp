@@ -47,6 +47,24 @@ namespace
 	}
 }
 
+void WindowManager::CheckChildren(bool on)
+{
+	for (const auto &window : m_windows)
+		window->wnd.CheckChildren(on);
+}
+
+bool WindowManager::IsAllValid(std::vector<std::string> *missing) const
+{
+	bool valid = true;
+	for (const auto &window : m_windows) {
+		valid = valid && window->wnd.Valid();
+		if (missing)
+			for (const std::string &child : window->wnd.MissingChildren())
+				missing->push_back(window->screen + ": " + child);
+	}
+	return valid;
+}
+
 void WindowManager::Reset(const SidlDefinitions *defs, SidlTextures *textures, int screen_width, int screen_height)
 {
 	m_defs = defs;

@@ -4,6 +4,7 @@
 
 #include "frontend.h"
 #include "../core/alt_adv.h"
+#include "ini_file.h"
 #include "item_display.h"
 #include "zone_names.h"
 
@@ -16,7 +17,7 @@ namespace
 	// What we do with a command so far; the rest say so.
 	enum class Command
 	{
-		None, Say, Tell, Group, Shout, Auction, Ooc, Guild, Reply, Emote, Hail, Location, Target, Camp,
+		None, LoadSkin, Say, Tell, Group, Shout, Auction, Ooc, Guild, Reply, Emote, Hail, Location, Target, Camp,
 		ClearChat, ShowNames, Sit, Stand, Book, Cast, Consider, Played, Motd, Time, Afk, Anonymous, Assist,
 		Random, LootNoDrop, FastDrop, AutoSplit, Roleplay, TargetGroupBuff, Split, Yell, Consent, Corpse, HideCorpses, Friends, Ignore, Social, Attack, CombatMusic, DoAbility, Filter, ServerFilter, Invite, Disband, Who, WhoTarget, Follow, MakeLeader, Lfg,
 		UserColor, GuildInvite, GuildRemove, GuildDelete, GuildStatus, GuildLeader, GuildWar, GuildPeace, GuildMotd,
@@ -124,7 +125,7 @@ namespace
 		{"/alias", 14204, 0, 1, Command::Nothing}, {"/hitsmode", 14205, 0, 1, Command::None}, {"/clearhits", 14206, 0, 1, Command::None},
 		{"/dopropertinting", 14207, 0, 1, Command::None}, {"/makeleader", 5043, 0, 1, Command::MakeLeader}, {"/viewport", 14210, 0, 1, Command::None},
 		{"/clearchat", 3127, 0, 1, Command::ClearChat}, {"/bazaar", 4501, 0, 1, Command::Bazaar}, {"/trader", 4502, 0, 1, Command::Trader},
-		{"/music", 6676, 0, 1, Command::None}, {"/bugreport", 13952, 0, 1, Command::BugReport}, {"/loadskin", 3123, 0, 1, Command::None},
+		{"/music", 6676, 0, 1, Command::None}, {"/bugreport", 13952, 0, 1, Command::BugReport}, {"/loadskin", 3123, 0, 1, Command::LoadSkin},
 		{"/newui", 14211, 0, 1, Command::None}, {"/webupdate", 14209, 0, 1, Command::None}, {"/viewpetition", 5056, 0, 1, Command::None},
 		{"/deletepetition", 5057, 0, 1, Command::None}, {"/raidwindow", 0, 0, 0, Command::RaidWindow}, {"/makeraidleader", 5089, 0, 0, Command::MakeRaidLeader},
 		{"/raidinvite", 5090, 0, 0, Command::RaidInvite}, {"/raiddecline", 5091, 0, 0, Command::RaidDecline}, {"/raidaccept", 5092, 0, 0, Command::RaidAccept},
@@ -435,6 +436,39 @@ namespace
 		}
 		return true;
 	}
+}
+
+void FrontEnd::LoadSkin(const std::string &args)
+{
+	// /loadskin (@004f8655), with the new UI (DAT_008092d8, always ours): nothing after it opens the
+	// Load UI Skin window; else the first word is the skin, written to the UI ini's [Main] UISkin
+	// (SaveToUIIniFile), eqstr 3125 said (print_chat_dsp_chat_2, 0x111), and DoPassageOfTime
+	// reloads the UI (DAT_008092d9), with the window settings from the ini when the second word
+	// starts with 't', 'T' or '1' (DAT_008092da). A first word that's empty is 3124's usage.
+	if (args.empty()) {
+		m_loadskin.Activate();
+		return;
+	}
+	std::string rest = args;
+	std::string skin = GrabFirstWord(rest);
+	std::string ini_word = GrabFirstWord(rest);
+	if (skin.empty()) {
+		ChatOut(EqString(3124, "Usage: /loadskin SKINDIR [1] where SKINDIR is a subdirectory of UIFiles in your EverQuest "
+		                       "directory containing a full set of UI XML and art files.  An additional argument is 1 or "
+		                       "True if you want to reload your INI window settings."),
+			0x111);
+		return;
+	}
+	if (!m_ui_layout_path.empty()) {
+		IniFile ini;
+		ini.Load(m_ui_layout_path);
+		ini.Set("Main", "UISkin", skin);
+		if (!ini.Save(m_ui_layout_path))
+			Log("UI: couldn't write " + m_ui_layout_path);
+	}
+	ChatOut(FormatEqString(m_ui.eqstr, 3125, "Reading UI data from UIFiles\\%1 directory...", {skin}), 0x111);
+	m_reload_ui = true;
+	m_reload_ini = !ini_word.empty() && (ini_word[0] == 't' || ini_word[0] == 'T' || ini_word[0] == '1');
 }
 
 void FrontEnd::Lfg(bool ours, const std::string &word)
@@ -2225,6 +2259,9 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 	}
 	case Command::BugReport:
 		m_bug_report.Activate(); // /bugreport (@004fb35a): ResetPositionAndUIState
+		break;
+	case Command::LoadSkin:
+		LoadSkin(args);
 		break;
 	case Command::Feedback:
 		m_feedback.Activate(); // /feedback (@004fb37c): CXWnd::ShowWindow

@@ -93,6 +93,7 @@ Music=midi
 SoundFont=synthus2.sf2
 
 [Defaults]
+UISkin=Default
 LastCharSel=0
 ShowNamesLevel=4
 EnableExtendedNameplateDistance=1
@@ -212,6 +213,10 @@ WeatherSounds=1
   mapper); or `sf2`, our own mix through `SoundFont`, one of the General MIDI banks EverQuest ships
   (`synthus2.sf2`, `synthusr.sf2`; in the EQ folder unless it's a full path). Without a MIDI out, `midi`
   falls back to the SoundFont. The MP3 music and the sounds always play through our mix (waveOut).
+- `UISkin` is the skin character select is drawn with, a folder of the EQ folder's `uifiles`
+  (eqclient.ini's `[Defaults] UISkin` in the real client, read and written back as it starts). In
+  the game each character has its own, the UI ini's `[Main] UISkin`, which /loadskin and the
+  options' Load UI Skin set.
 - `LastCharSel` is the character select slot to start on. Like the real client's `[Defaults]
   LastCharSel`, it's saved as you select characters (written when the GUI exits).
 - `ShowNamesLevel` is `/shownames`: 0 (off: no names over players or corpses), 1 first names,
@@ -823,7 +828,11 @@ camera, prints the name tags, clicks the other character, walks forward, and lea
 checking layout and flow without Windows. `--replay` plays a packet log back instead (no server;
 `settings` after SECONDS reads `OUTDIR/my-client.ini` first, such as its `[Filters]`;
 `help` opens the help window as we entered, prints its page, history and links, scrolls to the
-fourth link, hovers and clicks it, then presses Back and Contents; `alarm` (with
+fourth link, hovers and clicks it, then presses Back and Contents; `skin` opens the Load UI Skin
+window, picks a row and presses Load, then /loadskin's each skin in `uifiles` with Use INI and one
+that isn't there, printing the skin, the UI ini's `UISkin` and the windows' missing children each
+time, and moves the player window to show Use INI keeping it (`Default 1`) or not (`Default 0`);
+`alarm` (with
 `OUTDIR/my-client.ini`) prints the alarm window as we enter, types into its boxes,
 presses OK and /played, then arms a 0 minute alarm with Never show again checked, prints its
 dialog and presses OK, and prints `ShowAlarmWindow` as saved;
@@ -989,6 +998,59 @@ loads the same files:
 - Every piece is clipped to its parent's client area, as `CXWnd::GetClientClipRect` does, and can't
   be clicked outside it: the frame and title bar to the piece's own rect, everything else to its
   client area.
+
+**UI skins** (`LoadSidlSkin` in `frontend/sidl.*`; `FrontEnd::UseSkin`, `LoadSkin`, `ReloadUI`;
+`frontend/loadskin_window.*`):
+
+- **Which skin.** `CDisplay::InitNewUI` (@004a5866) reads `UISkin`, "Default" unless it's set,
+  and writes it back: with no character yet (`pinstPCData` null, at start-up) from eqclient.ini's
+  `[Defaults]` (ours: my-client.ini's), else from the UI ini's `[Main]`
+  (`LoadStringFromUIIniFile`). The folder is `UIFiles\<skin>\` (`DAT_0063d3c0`). It's called as
+  eqgame starts (`InitDDraw`) and by `ReloadUI`, which `ProcessGameLoop` runs as the main loop
+  begins (`ReloadUI(1)`, unless a merchant window's up), so a character's own skin takes over as
+  the world's entered; camping back to character select keeps it. Ours loads the character's as
+  the world's entered when it differs.
+- **A file the skin hasn't** comes from the default skin, one at a time: `_XMLRead` (@0058da10) for
+  `EQUI.xml` and each `<Include>` (`processXmlIncludes`), `getTextureRenderContext` (@00419941) for
+  each texture, both logging "Warning: file %s not found in directory %s. Attempting to use file
+  from Default". A skin of a few files is only those files over the default's (most of the
+  bundled skins have no `EQUI.xml` of their own), and a name that isn't a folder is the default
+  skin.
+- **A skin that doesn't load** (`LoadUIXMLData` fails: a file in neither folder, or XML that
+  doesn't parse) and isn't `Default` (stricmp) is "Error loading skin "%s", attempting to load
+  default." into `DAT_0063b3c4` and the default skin loaded instead; the default failing too is a
+  message box, "Error in your GUI XML files", and exit (ours keeps the skin it has).
+  `CDisplay_ActivateMainUI` puts `DAT_0063b3c4` in the chat in red (0xd) each time the game's UI
+  goes up; nothing clears it.
+- **/loadskin** (@004f8655), with the new UI: no word opens the Load UI Skin window; otherwise
+  the first word (`CEverQuest_GrabFirstWord`) is the skin, saved as the UI ini's `[Main] UISkin`,
+  eqstr 3125 "Reading UI data from UIFiles\%1 directory..." said, and `DAT_008092d9` set for
+  `DoPassageOfTime`, `DAT_008092da` from the second word (Use INI: starting 't', 'T' or '1'). An
+  empty first word is eqstr 3124's usage.
+- **`CDisplay::ReloadUI`** (@004a1465), from `DoPassageOfTime` with `DAT_008092da`: `DAT_0062a78c`
+  (whether `CSidlScreenWnd::LoadIniInfo`, `StoreIniInfo`, `LoadIniListWnd` and `StoreIniListWnd`
+  touch the UI ini) set to Use INI; `CDisplay_DeactivateMainUI` (each window's Deactivate, vtable
+  0x88: the trade, give, merchant, bank, spellbook, trainer and bazaar windows end their sessions,
+  the loot window `DoorLoading_(1)`, and the windows' places stored only with Use INI;
+  `CChatManager::Deactivate`'s `[ChatManager]` always); the textures unloaded; `CleanUpNewUI`
+  (every window and the chat manager gone, the chat's lines with them); `InitNewUI`;
+  `InitializeGameUserInterface`; `CXWndManager::IsAllValid`; `CDisplay_ActivateMainUI`; and
+  `DAT_0062a78c` back to 1. Without Use INI the windows come up where the XML puts them, and where
+  they were isn't kept. `resize_window/resetwindows` (@0043777e), which it also calls, is empty.
+- **`IsAllValid`** (@005a1390) asks every window's vtable 0 (`ValidCXWnd`, +0xf8), which
+  `CSidlScreenWnd::GetChildItem` (@00570320) clears when a window's constructor asks for a child its
+  screen hasn't ("Error: Could not find child %s in %s"). Any such window is eqstr 3146 into
+  `DAT_0063b3c4`. A screen that isn't there at all makes no children and asks for none, so it's
+  valid. Ours checks the lookups each window's owner makes as it's set up (`SidlWindow::CheckChildren`);
+  every skin in TAKP v2.1's `uifiles` passes.
+- **The Load UI Skin window** (`CLoadskinWnd`, screen `LoadskinWnd`): the constructor (@00425e1d)
+  disables `LoadButton`, checks `INIButton` (Use INI) and gives `SkinList` `SetColors(white,
+  yellow, gray)`, left-justified. `Activate` (@0042600d, the options' General page button and a
+  bare /loadskin) is `UpdateSkinList` (@00425f6a: the rows cleared, one per folder
+  `FindFirstFileA(".\UIFiles\*.*")` finds not starting with '.', `LoadButton` disabled) and Show.
+  A click on `SkinList` enables `LoadButton`; `LoadButton` is /loadskin of `"%s %c"`, the selected
+  row and '1' or '0' for Use INI (`HandleWindowNotification` @00426032). Checked in the preview's
+  `skin` replay test.
 
 Character select uses `CharacterSelectWindow`. Its buttons do what
 `CEverQuest::DoCharacterSelection` (@0053b9cf) and `CCharacterSelect::WndNotification` (@0040f278)
@@ -1961,7 +2023,7 @@ details and the nearest spawns at the top left and the radar at the top right.
   - Fast Drop: `/fastdrop`'s setting (`DAT_0079966c`): -1 never is the third choice, 1 the second
     (without confirmation), anything else the first. A pick runs `_fastdrop` with eqstr 12946 "off",
     12947 "on" or 12989 "never", which says so.
-  - Load UI Skin: `CLoadskinWnd::Activate` (not ours yet).
+  - Load UI Skin: `CLoadskinWnd::Activate` (see UI skins, under Character select).
   - The sliders, 21 ticks (`SetNumTicks(0x15)`): Sound Realism (`DAT_00798b04`,
     `EqSoundManager::SetEffectsLevel`), Music Volume (`DAT_00798afc`) and Sound Volume
     (`DAT_00798b00`), each at value * 100 / 20 hundredths, and the value label beside each "%d %c"

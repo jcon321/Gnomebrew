@@ -47,9 +47,20 @@ no rules of its own.
      has an editable column, flag 1), `ToggleSel` and `ExtendSel` with Shift and Ctrl
      (HandleListItemClick @0057bff0) and editing a cell in place (`CloseAndUpdateEditWindow`
      @0057c530).
-   - `CDisplay::ReloadUI` (@004a1465, from `ProcessGameLoop` and `DoPassageOfTime`): the whole UI
-     taken down and built again from another skin, with eqstr 3146 when its XML doesn't fit
-     (`CXWndManager::IsAllValid`); waits on /loadskin (34).
+   - ~~UI skins~~: done (`LoadSidlSkin` in `frontend/sidl.*`, `FrontEnd::UseSkin`, `ReloadUI`,
+     `DeactivateMainUI`, `BuildZoneWindows(reload, use_ini)`): `CDisplay::InitNewUI`'s skin, each
+     file not in `uifiles/<skin>` from `uifiles/default` (`_XMLRead`, `getTextureRenderContext`), the
+     default skin with "Error loading skin" when it doesn't load; character select's from
+     my-client.ini's `[Defaults] UISkin`, the character's from the UI ini's `[Main] UISkin` as the
+     world's entered; `CDisplay::ReloadUI` (@004a1465) from DoPassageOfTime after /loadskin, with
+     `DAT_0062a78c`'s Use INI and eqstr 3146 from `IsAllValid` (`SidlWindow::CheckChildren`, the
+     windows' `GetChildItem`). Still to do: `IsAllValid` is checked over our windows' set-up
+     lookups (their `Attach`), which are near but not the same as eqgame's constructors'
+     `GetChildItem` calls, and not over the chat windows'; InitNewUI's `EQUI_GUIDE.xml` for a GM
+     when it's there (`pinstCEverQuest[0x89].field_0x57a`); a default skin that doesn't load keeps
+     the skin we have, where InitNewUI says "Error in your GUI XML files" and exits;
+     `ProcessGameLoop` reloads the UI at every main loop start (`ReloadUI(1)` unless a merchant's
+     up), ours only as the world's entered.
    - The resize and drag cursors are the SIDL ones; the usual cursor is still eqmain's
      `cursor.bmp` rather than `A_DefaultCursor` (`CXWndManager::GetCursorToDisplay` @005a0690).
 2. **Display-only windows**, showing what the server already sends:
@@ -403,9 +414,8 @@ no rules of its own.
    Filters page (SyncChatPage, ChatPageWndNotification: the /filter switches, sent and kept), and
    the General page (SyncGeneralPage, GeneralPageWndNotification: Fast Item Destroy, Autosplit,
    Anonymous, Roleplaying, Allow trading with, Receive Guild Invites (msg_invite_guild reads it),
-   Fast Drop, the music and sound volumes; kept in my-client.ini). Still to do on the General
-   page: Load UI Skin (CLoadskinWnd, the skin picker). The Display page
-   (SyncDisplayPage, DisplayPageWndNotification, DisplayPageOnProcessFrame: names, sky, particles,
+   Fast Drop, the music and sound volumes, kept in my-client.ini; Load UI Skin, 34). The Display
+   page (SyncDisplayPage, DisplayPageWndNotification, DisplayPageOnProcessFrame: names, sky, particles,
    clip plane, the windows' global fades) is done; still to do there: Video Modes (CVideoModesWnd)
    and Level of Detail's effect (s3dSetDynamicLOD: models are always drawn whole); Gamma does
    nothing, as in eqgame windowed. Still to do: the Mouse page, which shows empty
@@ -816,10 +826,9 @@ no rules of its own.
       `RemovePlaylistItem`, `SkipToNextTrack`); /mp3 (@004fa1cc: add, play, pause, stop, count,
       list, clear, shuffle, ordered; eqstr 7531..7550) and /music (@004ff4f8: on or off into
       `[Defaults] PlayMusic` for the next run, eqstr 6677 and 6678, else 6679).
-    - Load UI skin (`CLoadskinWnd` @00425e1d: `SkinList`, `LoadButton`, `INIButton`;
-      `UpdateSkinList` @00425f6a lists `uifiles`' folders) from the options' button and /loadskin
-      (@004f8655: no word opens the window; `SKINDIR [1]` writes `UISkin` to the UI ini, says eqstr
-      3125 and reloads, `CDisplay::ReloadUI`, see 1; 3124 is its usage).
+    - ~~Load UI skin~~: done (`frontend/loadskin_window.*`: `CLoadskinWnd`'s constructor, Activate,
+      `UpdateSkinList` and `HandleWindowNotification`, from the options' button; /loadskin
+      @004f8655, `FrontEnd::LoadSkin`; the reload is 1's).
     - Video modes (`CVideoModesWnd` @0043b198: `VIDW_VideoResolutionsList`, the bit depth and
       refresh rate combo boxes, `VIDW_AcceptButton`; `Init` @0043b408 lists the adapter's modes;
       Accept changes the mode, asks eqstr 6682 for 15 s and goes back without a yes,
@@ -869,7 +878,7 @@ no rules of its own.
       dialog (`CEverQuest_Surname` @0053d8de, eqstr 10004), `OP_Surname` from `ProcessYes`, and the
       zone's answer (0x41c4, @004e46d5): 1374 rejected, or 1375 "Congratulations, %1 %2, your
       surname was approved." with the name over our head.
-    - /facepick (23), /hitsmode and /clearhits (3), /mp3, /music, /loadskin and /gems (34),
+    - /facepick (23), /hitsmode and /clearhits (3), /mp3, /music and /gems (34),
       /shownpcnames (9).
     - /hotbutton (@004ff36a): `[Name] <Color> [Text]` makes a social of that name, color and
       first line in the first free one of the 120 (or the one of that name), `registerHotButton`

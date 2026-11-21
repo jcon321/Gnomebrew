@@ -196,12 +196,15 @@ class SidlTextures
 {
 public:
 	explicit SidlTextures(std::string ui_dir) : m_dir(std::move(ui_dir)) {}
+	// A skin's: a texture not in skin_dir comes from default_dir (getTextureRenderContext's
+	// "Attempting to use file from Default").
+	SidlTextures(std::string skin_dir, std::string default_dir) : m_dir(std::move(skin_dir)), m_default_dir(std::move(default_dir)) {}
 	const Image *Get(const std::string &name); // null when missing
 	const std::vector<std::string> &Missing() const { return m_missing; }
 
 private:
-	std::string m_dir;
-	std::map<std::string, std::string> m_files; // lowercase -> real name
+	std::string m_dir, m_default_dir;
+	std::map<std::string, std::string> m_files; // lowercase -> real name, the skin's over the default's
 	bool m_scanned = false;
 	std::map<std::string, std::unique_ptr<Image>> m_cache;
 	std::vector<std::string> m_missing;
@@ -212,6 +215,10 @@ class SidlDefinitions
 public:
 	// ui_dir is e.g. <EQ>/uifiles/default. Loads EQUI.xml and every include.
 	bool Load(const std::string &ui_dir, std::string &error);
+	// A skin's (CXMLSOMDocumentBase::_XMLRead): EQUI.xml and each include from skin_dir, or from
+	// default_dir when the skin hasn't it. A file in neither, or one that doesn't parse, fails the
+	// load (LoadUIXMLData's error), which is what makes InitNewUI fall back to the default skin.
+	bool Load(const std::string &skin_dir, const std::string &default_dir, std::string &error);
 	// Our own windows' definitions, after Load: an XML document as the UI files have, its pieces
 	// drawn with the loaded templates and animations. `name` is for the warnings.
 	void LoadText(const std::string &xml, const std::string &name);
@@ -226,10 +233,13 @@ public:
 	const std::vector<std::string> &Warnings() const { return m_warnings; }
 
 private:
-	void LoadFile(const std::string &file);
+	bool LoadFile(const std::string &file, std::string &error);
+	bool LoadText(const std::string &xml, const std::string &name, std::string &error);
+	std::string FilePath(const std::string &file) const; // the skin's, else the default's; "" in neither
 	void ReadElement(const XmlNode &node);
 
-	std::string m_dir;
+	std::string m_dir, m_default_dir;
+	std::map<std::string, std::string> m_files, m_default_files; // lowercase -> path
 	std::map<std::string, SidlAnimation> m_animations;
 	std::map<std::string, SidlWindowTemplate> m_window_templates;
 	std::map<std::string, SidlFrameTemplate> m_frame_templates;
@@ -238,6 +248,27 @@ private:
 	std::map<std::string, SidlPiece> m_pieces;
 	std::vector<std::string> m_warnings;
 };
+
+// A UI skin: a folder of uifiles (CDisplay::InitNewUI's "UIFiles\%s"), each file it hasn't taken
+// from uifiles/default.
+struct SidlSkin
+{
+	std::string name; // as asked for (the ini's UISkin)
+	std::unique_ptr<SidlDefinitions> definitions;
+	std::unique_ptr<SidlTextures> textures;
+	bool fell_back = false; // name's didn't load: these are the default skin's
+};
+
+// <EQ>/uifiles/<name>, found whatever its case (eqgame's "UIFiles\Default\" is uifiles/default).
+std::string SidlSkinDirectory(const std::string &eq_dir, const std::string &name);
+// CDisplay::InitNewUI: the skin's files, and when they don't load and the skin isn't Default
+// (stricmp), the default skin's. False when even those don't. `message` gets the chat line eqgame
+// keeps for CDisplay_ActivateMainUI ("Error loading skin "%s", attempting to load default."),
+// `error` why the default didn't load.
+bool LoadSidlSkin(const std::string &eq_dir, const std::string &name, SidlSkin &skin, std::string &message, std::string &error);
+// CLoadskinWnd::UpdateSkinList: every folder in uifiles (".\UIFiles\*.*") not starting with '.', in
+// the order FindNextFileA gives them (NTFS's: by name, case ignored).
+std::vector<std::string> SidlSkinNames(const std::string &eq_dir);
 
 // SIDL font numbers index the seven fonts CDisplay::InitNewUI makes (0..6): Arial 10, 12, 14, 15, 16, 20
 // and 24, the heights Zeal's CreateFontIndirectA hook sees for each (3, 15 pixels, is the default).
@@ -459,6 +490,13 @@ public:
 	Control *Find(const std::string &screen_id);
 	Control &Item(int index) { return m_controls[index]; } // by index (a Control's children, parent)
 	const Control *Find(const std::string &screen_id) const;
+	// CSidlScreenWnd::GetChildItem's check, while its owner sets it up (the windows' constructors):
+	// a Find that comes back empty clears ValidCXWnd (+0xf8, CXWnd's vtable 0, which
+	// CXWndManager::IsAllValid asks of every window) and is logged ("Error: Could not find child
+	// %s in %s").
+	void CheckChildren(bool on) const { m_checking = on; }
+	bool Valid() const { return m_valid; }
+	const std::vector<std::string> &MissingChildren() const { return m_missing_children; }
 	// Radio group handling: checks this one, unchecks the rest of its group.
 	void Check(const std::string &screen_id);
 	// CTabWnd::SetActivePage: a TabBox shows its index'th page and hides the rest.
@@ -601,9 +639,13 @@ private:
 	void Scrolled(Control &control); // its scroll position changed
 	static constexpr int ScreenScrollUnit = 10; // a scrolling screen's step in pixels (ours)
 
+	void Missing(const std::string &screen_id) const;
+
 	const SidlDefinitions *m_defs = nullptr;
 	SidlValues *m_values = nullptr;
 	std::vector<Control> m_controls;
+	mutable bool m_checking = false, m_valid = true;
+	mutable std::vector<std::string> m_missing_children;
 	bool m_edit_drag = false; // an edit box's selection being dragged
 	int m_focus = -1;
 	// A scrollbar part held down: which control, which part; for the thumb, where it was grabbed.

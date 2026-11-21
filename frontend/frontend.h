@@ -51,6 +51,7 @@
 #include "bug_report.h"
 #include "alarm_window.h"
 #include "help_window.h"
+#include "loadskin_window.h"
 #include "tracking.h"
 #include "duel.h"
 #include "bazaar_search.h"
@@ -114,6 +115,11 @@ struct GameData
 	const EqStr *eqstr = nullptr;
 	const SpellFile *spells = nullptr; // spells_en.txt, for the item display
 	std::string eq_dir; // for the 3D character select scene; empty skips it
+	// The skin `definitions` and `textures` are (InitNewUI's [Defaults] UISkin, "Default" unless
+	// my-client.ini says), and the chat line its loading left (it fell back to the default skin),
+	// put in the chat as the game's UI first goes up.
+	std::string skin = "Default";
+	std::string skin_message;
 	// The 3D views' renderer (the host's GPU one); unset, they use the software Rasterizer.
 	std::function<std::unique_ptr<render::Renderer>()> make_renderer;
 	// The host's vsync, for the debug menu: whether it's on, and how to change it; unset without one.
@@ -198,6 +204,9 @@ public:
 	Tracking &TrackingForTests() { return m_tracking; }
 	AlarmWindow &AlarmForTests() { return m_alarm; }
 	HelpWindow &HelpForTests() { return m_help_window; }
+	LoadskinWindow &LoadskinForTests() { return m_loadskin; }
+	const std::string &SkinName() const { return m_skin_name; } // the skin the UI is built from
+	const SidlTextures *UiTextures() const { return m_ui.textures; }
 	void SetAirForTests(int air) { m_air = air; }
 	// RightClickedOnPlayer, as the right button on a spawn in the world does.
 	void RightClickForTests(uint16_t spawn) { RightClickedOnPlayer(spawn); }
@@ -325,7 +334,21 @@ private:
 	// The in-game SIDL windows, built once we're first in a zone (zoning keeps them), with the
 	// character's layout from UI_<character>_<server>.ini and hot buttons and socials from
 	// <character>_<server>.ini; each saved whenever it changes.
-	void BuildZoneWindows();
+	// reload (CDisplay::ReloadUI's InitializeGameUserInterface): the windows built again from the
+	// skin now loaded, keeping what the game holds outside them (the hot buttons, socials, friends,
+	// abilities, the duel); use_ini false lays them out as the XML has them (DAT_0062a78c 0).
+	void BuildZoneWindows(bool reload = false, bool use_ini = true);
+	// The UI ini's [Main] UISkin (InitNewUI in the game: "Default" when it isn't there), written back.
+	std::string LayoutSkin();
+	// InitNewUI's skin: `name`'s files, or the default skin's when they don't load (the line why
+	// added to `message`). False, keeping the skin we have, when not even those load.
+	bool UseSkin(const std::string &name, std::string &message);
+	// The SIDL windows outside m_windows built again from the skin as they're next wanted.
+	void ForgetSkinWindows();
+	void LoadSkin(const std::string &args); // /loadskin (@004f8655)
+	void ReloadUI(bool use_ini);             // CDisplay::ReloadUI (@004a1465)
+	void DeactivateMainUI();                 // CDisplay_DeactivateMainUI's windows down
+	void ActivateMainUI();                   // CDisplay_ActivateMainUI's (zone-in, ReloadUI)
 	void SaveUiLayout();
 	void SaveCustom(); // CEverQuest_saveCustom: the hot buttons and the socials changed
 	void SetChatFont(int font); // CChatWindow::SetChatFont, kept in the UI ini
@@ -680,6 +703,15 @@ private:
 
 	// character select
 	GameData m_ui;
+	// The skin the UI's built from (m_ui.definitions and m_ui.textures, the host's until UseSkin
+	// loads another, ours then), and /loadskin's reload waiting for DoPassageOfTime (DAT_008092d9,
+	// with DAT_008092da its Use INI). m_ui_message: the line CDisplay_ActivateMainUI puts in the
+	// chat (DAT_0063b3c4).
+	std::unique_ptr<SidlSkin> m_skin; // before the windows built from it, so it goes after them
+	std::unique_ptr<SidlSkin> m_retired_skin; // the one before, until the zone windows are built again
+	std::string m_skin_name;
+	bool m_reload_ui = false, m_reload_ini = false;
+	std::string m_ui_message;
 	SidlWindow m_charselect;
 	SidlWindow m_explore_window; // ExploreModeWindow (CExploreModeWnd)
 	bool m_exploring = false;
@@ -858,6 +890,7 @@ private:
 	Feedback m_feedback;      // CFeedbackWnd, /feedback
 	AlarmWindow m_alarm;      // CAlarmWnd and its alarm
 	HelpWindow m_help_window; // CHelpWnd and its pages
+	LoadskinWindow m_loadskin; // CLoadskinWnd
 	bool m_report_allowed = false; // DAT_00798550 1: /report not used since OP_SendExpZonein
 	Tracking m_tracking;      // CTrackingWnd, /trackplayers, /tracksort, /trackfilter, DoPassageOfTime's tracking
 	Duel m_duel;              // /duel, /decline, msg_duel

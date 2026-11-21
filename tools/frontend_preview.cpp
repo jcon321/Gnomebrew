@@ -1499,6 +1499,124 @@ namespace
 		return 0;
 	}
 
+	// The Load UI Skin window (the options' General page button), then /loadskin of each skin in
+	// uifiles: the skin the UI's built from, the windows' missing children (IsAllValid), the chat, the
+	// UI ini's UISkin; a window moved and /loadskin with and without Use INI keeping it or not.
+	int SkinTest(FrontEnd &frontend, Harness &h, const std::string &eq_dir)
+	{
+		WindowManager &windows = frontend.Windows();
+		h.Key(InputEvent::Key::F11);
+		auto chat_all = [&] {
+			for (const auto &line : frontend.Chat().Lines())
+				printf("[preview] chat: %s\n", line.text.c_str());
+		};
+		size_t chat_seen = frontend.Chat().Lines().size();
+		auto chat = [&] {
+			if (chat_seen > frontend.Chat().Lines().size())
+				chat_seen = 0; // the chat windows were built again
+			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
+				printf("[preview] chat: %s\n", frontend.Chat().Lines()[chat_seen].text.c_str());
+		};
+		auto type = [&](const std::string &line) {
+			printf("[preview] > %s\n", line.c_str());
+			h.Key(InputEvent::Key::Enter);
+			h.Type(line);
+			h.Key(InputEvent::Key::Enter);
+			h.RunUntil([] { return false; }, 300);
+			chat_seen = 0;
+			chat();
+		};
+		auto ui_skin = [&] {
+			IniFile ini;
+			ini.Load(frontend.UiLayoutPath());
+			return ini.Get("Main", "UISkin");
+		};
+		auto report = [&](const std::string &what) {
+			std::vector<std::string> missing;
+			bool valid = windows.IsAllValid(&missing);
+			Rect player = windows.WindowRect("PlayerWindow");
+			printf("[preview] %s: skin %s, UISkin=%s, %zu windows, valid %d (%zu missing), PlayerWindow at %d,%d %dx%d\n",
+				what.c_str(), frontend.SkinName().c_str(), ui_skin().c_str(), windows.Count(), valid ? 1 : 0,
+				missing.size(), player.x, player.y, player.w, player.h);
+			for (size_t i = 0; i < missing.size() && i < 8; ++i)
+				printf("[preview]   missing %s\n", missing[i].c_str());
+		};
+		chat();
+		report("as we entered");
+		// The options window's General page Load UI Skin button: the window up with the skins.
+		frontend.LoadskinForTests().Activate();
+		h.RunUntil([] { return false; }, 300);
+		if (const SidlWindow *wnd = windows.Find(LoadskinWindow::Screen); wnd) {
+			const SidlWindow::Control *list = wnd->Find("SkinList");
+			const SidlWindow::Control *load = wnd->Find("LoadButton");
+			const SidlWindow::Control *ini = wnd->Find("INIButton");
+			printf("[preview] Load UI Skin shown %d, load enabled %d, Use INI %d, skins:", windows.Shown(LoadskinWindow::Screen) ? 1 : 0,
+				load && load->enabled ? 1 : 0, ini && ini->checked ? 1 : 0);
+			if (list)
+				for (const auto &row : list->rows)
+					printf(" %s", row.empty() ? "" : row[0].c_str());
+			printf("\n");
+			h.Render();
+			h.Snapshot("skin-window");
+			// The middle of the list clicked (a row: Load enabled), then Load: /loadskin "<row> 1".
+			auto click_center = [&](const SidlWindow::Control *c) {
+				Rect area = frontend.ScreenArea();
+				int x = area.x + c->rect.x + c->rect.w / 2, y = area.y + c->rect.y + c->rect.h / 2;
+				frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+				frontend.OnEvent({InputEvent::Type::MouseDown, x, y});
+				frontend.OnEvent({InputEvent::Type::MouseUp, x, y});
+				h.RunUntil([] { return false; }, 300);
+			};
+			if (list && load) {
+				click_center(list);
+				wnd = windows.Find(LoadskinWindow::Screen);
+				list = wnd ? wnd->Find("SkinList") : nullptr;
+				load = wnd ? wnd->Find("LoadButton") : nullptr;
+				printf("[preview] list clicked: row %d (%s), load enabled %d\n", list ? list->selected_row : -1,
+					list && list->selected_row >= 0 ? list->rows[list->selected_row][0].c_str() : "",
+					load && load->enabled ? 1 : 0);
+				h.Snapshot("skin-window-selected");
+				if (load)
+					click_center(load);
+				h.RunUntil([] { return false; }, 300);
+				chat();
+				report("after Load");
+				h.Render();
+				h.Snapshot("skin-window-loaded");
+			}
+		}
+		type("/loadskin");
+		printf("[preview] /loadskin alone: window shown %d\n", windows.Shown(LoadskinWindow::Screen) ? 1 : 0);
+		type("/loadskin    ");
+		for (const std::string &skin : SidlSkinNames(eq_dir)) {
+			type("/loadskin " + skin + " 1");
+			h.RunUntil([] { return false; }, 300);
+			report("/loadskin " + skin + " 1");
+			chat_all();
+			h.Render();
+			h.Snapshot("skin-" + skin);
+		}
+		type("/loadskin NoSuchSkin");
+		h.RunUntil([] { return false; }, 300);
+		report("/loadskin NoSuchSkin");
+		// Use INI: the player window moved, then kept by "Default 1" and not by "Default 0".
+		type("/loadskin Default 1");
+		h.RunUntil([] { return false; }, 300);
+		windows.MoveTo("PlayerWindow", 300, 200);
+		report("moved");
+		type("/loadskin Default 1");
+		h.RunUntil([] { return false; }, 300);
+		report("Default 1");
+		windows.MoveTo("PlayerWindow", 320, 220);
+		type("/loadskin Default 0");
+		h.RunUntil([] { return false; }, 300);
+		report("Default 0");
+		type("/loadskin Default 1");
+		h.RunUntil([] { return false; }, 300);
+		report("Default 1 after 0");
+		return 0;
+	}
+
 	// The help window as we enter: its page, a link clicked, Back, Contents.
 	int HelpTest(FrontEnd &frontend, Harness &h)
 	{
@@ -4179,6 +4297,7 @@ int main(int argc, char **argv)
 	bool breath_test = argc == 7 && std::string(argv[6]) == "breath";
 	bool alarm_test = argc == 7 && std::string(argv[6]) == "alarm";
 	bool help_test = argc == 7 && std::string(argv[6]) == "help";
+	bool skin_test = argc == 7 && std::string(argv[6]) == "skin";
 	bool ladder_test = argc == 7 && std::string(argv[6]) == "ladder";
 	bool chat_windows_test = argc == 7 && std::string(argv[6]) == "chatwindows";
 	bool multiline_test = argc == 7 && std::string(argv[6]) == "multiline";
@@ -4197,19 +4316,20 @@ int main(int argc, char **argv)
 			config.login_port = static_cast<uint16_t>(atoi(login.c_str() + colon + 1));
 	}
 
-	std::string ui_dir = eq_dir + "/uifiles/default";
-	SidlDefinitions sidl;
-	SidlTextures textures(ui_dir);
+	std::string skin_name = "Default"; // [Defaults] UISkin's
+	SidlSkin skin;
 	GameData ui;
 	ui.eq_dir = eq_dir;
-	if (sidl.Load(ui_dir, error)) {
-		ui.definitions = &sidl;
-		ui.textures = &textures;
+	if (LoadSidlSkin(eq_dir, skin_name, skin, ui.skin_message, error)) {
+		ui.definitions = skin.definitions.get();
+		ui.textures = skin.textures.get();
+		ui.skin = skin.name;
 	}
 	else
 		ui.error = error;
-	for (const auto &warning : sidl.Warnings())
-		printf("[preview] SIDL: %s\n", warning.c_str());
+	if (skin.definitions)
+		for (const auto &warning : skin.definitions->Warnings())
+			printf("[preview] SIDL: %s\n", warning.c_str());
 	EqStr eqstr;
 	if (eqstr.Load(eq_dir + "/eqstr_en.txt"))
 		ui.eqstr = &eqstr;
@@ -4275,6 +4395,8 @@ int main(int argc, char **argv)
 			return AlarmTest(frontend, h, argv[2]);
 		if (help_test)
 			return HelpTest(frontend, h);
+		if (skin_test)
+			return SkinTest(frontend, h, argv[1]);
 		if (ladder_test)
 			return LadderTest(frontend, h);
 		if (chat_windows_test)
@@ -6369,7 +6491,8 @@ int main(int argc, char **argv)
 
 	for (const auto &name : art.Missing())
 		printf("[preview] missing art: %s\n", name.c_str());
-	for (const auto &name : textures.Missing())
-		printf("[preview] missing UI texture: %s\n", name.c_str());
+	if (const SidlTextures *textures = frontend.UiTextures())
+		for (const auto &name : textures->Missing())
+			printf("[preview] missing UI texture: %s\n", name.c_str());
 	return 0;
 }

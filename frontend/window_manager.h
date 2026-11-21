@@ -83,6 +83,12 @@ public:
 	SidlWindow *Add(const std::string &screen, bool shown, std::string *error = nullptr, const std::string &name = "");
 	SidlWindow *Find(const std::string &screen);
 	const SidlWindow *Find(const std::string &screen) const;
+	// While the windows' owners set them up (their constructors): GetChildItem's check on every
+	// window so far (SidlWindow::CheckChildren).
+	void CheckChildren(bool on);
+	// CXWndManager::IsAllValid: no window has asked for a child its screen hasn't. `missing` gets
+	// "<screen>: <child>" for each that was.
+	bool IsAllValid(std::vector<std::string> *missing = nullptr) const;
 	// What gauges and labels with an EQType show, for every window (kept across Reset).
 	void SetValues(SidlValues *values);
 

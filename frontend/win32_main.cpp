@@ -502,23 +502,30 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 		return 1;
 	}
 
-	// Character select is built from the SIDL UI files, like eqgame.
-	std::string ui_dir = Narrow(eq_dir) + "/uifiles/default";
-	SidlDefinitions sidl;
-	SidlTextures textures(ui_dir);
+	// Character select is built from the SIDL UI files, like eqgame: CDisplay::InitNewUI's skin,
+	// [Defaults] UISkin (Default unless it says; in my-client.ini, where eqgame has eqclient.ini),
+	// written back.
+	wchar_t skin_name[512];
+	GetPrivateProfileStringW(L"Defaults", L"UISkin", L"Default", skin_name, 512, ini.c_str());
+	WritePrivateProfileStringW(L"Defaults", L"UISkin", skin_name, ini.c_str());
+	SidlSkin skin;
 	GameData ui;
 	ui.eq_dir = Narrow(eq_dir);
 	std::string sidl_error;
-	if (sidl.Load(ui_dir, sidl_error)) {
-		ui.definitions = &sidl;
-		ui.textures = &textures;
+	if (LoadSidlSkin(Narrow(eq_dir), Narrow(skin_name), skin, ui.skin_message, sidl_error)) {
+		ui.definitions = skin.definitions.get();
+		ui.textures = skin.textures.get();
+		ui.skin = skin.name;
+		if (skin.fell_back)
+			Log("SIDL: skin " + skin.name + ": " + sidl_error + "; the default skin instead");
 	}
 	else {
 		ui.error = sidl_error;
 		Log("SIDL: " + sidl_error);
 	}
-	for (const auto &warning : sidl.Warnings())
-		Log("SIDL: " + warning);
+	if (skin.definitions)
+		for (const auto &warning : skin.definitions->Warnings())
+			Log("SIDL: " + warning);
 	EqStr eqstr;
 	if (eqstr.Load(Narrow(eq_dir) + "/eqstr_en.txt"))
 		ui.eqstr = &eqstr;
@@ -692,8 +699,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 
 	for (const auto &name : art.Missing())
 		Log("missing art: " + name);
-	for (const auto &name : textures.Missing())
-		Log("missing UI texture: " + name);
+	if (const SidlTextures *textures = frontend.UiTextures())
+		for (const auto &name : textures->Missing())
+			Log("missing UI texture: " + name);
 	WritePrivateProfileStringW(L"Login", L"User", Widen(frontend.Username()).c_str(), ini.c_str());
 	WritePrivateProfileStringW(L"Defaults", L"LastCharSel", std::to_wstring(frontend.LastCharacter()).c_str(), ini.c_str());
 	WritePrivateProfileStringW(L"Defaults", L"ShowNamesLevel", std::to_wstring(frontend.ShowNames()).c_str(), ini.c_str());

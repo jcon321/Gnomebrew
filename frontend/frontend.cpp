@@ -85,6 +85,8 @@ namespace
 FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, const FrontEndConfig &config, GameData ui)
 	: m_art(art), m_strings(strings), m_text(text), m_config(config), m_ui(std::move(ui))
 {
+	m_skin_name = m_ui.skin;
+	m_ui_message = m_ui.skin_message;
 	m_session.SetLogger([this](const std::string &line) { Log(line); });
 	m_world.SetLogger([this](const std::string &line) { Log(line); });
 	m_zone.SetLogger([this](const std::string &line) { Log(line); });
@@ -969,6 +971,11 @@ void FrontEnd::Update(uint64_t now_ms)
 		UpdateDeath(now_ms);
 	}
 	if (m_screen == Screen::Zone) {
+		// DoPassageOfTime: /loadskin's reload (DAT_008092d9, ReloadUI with DAT_008092da).
+		if (m_reload_ui && m_windows_built && !m_zoning) {
+			m_reload_ui = false;
+			ReloadUI(m_reload_ini);
+		}
 		Rect area = ScreenArea();
 		m_windows.Update(now_ms, m_mouse_x - area.x, m_mouse_y - area.y);
 		m_window_state.busy = m_containers.Combining() || m_merchant.Busy() || m_loot.Busy() || m_ground.Busy() ||
@@ -2217,6 +2224,7 @@ namespace
 		{BazaarWindow::Screen, false}, {BazaarSearch::Screen, false}, {InspectWindow::Screen, false},
 		{PlayerNotes::Screen, false}, {Tracking::Screen, false}, {"BreathWindow", false},
 		{BugReport::Screen, false}, {Feedback::Screen, false}, {AlarmWindow::Screen, false},
+		{LoadskinWindow::Screen, false},
 	};
 
 	// The selector's buttons (EQUI_SelectorWnd.xml) and the windows they open and close.
@@ -2233,13 +2241,27 @@ namespace
 	};
 }
 
-void FrontEnd::BuildZoneWindows()
+void FrontEnd::BuildZoneWindows(bool reload, bool use_ini)
 {
 	m_windows_built = true;
+	// eqgame names the file after the character and the first 7 characters of the login
+	// server's address (UI_Name_loginse.ini for loginserver.takproject.net).
+	const std::string &name = m_zone.Profile().name;
+	m_ui_layout_path.clear();
+	if (!m_config.ui_dir.empty() && !name.empty())
+		m_ui_layout_path = m_config.ui_dir + "/UI_" + name + "_" + m_config.login_host.substr(0, 7) + ".ini";
+	// ProcessGameLoop's CDisplay::ReloadUI(1) as the main loop begins: InitNewUI with the
+	// character's skin, the UI ini's (ReloadUI's own load is done by its caller).
+	if (!reload && !m_ui_layout_path.empty() && !m_ui.eq_dir.empty()) {
+		std::string skin = LayoutSkin();
+		if (Lower(skin) != Lower(m_skin_name))
+			UseSkin(skin, m_ui_message);
+	}
 	if (!m_ui.definitions || !m_ui.textures)
 		return;
 	m_windows.SetStrings(m_ui.eqstr);
 	m_windows.Reset(m_ui.definitions, m_ui.textures, m_game_width, m_game_height);
+	m_retired_skin.reset(); // nothing's built from it now
 	m_windows.SetValues(&m_game_values);
 	m_game_values.eqstr = m_ui.eqstr;
 	m_game_values.spells = m_ui.spells;
@@ -2251,29 +2273,33 @@ void FrontEnd::BuildZoneWindows()
 			Log("UI: " + error);
 	}
 	Containers::AddWindows(m_windows);
+	// What follows sets the windows up as their constructors do, GetChildItem's check on.
+	m_windows.CheckChildren(true);
 	// The sides their constructors let size them (CXWnd's 0x78).
 	m_windows.SetResizeEdges("MerchantWnd", WindowManager::ResizeTop | WindowManager::ResizeBottom);
 	m_windows.SetResizeEdges("LootWnd", WindowManager::ResizeTop | WindowManager::ResizeBottom);
 	m_windows.SetResizeEdges("OptionsWindow", WindowManager::ResizeTop | WindowManager::ResizeBottom);
 	m_windows.SetResizeEdges("SocialEditWnd", 0x44); // the sides (0x04 sizes nothing)
-	// eqgame names the file after the character and the first 7 characters of the login
-	// server's address (UI_Name_loginse.ini for loginserver.takproject.net).
-	m_ui_layout_path.clear();
 	m_hot_buttons_path.clear();
 	m_log_path.clear();
-	m_window_state = GameWindowState{};
-	DefaultSocials(m_window_state, m_ui.eqstr);
+	if (!reload) {
+		m_window_state = GameWindowState{};
+		DefaultSocials(m_window_state, m_ui.eqstr);
+	}
+	else {
+		// DeactivateMainUI took the quantity window down.
+		m_window_state.quantity_slot = m_window_state.quantity_coin = -1;
+		m_window_state.quantity_done = nullptr;
+	}
 	m_window_state.eqstr = m_ui.eqstr;
-	const std::string &name = m_zone.Profile().name;
-	if (!m_config.ui_dir.empty() && !name.empty()) {
+	if (!m_ui_layout_path.empty()) {
 		std::string suffix = name + "_" + m_config.login_host.substr(0, 7) + ".ini";
-		m_ui_layout_path = m_config.ui_dir + "/UI_" + suffix;
 		IniFile ini;
 		bool have_layout = ini.Load(m_ui_layout_path);
-		// CChatManager::CChatManager: the chat windows from [ChatManager]; then the layouts, and
-		// CChatManager::Activate shows them all.
+		// CChatManager::CChatManager: the chat windows from [ChatManager]; then the layouts
+		// (LoadIniInfo, skipped while DAT_0062a78c is 0), and CChatManager::Activate shows them all.
 		BuildChats(have_layout ? &ini : nullptr);
-		if (have_layout)
+		if (have_layout && use_ini)
 			m_windows.Load(ini);
 		m_chats.ShowAll();
 		m_windows.Show("QuantityWnd", false); // only ever up for a stack
@@ -2346,7 +2372,8 @@ void FrontEnd::BuildZoneWindows()
 			m_zone_view->PlaySoundAt(slot, {x, y, z});
 	};
 	m_abilities.Attach(m_windows, m_window_state, m_zone, m_ui.eqstr, std::move(abilities_host));
-	m_abilities.Reset();
+	if (!reload)
+		m_abilities.Reset();
 	// CFriendsWnd, and the friends and ignore lists (ProcessLocalPCIni) from the character's ini.
 	Friends::Host friends_host;
 	friends_host.text = [this](uint32_t id, const std::vector<std::string> &args, const std::string &fallback) {
@@ -2464,16 +2491,20 @@ void FrontEnd::BuildZoneWindows()
 	};
 	duel_host.chat = [this](const std::string &text, int type) { ChatOut(text, type); };
 	duel_host.ignored = [this](const std::string &name) { return m_friends.BeingIgnored(name); };
-	m_duel.Attach(m_zone, std::move(duel_host)); // CEverQuest::CEverQuest, SetDefaultGameValues
-	m_friends.Load(IniFile{});
+	if (!reload) {
+		m_duel.Attach(m_zone, std::move(duel_host)); // CEverQuest::CEverQuest, SetDefaultGameValues
+		m_friends.Load(IniFile{});
+	}
 	if (!m_hot_buttons_path.empty()) {
 		IniFile custom;
 		if (custom.Load(m_hot_buttons_path)) {
-			LoadHotButtons(custom, m_window_state);
-			LoadSocials(custom, m_window_state);
-			m_abilities.Load(custom);
-			m_friends.Load(custom);
-			m_inspect.Load(custom);
+			if (!reload) {
+				LoadHotButtons(custom, m_window_state);
+				LoadSocials(custom, m_window_state);
+				m_abilities.Load(custom);
+				m_friends.Load(custom);
+			}
+			m_inspect.Load(custom); // the inspect window's own, which its Attach forgot
 		}
 	}
 	// CDisplay_ActivateMainUI activates the compass if it was up; Toggle Compass (Alt+D) opens and
@@ -2562,7 +2593,8 @@ void FrontEnd::BuildZoneWindows()
 	m_game_values.buffs = &m_buffs;
 	m_spell_book.Attach(m_windows, m_window_state, m_zone, m_game_values, m_spell_cast, m_ui.spells, m_ui.eqstr,
 		std::move(host));
-	m_spell_book.Reset();
+	if (!reload)
+		m_spell_book.Reset();
 	m_game_values.spell_book = &m_spell_book;
 	m_game_values.spell_cast = &m_spell_cast;
 	// No layout to read (no character name yet): the chat windows without one.
@@ -2665,6 +2697,11 @@ void FrontEnd::BuildZoneWindows()
 	options_host.filters = &m_filters;
 	options_host.filters_changed = [this] { FiltersChanged(); };
 	m_options.Attach(m_windows, m_key_bindings, std::move(options_host));
+	LoadskinWindow::Host loadskin_host;
+	loadskin_host.skins = [this] { return SidlSkinNames(m_ui.eq_dir); };
+	loadskin_host.loadskin = [this](const std::string &text) { LoadSkin(text); };
+	m_loadskin.Attach(m_windows, std::move(loadskin_host));
+	m_windows.CheckChildren(false);
 	KeyMapUpdated();
 	m_windows.TakeChanged();
 }
@@ -2679,6 +2716,127 @@ void FrontEnd::SaveUiLayout()
 	m_chats.Store(ini); // CChatManager::Deactivate's [ChatManager]
 	if (!ini.Save(m_ui_layout_path))
 		Log("UI: couldn't write " + m_ui_layout_path);
+}
+
+std::string FrontEnd::LayoutSkin()
+{
+	// InitNewUI in the game: LoadStringFromUIIniFile("Main", "UISkin", "Default"), and
+	// SaveToUIIniFile of what it got.
+	if (m_ui_layout_path.empty())
+		return m_skin_name;
+	IniFile ini;
+	ini.Load(m_ui_layout_path);
+	std::string skin = ini.Get("Main", "UISkin", "Default");
+	ini.Set("Main", "UISkin", skin);
+	if (!ini.Save(m_ui_layout_path))
+		Log("UI: couldn't write " + m_ui_layout_path);
+	return skin;
+}
+
+bool FrontEnd::UseSkin(const std::string &name, std::string &message)
+{
+	if (m_ui.eq_dir.empty())
+		return false;
+	auto skin = std::make_unique<SidlSkin>();
+	std::string line, error;
+	if (!LoadSidlSkin(m_ui.eq_dir, name, *skin, line, error)) {
+		// InitNewUI: "Error in your GUI XML files" and exit; we keep the skin we have.
+		Log("UI: skin " + name + ": " + error);
+		return false;
+	}
+	if (skin->fell_back)
+		Log("UI: skin " + name + ": " + error + "; the default skin instead");
+	if (!line.empty())
+		message = line;
+	for (const auto &warning : skin->definitions->Warnings())
+		Log("SIDL: " + warning);
+	// Our own windows' screens, as the constructor adds them to the host's.
+	if (m_config.char_select_anim_window && m_charselect_view)
+		CharSelectAnimWindow::AddDefinitions(*skin->definitions);
+	WindowManager::AddDefinitions(*skin->definitions);
+	m_ui.definitions = skin->definitions.get();
+	m_ui.textures = skin->textures.get();
+	m_retired_skin = std::move(m_skin);
+	m_skin = std::move(skin);
+	m_skin_name = name;
+	ForgetSkinWindows();
+	Log("UI: skin " + name);
+	return true;
+}
+
+void FrontEnd::ForgetSkinWindows()
+{
+	// Character select's and creation's windows, built again from the new skin when next wanted
+	// (character select's own is built each time it's entered).
+	m_confirm.built = false;
+	m_confirm.window = SidlWindow{};
+	m_charselect = SidlWindow{};
+	m_explore_window = SidlWindow{};
+	m_anim_window.reset();
+	m_creation.reset();
+}
+
+void FrontEnd::DeactivateMainUI()
+{
+	// CDisplay_DeactivateMainUI (@004a7705), each window's Deactivate (vtable 0x88), in its order;
+	// the rest are only taken down, which building them again does. The confirmation dialog goes
+	// with CleanUpNewUI, unanswered.
+	m_question.open = false;
+	m_question.answer = nullptr;
+	m_destroy_until_ms = 0;
+	m_inspect.Deactivate();
+	m_tracking.Deactivate();
+	m_bazaar.Deactivate();
+	m_bazaar_search.Deactivate();
+	m_trade.Deactivate(); // the trade and give windows
+	m_merchant.Deactivate();
+	m_loot.Died(); // CLootWnd::DoorLoading_(1): Deactivate and fn_releaseloot
+	m_bank.Deactivate(false);
+	m_spell_book.Deactivate();
+	m_train.Deactivate();
+}
+
+void FrontEnd::ActivateMainUI()
+{
+	// CDisplay_ActivateMainUI: the help window's page, the alarm window, and the line InitNewUI
+	// or ReloadUI left (DAT_0063b3c4, never cleared) in the chat, red (print_chat_dsp_chat 0xd).
+	m_help_window.SetFile(HelpWindow::File);
+	m_alarm.Activate();
+	if (!m_ui_message.empty())
+		ChatOut(m_ui_message, ChatType::Red);
+}
+
+void FrontEnd::ReloadUI(bool use_ini)
+{
+	// CDisplay::ReloadUI (@004a1465), DAT_0062a78c (the windows' settings read from the UI ini and
+	// written to it: LoadIniInfo, StoreIniInfo) set to use_ini while it runs. DeactivateMainUI keeps
+	// them, and CChatManager::Deactivate its [ChatManager], which nothing gates.
+	if (!m_windows_built || !m_ui.definitions)
+		return;
+	if (!m_ui_layout_path.empty()) {
+		IniFile ini;
+		ini.Load(m_ui_layout_path);
+		if (use_ini)
+			m_windows.Store(ini);
+		m_chats.Store(ini);
+		if (!ini.Save(m_ui_layout_path))
+			Log("UI: couldn't write " + m_ui_layout_path);
+	}
+	DeactivateMainUI();
+	m_chats.Cleanup(); // CleanUpNewUI's CDisplay_CleanGameUI: the chat windows and what they held
+	// CleanUpNewUI, InitNewUI (the UI ini's skin, read from disk again even when it's the same),
+	// and InitializeGameUserInterface.
+	UseSkin(LayoutSkin(), m_ui_message);
+	BuildZoneWindows(true, use_ini);
+	// CXWndManager::IsAllValid: a window that asked for a child the skin hasn't, eqstr 3146.
+	std::vector<std::string> missing;
+	if (!m_windows.IsAllValid(&missing)) {
+		for (const std::string &child : missing)
+			Log("UI: Error: Could not find child " + child);
+		m_ui_message = EqString(3146, "Your XML files are not compatible with current EverQuest files, certain windows may "
+		                              "not perform correctly.  Use \"/loadskin Default 1\" to load the EverQuest default skin.");
+	}
+	ActivateMainUI();
 }
 
 void FrontEnd::SetChatFont(int font)
@@ -2995,7 +3153,7 @@ void FrontEnd::HandleWindowClicks()
 		    m_pet_window.Click(click.window, click.control) || m_friends.Click(click.window, click.control) ||
 		    m_text_entry.Click(click.window, click.control) || m_bug_report.Click(click.window, click.control) ||
 		    m_feedback.Click(click.window, click.control) || m_alarm.Click(click.window, click.control) ||
-		    m_help_window.Click(click.window, click.control))
+		    m_help_window.Click(click.window, click.control) || m_loadskin.Click(click.window, click.control))
 			continue;
 		// CInventoryWnd::WndNotification: the Alt. Adv. button opens the AA window, or closes it.
 		if (click.window == "InventoryWindow" && click.control == "IW_AltAdvBtn") {
@@ -4687,7 +4845,7 @@ void FrontEnd::SetGeneralOption(OptionsWindow::Host::General setting, int value)
 		SaveSetting("Sound", setting == General::MusicVolume ? "MusicVolume" : "SoundVolume", value);
 		break;
 	case General::LoadSkin:
-		// CLoadskinWnd::Activate: not ours yet (TODO).
+		m_loadskin.Activate(); // GeneralPageWndNotification: CLoadskinWnd::Activate
 		break;
 	}
 }
@@ -5378,8 +5536,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 		case Type::InZone:
 			m_zoning = false;
 			m_report_allowed = true; // HandleWorldMessage's OP_SendExpZonein
-			m_help_window.SetFile(HelpWindow::File); // CDisplay_ActivateMainUI
-			m_alarm.Activate();
+			ActivateMainUI();
 			m_guild.InZone();
 			FindMyVehicle();
 			// HandleWorldMessage's OP_SendExpZonein: still looking for a group, say so here too.

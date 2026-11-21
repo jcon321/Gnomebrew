@@ -67,6 +67,12 @@ void ChatManager::SetMenu(int menu)
 			m_manager->SetWindowMenu(w.screen, menu);
 }
 
+void ChatManager::Cleanup()
+{
+	m_windows.resize(1);
+	m_windows[0].chat = std::make_unique<ChatWindow>();
+}
+
 void ChatManager::Build(WindowManager &windows, const IniFile *layout, const Defaults &defaults,
 	std::function<std::string(uint32_t, const char *)> text, std::function<uint32_t(int)> color, uint32_t link_rgb)
 {
