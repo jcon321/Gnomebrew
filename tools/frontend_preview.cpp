@@ -1304,6 +1304,7 @@ namespace
 		h.RunUntil([] { return false; }, 1500);
 		chat();
 		state("breathing");
+		printf("[preview] the profile's air_remaining %d\n", zone.Profile().air_remaining);
 		uint32_t zone_id = zone.Profile().zone_id;
 		zone.EditProfile().zone_id = 171; // The Grey's no air, as far as CanIBreathe goes
 		for (int s = 1; s <= 12; ++s) {

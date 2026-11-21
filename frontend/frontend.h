@@ -811,7 +811,7 @@ private:
 	bool m_knocked_out = false;     // EQ_Character's StunnedState 3 (KnockedOut, until GetConscious)
 	int m_camp_seconds = 0;         // DAT_0063d8c4: the camp's seconds left at the last tick
 	uint64_t m_poison_ms = 0;       // DAT_00798604: when applying a poison began, 0 none
-	int m_air = -1;                 // EQ_PC's AirSupply (-1: full, not set yet)
+	int m_air = -1;                 // EQ_PC's AirSupply, from each profile (-1: none yet, full)
 	uint64_t m_air_tick_ms = 0;     // ActorInfo's LastTick, for ProcessAirSupply
 	uint64_t m_breath_window_ms = 0; // CBreathWnd+0x138
 	uint16_t m_poison_item = 0;     // DAT_00798608: the poison's item number

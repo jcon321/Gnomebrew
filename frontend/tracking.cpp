@@ -170,7 +170,14 @@ void Tracking::Generate()
 		e.distance = across(it->second);
 		e.index = count++;
 	}
-	for (const auto &[id, s] : m_zone->Spawns()) {
+	// pinstSpawnList's order: EQPlayer::EQPlayer puts each new spawn at its head, so newest first.
+	std::vector<const ZoneSpawn *> list;
+	for (const auto &[id, s] : m_zone->Spawns())
+		list.push_back(&s);
+	std::sort(list.begin(), list.end(), [](const ZoneSpawn *a, const ZoneSpawn *b) { return a->created > b->created; });
+	for (const ZoneSpawn *spawn : list) {
+		const ZoneSpawn &s = *spawn;
+		uint16_t id = s.id;
 		if (id == m_zone->MySpawnId() || s.npc >= 2)
 			continue;
 		if (s.race == 143 || s.race == 141 || s.race == 72 || s.race == 73 || s.race == 114 || s.race == 142)

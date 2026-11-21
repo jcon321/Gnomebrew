@@ -3758,7 +3758,7 @@ void FrontEnd::BreathPassageOfTime(uint64_t now_ms)
 	if (m_zone.GetState() != ZoneSession::State::InZone)
 		return;
 	int max = MaxAirSupply();
-	if (m_air < 0)
+	if (m_air < 0) // no profile's yet
 		m_air = max;
 	if (now_ms - m_air_tick_ms > 1000) {
 		m_air_tick_ms = now_ms;
@@ -5472,6 +5472,9 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 		}
 		case Type::Profile:
 			m_group.ProfileArrived(); // CheckForGroupChanges
+			// The profile copied into pinstPCData: its AirSupply too, as the zone has it.
+			if (m_zone.Profile().air_remaining >= 0)
+				m_air = m_zone.Profile().air_remaining;
 			break;
 		case Type::BookText:
 			BookText(event.value, event.text);

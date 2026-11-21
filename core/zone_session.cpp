@@ -2379,6 +2379,7 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		m_profile_ms = NowMs();
 		for (int i = 0; i < 100; ++i)
 			p.skills[i] = Read<int16_t>(data, 2988 + i * 2);
+		p.air_remaining = Read<int16_t>(data, 5900);
 		for (int i = 0; i < 6; ++i)
 			p.group_members[i] = CString(data, 5012 + i * 64, 64);
 		for (int i = 0; i < ZoneProfile::BookSlots; ++i)
@@ -2496,6 +2497,7 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		for (size_t i = 0; i < count; ++i) {
 			ZoneSpawn spawn = ParseSpawn(data, i * SpawnSize);
 			spawn.updated_ms = NowMs();
+			spawn.created = ++m_spawns_made;
 			if (MissingGuild(spawn)) // msg_eq_netplayer
 				RequestGuild(spawn.guild_id);
 			m_spawns[spawn.id] = spawn;

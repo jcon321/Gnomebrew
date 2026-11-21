@@ -600,7 +600,7 @@ no rules of its own.
       passing);
     - the tracking window: done (`frontend/tracking.*`, `CTrackingWnd`, /trackplayers, /tracksort,
       /trackfilter, DoPassageOfTime's direction lines). Not checked live (no ranger to test with);
-      the list's order is the spawns' ids', not `pinstSpawnList`'s; a selection isn't kept across
+      a selection isn't kept across
       a refresh (UpdateTrackingList's callers all pass 0, so neither is eqgame's);
     - the AA abilities (105 Harm Touch and 107 Lay on Hands: CastSpell gem 9 of spell 88 and 87, the
       profile's timers at +0xc7a and +0xc7e, with AdjustSpellRecastTimeByClassAbility's 12 min a rank
@@ -733,8 +733,9 @@ no rules of its own.
     `frontend/player_notes.*`): `CFriendsWnd`, /friends, /ignore, /who all friend (OP_FriendsWho),
     `[Friends]` and `[Ignored]` in the character's ini, `CEverQuest_BeingIgnored`; /inspect,
     `CEverQuest_doInspect` from `RightClickedOnPlayer`, `msg_req_inspect`'s answer, the inspect window
-    (`msg_inspect`, `CheckInspectionDistance`, `PlayerBeingDeleted`, `AcceptInspectText` into
-    `[InspectText] Text`) and `[Defaults] ShowInspectMessage`; `CPlayerNotesWnd` and /note with
+    (`msg_inspect`: their worn items and their inspect text, read only; ours editable when we
+    inspect ourselves, `AcceptInspectText` keeping it as `[InspectText] Text`;
+    `CheckInspectionDistance`, `PlayerBeingDeleted`) and `[Defaults] ShowInspectMessage`; `CPlayerNotesWnd` and /note with
     `notes.txt`. Still to do:
     - 0x4243's ignore check (EQMacEmu never sends it).
     - Inspecting live against two clients: only checked with injected packets in the preview.
@@ -794,8 +795,8 @@ no rules of its own.
     - `msg_snd_trader_eq` (0x4217) is the old UI's; IsOkToTransact's deity 20000 and mount checks.
 34. **The smaller windows**, each opened by its command or key:
     - ~~Breath~~: done (`FrontEnd::BreathPassageOfTime`, `CBreathWnd`, `CanIBreathe`,
-      `MaxAirSupply`, `ProcessAirSupply` and drowning's `ApplyDamage`). Still to do: `AirSupply`
-      from the profile at login (ours starts full), and checking it in water live.
+      `MaxAirSupply`, `ProcessAirSupply` and drowning's `ApplyDamage`; `AirSupply` from each
+      profile). Still to do: checking it in water live.
     - Alarm (`CAlarmWnd` @00403bc2, screen `AlarmWnd`: `ALRW_HoursEditbox`, `ALRW_MinutesEditbox`,
       `ALRW_NeverShowAgainCheckbox`, Ok and Cancel; shown by `CDisplay_ActivateMainUI` unless told
       never to). `ProcessAlarmTrigger` (@00403f34) plays a wave and puts eqstr 6685 "Your session

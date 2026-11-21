@@ -68,6 +68,7 @@ struct ZoneProfile
 	int16_t str = 0, sta = 0, cha = 0, dex = 0, int_ = 0, agi = 0, wis = 0; // base stats, without items or spells
 	int8_t fatigue = 0; // 0 rested .. 100 exhausted (OP_Stamina keeps it up to date)
 	int32_t hunger = 0, thirst = 0; // 0 .. 6000 eaten and drunk (the profile's, then OP_Stamina's)
+	int16_t air_remaining = -1;     // the profile's AirSupply (5900; EQ_Character+0x1708); -1 not sent
 	int16_t drunk = 0;  // Drunkness: 0 .. 200, ours alone (alcohol)
 	uint8_t languages[32] = {}; // skill in each language, 0..100
 	float x = 0, y = 0, z = 0, heading = 0;
@@ -158,6 +159,7 @@ struct ZoneSpawn
 	uint8_t trader = 0;      // ActorInfo's IsTrader: OP_BecomeTrader's code, or SpawnAppearance 31
 	uint8_t pvp = 0;
 	uint8_t invis = 0;       // VisibilityState (SpawnAppearance 3): 1 invisible or hidden, 2 to the undead, 3 to animals
+	uint32_t created = 0;    // the order its EQPlayer was made (msg_eq_netplayer): pinstSpawnList runs newest first
 	uint8_t sneaking = 0;    // IsSneaking (SpawnAppearance 15)
 	int16_t guild_id = -1;   // -1: none
 	uint16_t guild_rank = 0; // GuildStatus (Spawn_Struct @122): 0 member, 1 officer, 2 leader
@@ -1148,6 +1150,7 @@ private:
 	std::string m_character;
 	ZoneProfile m_profile;
 	std::vector<uint8_t> m_profile_bytes; // as the zone sent it (decrypted), for OP_Save
+	uint32_t m_spawns_made = 0;           // ZoneSpawn::created's count
 	ZoneInfo m_info;
 	std::map<uint16_t, ZoneSpawn> m_spawns;
 	ZoneSpawn m_self;

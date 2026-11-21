@@ -2092,7 +2092,9 @@ details and the nearest spawns at the top left and the radar at the top right.
   The breath gauge (EQType 8, `fn_GetGaugeLabelFromEQ`) is `AirSupply * 1000 / MaxAirSupply`.
   `CBreathWnd` (@00408bee, "BreathWindow"), activated by `CDisplay_ActivateMainUI`:
   `UpdateBreathIndicator` (@00408c7d), past 500 ms since last, shows it while `CanIBreathe` says no
-  and hides it once it says yes. Ours starts `AirSupply` full on login rather than the profile's.
+  and hides it once it says yes. `AirSupply` comes in with each zone's profile (byte 5900,
+  `air_remaining`; EQMacEmu sets it to the lung capacity on zone-in unless
+  `AlKabor:RememberAir`), copied into `pinstPCData` with the rest; full until one has come.
   Checked in the preview's `breath` test (The Grey's flag faked).
 - **Anyone's casts** (`frontend/spell_casting.*`): `OP_BeginCast`, `OP_Action` and `OP_Damage`.
   `CEverQuest_StartCasting` prints "%1 begins to cast a spell." (ours is 12205; a bard's is
@@ -2356,8 +2358,8 @@ details and the nearest spawns at the top left and the radar at the top right.
   profile's bytes 102..133)}; the zone sends it to its first field. The old UI's answer
   (`DAT_008092d8` 0) fills `EQ_Main`+0xeb0; the new UI's is `msg_inspect` (@00420efe): the spawn
   at +2 (none: nothing), over 20 away 1402 in 0x111, else the window's title 1401 ("You are
-  inspecting %1."), also said in color 10 for anyone but us, `INSW_Edit` editable only for us
-  (+0x51) with the text at +0x5b0, and one `EQ_Equipment` per name (strcpy'd, its icon at +0xb6).
+  inspecting %1."), also said in color 10 for anyone but us, `INSW_Edit` showing the text at
+  +0x5b0 (theirs, read only; ours editable, +0x51, when we inspect ourselves), and one `EQ_Equipment` per name (strcpy'd, its icon at +0xb6).
   `CInvSlotMgr::UpdateSlots` shows them in EQTypes 8000..8029 (`pinstCInspectWnd` + 0x140 + (type
   - 8000) * 4); the default skin's `InvSlot1..21` are 8001..8021, so the cursor's entry 0 is never
   shown. `CInvSlot::HandleLButtonUp` and `HandleRButtonUp` return at once for 8000..8030, before
@@ -2793,8 +2795,10 @@ details and the nearest spawns at the top left and the radar at the top right.
     96 12677, 160 12678, 224 12679 with 12675 left when `(their y - ours) * cos(h) * 100 + (their x -
     ours) * sin(h) * 100` (h = heading * 6.28 / 512 + 1.57) is 0 or more, else 12674 right; 256
     12680; color 0x10e. Done stops it (`DAT_007989e2` 53 to -1, the spawn kept); the time running
-    out says 12681, no spawn 12499, the spawn's death or despawn 12102. eqgame's list follows
-    `pinstSpawnList`'s order; ours the spawns' ids'. Checked in the preview's `tracking` test.
+    out says 12681, no spawn 12499, the spawn's death or despawn 12102. The list follows
+    `pinstSpawnList`, which `EQPlayer::EQPlayer` (@00506802) builds by putting each new spawn at
+    its head: newest first (ours by `ZoneSpawn::created`, the order the zone's spawn packets made
+    them). Checked in the preview's `tracking` test.
 - **CanIHitTarget** (`EQPlayer::CanIHitTarget` @00509e09): not with divine aura (SPA 40: 12695), at
   ourselves (12696) or nobody (12697), `AllowedToAttack` (@0050996a: never at or as races 72, 141,
   73, nor as 114; an NPC or an NPC's pet yes; a player or a player's pet only both PvP, within 4
