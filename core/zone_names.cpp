@@ -3,6 +3,7 @@
 #include "eqstr.h"
 
 #include <algorithm>
+#include <cctype>
 #include <iterator>
 
 namespace
@@ -222,6 +223,21 @@ std::string ShortZoneName(uint32_t zone_id)
 	return it != std::end(Zones) && it->id == zone_id ? it->short_name : "";
 }
 
+uint32_t ZoneIdFromShortName(const std::string &short_name)
+{
+	for (const ZoneName &zone : Zones) {
+		const std::string name = zone.short_name;
+		if (name.size() != short_name.size())
+			continue;
+		bool same = true;
+		for (size_t i = 0; i < name.size() && same; ++i)
+			same = std::tolower(static_cast<unsigned char>(name[i])) == std::tolower(static_cast<unsigned char>(short_name[i]));
+		if (same)
+			return zone.id;
+	}
+	return 0;
+}
+
 int ZoneExpansion(uint32_t zone_id)
 {
 	// The ids AddZone gives each expansion, the original world's being the rest.
@@ -239,4 +255,9 @@ int ZoneExpansion(uint32_t zone_id)
 bool NoAirZone(uint32_t zone_id)
 {
 	return zone_id == 171;
+}
+
+bool NoBindZone(uint32_t zone_id)
+{
+	return zone_id == 171 || zone_id == 204 || zone_id == 206 || zone_id == 221;
 }

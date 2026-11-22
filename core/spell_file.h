@@ -2,7 +2,7 @@
 
 // spells_en.txt: eqgame's spell data, a line per spell of '^'-separated fields, the spell's id
 // first. Of its 147 fields (EQ_Spell::EQ_Spell @004d6b40 reads them in order) we keep what the
-// item display (CItemDisplayWnd::SetItem), the spellbook, the spell gems and casting use: the name (1),
+// item display (CItemDisplayWnd::SetItem), the spellbook, the spell gems and casting use: the name (1), a teleport's zone (3),
 // the casting texts (4..8), the range (9), the cast time (13, ms), the recovery time (14, ms), the recast
 // time (15, ms), the buff's duration formula and most ticks (16, 17), AEDuration (18), the mana (19), the
 // effects' base values (20..31), their maximums (32..43) and their formulas (58..69), goodEffect (71),
@@ -21,6 +21,8 @@ struct SpellInfo
 {
 	int id = 0;
 	std::string name;
+	// EQ_Spell +0xd8: the zone a teleport (SPA 83, 88, 145) goes to, "same" this one; empty none.
+	std::string teleport_zone;
 	// What the chat says (EQ_Spell +0xdc..+0xec): a bard's own song starting, someone else's (after
 	// their name), the spell landing on us, on someone else (after their name), and wearing off.
 	std::string you_cast, other_casts, cast_on_you, cast_on_other, fades;

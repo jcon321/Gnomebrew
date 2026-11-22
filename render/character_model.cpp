@@ -894,7 +894,7 @@ namespace render
 			       (appearance.race == 3 && upper.compare(0, 5, "CLKER") == 0);
 		};
 		// A mesh's vertices on their bones (the body), or all on the one `point` an item hangs from.
-		auto append = [&](const WldMesh &mesh, Source &from, int point) {
+		auto append = [&](const WldMesh &mesh, Source &from, int point, bool bounds = false) {
 			bool body = point < 0;
 			uint32_t base = static_cast<uint32_t>(model->m_positions.size());
 			if (body) {
@@ -910,7 +910,7 @@ namespace render
 				model->m_normals.push_back(Normalize({mesh.normals[i].x, mesh.normals[i].y, mesh.normals[i].z}));
 				model->m_uvs.push_back(mesh.uvs[i * 2]);
 				model->m_uvs.push_back(mesh.uvs[i * 2 + 1]);
-				if (body) {
+				if (body || bounds) {
 					float z = bones[model->m_bones[base + i]].Apply(p).z;
 					model->m_min_z = std::min(model->m_min_z, z);
 					model->m_max_z = std::max(model->m_max_z, z);
@@ -962,6 +962,14 @@ namespace render
 				append(mesh, *source, -1);
 		}
 		appending_head = false;
+		// A DAG's own sprite (the bone's 0x2d, as eqgfx draws a hierarchical sprite's DAGs): its mesh
+		// on that bone, whole (the Eye of Zomm's EYE_DMSPRITEDEF on EYE_HS_DEF's bone, with no 0x200
+		// mesh list).
+		for (size_t b = 0; b < skeleton.bones.size(); ++b)
+			if (skeleton.bones[b].mesh >= 0 &&
+				std::find(skeleton.meshes.begin(), skeleton.meshes.end(), skeleton.bones[b].mesh) == skeleton.meshes.end() &&
+				source->wld.ReadMesh(skeleton.bones[b].mesh, mesh))
+				append(mesh, *source, static_cast<int>(b), true);
 
 		// EQPlayer::DisplayWeaponsAndArmor -> CDisplay_UpdateItemSlot2: IT<primary> in the right hand
 		// (<tag>R_POINT_DAG), IT<secondary> in the left (L_POINT_DAG), or on the arm (SHIELD_POINT_DAG)

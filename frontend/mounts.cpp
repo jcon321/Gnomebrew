@@ -28,13 +28,6 @@ namespace
 		return a.size() == b.size() && StartsWithName(a, b);
 	}
 
-	// CEverQuest::trimName, as ZoneSpawn::DisplayName does it.
-	std::string Trimmed(const std::string &name)
-	{
-		ZoneSpawn spawn;
-		spawn.name = name;
-		return spawn.DisplayName();
-	}
 }
 
 void Mounts::Attach(ZoneSession &zone, Host host)
@@ -129,21 +122,7 @@ void Mounts::Tick()
 	// starting so (trimName'd both ways, case aside).
 	if (!m_zone || !Ready() || !m_host.has_affect || !m_host.has_affect(SummonHorse) || m_mount.count(Me()))
 		return;
-	std::string wanted = Trimmed(m_zone->Self().name.substr(0, 0x17) + "`s_Mount");
-	uint16_t found = 0;
-	size_t found_length = 0;
-	auto consider = [&](uint16_t id, const ZoneSpawn &spawn) {
-		std::string trimmed = Trimmed(spawn.name);
-		if (!StartsWithName(trimmed, wanted))
-			return;
-		if (!found || spawn.name.size() < found_length) {
-			found = id;
-			found_length = spawn.name.size();
-		}
-	};
-	for (const auto &[id, spawn] : m_zone->Spawns())
-		consider(id, spawn);
-	consider(Me(), m_zone->Self());
+	uint16_t found = m_zone->PlayerByPartialName(m_zone->Self().name.substr(0, 0x17) + "`s_Mount");
 	if (found)
 		Mount(Me(), found);
 }

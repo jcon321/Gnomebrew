@@ -203,6 +203,45 @@ void ZoneView::SetPlayerPosition(float x, float y, float z, float heading)
 	m_position_dirty = true;
 }
 
+void ZoneView::SpellMove(float x, float y, float z, float heading, bool drop)
+{
+	if (drop && m_placed) {
+		float floor_z;
+		if (m_zone.FloorBelow({y, x, z}, 10000, floor_z))
+			z = floor_z + m_height / 5 * 3.125f;
+	}
+	m_movement.ClearVehicle();
+	m_server_position = {x, y, z};
+	m_heading = heading;
+	m_position_dirty = true;
+}
+
+bool ZoneView::ValidTeleport(float x, float y, float z, float heading, float distance) const
+{
+	if (!m_placed)
+		return false;
+	render::Vec3 from = MyFeet() + render::Vec3{0, 0, m_height / 5 * 3.125f};
+	render::Vec3 to{y, x, z};
+	float fraction;
+	if (m_zone.SphereHit(from, to, 0.5f, fraction, nullptr, false))
+		return false;
+	const render::ZoneRegions &regions = m_zone.Regions();
+	auto dry = [&](const render::Vec3 &at) {
+		return regions.Empty() || regions.RegionAt(at) < 0 || regions.EnvironmentAt(at) == render::Environment::Dry;
+	};
+	if (!dry(to))
+		return false;
+	float a = render::HeadingToRadians(heading);
+	render::Vec3 back{std::cos(a) * 2, std::sin(a) * 2, 0};
+	render::Vec3 at = to - back;
+	for (float left = distance - 2; left > 0; left -= 2) {
+		if (!dry(at))
+			return false;
+		at = at - back;
+	}
+	return true;
+}
+
 ZoneView::CameraSetup::CameraSetup()
 {
 	// CDisplay_default_camera, English (DAT_00799770 0): view 2's distance, height and pitch are 0
@@ -305,6 +344,12 @@ void ZoneView::Turn(float delta)
 {
 	if (!m_placed)
 		return;
+	// Mouse look turns pinstCharSpawn: our eye while we steer one.
+	if (m_driven && m_drive_walk) {
+		m_drive_walker.Turn(delta);
+		m_drive_heading = m_drive_walker.Heading();
+		return;
+	}
 	m_movement.Turn(delta);
 	m_heading = m_movement.Heading();
 }
@@ -588,20 +633,23 @@ void ZoneView::MoveToSafePoint(float x, float y, float z)
 	m_server_position = {m_feet.y, m_feet.x, m_feet.z + center};
 }
 
-void ZoneView::SteerBoat(uint16_t boat)
+void ZoneView::Steer(uint16_t id, bool levitating)
 {
-	auto it = m_actors.find(boat);
-	if (boat && it == m_actors.end())
-		boat = 0;
-	if (m_driven && m_driven != boat) {
-		// pinstCharSpawn us again: the boat stops where it is.
+	auto it = m_actors.find(id);
+	if (id && it == m_actors.end())
+		id = 0;
+	if (m_driven && m_driven != id) {
+		// pinstCharSpawn something else: what we steered stops where it is (its MovementSpeed and
+		// MovementSpeedHeading 0).
 		auto was = m_actors.find(m_driven);
 		if (was != m_actors.end())
 			was->second.actor.Drive(was->second.Feet(), was->second.actor.Heading(), 0, 0, {}, true,
 				was->second.actor.BodyEnvironment(), was->second.actor.FeetEnvironment());
 	}
-	m_driven = boat;
-	if (!boat)
+	if (m_driven == id)
+		return;
+	m_driven = id;
+	if (!id)
 		return;
 	const SpawnView &view = it->second;
 	m_drive_feet = view.Feet();
@@ -609,6 +657,13 @@ void ZoneView::SteerBoat(uint16_t boat)
 	m_drive_speed = m_drive_heading_speed = m_drive_turn_ramp = 0;
 	m_drive_velocity = {};
 	m_drive_center = view.center_height;
+	m_drive_walk = !IsBoatRace(view.race);
+	if (m_drive_walk) {
+		m_drive_walker.SetRace(view.race);
+		m_drive_walker.Place(m_drive_feet, m_drive_heading, view.center_height / 0.625f, view.walk_speed,
+			view.run_speed, m_info.gravity);
+		m_drive_walker.SetLevitating(levitating);
+	}
 }
 
 void ZoneView::SteerStep(const MoveControls &controls, float ms)
@@ -620,6 +675,15 @@ void ZoneView::SteerStep(const MoveControls &controls, float ms)
 	}
 	const SpawnView &view = it->second;
 	m_drive_center = view.center_height;
+	if (m_drive_walk) {
+		m_drive_walker.Step(controls, ms, m_zone);
+		m_drive_feet = m_drive_walker.Feet();
+		m_drive_heading = m_drive_walker.Heading();
+		m_drive_speed = m_drive_walker.Speed();
+		m_drive_heading_speed = m_drive_walker.HeadingSpeed();
+		m_drive_velocity = m_drive_walker.Velocity();
+		return;
+	}
 	// ProcessControls on pinstCharSpawn: the boat's own speeds (MovementForward and
 	// MovementBackwardSpeedMultiplier), turning up to 12 a tick, one more each frame.
 	float ticks = std::min(ms * 0.02f, 3.0f);
@@ -690,7 +754,7 @@ ZoneMovement ZoneView::SteeredMovement() const
 	m.heading_speed = m_drive_heading_speed;
 	m.dy = m_drive_velocity.x;
 	m.dx = m_drive_velocity.y;
-	m.dz = 0;
+	m.dz = m_drive_walk ? m_drive_velocity.z : 0;
 	return m;
 }
 
@@ -1706,6 +1770,10 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 	}
 	m_triangles_drawn = m_renderer->TriangleCount();
 	m_renderer->Finish(canvas.Row(0), canvas.Stride(), sky ? ScaleColor(m_sky.HorizonColor(), sky_tint) : camera.fog_color);
+	// RealRender_World: blind (our ActorInfo+0x18d), CDisplay::ClearScreen's eqgfx call (0) once
+	// the world's drawn, so only the windows show.
+	if (m_blind)
+		canvas.Fill({0, 0, canvas.Width(), canvas.Height()}, 0x000000);
 	DrawDebugOverlays(canvas);
 	m_times.submit = since(start);
 }
@@ -2203,6 +2271,11 @@ void ZoneView::UpdateSpawns(const std::map<uint16_t, ZoneSpawn> &spawns, uint16_
 			if (uint16_t boat = view.actor.Vehicle(); boat && boat_moves.count(boat))
 				view.actor.Carry(boat_moves[boat]);
 			PoseSpawn(view, spawn, now_ms);
+			// What we steer that isn't a boat (our Eye of Zomm): where our keys have it; the zone
+			// sends its updates to everyone else.
+			if (id == m_driven && m_drive_walk)
+				view.actor.Drive(m_drive_feet, m_drive_heading, m_drive_speed, m_drive_heading_speed, m_drive_velocity,
+					m_drive_walker.OnGround(), m_drive_walker.BodyEnvironment(), m_drive_walker.FeetEnvironment());
 		}
 		if (m_sound)
 			SpawnSounds(view, spawn, id, now_ms);

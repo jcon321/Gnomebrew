@@ -1003,7 +1003,7 @@ namespace
 		h.Snapshot("b1-later");
 		uint16_t on = view->Vehicle();
 		if (on && zone.Spawns().count(on) && zone.Spawns().at(on).race == 141) {
-			view->SteerBoat(on); // HandleWorldMessage's 0x4126 yes
+			view->Steer(on); // HandleWorldMessage's 0x4126 yes
 			printf("[preview] steering %u\n", view->Steered());
 			InputEvent forward;
 			forward.type = InputEvent::Type::Key;
@@ -2253,6 +2253,94 @@ namespace
 		memcpy(kill, zone.Profile().name.c_str(), zone.Profile().name.size());
 		inject_to.InjectReplayPacket(ZoneOp::GMKill, kill, sizeof(kill));
 		watch(4000, false);
+		return 0;
+	}
+
+	// Replay "spells": spells with no duration landing on us (HitBySpell's own branches: Bind
+	// Affinity, Gate, Shadow Step, Succor, a teleport to another zone), and buffs whose effects are
+	// ours: blindness, fear and charm, and the Eye of Zomm (its eye found on the 6 s tick and steered,
+	// its despawn handing us back).
+	int SpellsTest(FrontEnd &frontend, Harness &h)
+	{
+		const ZoneSession &zone = frontend.Zone();
+		ZoneSession &inject_to = frontend.ZoneForTests();
+		size_t chat_seen = frontend.Chat().Lines().size();
+		auto run = [&](int ms) {
+			h.RunUntil([] { return false; }, ms);
+			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
+				printf("[preview] chat %06x: %s\n", frontend.Chat().Lines()[chat_seen].rgb, frontend.Chat().Lines()[chat_seen].text.c_str());
+		};
+		run(800);
+		const ZoneView *view = frontend.ZoneScene();
+		if (!view) {
+			printf("[preview] no zone view\n");
+			return 1;
+		}
+		uint16_t me = zone.MySpawnId();
+		auto where = [&](const char *what) {
+			ZoneMovement m = view->Movement();
+			const ZoneProfile &p = zone.Profile();
+			printf("[preview] %s: at %.1f %.1f %.1f heading %.0f, state %d, bind zone %u at %.1f %.1f %.1f, blind %d, "
+			       "steered %u, view actor %u\n",
+				what, m.x, m.y, m.z, m.heading, static_cast<int>(zone.GetState()), p.bind_zone, p.bind_x, p.bind_y, p.bind_z,
+				view->Blind() ? 1 : 0, view->Steered(), view->ViewActor());
+		};
+		auto land = [&](int spell, uint16_t caster) {
+			uint8_t body[36] = {};
+			memcpy(body, &me, 2);
+			memcpy(body + 2, &caster, 2);
+			uint16_t level = 50;
+			memcpy(body + 4, &level, 2);
+			int32_t instrument = 10;
+			memcpy(body + 8, &instrument, 4);
+			body[24] = 231;
+			int16_t id = static_cast<int16_t>(spell);
+			memcpy(body + 30, &id, 2);
+			body[33] = 4;
+			inject_to.InjectReplayPacket(ZoneOp::Action, body, sizeof(body));
+			run(400);
+		};
+		uint16_t npc = 0;
+		for (const auto &[id, spawn] : zone.Spawns())
+			if (npc == 0 && spawn.npc == 1)
+				npc = id;
+		where("start");
+		land(35, me); // Bind Affinity, ours (South Qeynos: time type 2, a city)
+		where("bind affinity (ours)");
+		land(35, npc);
+		where("bind affinity (an NPC's)");
+		land(3015, me); // Juxtapose of Fire: Shadow Step
+		where("shadow step");
+		land(1086, npc); // Blinding Smog: SPA 20
+		where("blinding smog");
+		land(126, npc); // Inspire Fear: SPA 23
+		land(141, npc); // Beguile Animals: SPA 22, another's
+		where("fear, charm");
+		// The Eye of Zomm: its eye spawned before us, then the 6 s tick finds it.
+		ZoneSpawn eye;
+		eye.name = "Eye_of_" + zone.Profile().name + "00";
+		eye.race = 108;
+		eye.gender = 2;
+		eye.npc = 1;
+		eye.level = 1;
+		eye.size = 3;
+		ZoneMovement m = view->Movement();
+		eye.x = m.x + 5;
+		eye.y = m.y;
+		eye.z = m.z;
+		uint16_t eye_id = 4990;
+		inject_to.EditSpawnsForTests()[eye_id] = eye;
+		run(500);
+		land(323, me);
+		where("eye of zomm landed");
+		run(6500);
+		where("eye of zomm after a tick");
+		inject_to.InjectReplayPacket(ZoneOp::DeleteSpawn, &eye_id, sizeof(eye_id));
+		run(400);
+		where("eye despawned");
+		printf("[preview] eye buff still on: %d\n", frontend.BuffsForTests().HasAffect(67) ? 1 : 0);
+		land(1567, me); // Succor: "same", the safe point and this zone again
+		where("succor");
 		return 0;
 	}
 
@@ -4308,6 +4396,7 @@ int main(int argc, char **argv)
 	bool train_test = argc == 7 && std::string(argv[6]) == "train";
 	bool cameras_test = argc == 7 && std::string(argv[6]) == "cameras";
 	bool packets_test = argc == 7 && std::string(argv[6]) == "packets";
+	bool spells_test = argc == 7 && std::string(argv[6]) == "spells";
 	if (argc >= 6 && !replay) {
 		std::string login = argv[3];
 		size_t colon = login.rfind(':');
@@ -4409,6 +4498,8 @@ int main(int argc, char **argv)
 			return CamerasTest(frontend, h);
 		if (packets_test)
 			return PacketsTest(frontend, h);
+		if (spells_test)
+			return SpellsTest(frontend, h);
 		h.RunUntil([] { return false; }, 500);
 		h.Snapshot("r0-zone");
 		// Toggle UI Display (F10, ExecuteCmd 0x15): the windows and cursor gone, then back.

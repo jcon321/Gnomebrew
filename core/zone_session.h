@@ -786,6 +786,14 @@ public:
 	void ControlBoat(uint16_t boat, bool take);
 	void LocateVehicle(const std::string &name);
 	void SetBoat(const std::string &name) { m_profile.boat = name; } // EQ_Character+0xcb4
+	// HitBySpell's Bind Affinity: ZoneBoundId and ZoneBoundX, Y and Z (the server's, our center).
+	void SetBind(uint32_t zone, float x, float y, float z)
+	{
+		m_profile.bind_zone = zone;
+		m_profile.bind_x = x;
+		m_profile.bind_y = y;
+		m_profile.bind_z = z;
+	}
 	// ChangeStance: OP_SpawnAppearance with our stance (100 standing, 110 sitting, 111 crouching...),
 	// kept in Self().stance.
 	void SetStance(uint8_t stance);
@@ -1039,6 +1047,9 @@ public:
 	ZoneProfile &EditProfile() { return m_profile; }
 	const ZoneInfo &Info() const { return m_info; }
 	const std::map<uint16_t, ZoneSpawn> &Spawns() const { return m_spawns; }
+	// EQPlayer_get_player_partial_name (@0050820e): the spawn (or us) whose trimName starts with
+	// `name`'s (trimName'd too, case aside), the shortest such name, the first of equal ones; 0 none.
+	uint16_t PlayerByPartialName(const std::string &name) const;
 	std::map<uint16_t, ZoneSpawn> &EditSpawnsForTests() { return m_spawns; } // the preview's
 	// Our own spawn from OP_ZoneEntry (ServerZoneEntry_Struct): appearance, size, position.
 	// Set before the ZoneInfo event.

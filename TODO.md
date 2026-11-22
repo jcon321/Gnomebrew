@@ -96,23 +96,35 @@ no rules of its own.
      UpdateMyVisibleStatus), seeing invisible (13: CanISeeInvis in `InvisibleToMe`, a target lost
      as it fades), infravision and ultravision (65, 66: Vision1 and 2 over the race's), the lens
      (87: SetViewAngle), Bind Sight (73: SetViewActorByName, the camera from the target's eyes;
-     1275..1277; no target 214 and the buff cleared) and Locate Corpse (77:
-     eqspa_locate_corpse), and HandleSpecialPCAffects(1) as we're made in a zone (the zone-only
-     buffs, 67, 31, 58, 22, 23, 73 and 64, taken off, an enchanter's illusion kept with Permanent
-     Illusion). Still to do: the Eye of Zomm (67: the eye becomes pinstCharSpawn, which we'd drive,
-     and its view actor; RemovePCAffectex hands us back with headEnvironmentChange); blindness (20
-     and 34: ActorInfo+0x18d, what it does to the view not traced); fear and charm handing us to
-     the zone (22, 23: `EQPlayer::HandoverControlToZoneserver` @0050b783; the zone's
-     OP_FreezeClientControl does it now); TurnInfravisionEffectOff's spawn ambient reset (ours
-     redoes the glow each frame); a bard's instrument mastery; levitation on our horse
-     (SetNoGrav on the Mount); HitBySpell's own branches: the bind's place checks
-     (`InSpecialBindSpot` @004cadbc, `EQWorldData::IsNoBindZone`: setting ZoneBound and SavePC, or
-     0x69 / 0x103), the teleport checks (`CDisplay::IsValidTeleport` @004af646,
-     `EQPlayer::HandoverControlToZoneserver`), SPA 0x26's cursor messages (0x30a4, 0x61a, 0x30a3)
-     and the illusion's change of form here (`eqspa_change_form` @004ca8b2, through
-     `EQPlayer::do_change_form` @005074fa; races 142 and 143 failing its own
-     `GetNearestActorTag`, `ZoneView::NearestActorTag`, land no form; the zone's OP_Illusion does
-     the form now). Alt+click or the right button held on a buff shows its spell's name and icon
+     1275..1277; no target 214 and the buff cleared), Locate Corpse (77: eqspa_locate_corpse),
+     blindness (20 and 34: ActorInfo+0x18d, RealRender_World's ClearScreen over the world; 34's
+     stays to the next zone), fear and charm by another (23, 22:
+     `EQPlayer::HandoverControlToZoneserver`'s 1461; the zone's OP_FreezeClientControl does the
+     rest) and the Eye of Zomm (67: ProcessAffects finds "Eye_of_<name>" each tick,
+     `ZoneSession::PlayerByPartialName`, and it's pinstCharSpawn, walked by the keys with a
+     PlayerMovement of its own, `ZoneView::Steer`, its OP_ClientUpdate sent with its id, and the
+     view actor; RemovePCAffectex and ~EQPlayer of the eye hand us back), and
+     HandleSpecialPCAffects(1) as we're made in a zone (the zone-only buffs, 67, 31, 58, 22, 23, 73
+     and 64, taken off, an enchanter's illusion kept with Permanent Illusion; 20 and 34 blind us
+     again). A spell with no duration landing on us does HitBySpell's own branches: Bind Affinity
+     (25: `EQWorldData::IsNoBindZone`, `InSpecialBindSpot`, FV's rules and the zone's time type;
+     ZoneBound set and SavePC, or 105 / 259), Gate (26: 98 in 100, our bind, MoveToZone 6, else
+     260), Shadow Step (42: `CDisplay::IsValidTeleport` over 10001 random tries, else 12399) and
+     the teleports (83, 88, 145: the spell's zone and base values, the evacuations to "same" at
+     the safe point, Decession only from our group, Succor's 1 in 100; MoveToZone 7). Still to
+     do: TurnInfravisionEffectOff's spawn ambient reset (ours redoes the glow each frame); a
+     bard's instrument mastery; levitation on our horse (SetNoGrav on the Mount); the eye's
+     `headEnvironmentChange` (the underwater sound and view follow pinstCharSpawn's head in
+     eqgame, ours follow us) and RemovePCAffectex handing back a boat's helm too (ours only lets
+     go of an eye); IsValidTeleport's sphere (ours 0.5; eqgfx's radius is CDisplay+0xb30's, not
+     traced) and `GetEnvironment`'s other region types (ours: water, lava and the like);
+     HitBySpell's other no-duration branches: SPA 0x51 (0x412a with the target's place), 0x33
+     (the nearest trap switch), 0x34..0x35 (FindClosest tracking), 0x3d and 0x3e (the cursor
+     item's lore and its stats, eqstr 0x30a2..0x30a5), and the illusion's change of form here
+     (`eqspa_change_form` @004ca8b2, through `EQPlayer::do_change_form` @005074fa; races 142 and
+     143 failing its own `GetNearestActorTag`, `ZoneView::NearestActorTag`, land no form; the
+     zone's OP_Illusion does the form now). The new ones are checked on replay
+     (`frontend_preview ... spells`), none live. Alt+click or the right button held on a buff shows its spell's name and icon
      in the item display (HandleSpellInfoDisplay), and Alt over the window shows every buff's
      tooltip (CBuffWindow::PostDraw, `FrontEnd::DrawBuffTooltips`).
    - Inventory: name, level, class (its title from 51), deity, HP, stats and resists (base, worn

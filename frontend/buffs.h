@@ -83,6 +83,8 @@ public:
 	bool HasSpell(int spell) const;
 
 	const ZoneBuff &Slot(int slot) const;
+	uint16_t CasterOf(int slot) const; // BuffCasterId: who cast it (0 unknown, or slot -1)
+	uint16_t LandingCaster() const { return m_landing_caster; } // during `effects` as a spell lands: its caster
 	// IsValidAffect: a buff there of a spell we know.
 	const SpellInfo *SlotSpell(int slot) const;
 	int Total(int spa) const; // TotalSpellAffects
@@ -147,4 +149,5 @@ private:
 	uint16_t m_casters[Slots] = {}; // BuffCasterId (UpdateBuffSlotIndicator)
 	uint64_t m_tick_ms = 0;         // ActorInfo's Last6000msTick
 	uint32_t m_serial = 0;
+	uint16_t m_landing_caster = 0;
 };

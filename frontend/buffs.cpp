@@ -84,6 +84,11 @@ const SpellInfo *Buffs::Spell(int id) const
 	return m_spells ? m_spells->Find(id) : nullptr;
 }
 
+uint16_t Buffs::CasterOf(int slot) const
+{
+	return slot >= 0 && slot < Slots ? m_casters[slot] : 0;
+}
+
 const ZoneBuff &Buffs::Slot(int slot) const
 {
 	static const ZoneBuff none;
@@ -163,6 +168,7 @@ void Buffs::Land(const ZoneCast &cast)
 	int level = caster.level;
 	if (cast.spell >= 1252 && cast.spell <= 1266 && cast.level > 0 && cast.level < 61)
 		level = cast.level;
+	m_landing_caster = caster.id;
 	if (spell->duration_formula == 0) {
 		if (effects)
 			effects(*spell, -1, level, true); // no buff: its effects at once

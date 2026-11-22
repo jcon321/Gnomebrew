@@ -765,7 +765,7 @@ build/eqclient -u USER -p PASS [options]
 
 ```
 build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|train|ground|commands|group|duel|bazaar|raid|guild|skills|aa]]
-build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez|cameras|packets|friends|chatwindows|multiline|inspect|tracking|breath|ladder]]
+build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez|cameras|packets|spells|friends|chatwindows|multiline|inspect|tracking|breath|ladder]]
 ```
 
 This drives the real front-end code with scripted input and writes PNG snapshots. Text is
@@ -877,7 +877,10 @@ sends any recording's zone the packets that change our state and prints what the
 (one, three, its last, the empty slot), `OP_Reward`'s coins from an NPC and from nobody,
 `OP_ResetSkill` on a skill just used (0 seconds, then past its reuse), `OP_Disarm`'s two answers,
 and `OP_FreezeClientControl` (another's name, ours, the forward key held), `OP_UnfreezeClientControl`
-and `OP_ReturnClientControl`)
+and `OP_ReturnClientControl`; `spells` lands spells on us (`OP_Action` 231) and prints our place,
+bind, blindness, what we steer and the view actor after each: Bind Affinity ours and an NPC's, a
+Shadow Step, Blinding Smog, a fear and a charm, an Eye of Zomm with an "Eye_of_<name>00" spawn
+put in (before and after the 6 s tick, then its despawn) and Succor)
 and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,
 opens, minimizes, resizes and closes windows (the layout goes to OUTDIR), types into the chat window
 (a say, commands, /target) and prints what the chat window holds, then stands near the target to
@@ -1724,7 +1727,10 @@ the rejection).
   model has one, untinted), so a Qeynos guard is race 71 (`QCM`) with texture 1. The head is a mesh of its
   own: `SwapHead` puts `<tag>HE<nn>_DMSPRITEDEF` in place of `HE00`, chosen by the NPC's `helm` (byte 102)
   or the helm material (chain is 2), and the helm's tint goes only on its `HELM*` / `CHAIN*` materials, not
-  the face. `OP_WearChange` changes a slot's material and tint.
+  the face. `OP_WearChange` changes a slot's material and tint. A skeleton's meshes are its
+  `_HS_DEF`'s list (flag 0x200) and any mesh a DAG carries itself (its 0x2d), drawn whole on that
+  bone as eqgfx draws a DAG's sprite: the Eye of Zomm's `EYE_HS_DEF` has only that, and CCD, GOM,
+  PRE and TRT add a piece so (`CharacterModels`, `render/character_model.cpp`).
 - **Animations:** the client plays animations by number; the table at 004d7a21 (TAKP calls it
   `initializeHotkeyLabels`) names their tracks: 1..11 `C01`..`C11` combat, 16 `D05` death, 17..25
   `L01`..`L09` walking to treading water, 26 `O01` fidget, 32..38 `P01`..`P07` idle to sitting, 39..47
@@ -2252,8 +2258,57 @@ details and the nearest spawns at the top left and the radar at the top right.
   and faced, "You sense a corpse in this direction." (1563, 0x108), else 12447 or 12446 (0x121).
   `HandleSpecialPCAffects(1)` (@004c62bd, from `EQPlayer::EQPlayer` as we're made in a zone)
   takes the zone-only buffs off (67, 31, 58, 22, 23, 73, 64; an enchanter's illusion stays with
-  Permanent Illusion, AA 0x37) and does the rest's as they land; `do_change_form` calls it with
-  0, which keeps them all.
+  Permanent Illusion, AA 0x37) and does the rest's as they land (blindness again); `do_change_form`
+  calls it with 0, which keeps them all. Blindness (20 and 34) sets ActorInfo+0x18d, and
+  `RealRender_World` then clears the world it drew to black (`CDisplay::ClearScreen`'s eqgfx call
+  with 0), the windows drawn over it; only 20's fading clears it, so 34's lasts to the next zone's
+  new ActorInfo (`ZoneView::SetBlind`). Charm by another (22) and fear (23) are
+  `EQPlayer::HandoverControlToZoneserver` (@0050b783): for us only "You lose control of
+  yourself!" (1461); the zone's `OP_FreezeClientControl` does the rest. The Eye of Zomm (67) does
+  nothing as it lands: `ProcessAffects`' 6 s tick looks for "Eye_of_<our name>" each time
+  (`EQPlayer_get_player_partial_name` @0050820e: both trimName'd, a case-blind prefix, the
+  shortest name and the first of equal ones; `ZoneSession::PlayerByPartialName`), stops what
+  pinstCharSpawn was, makes the eye pinstCharSpawn and `SetViewActorByName` it. The keys then
+  drive the eye with our own ProcessControls and process_physics (`ZoneView::Steer`: a
+  `PlayerMovement` with its size, race and speeds; mouse look turns it), and its
+  `OP_ClientUpdate` goes with its id, which EQMacEmu takes while `has_zomm` and sends on to
+  everyone else, never back to us. Fading, `RemovePCAffectex` calls `headEnvironmentChange` on the
+  eye with our head's water, makes our horse or us pinstCharSpawn and `SetViewActorByName`s us;
+  `~EQPlayer` of a pinstCharSpawn not us takes the SPA 67 buff off (`RemovePCAffect`) and makes us
+  pinstCharSpawn.
+- **A spell with no duration landing on us** (`FrontEnd::SpellBind`, `SpellGate`,
+  `SpellShadowStep`, `SpellTeleport`): `HitBySpell`'s loop over its effects for a spell whose
+  duration formula is 0, on us as a player. EQMacEmu leaves gate and the teleports to the client
+  (its `SE_Gate` gates only NPCs; for the teleports the client sends the zone request itself).
+  - Bind Affinity (25): in a no-bind zone (`EQWorldData::IsNoBindZone` @00523f23,
+    `IsSpecialZone` flag 0x20, which `AddZone` gives The Grey, ponightmare, poinnovation and
+    nightmareb) eqstr 105, color 0x121. Cast by us or a GM (Entity+0x109): with FV's rules
+    (`OP_LogServer` at 0) every zone counts as an expansion's, else a time type 1 zone counts as
+    the original world's and the rest by `EQWorldData::ExpansionZone` (every one an expansion's on
+    a server of type 4); a GM's, one of the original world, time types 2..4 or
+    `EQ_Character::InSpecialBindSpot` (@004cadbc: boxes by the server's y, x and z in zones 13, 78,
+    84, 92, 93, 110, 113 and 114) bind us here (ZoneBoundId, ZoneBoundY/X/Z from our position)
+    and `SavePC(0, 1, 0xe)`; otherwise 259. Cast by someone else, time types 2..4 or the special
+    spot bind us here (no save), otherwise 259. EQMacEmu binds us by its own rules too.
+  - Gate (26): under 98 in 100 (`RandNbr % 100 + 1`), off any boat (AttachedEntity, EQ_Character
+    +0xcb4), at our bind (ZoneEnter too), the wave 0x89; in this zone onto the floor there
+    (`GetPlayerFloorHeight`, `UpdatePlayerActor`), else `MoveToZone(ZoneBoundId, "gate spell", 0,
+    6)`; otherwise "Your gate is too unstable, and collapses." (260, 0x121).
+  - Shadow Step (42): up to 10001 tries of a random heading (0..511) and distance (4, or `4 +
+    RandNbr % (value + 2)`), from our place at our height; the first that
+    `CDisplay::IsValidTeleport` (@004af646) takes is ours, the wave 0x89, onto the floor. It takes
+    a place `s3dCollideSphereWithWorld` reaches from us unblocked, whose `GetEnvironment` is 0,
+    and each 2 back toward us along the heading while more than 2 of the distance is left. None:
+    "Nothing happens." (12399, 0x111).
+  - The teleports (83, 88 and 145): Succor's kind (88) does nothing 1 time in 100; Decession (2558)
+    and Greater Decession (3244) only from a member of our group (`EQ_PC::IsAGroupMember`). With
+    a zone named (spells_en field 3, EQ_Spell+0xd8), off any boat, at the spell's base values (y,
+    x, z, the heading) in that zone (`GetIndexFromZoneName` of the name); the evacuations named
+    "same" (2558, 1567, 1626, 1627, 1628, 2771, 2183, 1566, 2184, 3244, 3073) go to this zone's
+    safe point, heading 0, and `MoveToZone(this zone, "portal spell", 0, 7)`. Then the wave 0x89,
+    and in this zone onto the floor there (not for spell 1476), else `MoveToZone(that zone,
+    "portal spell", 0, 7)`. Another spell to "same" (3921, Guide Evacuation) gets zone 0 from
+    `GetIndexFromZoneName` and asks for it.
 - **Luclin effects** (`frontend/spell_effects.*`, `render/spell_particles.*`): a spell's
   `SpellsNew.eff` record plays stage 0 while casting and stage 2 on landing, each emitter chosen by
   the caster's level (NPCs count as 1). The emitters sit on the caster, the target or a summoning's

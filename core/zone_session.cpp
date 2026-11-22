@@ -319,6 +319,37 @@ void ZoneSession::PlayAnimation(uint16_t spawn, int animation, float speed)
 	++it->second.action_serial;
 }
 
+uint16_t ZoneSession::PlayerByPartialName(const std::string &name) const
+{
+	ZoneSpawn probe;
+	probe.name = name;
+	std::string wanted = probe.DisplayName();
+	if (wanted.empty())
+		return 0;
+	auto starts = [&](const std::string &text) {
+		if (text.size() < wanted.size())
+			return false;
+		for (size_t i = 0; i < wanted.size(); ++i)
+			if (std::tolower(static_cast<unsigned char>(text[i])) != std::tolower(static_cast<unsigned char>(wanted[i])))
+				return false;
+		return true;
+	};
+	uint16_t found = 0;
+	size_t found_length = 0;
+	auto consider = [&](uint16_t id, const ZoneSpawn &spawn) {
+		if (!starts(spawn.DisplayName()))
+			return;
+		if (!found || spawn.name.size() < found_length) {
+			found = id;
+			found_length = spawn.name.size();
+		}
+	};
+	for (const auto &[id, spawn] : m_spawns)
+		consider(id, spawn);
+	consider(MySpawnId(), Self());
+	return found;
+}
+
 std::string ZoneSpawn::DisplayName() const
 {
 	// The client's CleanName (CEverQuest::trimName): underscores become spaces, and the digits

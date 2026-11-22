@@ -6,7 +6,7 @@
 
 namespace
 {
-	constexpr size_t NameField = 1, YouCastField = 4, OtherCastsField = 5, CastOnYouField = 6, CastOnOtherField = 7,
+	constexpr size_t NameField = 1, TeleportZoneField = 3, YouCastField = 4, OtherCastsField = 5, CastOnYouField = 6, CastOnOtherField = 7,
 	                 FadesField = 8, RangeField = 9, CastTimeField = 13, RecoveryField = 14, RecastField = 15, DurationFormulaField = 16, DurationField = 17,
 	                 AeDurationField = 18, ManaField = 19, FirstBaseField = 20, FirstMaxField = 32, FirstFormulaField = 58,
 	                 GoodEffectField = 71, ActivatedField = 72, ResistTypeField = 73, FirstSpaField = 74, TargetTypeField = 86, SkillField = 88, FirstClassField = 92,
@@ -39,6 +39,7 @@ bool SpellFile::Load(const std::string &path)
 		auto number = [&](size_t field) { return std::atoi(fields[field].c_str()); };
 		SpellInfo spell;
 		spell.name = fields[NameField];
+		spell.teleport_zone = fields[TeleportZoneField];
 		spell.you_cast = fields[YouCastField];
 		spell.other_casts = fields[OtherCastsField];
 		spell.cast_on_you = fields[CastOnYouField];

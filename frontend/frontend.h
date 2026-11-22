@@ -556,6 +556,15 @@ private:
 	void HandleSpecialPCAffects();
 	// CDisplay::SetViewActorByName: the camera from a spawn's eyes (Bind Sight), ours with our id.
 	void SetViewActorByName(uint16_t id);
+	void EyeOfZommTick(); // ProcessAffects' SPA 67: our eye is pinstCharSpawn and the view
+	void SetBlind(bool blind); // ActorInfo+0x18d: SPA 20 and 34
+	// HitBySpell's moves and bind for a spell with no duration landing on us (SPA 25, 26, 42; 83,
+	// 88 and 145).
+	void SpellBind(uint16_t caster);
+	static bool InSpecialBindSpot(uint32_t zone, float x, float y, float z);
+	void SpellGate();
+	void SpellShadowStep(int value);
+	void SpellTeleport(const SpellInfo &spell, int spa, uint16_t caster);
 	void LocateCorpse(); // EQ_Character::eqspa_locate_corpse
 	// CDisplay::RealRender_World's DeathTimer: lying dead, 2 seconds on "Returning to home point,
 	// please wait...", and the frame after it, back to our bind point (MoveToZone).
@@ -862,6 +871,7 @@ private:
 	std::set<uint16_t> m_hidden_corpses; // /hidecorpses' (ActorInfo IsInvisible)
 	std::string m_logout_text;      // why we're going to character select, when it isn't a camp
 	bool m_stunned = false;         // EQ_Character's StunnedState 1 (StunMe)
+	bool m_blind = false;           // ActorInfo+0x18d (SetBlind)
 	bool m_frozen = false;          // EQ_Character's StunnedState 2 (OP_FreezeClientControl)
 	uint64_t m_stun_until_ms = 0;   // ActorInfo's stun timer (+0xc4): 0 not stunned
 	uint64_t m_death_ms = 0;        // ActorInfo's DeathTimer: when we lay down; 1 once told we're going home

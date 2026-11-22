@@ -95,6 +95,15 @@ public:
 	// The Luclin player models to use (my-client.ini's UseLuclin*); before StartLoading.
 	void SetLuclinModels(const render::LuclinModels &models) { m_luclin = models; }
 	void SetPlayerPosition(float x, float y, float z, float heading);
+	// HitBySpell's moves (gate, the teleports, Shadow Step): there (the server's x, y and z of our
+	// center), off any boat; `drop`: onto the floor under it (GetPlayerFloorHeight's, which leaves
+	// it where it is with none), the center ModelHeightOffset over that.
+	void SpellMove(float x, float y, float z, float heading, bool drop);
+	// CDisplay::IsValidTeleport (@004af646), for Shadow Step: nothing solid from our center to there
+	// (s3dCollideSphereWithWorld; ours a 0.5 sphere), no special environment there
+	// (CDisplay::GetEnvironment 0), nor at each 2 back toward us along `heading` while more than 2 of
+	// `distance` is left.
+	bool ValidTeleport(float x, float y, float z, float heading, float distance) const;
 	void SetSwimSkill(int skill) { m_movement.SetSwimSkill(skill); } // the profile's swimming skill
 	void SetSafeFallSkill(int skill) { m_safe_fall = skill; }        // for the landing sounds
 	// EQPlayer::IHaveFallen for us: TakeFallDamage of the fall past 2.5, the damage it did.
@@ -114,6 +123,10 @@ public:
 	}
 	// CDisplay::SetViewAngle (@004acaa6): the lens (SPA 87's value as it lands).
 	void SetViewAngle(float angle) { m_cam->angle = angle; }
+	// Blind (SPA 20 or 34 on us: ActorInfo+0x18d): RealRender_World clears the world it drew to
+	// black (CDisplay::ClearScreen's eqgfx call), the windows drawn over it as ever.
+	void SetBlind(bool blind) { m_blind = blind; }
+	bool Blind() const { return m_blind; }
 	// CDisplay::SetViewActor: whose eyes the camera sees from (Bind Sight), 0 our own.
 	void SetViewActor(uint16_t id) { m_view_actor = id; }
 	uint16_t ViewActor() const { return m_view_actor; }
@@ -230,8 +243,13 @@ public:
 	// damped as a moving NPC (process_physics' 0.625 halved, 0.8); and MovePlayer's boat branch:
 	// 6 ahead (11 behind, backing up) has to be water with nothing solid on the way, or the move's
 	// undone and the boat stops. We ride along on it.
-	void SteerBoat(uint16_t boat);
+	// Any other spawn (our Eye of Zomm: ProcessAffects' SPA 67) walks as we do (ProcessControls and
+	// process_physics on pinstCharSpawn, MovePlayer's collision: a PlayerMovement of its own, with
+	// its size, race, walk and run speeds; `levitating`: its LevitationState, no gravity), while
+	// we stand.
+	void Steer(uint16_t id, bool levitating = false);
 	uint16_t Steered() const { return m_driven; }
+	bool SteeringBoat() const { return m_driven != 0 && !m_drive_walk; }
 	ZoneMovement SteeredMovement() const; // its OP_ClientUpdate (the server's terms, its center)
 	// The light we carry (our ZoneSpawn::light; we're not among the spawns).
 	void SetMyLight(uint8_t light) { m_my_light = light; }
@@ -505,7 +523,7 @@ private:
 	void UpdateBoatShapes(const std::map<uint16_t, ZoneSpawn> &spawns, uint16_t my_id);
 	// PutOnVehicle once it can be done; false while it waits.
 	bool PlaceOnVehicle();
-	// The boat we steer moved by the keys (SteerBoat).
+	// The boat we steer moved by the keys (Steer).
 	void SteerStep(const MoveControls &controls, float ms);
 	// Our horse moved with us, and where that puts us on it.
 	void DriveHorse(uint64_t now_ms);
@@ -625,6 +643,7 @@ private:
 	uint8_t m_stance = 100;                // our StandingState as SetStance last had it
 	bool m_infravision_buff = false, m_ultravision_buff = false; // SetVisionBuffs
 	uint16_t m_view_actor = 0;             // SetViewActor: 0 ourselves
+	bool m_blind = false;                  // SetBlind
 	bool m_dead = false;
 
 	// Other spawns: models shared by everyone who looks the same, built once they're in range.
@@ -686,6 +705,8 @@ private:
 	render::Vec3 m_drive_feet, m_drive_velocity;
 	float m_drive_heading = 0, m_drive_speed = 0, m_drive_heading_speed = 0, m_drive_turn_ramp = 0;
 	float m_drive_center = 0; // its ModelHeightOffset
+	bool m_drive_walk = false;     // not a boat: m_drive_walker moves it
+	PlayerMovement m_drive_walker;
 	struct GroundItemView
 	{
 		std::string model_name;

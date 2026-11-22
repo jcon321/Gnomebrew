@@ -1012,8 +1012,10 @@ void FrontEnd::Update(uint64_t now_ms)
 		m_spell_book.Frame(now_ms);
 		m_spell_cast.Frame(now_ms);
 		m_abilities.Frame(now_ms);
-		if (m_buffs.Frame(now_ms))
+		if (m_buffs.Frame(now_ms)) {
 			m_mounts.Tick(); // ProcessAffects' SPA 113
+			EyeOfZommTick();  // and SPA 67
+		}
 		if (m_zone_view) {
 			m_zone_view->SetAutoAttack(m_attack);
 			// Levitation while a buff of it's on us (Levitate as it lands, RemovePCAffectex as it
@@ -3395,6 +3397,33 @@ void FrontEnd::BuffEffect(const SpellInfo &spell, int slot, int level, bool land
 			case 57: // EQ_Character::Levitate: SetNoGrav(2), and the zone told (SpawnAppearance 0x13)
 				m_zone.SendAppearance(0x13, 2);
 				break;
+			case 20: case 34: // blindness: ActorInfo+0x18d
+				SetBlind(true);
+				break;
+			case 25: // a spell with no duration only (a buff's effect does nothing as it lands)
+				if (slot < 0)
+					SpellBind(m_buffs.LandingCaster());
+				break;
+			case 26:
+				if (slot < 0)
+					SpellGate();
+				break;
+			case 42:
+				if (slot < 0)
+					SpellShadowStep(Buffs::Value(spell, level, i, nullptr));
+				break;
+			case 83: case 88: case 145:
+				if (slot < 0)
+					SpellTeleport(spell, spa, m_buffs.LandingCaster());
+				break;
+			case 22: // charm, by another: EQPlayer::HandoverControlToZoneserver (the zone's
+				// OP_FreezeClientControl does the rest)
+				if (m_buffs.CasterOf(slot) != m_zone.MySpawnId())
+					ChatOut(EqString(1461, "You lose control of yourself!"), ChatType::Default);
+				break;
+			case 23: // fear
+				ChatOut(EqString(1461, "You lose control of yourself!"), ChatType::Default);
+				break;
 			case 12: case 28: case 29:
 				m_abilities.UpdateMyVisibleStatus();
 				break;
@@ -3423,12 +3452,20 @@ void FrontEnd::BuffEffect(const SpellInfo &spell, int slot, int level, bool land
 		case 12: case 28: case 29:
 			m_abilities.UpdateMyVisibleStatus();
 			break;
+		case 20: // blindness gone (34's stays until the next zone, as in RemovePCAffectex)
+			SetBlind(false);
+			break;
 		case 13: // seeing invisible gone: a target now unseen isn't ours
 			if (m_game_values.target != 0 && m_game_values.target != m_zone.MySpawnId())
 				if (auto it = m_zone.Spawns().find(m_game_values.target); it != m_zone.Spawns().end() && InvisibleToMe(it->second))
 					m_game_values.target = 0;
 			break;
-		case 67: case 73: // back to our own eyes (SetViewActorByName of our name)
+		case 67: // the Eye of Zomm: pinstCharSpawn our horse or us again, and our own eyes
+			if (m_zone_view && m_zone_view->Steered() && !m_zone_view->SteeringBoat())
+				m_zone_view->Steer(0);
+			SetViewActorByName(m_zone.MySpawnId());
+			break;
+		case 73: // back to our own eyes (SetViewActorByName of our name)
 			SetViewActorByName(m_zone.MySpawnId());
 			break;
 		case 87:
@@ -3441,6 +3478,205 @@ void FrontEnd::BuffEffect(const SpellInfo &spell, int slot, int level, bool land
 	}
 }
 
+void FrontEnd::SpellBind(uint16_t caster_id)
+{
+	// HitBySpell's SPA 25 (Bind Affinity), on us as a player. In a no-bind zone
+	// (EQWorldData::IsNoBindZone) 105, color 0x121. Cast by us or a GM: with FV's rules, or a city
+	// (time type 1: the original world's zones only, the deity team servers' every zone), anywhere
+	// a GM's, any zone of the original world, time types 2..4 and InSpecialBindSpot: bound here and
+	// SavePC (0, 1, 0xe); else 259. Cast by another: time types 2..4 or InSpecialBindSpot, bound
+	// here (no save); else 259. The zone binds us as its own rules say too.
+	const ZoneProfile &me = m_zone.Profile();
+	uint32_t zone = me.zone_id;
+	if (NoBindZone(zone)) {
+		ChatOut(EqString(105, "You cannot seem to develop an affinity for this place. Try a city."), 0x121);
+		return;
+	}
+	auto caster = m_zone.Spawns().find(caster_id);
+	bool gm = caster != m_zone.Spawns().end() && caster->second.gm != 0;
+	bool ours = caster_id == m_zone.MySpawnId();
+	if (ours)
+		gm = m_zone.Self().gm != 0;
+	uint8_t time_type = m_zone.Info().time_type;
+	bool city = time_type == 2 || time_type == 3 || time_type == 4;
+	ZoneMovement here = m_zone_view ? m_zone_view->Movement() : ZoneMovement{};
+	auto bind = [&] {
+		m_zone.SetBind(zone, here.x, here.y, here.z);
+	};
+	if (ours || gm) {
+		int expansion = 1;
+		if (!m_world.FvRules()) {
+			if (time_type == 1)
+				expansion = 0;
+			else {
+				expansion = ZoneExpansion(zone);
+				if (m_world.ServerType() == 4)
+					expansion = 1;
+			}
+		}
+		if (gm || expansion == 0 || city || InSpecialBindSpot(zone, here.x, here.y, here.z)) {
+			bind();
+			SavePC();
+			return;
+		}
+	}
+	else if (city || InSpecialBindSpot(zone, here.x, here.y, here.z)) {
+		bind();
+		return;
+	}
+	ChatOut(EqString(259, "You cannot seem to develop an affinity for this place. Try a city."), 0x121);
+}
+
+bool FrontEnd::InSpecialBindSpot(uint32_t zone, float x, float y, float z)
+{
+	// EQ_Character::InSpecialBindSpot (@004cadbc): the places in a few zones a bind takes outside a
+	// city, by the server's y, x (and z), each bound open or closed as eqgame compares.
+	switch (zone) {
+	case 0x6e: return y > 5270 && y < 5365 && x > 325 && x < 510;     // Iceclad
+	case 0x5c: return y > -2250 && y < -2100 && x > 1180 && x < 1560; // Frontier Mountains
+	case 0x4e: return y > -2250 && y < -1200 && x > -550 && x < 275;  // Field of Bone
+	case 0xd: return y > -720 && y < -550 && x > -260 && x < -73;     // North Karana
+	case 0x54: return y > -4410 && y < -2397 && x > 1194 && x < 3492; // Firiona Vie
+	case 0x5d: return y > 2344 && y < 3538 && x > 2011 && x < 3852;   // Overthere
+	case 0x72: // Skyshrine
+		if (y >= -320 && y <= 535 && x >= -930 && x <= -200 && z >= -10 && z <= 60)
+			return true;
+		return y >= 535 && y <= 1000 && x >= -800 && x <= -200 && z >= -10 && z <= 120;
+	case 0x71: // Kael Drakkel
+		if (y >= -176 && y <= 17 && x >= -657 && x <= -603)
+			return true;
+		return y >= -287 && y <= -102 && x >= 3139 && x <= 3196;
+	default:
+		return false;
+	}
+}
+
+void FrontEnd::SpellGate()
+{
+	// HitBySpell's SPA 26, on us as a player: under 98 of 100 (RandNbr % 100 + 1), off any boat
+	// and at our bind (ZoneEnter too), the wave 0x89; in this zone onto the floor there
+	// (GetPlayerFloorHeight, UpdatePlayerActor), else MoveToZone(ZoneBoundId, "gate spell", 0, 6).
+	// Otherwise "Your gate is too unstable, and collapses." (260, 0x121). The zone leaves our gate
+	// to us.
+	if (!m_zone_view)
+		return;
+	if (std::rand() % 100 + 1 >= 98) {
+		ChatOut(EqString(260, "Your gate is too unstable, and collapses."), 0x121);
+		return;
+	}
+	const ZoneProfile &me = m_zone.Profile();
+	m_zone.SetBoat("");
+	ZoneMovement here = m_zone_view->Movement();
+	m_zone_view->SpellMove(me.bind_x, me.bind_y, me.bind_z, here.heading, me.bind_zone == me.zone_id);
+	if (m_sound)
+		m_sound->PlayWave(0x89);
+	if (me.bind_zone != me.zone_id)
+		m_zone.RequestZoneChange(me.bind_zone, 6);
+}
+
+void FrontEnd::SpellShadowStep(int value)
+{
+	// HitBySpell's SPA 42: up to 10001 tries of a random heading and a distance of 4 (the value
+	// under 0) or 4 + RandNbr % (value + 2), from our place at our height; the first
+	// CDisplay::IsValidTeleport one is ours, the wave 0x89, onto the floor there; none, "Nothing
+	// happens." (12399, 0x111).
+	if (!m_zone_view)
+		return;
+	ZoneMovement here = m_zone_view->Movement();
+	for (int tries = 0; tries <= 10000; ++tries) {
+		float distance = value + 5 < 5 ? 4.0f : static_cast<float>(std::rand() % (value + 2) + 4);
+		float heading = static_cast<float>(std::rand() % 512);
+		float a = render::HeadingToRadians(heading);
+		float y = std::cos(a) * distance + here.y;
+		float x = std::sin(a) * distance + here.x;
+		if (!m_zone_view->ValidTeleport(x, y, here.z, heading, distance))
+			continue;
+		if (m_sound)
+			m_sound->PlayWave(0x89);
+		m_zone_view->SpellMove(x, y, here.z, here.heading, true);
+		return;
+	}
+	ChatOut(EqString(12399, "Nothing happens."), 0x111);
+}
+
+void FrontEnd::SpellTeleport(const SpellInfo &spell, int spa, uint16_t caster)
+{
+	// HitBySpell's SPA 83, 88 and 145, on us as a player. Succor's (88) fails 1 time in 100
+	// (RandNbr % 100 + 1 == 1), quietly. Decession (2558) and Greater Decession (3244) only from a
+	// member of our group (EQ_PC::IsAGroupMember). With a zone named: off any boat, at its base
+	// values (y, x, z and the heading), the zone's id (GetIndexFromZoneName); the evacuations to
+	// "same" (2558, 1567, 1626, 1627, 1628, 2771, 2183, 1566, 2184, 3244, 3073) at the zone's safe
+	// point, heading 0, and MoveToZone(this zone, "portal spell", 0, 7). Then the wave 0x89: in this
+	// zone onto the floor there (not for spell 1476), else MoveToZone(that zone, "portal spell", 0,
+	// 7).
+	if (!m_zone_view)
+		return;
+	if (spa == 88 && std::rand() % 100 + 1 == 1)
+		return;
+	int id = spell.id;
+	if (id == 2558 || id == 3244) {
+		auto it = m_zone.Spawns().find(caster);
+		std::string name = caster == m_zone.MySpawnId() ? m_zone.Profile().name : it != m_zone.Spawns().end() ? it->second.name : "";
+		if (!m_group.IsAGroupMember(name))
+			return;
+	}
+	if (spell.teleport_zone.empty())
+		return;
+	const ZoneProfile &me = m_zone.Profile();
+	m_zone.SetBoat("");
+	float y = spell.base[0], x = spell.base[1], z = spell.base[2], heading = spell.base[3];
+	uint32_t zone = ZoneIdFromShortName(spell.teleport_zone);
+	static const int Evacuations[] = {2558, 1567, 1626, 1627, 1628, 2771, 2183, 1566, 2184, 3244, 3073};
+	std::string lower = spell.teleport_zone;
+	for (char &c : lower)
+		c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+	bool same = lower == "same"; // stricmp with DAT_0060715c
+	if (same && std::find(std::begin(Evacuations), std::end(Evacuations), id) != std::end(Evacuations)) {
+		zone = me.zone_id;
+		const ZoneInfo &info = m_zone.Info();
+		x = info.safe_x;
+		y = info.safe_y;
+		z = info.safe_z;
+		heading = 0;
+		m_zone.RequestZoneChange(zone, 7);
+	}
+	if (m_sound)
+		m_sound->PlayWave(0x89);
+	if (zone == me.zone_id) {
+		m_zone_view->SpellMove(x, y, z, heading, id != 1476);
+		return;
+	}
+	m_zone_view->SpellMove(x, y, z, heading, false);
+	m_zone.RequestZoneChange(zone, 7);
+}
+
+void FrontEnd::SetBlind(bool blind)
+{
+	m_blind = blind;
+	if (m_zone_view)
+		m_zone_view->SetBlind(blind);
+}
+
+void FrontEnd::EyeOfZommTick()
+{
+	// ProcessAffects' SPA 67, each 6 s tick for each buff of it: "Eye_of_<our name>"
+	// (EQPlayer_get_player_partial_name) is pinstCharSpawn, the keys driving it (what we steered
+	// stopped), and the camera sees from it (SetViewActorByName of its name).
+	if (!m_zone_view)
+		return;
+	for (int slot = 0; slot < Buffs::Slots; ++slot) {
+		const SpellInfo *spell = m_buffs.SlotSpell(slot);
+		if (!spell || m_buffs.Slot(slot).type < 2 || !spell->HasSpa(67))
+			continue;
+		uint16_t eye = m_zone.PlayerByPartialName("Eye_of_" + m_zone.Profile().name.substr(0, 0x17));
+		auto it = m_zone.Spawns().find(eye);
+		if (it == m_zone.Spawns().end())
+			continue;
+		m_zone_view->Steer(eye, it->second.fly_mode != 0);
+		SetViewActorByName(eye);
+	}
+}
+
 void FrontEnd::HandleSpecialPCAffects()
 {
 	// EQ_Character::HandleSpecialPCAffects(1), as EQPlayer::EQPlayer makes us in a zone: the buffs
@@ -3450,6 +3686,7 @@ void FrontEnd::HandleSpecialPCAffects()
 	// movement rate SpeedModifier's): the lens of SPA 87.
 	const ZoneProfile &me = m_zone.Profile();
 	bool permanent = me.class_id == 14 && me.aa_ranks[0x37] != 0;
+	SetBlind(false); // a new ActorInfo
 	for (int slot = 0; slot < Buffs::Slots; ++slot) {
 		const SpellInfo *spell = m_buffs.SlotSpell(slot);
 		if (!spell)
@@ -3463,6 +3700,8 @@ void FrontEnd::HandleSpecialPCAffects()
 			m_buffs.RemoveAffect(spell->spas[0]);
 			continue;
 		}
+		if (spell->HasSpa(34) || spell->HasSpa(20))
+			SetBlind(true);
 		for (int i = 0; i < 12; ++i)
 			if (spell->spas[i] == 87 && m_zone_view)
 				m_zone_view->SetViewAngle(static_cast<float>(Buffs::Value(*spell, m_buffs.Slot(slot).level, i, &m_buffs.Slot(slot))));
@@ -4525,7 +4764,7 @@ void FrontEnd::RightClickedOnPlayer(uint16_t spawn)
 			return;
 		if (m_zone_view->Steered() == spawn) {
 			m_zone.ControlBoat(spawn, false);
-			m_zone_view->SteerBoat(0);
+			m_zone_view->Steer(0);
 		}
 		else if (m_zone_view->Vehicle() == spawn)
 			m_zone.ControlBoat(spawn, true);
@@ -4589,11 +4828,11 @@ void FrontEnd::VehiclePassageOfTime(uint64_t now_ms)
 	if (!m_zone_view || m_zone.GetState() != ZoneSession::State::InZone)
 		return;
 	// ProcessControls: steering a race 141 boat we're no longer on, we let go of it.
-	if (uint16_t steered = m_zone_view->Steered(); steered && m_zone_view->Vehicle() != steered) {
+	if (uint16_t steered = m_zone_view->Steered(); steered && m_zone_view->SteeringBoat() && m_zone_view->Vehicle() != steered) {
 		auto boat = m_zone.Spawns().find(steered);
 		if (boat == m_zone.Spawns().end() || boat->second.race == 141) {
 			m_zone.ControlBoat(steered, false);
-			m_zone_view->SteerBoat(0);
+			m_zone_view->Steer(0);
 		}
 	}
 	// IFoundMyVehicle gives up after 60 s: "I can't find the %s. Sending player to safe point."
@@ -5336,6 +5575,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			m_zone_view->SetLuclinModels(m_config.luclin_models);
 			m_zone_view->SetSpellFile(m_ui.spells);
 			m_zone_view->SetFallDamage([this](float fall) { return TakeFallDamage(fall); });
+			m_zone_view->SetBlind(m_blind);
 			ApplyDisplayOptions();
 			m_zone_view->StartLoading(m_zone.Info());
 			m_zone_view->SetSound(m_sound.get());
@@ -5433,7 +5673,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			auto boat = m_zone.Spawns().find(static_cast<uint16_t>(event.id));
 			if (event.value != 1 || boat == m_zone.Spawns().end() || !m_zone_view)
 				break;
-			m_zone_view->SteerBoat(boat->first);
+			m_zone_view->Steer(boat->first);
 			if (boat->second.race == 141)
 				ChatOut(EqString(1407, "You have the helm captain."), ChatType::Default);
 			break;
@@ -5854,6 +6094,12 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			break;
 		}
 		case Type::SpawnRemoved:
+			// ~EQPlayer of pinstCharSpawn not us (our Eye of Zomm): the SPA 67 buff off
+			// (RemovePCAffect, whose fade gives us back our own eyes) and pinstCharSpawn us.
+			if (m_zone_view && event.id != 0 && m_zone_view->Steered() == event.id && !m_zone_view->SteeringBoat()) {
+				m_buffs.RemoveAffect(67);
+				m_zone_view->Steer(0);
+			}
 			m_duel.Despawned(event.id, event.text); // HandleWorldMessage's 0x4029: the duel's end
 			m_mounts.SpawnRemoved(event.id); // ~EQPlayer's Dismount2
 			m_hidden_corpses.erase(event.id);

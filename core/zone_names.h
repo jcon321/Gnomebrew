@@ -16,6 +16,10 @@ std::string FullZoneName(uint32_t zone_id, const EqStr *strings);
 // it doesn't know.
 std::string ShortZoneName(uint32_t zone_id);
 
+// EQWorldData::GetIndexFromZoneName (@00523fa4): the id of the zone with this short name, case
+// aside; 0 for none.
+uint32_t ZoneIdFromShortName(const std::string &short_name);
+
 // EQWorldData::ExpansionZone (@00523ec1): the expansion AddZone gives a zone (0 the original world,
 // 1 Kunark, 2 Velious, 3 Luclin, 4 the Planes of Power); 0 for an id it doesn't know.
 int ZoneExpansion(uint32_t zone_id);
@@ -23,3 +27,7 @@ int ZoneExpansion(uint32_t zone_id);
 // EQWorldData::IsNoAirZone (@00523f31, IsSpecialZone's flag 0x4000): AddZone gives it to The Grey
 // (171) alone.
 bool NoAirZone(uint32_t zone_id);
+
+// EQWorldData::IsNoBindZone (@00523f23, IsSpecialZone's flag 0x20): AddZone gives it to The Grey
+// (171), the Plane of Nightmare (204), the Plane of Innovation (206) and Lair of Terris Thule (221).
+bool NoBindZone(uint32_t zone_id);
