@@ -1093,11 +1093,15 @@ no rules of its own.
     spell its old one, as eqgame without SpellsNew.eff), the old sprite flashes' lights and the
     stages' sounds (game sounds; the debug menu's Sound section lists them), and missiles
     (OP_Projectile, `frontend/missiles.*`: bolts, arrows and thrown weapons with their models, lights,
-    the caster's animation and a spell's stage 1 on them). Still to do: a missile's old (spells.eff)
-    stage 1, blit-sprite actors as a missile's model (`GENC00_ACTORDEF`: only item meshes are built;
-    the server sends `IT68`), the static kind 9 missiles' checks on who walks into them (MoveMissile's
-    sentinel and trap spells), our own archery and throwing making their missile (DoAttack),
-    /showspelleffects (35: the Display page's spell particle settings are done, the command's
+    the caster's animation and a spell's stage 1 on them, the old spells.eff one too: its sprite
+    going with the missile and its emitters as `DoParticleEffect` places them for a missile), and
+    a missile whose model is a gequip blit-sprite actor (`GENC00`, `GENW00`) drawn as that sprite
+    (`SpellEffects::DrawActorSprite`). Our own arrows and throws come back from the zone as
+    OP_Projectile (EQMacEmu sends them to the shooter too); DoAttack's own EQMissile is only for a
+    shot with no target, which `CanIHitTarget` stops online. Still to do: a blit-sprite missile's
+    size (ours is CreateActor's scale, 1.5; the sprite's own size in eqgfx isn't traced), the
+    static kind 9 missiles' checks on who walks into them (MoveMissile's sentinel and trap
+    spells), /showspelleffects (35: the Display page's spell particle settings are done, the command's
     on and off isn't), `DoParticleEffectNew` (@004e8208) and
     `t3dParticleSystemDestroyTaggedEmitters` (@004e81ef) for OP 0x4265 to 0x4267 (destroy or start
     a cast's emitters; this server never sends them).

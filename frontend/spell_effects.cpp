@@ -257,6 +257,8 @@ void SpellEffects::MoveToRoot(uint16_t spawn)
 
 bool SpellEffects::PlaceBone(uint32_t binding, const FindActor &find, render::Transform &bone)
 {
+	if (binding & MissileBinding) // the missile's actor
+		return m_find_missile && m_find_missile(binding & ~MissileBinding, bone);
 	Actor actor;
 	if (!find(static_cast<uint16_t>(binding >> 8), actor) || !actor.model)
 		return false;
@@ -469,8 +471,11 @@ void SpellEffects::MakeCloud(int pcloud, const OldEmitter &emitter, const render
 
 void SpellEffects::StartOld(const Request &request, const FindActor &find)
 {
-	if (request.stage == 1)
-		return; // an old effect on a missile isn't done
+	// Stage 1 is the missile's (EQMissile::ProcessMissile's DoSpellEffect(1, ..., the missile)):
+	// its place for what goes where it is.
+	render::Transform missile;
+	if (request.stage == 1 && (!request.missile || !m_find_missile || !m_find_missile(request.missile, missile)))
+		return;
 	const OldStage &stage = m_old[request.old_effect].stages[request.stage];
 	Actor caster, target;
 	bool have_caster = request.caster && find(request.caster, caster);
@@ -487,7 +492,8 @@ void SpellEffects::StartOld(const Request &request, const FindActor &find)
 		const Actor *at = have_target ? &target : have_caster ? &caster : nullptr;
 		size_t count = stage.sprite_kind == 1 ? std::min<size_t>(1, stage.sprites.size()) : stage.sprites.size();
 		bool ring = stage.sprite_kind == 2;
-		if ((ring && !have_target) || (!ring && !request.at_point && !at))
+		bool on_missile = request.stage == 1 && !ring; // EQEffect's param_6: it goes with the missile
+		if ((ring && !have_target) || (!ring && !request.at_point && !at && !on_missile))
 			count = 0;
 		for (size_t j = 0; j < count; ++j) {
 			const OldSprite &sprite = stage.sprites[j];
@@ -498,7 +504,9 @@ void SpellEffects::StartOld(const Request &request, const FindActor &find)
 			effect.tint = sprite.tint ? sprite.tint : 0xffffff;
 			effect.kind = sprite.kind;
 			effect.size = sprite.size;
-			effect.center = ring || !request.at_point ? at->placement.translation : request.point;
+			effect.center = on_missile ? missile.translation : ring || !request.at_point ? at->placement.translation : request.point;
+			if (on_missile)
+				effect.missile = request.missile;
 			// EQEffect's: a kind 2 circles out `radius` (2 if none) at least 2 big; a ring's spaced
 			// around the target, theirs.
 			if (ring) {
@@ -519,6 +527,9 @@ void SpellEffects::StartOld(const Request &request, const FindActor &find)
 				effect.end_ms = effect.on ? m_now_ms + 2000 : 0;
 			else
 				effect.end_ms = effect.kind > 0 ? m_now_ms + static_cast<uint64_t>(effect.kind) : 0;
+			// On a missile, forever means until the missile's gone (CleanupMissileEffects).
+			if (!effect.end_ms && effect.missile)
+				effect.end_ms = UINT64_MAX;
 			if (!effect.end_ms)
 				continue;
 			effect.physics_ms = m_now_ms;
@@ -540,7 +551,8 @@ void SpellEffects::StartOld(const Request &request, const FindActor &find)
 		if (level < 39 && (i == 2 || (i == 1 && level < 24)))
 			continue;
 		uint32_t dag = static_cast<uint32_t>(on_id) << 8 | static_cast<uint32_t>(DagAttach(e.dag));
-		render::Vec3 at = request.at_point ? request.point : on->placement.translation;
+		bool on_missile = request.stage == 1; // DoParticleEffect's param_7
+		render::Vec3 at = request.at_point ? request.point : on_missile ? missile.translation : on->placement.translation;
 		// On the floor under them (CDisplay::GetFloorHeight), or 10 over them when the normal's down.
 		render::Vec3 floor = at;
 		if (!request.at_point)
@@ -550,13 +562,16 @@ void SpellEffects::StartOld(const Request &request, const FindActor &find)
 			MakeCloud(0, e, at, static_cast<uint32_t>(on_id) << 8 | 4, duration);
 			MakeCloud(0, e, at, static_cast<uint32_t>(on_id) << 8 | 5, duration);
 			break;
-		case 1: MakeCloud(5, e, at, request.at_point ? 0 : dag, duration); break;
+		case 1: // on a missile, its actor's (t3dAttach... to the missile's actor)
+			MakeCloud(5, e, at, request.at_point ? 0 : on_missile ? MissileBinding | request.missile : dag, duration);
+			break;
 		case 2: MakeCloud(1, e, at, request.at_point ? 0 : dag, duration); break;
 		case 3: MakeCloud(3, e, floor, 0, duration); break;
 		case 4: MakeCloud(4, e, floor, 0, duration); break;
 		case 5:
 			MakeCloud(6, e, floor, 0, duration);
-			MakeCloud(6, e, floor, request.at_point ? 0 : dag, duration);
+			if (!on_missile) // with a missile, the one cloud
+				MakeCloud(6, e, floor, request.at_point ? 0 : dag, duration);
 			break;
 		default: break;
 		}
@@ -603,6 +618,14 @@ void SpellEffects::UpdateSprites(uint64_t now_ms, const FindActor &find)
 	for (size_t i = 0; i < m_sprites.size();) {
 		SpriteEffect &e = m_sprites[i];
 		bool gone = e.end_ms && now_ms > e.end_ms;
+		if (!gone && e.missile) {
+			// On a missile: where it is; gone with it (EQMissile::CleanupMissileEffects).
+			render::Transform at;
+			if (!m_find_missile || !m_find_missile(e.missile, at))
+				gone = true;
+			else
+				e.center = at.translation;
+		}
 		if (!gone && e.on) {
 			// CDisplay::ProcessEffects: a kind 2 back on its spawn, and no more pushing out in its
 			// last fifth of a second (it falls back in).
@@ -659,16 +682,30 @@ void SpellEffects::DrawSprites(render::Renderer &renderer)
 		return;
 	// renderPointLight: the blit sprite facing the camera, `size` out to its corners at 45 degrees,
 	// in its tint, its frames stepped on with the time.
+	renderer.SetVertexLight({1, 1, 1}, {0, 0, 0});
+	for (const SpriteEffect &e : m_sprites)
+		DrawBlit(renderer, *e.blit, e.center + e.offset, e.size, e.tint);
+}
+
+bool SpellEffects::DrawActorSprite(render::Renderer &renderer, const std::string &name, const render::Vec3 &at, float size)
+{
+	const Blit *blit = FindBlit(name + "_ACTORDEF");
+	if (!blit)
+		return false;
+	renderer.SetVertexLight({1, 1, 1}, {0, 0, 0});
+	DrawBlit(renderer, *blit, at, size, 0xffffff);
+	return true;
+}
+
+void SpellEffects::DrawBlit(render::Renderer &renderer, const Blit &blit, const render::Vec3 &at, float size, uint32_t tint)
+{
 	const render::Camera &camera = renderer.CurrentCamera();
 	render::Vec3 forward = render::Normalize(camera.forward);
 	render::Vec3 right = render::Normalize(render::Cross(forward, camera.up));
 	render::Vec3 up = render::Cross(right, forward);
-	renderer.SetVertexLight({1, 1, 1}, {0, 0, 0});
-	for (const SpriteEffect &e : m_sprites) {
-		const Blit &blit = *e.blit;
+	{
 		const render::Texture *texture = blit.frames[(m_now_ms / std::max<uint32_t>(blit.frame_ms, 1)) % blit.frames.size()];
-		render::Vec3 at = e.center + e.offset;
-		render::Vec3 r = right * (e.size * 0.7071068f), u = up * (e.size * 0.7071068f);
+		render::Vec3 r = right * (size * 0.7071068f), u = up * (size * 0.7071068f);
 		const render::Vec3 corners[4] = {at - r + u, at + r + u, at + r - u, at - r - u};
 		const float uv[4][2] = {{0, 1}, {1, 1}, {1, 0}, {0, 0}};
 		render::Vertex vertices[4];
@@ -676,7 +713,7 @@ void SpellEffects::DrawSprites(render::Renderer &renderer)
 			vertices[k].position = corners[k];
 			vertices[k].u = uv[k][0];
 			vertices[k].v = uv[k][1];
-			vertices[k].color = e.tint;
+			vertices[k].color = tint;
 		}
 		static const uint32_t indices[6] = {0, 1, 2, 0, 2, 3};
 		render::Material material;

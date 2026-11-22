@@ -2361,7 +2361,17 @@ details and the nearest spawns at the top left and the radar at the top right.
   animation (44 for a spell). `ProcessMissile` makes it the first frame: `CreateActor` of the packet's
   model (else `IT63`, else none and it's gone) with its light, out 2 minutes; a spell's (kind 9) is out
   its `AEDuration`, or 30 s for a bolt (travel type 3, which also keeps it level), and gets the
-  effect's stage 1 on the missile (on whom 2). Then once 32 ms have gone by each frame: `MissileAI`
+  effect's stage 1 on the missile (on whom 2). For an old (`spells.eff`) effect that's
+  `DoSpellEffect(1, ..., the missile)`: `DoSpriteEffect`'s sprite at the missile, going with it
+  until `EQMissile::CleanupMissileEffects`, and `DoParticleEffect` with the missile as its seventh
+  argument: kind 0 on the caster's hands as ever, kind 1 bound to the missile's actor, kind 2 on
+  the caster's bone, kinds 3 and 4 on the floor under the missile (10 over it with the normal
+  down), kind 5 there once. A model that's a gequip blit-sprite actor (`GENC00`, `GENW00`:
+  `<name>_ACTORDEF` -> 0x27 -> 0x26) is drawn as that sprite, at the actor's scale
+  (`SpellEffects::DrawActorSprite`; the sprite's own size isn't traced). Our own shots come back
+  from the zone like anyone's: `Mob::ProjectileAnimation` and `SendItemAnimation` queue
+  OP_Projectile to the shooter too (`ignore_sender` false), and DoAttack makes its own EQMissile
+  only for a shot with no target (13, 14, 0x65), which `CanIHitTarget` turns down online. Then once 32 ms have gone by each frame: `MissileAI`
   turns it at its target's center plus half its `ModelHeightOffset`, 16 a step at most, asking where
   that is every 125 ms to a second by flat distance (every step under 60, hit under 2, pointed
   straight at it under 32; not at all once it's dead); `process_physics` pushes it along its heading

@@ -121,6 +121,11 @@ public:
 	void SetSound(PlaySound play) { m_play_sound = std::move(play); }
 
 	void Start(const Request &request, const FindActor &find);
+	// CDisplay::CreateActor of a gequip blit-sprite actor ("<name>_ACTORDEF" -> 0x27 -> 0x26, as
+	// GENC00 or GENW00 for a missile): drawn as its sprite, facing the camera, `size` out to its
+	// corners; false when there's no such actor.
+	bool DrawActorSprite(render::Renderer &renderer, const std::string &name, const render::Vec3 &at, float size);
+	bool HasActorSprite(const std::string &name) { return FindBlit(name + "_ACTORDEF") != nullptr; }
 	// The particle system's destroy of an effect's emitters (the clouds a Request's `tag` made):
 	// none made from now on, the rest left to die out.
 	void StopTagged(int tag);
@@ -216,6 +221,7 @@ private:
 		float size = 1;
 		int kind = 0;
 		uint16_t on = 0;            // the spawn it's put back on each frame (kind 2)
+		uint32_t missile = 0;       // the missile it goes with (stage 1), Missiles' id
 		render::Vec3 center, offset; // where it is: the spawn's place, and how far out it's pushed
 		float heading = 0, pitch = 0, speed = 0, turn = 0, climb = 0; // 512ths of a turn; speed out
 		render::Vec3 velocity;
@@ -232,6 +238,8 @@ private:
 	int Bone(const render::CharacterModel &model, int attach);
 	const Blit *FindBlit(const std::string &name);
 	void MakeCloud(int pcloud, const OldEmitter &emitter, const render::Vec3 &at, uint32_t binding, int duration_ms);
+	// renderPointLight's quad for one blit sprite.
+	void DrawBlit(render::Renderer &renderer, const Blit &blit, const render::Vec3 &at, float size, uint32_t tint);
 	void UpdateSprites(uint64_t now_ms, const FindActor &find);
 	void DrawSprites(render::Renderer &renderer);
 

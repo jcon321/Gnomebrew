@@ -1401,7 +1401,9 @@ void ZoneView::UpdateMissiles(uint64_t now_ms)
 		float fraction;
 		return m_zone.SegmentHit(from, to, fraction, nullptr, true);
 	};
-	world.has_model = [&](const std::string &name) { return MissileModel(name) != nullptr; };
+	world.has_model = [&](const std::string &name) {
+		return MissileModel(name) != nullptr || m_spell_effects.HasActorSprite(name); // a mesh or a blit sprite actor
+	};
 	m_missiles.Update(now_ms, world);
 }
 
@@ -1419,13 +1421,16 @@ void ZoneView::DrawMissiles(uint64_t now_ms)
 {
 	render::Vec3 camera = m_renderer->CurrentCamera().position;
 	for (const Missiles::Missile &missile : m_missiles.All()) {
-		render::CharacterModel *model = missile.made ? MissileModel(missile.model) : nullptr;
-		if (!model)
+		if (!missile.made)
 			continue;
+		render::CharacterModel *model = MissileModel(missile.model);
 		render::Transform placement = MissilePlacement(missile, now_ms);
 		if (render::Length(placement.translation - camera) > FarPlane())
 			continue;
-		model->Draw(*m_renderer, placement, ModelLightingAt(placement.translation), 0);
+		if (model)
+			model->Draw(*m_renderer, placement, ModelLightingAt(placement.translation), 0);
+		else // a blit-sprite actor (gequip's GENC00, GENW00...), at CreateActor's scale
+			m_spell_effects.DrawActorSprite(*m_renderer, missile.model, placement.translation, placement.scale);
 	}
 }
 
