@@ -58,6 +58,10 @@
 #include <string>
 #include <thread>
 
+// Our spawn id here (none of the --npc ones): what needs our own actor (a particle switch's
+// DoParticleEffect on pinstLocalPlayer) finds it.
+constexpr uint16_t PreviewMyId = 0xffff;
+
 namespace
 {
 	// --sound: what the doors, we and the spawns sound like, mixed to a WAV as the frames run
@@ -206,7 +210,7 @@ namespace
 		view.SetPlayerPosition(x, y, z, heading);
 		if (game_hour > 0)
 			view.SetGameTime(game_hour, game_minute);
-		view.UpdateSpawns(spawns, 0, 1000);
+		view.UpdateSpawns(spawns, PreviewMyId, 1000);
 		if (first_person)
 			view.SetCameraView(ZoneView::CameraView::FirstPerson);
 		view.Orbit(orbit);
@@ -273,7 +277,7 @@ namespace
 			for (int ms = 0; ms <= spawn_ms; ms += 16, ++spawn_steps) {
 				spawn_clock += 16;
 				auto start = std::chrono::steady_clock::now();
-				view.UpdateSpawns(spawns, 0, spawn_clock);
+				view.UpdateSpawns(spawns, PreviewMyId, spawn_clock);
 				spawn_total += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
 				g_sound.Frame(view, spawn_clock, 16);
 				if ((ms % 1000 >= 16 && ms != spawn_ms) || spawns.size() > 12)
@@ -312,7 +316,7 @@ namespace
 			}
 		}
 		if (g_effect.stage >= 0) {
-			view.UpdateSpawns(spawns, 0, spawn_clock);
+			view.UpdateSpawns(spawns, PreviewMyId, spawn_clock);
 			view.Render(canvas, spawn_clock);
 			SpellEffects::Request request;
 			request.stage = g_effect.stage;
@@ -327,7 +331,7 @@ namespace
 			int effect_frames = 0;
 			for (int ms = 0; ms <= g_effect.ms; ms += 16, ++effect_frames) {
 				spawn_clock += 16;
-				view.UpdateSpawns(spawns, 0, spawn_clock);
+				view.UpdateSpawns(spawns, PreviewMyId, spawn_clock);
 				auto start = std::chrono::steady_clock::now();
 				view.Render(canvas, spawn_clock);
 				effect_total += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
@@ -343,7 +347,7 @@ namespace
 			const ZoneSpawn &to = spawns.at(static_cast<uint16_t>(g_missile.target));
 			if (spell_file.Load(eq_dir + "/spells_en.txt"))
 				view.SetSpellFile(&spell_file);
-			view.UpdateSpawns(spawns, 0, spawn_clock);
+			view.UpdateSpawns(spawns, PreviewMyId, spawn_clock);
 			view.Render(canvas, spawn_clock);
 			ZoneMissile missile;
 			missile.x = from.x;
@@ -363,7 +367,7 @@ namespace
 			view.LaunchMissile(missile);
 			for (int ms = 0; ms <= g_missile.ms; ms += 16) {
 				spawn_clock += 16;
-				view.UpdateSpawns(spawns, 0, spawn_clock);
+				view.UpdateSpawns(spawns, PreviewMyId, spawn_clock);
 				view.Render(canvas, spawn_clock);
 				if (view.Flying().All().empty()) {
 					printf("  %5d ms: gone\n", ms);
@@ -379,7 +383,7 @@ namespace
 		}
 		double total = 0;
 		for (int f = 0; f < frames; ++f) {
-			view.UpdateSpawns(spawns, 0, spawn_clock + f);
+			view.UpdateSpawns(spawns, PreviewMyId, spawn_clock + f);
 			auto start = std::chrono::steady_clock::now();
 			view.Render(canvas, spawn_clock + f);
 			total += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();

@@ -3,8 +3,13 @@
 
 #include "zone_scene.h"
 
+#include "zone_names.h"
+
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 
 namespace
 {
@@ -424,15 +429,32 @@ void ZoneDoors::Step(Door &door, float ticks, uint64_t now_ms) const
 	}
 }
 
-void ZoneDoors::Update(render::ZoneScene &scene, uint64_t now_ms)
+void ZoneDoors::Update(render::ZoneScene &scene, uint64_t now_ms, int hour, bool emit)
 {
 	float ticks = m_last_ms && now_ms > m_last_ms ? (now_ms - m_last_ms) * 0.02f : 0;
 	m_last_ms = now_ms;
 	for (Door &door : m_doors) {
+		if (door.spawn.type == 53) {
+			// UpdateDoorStateBasedOnWorldTime: the incline (EQSwitch+0x30) 1 or 2; its own
+			// +0xcf check (on the 2's) isn't known and counts as 0.
+			if (door.spawn.incline == 1)
+				door.state = hour < 5 || hour > 18 ? 0 : 1;
+			else if (door.spawn.incline == 2)
+				door.state = hour > 4 && hour < 19 ? 0 : 1;
+			int tag = 0x10000 | door.spawn.id;
+			if (emit && door.state == 1 && !door.emitting && door.spawn.param > 0 && door.spawn.param < 0x100) {
+				door.emitting = true;
+				m_particles.push_back({true, tag, door.spawn.param, door.at});
+			}
+			else if (door.state == 0 && door.emitting) {
+				door.emitting = false;
+				m_particles.push_back({false, tag, 0, door.at});
+			}
+		}
 		render::Vec3 at = door.at;
 		float heading = door.heading, incline = door.incline;
 		Step(door, ticks, now_ms);
-		if (!door.visible || (door.tried && door.scene < 0))
+		if (door.tried && door.scene < 0)
 			continue;
 		bool moved = at.x != door.at.x || at.y != door.at.y || at.z != door.at.z || heading != door.heading || incline != door.incline;
 		if (door.tried && !moved)
@@ -444,9 +466,17 @@ void ZoneDoors::Update(render::ZoneScene &scene, uint64_t now_ms)
 		                     render::AxisAngle({0, 1, 0}, -render::HeadingToRadians(door.incline));
 		placement.translation = door.at;
 		placement.scale = door.scale;
+		if (!door.tried && door.spawn.type == 53) {
+			door.tried = true; // EQSwitch_DoorLoadingCode makes no actor for a particle switch
+			continue;
+		}
 		if (!door.tried) {
 			door.tried = true;
-			door.scene = scene.AddDoor(door.spawn.name, placement);
+			// The invisible ones too (not drawn, not clicked, not walked into): a floor as
+			// CDisplay_IsCollisionValid has it, which the pressure plates (50) aren't.
+			door.scene = scene.AddDoor(door.spawn.name, placement, !door.visible);
+			if (!door.visible && door.spawn.type != 50)
+				scene.SetDoorFloor(door.scene, true);
 			door.radius = scene.DoorRadius(door.scene);
 		}
 		else
@@ -461,6 +491,17 @@ ZoneDoors::Use ZoneDoors::Click(int scene_door, const render::Vec3 &center, floa
 	if (found == m_doors.end())
 		return Use::Nothing;
 	const Door &door = *found;
+	// CEverQuest_ClickedSwitch: a trap takes the disarm traps skill, anything else what we hold.
+	int damage = Damage(door.spawn.type);
+	item = damage != 0 ? 0xffff : held.item;
+	skill = std::min<int16_t>(damage != 0 ? held.disarm : held.skill, 0xfe);
+	return UseSwitch(door, true, center, height, item, skill, id);
+}
+
+ZoneDoors::Use ZoneDoors::UseSwitch(const Door &door, bool spawn, const render::Vec3 &center, float height, uint16_t item,
+	int16_t skill, uint8_t &id) const
+{
+	(void)item;
 	uint8_t type = door.spawn.type;
 	if (type == 54 || type == 55 || type == 56)
 		return Use::Nothing;
@@ -470,15 +511,140 @@ ZoneDoors::Use ZoneDoors::Click(int scene_door, const render::Vec3 &center, floa
 		return Use::Nothing;
 	if (door.state == 1 && door.spawn.param == -2)
 		return Use::Nothing;
-	// CEverQuest_ClickedSwitch: a trap takes the disarm traps skill, and does nothing without it
-	// (EQSwitch_GetSwitchDamage2); anything else what we hold. UseSwitch caps the skill at 0xfe.
-	item = damage != 0 ? 0xffff : held.item;
-	skill = std::min<int16_t>(damage != 0 ? held.disarm : held.skill, 0xfe);
-	if (damage != 0 && (skill < 1 || skill == 0xfe))
-		return Use::Nothing;
-	// Within reach: a quarter of the model's radius, our height, and 20.
-	if (render::Length(door.at - center) > door.radius * 0.25f + height + 20)
-		return Use::TooFar;
+	skill = std::min<int16_t>(skill, 0xfe);
+	if (spawn) {
+		// A trap does nothing without the skill (EQSwitch_GetSwitchDamage2).
+		if (damage != 0 && (skill < 1 || skill == 0xfe))
+			return Use::Nothing;
+		// Within reach: a quarter of the model's radius, our height, and 20.
+		if (render::Length(door.at - center) > door.radius * 0.25f + height + 20)
+			return Use::TooFar;
+	}
 	id = door.spawn.id;
 	return Use::Ask;
+}
+
+int ZoneDoors::TouchedSwitch(const std::vector<std::pair<int, float>> &under, const render::Vec3 &from, float floor_z,
+	float height, uint32_t zone_id) const
+{
+	int touched = -1;
+	float lowest = 0;
+	for (const auto &[scene_door, z] : under) {
+		auto found = std::find_if(m_doors.begin(), m_doors.end(), [&](const Door &door) { return door.scene == scene_door; });
+		if (found == m_doors.end())
+			continue;
+		uint8_t type = found->spawn.type;
+		bool touches = type == 70 ? zone_id == 59 : type > 7 && (type < 60 || type > 77);
+		if (!touches || from.z - z >= height + 2 || z < floor_z - 0.01f)
+			continue;
+		if (touched < 0 || z < lowest) {
+			touched = scene_door;
+			lowest = z;
+		}
+	}
+	return touched;
+}
+
+ZoneDoors::Touch ZoneDoors::Touching(int scene_door, uint16_t me, uint16_t cursor_item, const render::Vec3 &center,
+	float height, uint64_t now_ms, int percent)
+{
+	Touch touch;
+	auto found = std::find_if(m_doors.begin(), m_doors.end(), [&](const Door &door) { return door.scene == scene_door; });
+	if (scene_door < 0 || found == m_doors.end())
+		return touch;
+	Door &door = *found;
+	if (door.state == 4)
+		return touch;
+	uint8_t type = door.spawn.type;
+	auto use = [&](bool spawn, uint16_t item) {
+		uint8_t id = 0;
+		switch (UseSwitch(door, spawn, center, height, item, 0, id)) {
+		case Use::Ask:
+			touch.kind = Touch::Kind::Ask;
+			touch.id = id;
+			touch.item = item;
+			touch.spawn = spawn ? me : 0;
+			return true;
+		case Use::TooFar:
+			touch.kind = Touch::Kind::TooFar;
+			return false;
+		default:
+			return false;
+		}
+	};
+	if (type == 35) {
+		if (now_ms - m_touch_ms <= 1000)
+			return touch;
+		m_touch_ms = now_ms;
+		if (percent < 51)
+			return touch;
+		use(false, 0);
+		return touch;
+	}
+	if (type == 57) {
+		if (now_ms - m_touch_ms <= 2000)
+			return touch;
+		m_touch_ms = now_ms;
+		auto entry = std::find_if(m_teleports.begin(), m_teleports.end(),
+			[&](const TeleportEntry &e) { return e.id == door.spawn.param; });
+		// DoesZoneFileExist: the zone's <short name>.s3d in the folder.
+		std::string name = entry == m_teleports.end() ? "" : ShortZoneName(static_cast<uint32_t>(entry->zone));
+		std::error_code ec;
+		if (name.empty() || !std::filesystem::exists(m_eq_dir + "/" + name + ".s3d", ec))
+			return touch;
+		use(true, cursor_item);
+		return touch;
+	}
+	if (type == 50) {
+		if (door.state != 0) {
+			if (CloseAfterMs(door.spawn) < now_ms - m_touch_ms)
+				door.state = 0;
+			return touch;
+		}
+		use(true, 0xffff);
+		m_touch_ms = now_ms;
+		return touch;
+	}
+	if (type >= 115) {
+		uint64_t wait = CloseAfterMs(door.spawn) < 1000 ? 400 : 1000;
+		if (m_last_trap == scene_door && now_ms - m_touch_ms < wait)
+			return touch;
+		m_last_trap = scene_door;
+		touch.kind = Touch::Kind::Trap;
+		m_touch_ms = now_ms;
+	}
+	return touch;
+}
+
+void ZoneDoors::LoadTeleportTable(const std::string &eq_dir, const std::string &zone)
+{
+	// Missing, eqgame sleeps a second and keeps the last zone's table; empty, it exits.
+	m_eq_dir = eq_dir;
+	std::ifstream in(eq_dir + "/" + zone + "_tp.txt", std::ios::binary);
+	if (!in)
+		return;
+	m_teleports.clear();
+	std::string line;
+	if (!std::getline(in, line))
+		return;
+	while (std::getline(in, line)) {
+		if (line.empty())
+			break; // readLineFromFile under 1: the end
+		std::vector<std::string> fields;
+		size_t start = 0;
+		for (size_t i = 0; i <= line.size(); ++i)
+			if (i == line.size() || line[i] == '^' || line[i] == '\n') {
+				fields.push_back(line.substr(start, i - start));
+				start = i + 1;
+			}
+		fields.resize(6);
+		TeleportEntry e;
+		e.id = static_cast<int16_t>(std::atoi(fields[0].c_str()));
+		e.y = static_cast<float>(std::atof(fields[1].c_str()));
+		e.x = static_cast<float>(std::atof(fields[2].c_str()));
+		e.z = static_cast<float>(std::atof(fields[3].c_str()));
+		e.heading = static_cast<float>(std::atof(fields[4].c_str()));
+		e.zone = std::atoi(fields[5].c_str());
+		m_teleports.push_back(e);
+	}
 }

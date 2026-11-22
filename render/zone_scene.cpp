@@ -667,7 +667,7 @@ namespace render
 			test(&m_collision[t * 3], t < m_collision_exposure.size() ? m_collision_exposure[t] : 1);
 		Vec3 low{from.x, from.y, from.z - depth}, high{from.x, from.y, from.z + 0.01f};
 		for (const Door &door : m_doors) {
-			if (!BoxesMeet(low, high, door.low, door.high))
+			if (!door.floor || !BoxesMeet(low, high, door.low, door.high))
 				continue;
 			for (size_t t = 0; t * 3 < door.placed_collision.size(); ++t)
 				test(&door.placed_collision[t * 3], t < door.exposure.size() ? door.exposure[t] : 1);
@@ -726,7 +726,7 @@ namespace render
 			test(&m_collision[triangle * 3]);
 		if (doors)
 			for (const Door &door : m_doors) {
-				if (!BoxesMeet(low, high, door.low, door.high))
+				if (door.hidden || !BoxesMeet(low, high, door.low, door.high))
 					continue;
 				for (size_t t = 0; t * 3 < door.placed_collision.size(); ++t)
 					test(&door.placed_collision[t * 3]);
@@ -765,7 +765,7 @@ namespace render
 			test(&m_collision[triangle * 3]);
 		if (doors) {
 			for (const Door &door : m_doors) {
-				if (!BoxesMeet(low, high, door.low, door.high))
+				if (door.hidden || !BoxesMeet(low, high, door.low, door.high))
 					continue;
 				for (size_t t = 0; t * 3 < door.placed_collision.size(); ++t)
 					test(&door.placed_collision[t * 3]);
@@ -783,7 +783,7 @@ namespace render
 		return found;
 	}
 
-	int ZoneScene::AddDoor(const std::string &name, const Transform &placement)
+	int ZoneScene::AddDoor(const std::string &name, const Transform &placement, bool hidden)
 	{
 		int actor = m_object_models.Find(name + "_ACTORDEF");
 		if (actor < 0 || m_object_models.Fragments()[actor].type != 0x14)
@@ -812,6 +812,8 @@ namespace render
 		for (auto &p : door.collision)
 			p = local(p);
 		door.placed = door.meshes;
+		door.hidden = hidden;
+		door.floor = !hidden;
 		m_doors.push_back(std::move(door));
 		int index = static_cast<int>(m_doors.size()) - 1;
 		PlaceDoor(index, placement);
@@ -865,12 +867,44 @@ namespace render
 		return m_doors[index].radius * m_doors[index].placement.scale;
 	}
 
+	void ZoneScene::SetDoorFloor(int index, bool floor)
+	{
+		if (index >= 0 && index < static_cast<int>(m_doors.size()))
+			m_doors[index].floor = floor;
+	}
+
+	void ZoneScene::DoorsUnder(const Vec3 &from, float depth, std::vector<std::pair<int, float>> &out) const
+	{
+		out.clear();
+		Vec3 low{from.x, from.y, from.z - depth}, high{from.x, from.y, from.z + 0.01f};
+		for (size_t i = 0; i < m_doors.size(); ++i) {
+			const Door &door = m_doors[i];
+			if (!BoxesMeet(low, high, door.low, door.high))
+				continue;
+			bool found = false;
+			float best = 0;
+			for (const auto *list : {&door.placed_collision, &door.placed_triangles})
+				for (size_t t = 0; t + 2 < list->size(); t += 3) {
+					float z;
+					if (HeightAt((*list)[t], (*list)[t + 1], (*list)[t + 2], from.x, from.y, z) && z <= from.z + 0.01f &&
+						z >= from.z - depth && (!found || z > best)) {
+						best = z;
+						found = true;
+					}
+				}
+			if (found)
+				out.emplace_back(static_cast<int>(i), best);
+		}
+	}
+
 	int ZoneScene::DoorHit(const Vec3 &from, const Vec3 &direction, float range, float &distance) const
 	{
 		int best = -1;
 		distance = range;
 		for (size_t i = 0; i < m_doors.size(); ++i) {
 			const Door &door = m_doors[i];
+			if (door.hidden)
+				continue;
 			// Past the sphere around it, or behind us: missed.
 			Vec3 to_center = door.center - from;
 			float along = Dot(to_center, direction);
@@ -892,7 +926,7 @@ namespace render
 	{
 		uint32_t set = ~0u;
 		for (const Door &door : m_doors) {
-			if (!renderer.SphereVisible(door.center, door.placed_radius) || !InView(door.center, door.placed_radius))
+			if (door.hidden || !renderer.SphereVisible(door.center, door.placed_radius) || !InView(door.center, door.placed_radius))
 				continue;
 			for (const StaticMesh &mesh : door.placed) {
 				uint32_t mask = 0;

@@ -140,6 +140,7 @@ void ZoneView::Load()
 	if (m_error.empty())
 		m_models.AddZone(m_eq_dir, m_info.short_name);
 	std::string effects_error;
+	m_doors.LoadTeleportTable(m_eq_dir, m_info.short_name); // StartWorldDisplay's msg_teleport_index
 	if (m_error.empty() && !m_spell_effects.Load(m_eq_dir, effects_error))
 		fprintf(stderr, "[zone view] spell effects: %s\n", effects_error.c_str());
 	m_spell_effects.SetFloor([this](const render::Vec3 &at) {
@@ -812,8 +813,25 @@ bool ZoneView::Move(const MoveControls &controls, uint64_t now_ms, bool looking)
 		m_loader.join();
 	PlacePlayer();
 	// EQSwitch_UpdateDoorStates: the doors move first, so a lift carries us.
-	m_doors.Update(m_zone, now_ms);
+	m_doors.Update(m_zone, now_ms, m_hour, m_model != nullptr && m_appearance && m_my_id != 0);
 	DoorSounds();
+	// The particle switches' effects (EQSwitch_UpdateDoorStates' DoParticleEffect and destroy).
+	for (const ZoneDoors::Particles &p : m_doors.TakeParticles()) {
+		if (!p.start) {
+			m_spell_effects.StopTagged(p.tag);
+			continue;
+		}
+		SpellEffects::Request request;
+		request.stage = 2;
+		request.old_effect = p.effect;
+		request.caster = m_my_id;
+		request.at_point = true;
+		request.point = p.at;
+		request.emitters_only = true;
+		request.cloud_ms = 43200000;
+		request.tag = p.tag;
+		m_spell_effects.Start(request, [this](uint16_t id, SpellEffects::Actor &actor) { return FindActor(id, actor); });
+	}
 	float ms = m_last_move_ms ? static_cast<float>(now_ms - m_last_move_ms) : 0;
 	m_last_move_ms = now_ms;
 	// A jump pressed on a frame that's too short to move in waits for the next one.
@@ -838,6 +856,13 @@ bool ZoneView::Move(const MoveControls &controls, uint64_t now_ms, bool looking)
 	bool jumped = m_movement.Step(swim, ms, m_zone);
 	m_feet = m_movement.Feet();
 	m_heading = m_movement.Heading();
+	// GetPlayerFloorHeight's sweep (from half a unit over the lifted center) meets the switches
+	// under us: CDisplay_IsCollisionValid records one within our Height + 2 (TouchSwitch).
+	m_touch_probed = !m_horse;
+	if (m_touch_probed) {
+		m_touch_from = m_movement.SphereCenter() + render::Vec3{0, 0, 0.5f};
+		m_zone.DoorsUnder(m_touch_from, m_height + 2, m_doors_under);
+	}
 	// Riding, the horse's x and y and its floor plus our ModelHeightOffset (DoMainLoop's update for a
 	// pinstCharSpawn with a Rider): the same, the horse being as tall as we are.
 	m_server_position = {m_feet.y, m_feet.x, m_feet.z + m_height / 5 * 3.125f};
@@ -1475,6 +1500,18 @@ float ZoneView::BoundingRadius(uint16_t id) const
 uint16_t ZoneView::PickSpawn(int x, int y, uint16_t me) const
 {
 	return Pick(x, y, me).spawn;
+}
+
+ZoneDoors::Touch ZoneView::TouchSwitch(uint16_t me, uint16_t cursor_item, uint32_t zone_id, uint64_t now_ms, int percent)
+{
+	if (!m_touch_probed)
+		return {};
+	m_touch_probed = false;
+	int door = m_doors.TouchedSwitch(m_doors_under, m_touch_from, m_feet.z, m_height, zone_id);
+	if (door < 0)
+		return {};
+	return m_doors.Touching(door, me, cursor_item, MyFeet() + render::Vec3{0, 0, m_height / 5 * 3.125f}, m_height, now_ms,
+		percent);
 }
 
 ZoneDoors::Use ZoneView::ClickDoor(int x, int y, const ZoneDoors::Held &held, uint8_t &id, uint16_t &item, int16_t &skill) const

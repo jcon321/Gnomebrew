@@ -765,7 +765,7 @@ build/eqclient -u USER -p PASS [options]
 
 ```
 build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|train|ground|commands|group|duel|bazaar|raid|guild|skills|aa]]
-build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez|cameras|packets|spells|friends|chatwindows|multiline|inspect|tracking|breath|ladder]]
+build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez|cameras|packets|spells|switches|friends|chatwindows|multiline|inspect|tracking|breath|ladder]]
 ```
 
 This drives the real front-end code with scripted input and writes PNG snapshots. Text is
@@ -880,7 +880,9 @@ and `OP_FreezeClientControl` (another's name, ours, the forward key held), `OP_U
 and `OP_ReturnClientControl`; `spells` lands spells on us (`OP_Action` 231) and prints our place,
 bind, blindness, what we steer and the view actor after each: Bind Affinity ours and an NPC's, a
 Shadow Step, Blinding Smog, a fear and a charm, an Eye of Zomm with an "Eye_of_<name>00" spawn
-put in (before and after the 6 s tick, then its despawn) and Succor)
+put in (before and after the 6 s tick, then its despawn) and Succor; `switches` lists the zone's door
+models and types, then puts a pressure plate (a copy of the first door's model) under our feet and
+shows its `OP_ClickDoor`s)
 and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,
 opens, minimizes, resizes and closes windows (the layout goes to OUTDIR), types into the chat window
 (a say, commands, /target) and prints what the chat window holds, then stands near the target to
@@ -1704,8 +1706,38 @@ the rejection).
   0x410f (MSG_REQ_HOUSELOCK), Sony's housing, which isn't ours. The lock's answer is the zone's.
   The zone answers everyone with `OP_MoveDoor {id, state}` (2 opening, 3 closing), which is
   `ChangeState`. A door is solid where it stands, so closed doors block, lifts carry, and the camera
-  stops at them (`frontend/zone_doors.cpp`, `FrontEnd::WorldClick`). Not done: pressure plates and
-  touch teleporters, the particle-effect switches.
+  stops at them (`frontend/zone_doors.cpp`, `FrontEnd::WorldClick`). The invisible ones are in the
+  scene too (not drawn, not clicked, nothing to walk into); `CDisplay_IsCollisionValid` (@004b36ba,
+  the floor checks' callback) makes 54 and 57 floors and the plates (50, 51) and traps (115 up)
+  not.
+  - **Walking onto one:** `GetPlayerFloorHeight`'s sweep calls `CDisplay_IsCollisionValid` for what
+    it meets; a switch of type 8..59 or 78 and up (70 only in zone 59) whose contact is under our
+    Height + 2 goes in ActorInfo+0x1c4, the last one met. `CDisplay::MovePlayer` then calls
+    `EQPlayer::TouchingSwitch` (@0050b7ac) for us (never riding: it moves the horse then) with
+    ActorInfo+0x164+8 as the last touch's time: a trap that's gone off (state 4) does nothing; type
+    35 a second after the last, 49 times in 100, `UseSwitch(0, 0, 0)` (no spawn, so no reach
+    check, item 0); a teleporter (57) two seconds after the last, as a player, `UseSwitch(us, the
+    cursor's item)` if `GetTeleportTableEntryByID` of its parameter names a zone whose `.s3d` we
+    have; a plate (50), as a player, shut `UseSwitch(us, 0xffff)` (each frame until the zone's
+    `OP_MoveDoor` opens it), open longer than its close time since the last touch shut on the spot;
+    a trap (115 and up) a second after touching the same trap (0.4 s for one that closes in under
+    1 s), `IWasHit` with `GetSwitchDamage` and type 0xfd, which for us only ends invisibility (SPA
+    12, 28, 29), hiding and sneaking: the zone does the damage. Ours: `ZoneScene::DoorsUnder` from
+    half a unit over our sphere, the lowest qualifying surface at or over our floor
+    (`ZoneDoors::TouchedSwitch`, `Touching`, `FrontEnd::SwitchTouched`).
+  - **The teleport table:** `msg_teleport_index` (@004f1e5b, from `StartWorldDisplay`) reads
+    `<zone>_tp.txt` from the EQ folder: a header line, then `id^y^x^z^heading^zone` lines (fields
+    split by `^`, `copyStringUntilDelimiter`) to the first empty one. Missing, it sleeps a second and
+    keeps the last table (ours keeps it without the sleep); empty, eqgame exits. TAKP's folder has
+    no `_tp.txt` file, so its teleporters never go by touch: clicking them is the zone's.
+  - **The particle switches** (53, no actor): `EQSwitch_UpdateDoorStates` first sets the state by
+    the hour (`UpdateDoorStateBasedOnWorldTime` @004a3023, from the incline, EQSwitch+0x30: 1 open
+    from 5 to 18, 2 shut then and open otherwise; its +0xcf check on the 2's isn't known), then an
+    open one with a parameter of 1..255 and nothing made yet gets `DoParticleEffect(2, spells.eff
+    record param, pinstLocalPlayer, 0, 0, at the switch, 0, 43200000)` (emitters only, no sprites;
+    kind 0 still goes on our hands, as `DoParticleEffect` binds those to the actor whatever the
+    place), and a shut one's are destroyed (1000 ms; ours stop making particles,
+    `SpellEffects::StopTagged`). It tries again each frame until our actor is in.
 - **Position updates:** `OP_ClientUpdate` as `pack_physics` packs it (the speed * 10, the heading in
   256ths, its change per tick, y/x/z*10, and the velocities in 16ths per tick). `ProcessControls` flags an
   update when the heading moves 2 or the speed 0.2, `DoPassageOfTime` every second, and `DoMainLoop` sends

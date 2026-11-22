@@ -558,6 +558,7 @@ private:
 	void SetViewActorByName(uint16_t id);
 	void EyeOfZommTick(); // ProcessAffects' SPA 67: our eye is pinstCharSpawn and the view
 	void SetBlind(bool blind); // ActorInfo+0x18d: SPA 20 and 34
+	void SwitchTouched(uint64_t now_ms); // MovePlayer's TouchingSwitch
 	// HitBySpell's moves and bind for a spell with no duration landing on us (SPA 25, 26, 42; 83,
 	// 88 and 145).
 	void SpellBind(uint16_t caster);

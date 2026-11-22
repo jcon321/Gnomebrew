@@ -110,12 +110,20 @@ public:
 		render::Vec3 point;
 		int delay_ms = 0;    // started this long after (a dragon breath's casting)
 		uint32_t missile = 0; // the missile for the emitters on one (Missiles' id)
+		// DoParticleEffect alone (a switch's: EQSwitch_UpdateDoorStates), no sprites; its clouds
+		// made for `cloud_ms` (its last argument) and stopped together by StopTagged(`tag`).
+		bool emitters_only = false;
+		int cloud_ms = 0;
+		int tag = 0;
 	};
 	// EQPlayer::PlaySoundA: a stage's sound (a numbered wave) from spawn `on`, as it starts.
 	using PlaySound = std::function<void(const Request &request, uint16_t on, int slot)>;
 	void SetSound(PlaySound play) { m_play_sound = std::move(play); }
 
 	void Start(const Request &request, const FindActor &find);
+	// The particle system's destroy of an effect's emitters (the clouds a Request's `tag` made):
+	// none made from now on, the rest left to die out.
+	void StopTagged(int tag);
 	void Update(uint64_t now_ms, const render::Vec3 &camera, const FindActor &find);
 	void Draw(render::Renderer &renderer);
 	void Clear();
@@ -197,7 +205,9 @@ private:
 	{
 		std::unique_ptr<render::ParticleCloud> cloud;
 		uint32_t binding = 0;
+		int tag = 0;
 	};
+	int m_making_tag = 0; // StartOld's request's tag, for MakeCloud
 	// An EQEffect: a blit sprite actor.
 	struct SpriteEffect
 	{

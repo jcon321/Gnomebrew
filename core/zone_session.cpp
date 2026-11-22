@@ -741,7 +741,7 @@ void ZoneSession::SetTarget(uint16_t id, bool command)
 		m_replay_target = id; // no zone to answer: as if it took it
 }
 
-bool ZoneSession::ClickDoor(uint8_t door, uint16_t item, int16_t skill)
+bool ZoneSession::ClickDoor(uint8_t door, uint16_t item, int16_t skill, int spawn)
 {
 	if (m_state != State::InZone)
 		return false;
@@ -750,7 +750,8 @@ bool ZoneSession::ClickDoor(uint8_t door, uint16_t item, int16_t skill)
 	uint8_t body[8] = {door, 0};
 	memcpy(body + 2, &skill, 2);
 	memcpy(body + 4, &item, 2);
-	memcpy(body + 6, &m_my_id, 2);
+	uint16_t who = spawn < 0 ? m_my_id : static_cast<uint16_t>(spawn);
+	memcpy(body + 6, &who, 2);
 	return Send(ZoneOp::ClickDoor, body, sizeof(body), "OP_ClickDoor " + std::to_string(door));
 }
 

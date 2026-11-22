@@ -916,7 +916,8 @@ public:
 	const std::vector<ZoneDoor> &Doors() const { return m_doors; }
 	// EQSwitch::UseSwitch: we used a door, holding `item` (0xffff none) with `skill` (disarm traps).
 	// The zone answers everyone with OP_MoveDoor when it opens.
-	bool ClickDoor(uint8_t door, uint16_t item, int16_t skill);
+	// `spawn`: who's using it (UseSwitch's), -1 us.
+	bool ClickDoor(uint8_t door, uint16_t item, int16_t skill, int spawn = -1);
 	// CChatWindow::WndNotification's 0x1a: a link clicked in the chat, OP_ItemLinkResponse with its
 	// id and the first word of its text. An item's comes back as ItemLink; the zone says a say
 	// link's phrase for us.

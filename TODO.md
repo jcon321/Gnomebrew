@@ -1237,17 +1237,20 @@ no rules of its own.
       isn't there; ours to race 75's (a gender 0 launch, `LAUNCHM`, shows as an elemental). Check
       where the race 75 fallback came from before changing it.
 41. **Doors and switches.** Clicking, moving, sounds, and keys and lockpicks on the cursor
-    (`CEverQuest_ClickedSwitch` @00547034, `FrontEnd::WorldClick`) are done
-    (`frontend/zone_doors.*`). Still to do:
-    - Walking into one (`EQPlayer::TouchingSwitch`: pressure plates, teleporters, hurting ones;
-      22), with the teleporters' table (`msg_teleport_index` @004f1e5b reads a `_tp.txt` file as
-      the zone loads, for `GetTeleportTableEntryByID` and `GetTPCoordsFromIndex` @0052459f; the
-      TAKP folder has no such file, so find where the table comes from first).
-    - Switches by the hour (`EQSwitch::UpdateDoorStateBasedOnWorldTime` @004a3023, from
-      `EQSwitch_UpdateDoorStates`): one whose +0x30 is 1.0 is on from 5 to 18 and off at night, 2.0
-      the other way round (unless +0xcf); it sets the byte at +0x1d. What that byte shows (a lit
-      or unlit state) isn't traced.
-    - The particle-effect switches (type 53, `CRATEG`: also character select's, 23), and
+    (`CEverQuest_ClickedSwitch` @00547034, `FrontEnd::WorldClick`), walking onto one
+    (`EQPlayer::TouchingSwitch` from the floor check's `CDisplay_IsCollisionValid`: type 35's
+    chance, pressure plates, teleporters by `msg_teleport_index`'s `<zone>_tp.txt`, traps' IWasHit;
+    `ZoneDoors::Touching`, `FrontEnd::SwitchTouched`), the invisible switches in the scene (54 and
+    57 floors) and the particle switches (53: by the hour, `UpdateDoorStateBasedOnWorldTime`, and
+    their spells.eff effect at the switch) are done (`frontend/zone_doors.*`). The plate checked on
+    replay (`frontend_preview ... switches`), none live. Still to do:
+    - `CDisplay_IsCollisionValid`'s floors for the visible doors: it makes 0..7 and 60..77 (lifts)
+      no floor for `GetPlayerFloorHeight`, and the traps (115 up) none; ours stand on every visible
+      door. Lifts carry us as they are; check how eqgame keeps us on one before changing it.
+    - Riding a horse, nothing's touched (MovePlayer moves the horse); not checked whether eqgame's
+      MovePlayer for us runs too then.
+    - `GetTPCoordsFromIndex` (@0052459f), what reads the table's coordinates.
+    - The particle switches at character select (23's `CRATEG`), and
       `EQSwitch::InitializeSwitchColors` (@005214f2, from the door loading code).
     - Type 56's 0x410f (MSG_REQ_HOUSELOCK) is Sony's housing: nothing to do.
 42. **Scenery and model odds and ends**, found in the decompile and not ours:

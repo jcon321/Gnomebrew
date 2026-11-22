@@ -183,6 +183,9 @@ public:
 	void MoveDoor(uint8_t id, uint8_t state, uint64_t now_ms) { m_doors.ChangeState(id, state, now_ms); }
 	size_t DoorCount() const { return m_doors.Count(); }
 	size_t DoorsShown() const { return m_doors.Shown(); }
+	// CDisplay::MovePlayer's EQPlayer::TouchingSwitch for us, after Move: the switch our floor check
+	// met this frame (none riding: MovePlayer moves the horse then), what touching it does.
+	ZoneDoors::Touch TouchSwitch(uint16_t me, uint16_t cursor_item, uint32_t zone_id, uint64_t now_ms, int percent);
 	// A left click on the window at (x, y), after Render: the door it's on, if any, and whether we
 	// can use it (EQSwitch::UseSwitch). `held` is what goes with the click (ZoneDoors::Held); `id`,
 	// `item` and `skill` are for OP_ClickDoor.
@@ -643,6 +646,9 @@ private:
 	uint8_t m_stance = 100;                // our StandingState as SetStance last had it
 	bool m_infravision_buff = false, m_ultravision_buff = false; // SetVisionBuffs
 	uint16_t m_view_actor = 0;             // SetViewActor: 0 ourselves
+	std::vector<std::pair<int, float>> m_doors_under; // the doors under us after the last Move
+	render::Vec3 m_touch_from;
+	bool m_touch_probed = false;
 	bool m_blind = false;                  // SetBlind
 	bool m_dead = false;
 

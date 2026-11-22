@@ -961,6 +961,7 @@ void FrontEnd::Update(uint64_t now_ms)
 			m_buffs.RemoveAffect(113); // headEnvironmentChange with a Rider
 		if (jumped)
 			m_zone.Jump();
+		SwitchTouched(now_ms);
 		if (m_zone_view->Crouching() != m_crouch_sent) {
 			m_crouch_sent = !m_crouch_sent;
 			m_zone.SetStance(m_crouch_sent ? 111 : 100);
@@ -3648,6 +3649,35 @@ void FrontEnd::SpellTeleport(const SpellInfo &spell, int spa, uint16_t caster)
 	}
 	m_zone_view->SpellMove(x, y, z, heading, false);
 	m_zone.RequestZoneChange(zone, 7);
+}
+
+void FrontEnd::SwitchTouched(uint64_t now_ms)
+{
+	// CDisplay::MovePlayer's EQPlayer::TouchingSwitch for us (ZoneDoors::Touching): a switch's use
+	// goes to the zone as a click would (OP_ClickDoor, with who's using it), a trap is IWasHit
+	// (our invisibility, hide and sneak gone; the zone hurts us).
+	if (!m_zone_view)
+		return;
+	auto held = m_zone.Items().find(Inventory::Cursor);
+	uint16_t cursor = held != m_zone.Items().end() ? held->second.id : 0xffff;
+	ZoneDoors::Touch touch =
+		m_zone_view->TouchSwitch(m_zone.MySpawnId(), cursor, m_zone.Profile().zone_id, now_ms, std::rand() % 100 + 1);
+	switch (touch.kind) {
+	case ZoneDoors::Touch::Kind::Ask:
+		m_zone.ClickDoor(touch.id, touch.item, touch.skill, touch.spawn);
+		break;
+	case ZoneDoors::Touch::Kind::TooFar:
+		ChatOut(EqString(1462, "You can't reach that, get closer."), ChatType::Default);
+		break;
+	case ZoneDoors::Touch::Kind::Trap:
+		Log("TouchingSwitch: a trap, IWasHit");
+		m_abilities.Hit();
+		for (int spa : {12, 28, 29})
+			m_buffs.RemoveAffect(spa);
+		break;
+	default:
+		break;
+	}
 }
 
 void FrontEnd::SetBlind(bool blind)

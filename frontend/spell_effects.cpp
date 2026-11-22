@@ -347,6 +347,15 @@ void SpellEffects::Start(const Request &request, const FindActor &find)
 		StartOld(request, find);
 }
 
+void SpellEffects::StopTagged(int tag)
+{
+	if (tag == 0)
+		return;
+	for (OldCloud &cloud : m_clouds)
+		if (cloud.tag == tag && !cloud.cloud->Stopped())
+			cloud.cloud->Stop(m_now_ms);
+}
+
 void SpellEffects::FlashLights(std::vector<render::Vec3> &at) const
 {
 	for (const SpriteEffect &e : m_sprites)
@@ -451,6 +460,7 @@ void SpellEffects::MakeCloud(int pcloud, const OldEmitter &emitter, const render
 	OldCloud cloud;
 	cloud.cloud = std::make_unique<render::ParticleCloud>(def, render::PCloudDensity(), nullptr, nullptr);
 	cloud.binding = binding;
+	cloud.tag = m_making_tag;
 	render::Transform place;
 	place.translation = at;
 	cloud.cloud->SetEmitter(place); // a bound one's moved onto its bone before each Update
@@ -467,10 +477,13 @@ void SpellEffects::StartOld(const Request &request, const FindActor &find)
 	bool have_target = request.target && find(request.target, target);
 	// CEverQuest_StartCasting's duration for the casting's clouds; the landing's keep their own.
 	int duration = request.stage == 0 ? CastDuration(request, have_caster ? &caster : nullptr) : 0;
+	if (request.cloud_ms > 0)
+		duration = request.cloud_ms;
+	m_making_tag = request.tag;
 
 	// DoSpriteEffect: one sprite at the target (or the spot), or a ring of them around the target
 	// (the caster, casting).
-	if (stage.sprite_kind == 1 || stage.sprite_kind == 2) {
+	if (!request.emitters_only && (stage.sprite_kind == 1 || stage.sprite_kind == 2)) {
 		const Actor *at = have_target ? &target : have_caster ? &caster : nullptr;
 		size_t count = stage.sprite_kind == 1 ? std::min<size_t>(1, stage.sprites.size()) : stage.sprites.size();
 		bool ring = stage.sprite_kind == 2;

@@ -2344,6 +2344,49 @@ namespace
 		return 0;
 	}
 
+	// Replay "switches": the zone's door models and types, then a pressure plate (50) put under our
+	// feet (a copy of the zone's first door model, hidden as plates are) and what TouchingSwitch
+	// does with it (OP_ClickDoor each frame while it stays shut: a replay never opens it); then the
+	// doors as they were.
+	int SwitchesTest(FrontEnd &frontend, Harness &h)
+	{
+		const ZoneSession &zone = frontend.Zone();
+		h.RunUntil([] { return false; }, 800);
+		ZoneView *view = frontend.ZoneScene();
+		if (!view || zone.Doors().empty()) {
+			printf("[preview] no zone view or no doors\n");
+			return 1;
+		}
+		ZoneMovement m = view->Movement();
+		float feet = m.z - view->CenterHeight(zone.MySpawnId());
+		std::set<std::string> kinds;
+		for (const ZoneDoor &d : zone.Doors())
+			kinds.insert(d.name + "/" + std::to_string(d.type));
+		for (const std::string &k : kinds)
+			printf("[preview] zone door %s\n", k.c_str());
+		auto under = [&](uint8_t type) {
+			std::vector<ZoneDoor> doors = zone.Doors();
+			ZoneDoor door = doors.front();
+			door.id = 250;
+			door.type = type;
+			door.x = m.x;
+			door.y = m.y;
+			door.z = feet;
+			door.incline = 0;
+			door.open = 0;
+			door.param = 0;
+			doors.push_back(door);
+			printf("[preview] a %s (%u, %s) under our feet at %.1f\n", type == 50 ? "pressure plate" : "trap", type,
+				door.name.c_str(), feet);
+			view->SetDoors(doors, NowMs());
+			h.RunUntil([] { return false; }, 2500);
+		};
+		under(50);
+		view->SetDoors(zone.Doors(), NowMs());
+		h.RunUntil([] { return false; }, 300);
+		return 0;
+	}
+
 	// Replay "packets": what the zone sends that changes our state, injected into any recording:
 	// OP_LevelUpdate (up, the same and down), OP_DeleteCharge (one off a stack, its last, an empty
 	// slot), OP_Reward's coins, OP_ResetSkill on a waiting skill, OP_Disarm's two answers, and the
@@ -4397,6 +4440,7 @@ int main(int argc, char **argv)
 	bool cameras_test = argc == 7 && std::string(argv[6]) == "cameras";
 	bool packets_test = argc == 7 && std::string(argv[6]) == "packets";
 	bool spells_test = argc == 7 && std::string(argv[6]) == "spells";
+	bool switches_test = argc == 7 && std::string(argv[6]) == "switches";
 	if (argc >= 6 && !replay) {
 		std::string login = argv[3];
 		size_t colon = login.rfind(':');
@@ -4500,6 +4544,8 @@ int main(int argc, char **argv)
 			return PacketsTest(frontend, h);
 		if (spells_test)
 			return SpellsTest(frontend, h);
+		if (switches_test)
+			return SwitchesTest(frontend, h);
 		h.RunUntil([] { return false; }, 500);
 		h.Snapshot("r0-zone");
 		// Toggle UI Display (F10, ExecuteCmd 0x15): the windows and cursor gone, then back.

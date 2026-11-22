@@ -98,8 +98,15 @@ namespace render
 		// Doors and other switches (CDisplay::CreateActor's "<name>_ACTORDEF" from the zone's
 		// _obj.s3d), drawn and solid where they are, lit like the zone's objects where they're
 		// added. AddDoor returns the door's number, or -1 when the zone has no such model.
-		int AddDoor(const std::string &name, const Transform &placement);
+		// `hidden` (EQSwitch_DoorLoadingCode's invisible switches: 50, 54, 57 with an incline of 1):
+		// not drawn, not clicked, nothing to walk into; a floor only with SetDoorFloor.
+		int AddDoor(const std::string &name, const Transform &placement, bool hidden = false);
 		void PlaceDoor(int door, const Transform &placement);
+		// Whether a door is a floor for FloorBelow (CDisplay_IsCollisionValid's: on by default).
+		void SetDoorFloor(int door, bool floor);
+		// The doors (drawn or hidden) with a surface right under `from` within `depth`: each one's
+		// number and the surface's height there, the highest per door.
+		void DoorsUnder(const Vec3 &from, float depth, std::vector<std::pair<int, float>> &out) const;
 		// t3dGetScaledActorBoundingRadius.
 		float DoorRadius(int door) const;
 		// The nearest door the ray from `from` along the unit `direction` hits within `range`,
@@ -148,6 +155,8 @@ namespace render
 			Transform placement;
 			Vec3 low, high, center; // placed
 			float placed_radius = 0;
+			bool hidden = false;
+			bool floor = true;
 		};
 		std::vector<Door> m_doors;
 		struct ActorShape
