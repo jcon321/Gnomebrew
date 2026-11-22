@@ -170,7 +170,12 @@ void Missiles::Make(Missile &m, uint64_t now_ms, const World &world)
 		m.done = true;
 		return;
 	}
-	m.radius = m.from.aimed ? 1.0f : 1.5f;
+	// CreateActor's collision sphere: 1 aimed, else 1.5, or 20.5 from a dragon or wurm (the source's
+	// race 49, 158 or 196).
+	Spawn source;
+	bool big = world.find && world.find(m.from.source, source) &&
+	           (source.race == 49 || source.race == 158 || source.race == 196);
+	m.radius = m.from.aimed ? 1.0f : big ? 20.5f : 1.5f;
 	m.aim_heading = m.heading;
 	m.aim_climb = m.climb;
 	m.aim_distance = 2000;

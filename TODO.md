@@ -116,8 +116,7 @@ no rules of its own.
      bard's instrument mastery; levitation on our horse (SetNoGrav on the Mount); the eye's
      `headEnvironmentChange` (the underwater sound and view follow pinstCharSpawn's head in
      eqgame, ours follow us) and RemovePCAffectex handing back a boat's helm too (ours only lets
-     go of an eye); IsValidTeleport's sphere (ours 0.5; eqgfx's radius is CDisplay+0xb30's, not
-     traced) and `GetEnvironment`'s other region types (ours: water, lava and the like);
+     go of an eye); `GetEnvironment`'s other region types (ours: water, lava and the like);
      HitBySpell's other no-duration branches: SPA 0x51 (0x412a with the target's place), 0x33
      (the nearest trap switch), 0x34..0x35 (FindClosest tracking), 0x3d and 0x3e (the cursor
      item's lore and its stats, eqstr 0x30a2..0x30a5), and the illusion's change of form here
@@ -748,7 +747,7 @@ no rules of its own.
     Acrobatics, Endless Quiver, the spell display's `GetAACastingTimeModifier` and Permanent
     Illusion's duration, `DoMeditation`'s 0x77 and 0xe0, and Jam Fest (0x5e: a bard's own songs
     count 1, 3 or 5 levels more in `CalcAffectChange`, `Buffs::OurValue`) and Permanent Illusion
-    in a decaying buff's value. Nothing to do on the client: the "archery and throwing rolls"
+    in a decaying illusion's value (its 10000 ticks, only a beneficial SPA 0x3a spell's). Nothing to do on the client: the "archery and throwing rolls"
     (`CheckArcherySuccess` 0xba..0xbd, `CheckThrowingSkill` 0x51) are DoAttack 13 and 14's double
     attack and dual wield rolls, which send nothing; a bard's instrument and singing mastery
     (`CalculateBardSongMod`) is `CastingRequirementsMet`'s, offline only (the zone sends the
@@ -1100,8 +1099,7 @@ no rules of its own.
     a missile whose model is a gequip blit-sprite actor (`GENC00`, `GENW00`) drawn as that sprite
     (`SpellEffects::DrawActorSprite`). Our own arrows and throws come back from the zone as
     OP_Projectile (EQMacEmu sends them to the shooter too); DoAttack's own EQMissile is only for a
-    shot with no target, which `CanIHitTarget` stops online. Still to do: a blit-sprite missile's
-    size (ours is CreateActor's scale, 1.5; the sprite's own size in eqgfx isn't traced), the
+    shot with no target, which `CanIHitTarget` stops online. Still to do: the
     static kind 9 missiles' checks on who walks into them (MoveMissile's sentinel and trap
     spells), /showspelleffects (35: the Display page's spell particle settings are done, the command's
     on and off isn't), `DoParticleEffectNew` (@004e8208) and

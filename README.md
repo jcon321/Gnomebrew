@@ -2339,7 +2339,8 @@ details and the nearest spawns at the top left and the radar at the top right.
   - Shadow Step (42): up to 10001 tries of a random heading (0..511) and distance (4, or `4 +
     RandNbr % (value + 2)`), from our place at our height; the first that
     `CDisplay::IsValidTeleport` (@004af646) takes is ours, the wave 0x89, onto the floor. It takes
-    a place `s3dCollideSphereWithWorld` reaches from us unblocked, whose `GetEnvironment` is 0,
+    a place `s3dCollideSphereWithWorld` reaches from us unblocked (CDisplay+0x2cc0's sphere,
+    `t3dCreateSphere(1.0)` in `StartWorldDisplay`: radius 1), whose `GetEnvironment` is 0,
     and each 2 back toward us along the heading while more than 2 of the distance is left. None:
     "Nothing happens." (12399, 0x111).
   - The teleports (83, 88 and 145): Succor's kind (88) does nothing 1 time in 100; Decession (2558)
@@ -2369,7 +2370,9 @@ details and the nearest spawns at the top left and the radar at the top right.
   `Arrow_Struct`, the missile's own first 0x70 bytes) is an arrow, a thrown weapon or a bolt in
   flight, only to look at: the zone says what it hit. The caster plays `GetAnimationIdForAttack`'s
   animation (44 for a spell). `ProcessMissile` makes it the first frame: `CreateActor` of the packet's
-  model (else `IT63`, else none and it's gone) with its light, out 2 minutes; a spell's (kind 9) is out
+  model (else `IT63`, else none and it's gone) with its light and a collision sphere (`t3dCreateSphere`)
+  of 1 when aimed, else 1.5, or 20.5 when the source (`__EQP_IDArray` of packet +0x40) is race 49,
+  158 or 196, out 2 minutes; a spell's (kind 9) is out
   its `AEDuration`, or 30 s for a bolt (travel type 3, which also keeps it level), and gets the
   effect's stage 1 on the missile (on whom 2). For an old (`spells.eff`) effect that's
   `DoSpellEffect(1, ..., the missile)`: `DoSpriteEffect`'s sprite at the missile, going with it
@@ -2377,8 +2380,11 @@ details and the nearest spawns at the top left and the radar at the top right.
   argument: kind 0 on the caster's hands as ever, kind 1 bound to the missile's actor, kind 2 on
   the caster's bone, kinds 3 and 4 on the floor under the missile (10 over it with the normal
   down), kind 5 there once. A model that's a gequip blit-sprite actor (`GENC00`, `GENW00`:
-  `<name>_ACTORDEF` -> 0x27 -> 0x26) is drawn as that sprite, at the actor's scale
-  (`SpellEffects::DrawActorSprite`; the sprite's own size isn't traced). Our own shots come back
+  `<name>_ACTORDEF` -> 0x27 -> 0x26) is drawn as that sprite (`SpellEffects::DrawActorSprite`):
+  eqgfx's `renderVisibleEntities` gives an actor whose sprite is a blit sprite (type 8) to
+  `renderPointLight`, which draws it facing the camera with its corners out the actor's scale
+  factor (actor+0x34, `t3dGetActorScaleFactor`) at 45 degrees. That's `CreateActor`'s scale
+  (`t3dCreateActorEx` param 7): 1 but for the tradeskill containers and bulletin boards. Our own shots come back
   from the zone like anyone's: `Mob::ProjectileAnimation` and `SendItemAnimation` queue
   OP_Projectile to the shooter too (`ignore_sender` false), and DoAttack makes its own EQMissile
   only for a shot with no target (13, 14, 0x65), which `CanIHitTarget` turns down online. Then once 32 ms have gone by each frame: `MissileAI`
@@ -3219,7 +3225,7 @@ details and the nearest spawns at the top left and the radar at the top right.
     (`EQ_Character_BardCastBard`: our class 8 and the spell's bard level, EQ_Spell+0xa4, not 0
     nor 255) counts 1, 3 or 5 levels more (rank 1, 2, 3; a byte), its decay too
     (`Buffs::OurValue`, which also passes Permanent Illusion to a decaying formula's
-    `CalculateSpellDuration`). A bard's instrument and singing mastery (`CalculateBardSongMod`
+    `CalculateSpellDuration`: its 10000 ticks only for a beneficial illusion, SPA 0x3a). A bard's instrument and singing mastery (`CalculateBardSongMod`
     @004c589a, `CalculateInstrumentMasteryMod`, `CalculateSingingMasteryMod`) only run from
     `CastingRequirementsMet`, the offline build's: online the zone sends the song's modifier in
     `OP_Action`.

@@ -224,7 +224,7 @@ bool ZoneView::ValidTeleport(float x, float y, float z, float heading, float dis
 	render::Vec3 from = MyFeet() + render::Vec3{0, 0, m_height / 5 * 3.125f};
 	render::Vec3 to{y, x, z};
 	float fraction;
-	if (m_zone.SphereHit(from, to, 0.5f, fraction, nullptr, false))
+	if (m_zone.SphereHit(from, to, 1.0f, fraction, nullptr, false))
 		return false;
 	const render::ZoneRegions &regions = m_zone.Regions();
 	auto dry = [&](const render::Vec3 &at) {
@@ -1369,6 +1369,7 @@ void ZoneView::UpdateMissiles(uint64_t now_ms)
 				return false;
 			spawn.at = m_feet + render::Vec3{0, 0, my_center};
 			spawn.height_offset = my_center;
+			spawn.race = m_appearance ? m_appearance->race : 0;
 			return true;
 		}
 		auto it = m_actors.find(id);
@@ -1377,6 +1378,7 @@ void ZoneView::UpdateMissiles(uint64_t now_ms)
 		spawn.at = it->second.Feet() + render::Vec3{0, 0, it->second.center_height};
 		spawn.height_offset = it->second.center_height;
 		spawn.dead = it->second.dead;
+		spawn.race = it->second.race;
 		return true;
 	};
 	world.spawn_hit = [&](const render::Vec3 &from, const render::Vec3 &to, float radius, uint16_t ignore) -> uint16_t {

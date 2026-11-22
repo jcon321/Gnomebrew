@@ -11,7 +11,7 @@
 //                 kind 9: on its target for the target types 8, 21..23 and 28; a bolt, travel type
 //                 3, level), out 2 minutes (a spell its AEDuration, else 30 s for a bolt, else 50 ms);
 //                 CreateActor of its model (else IT63, else RED_BLOB; none, it's gone) with a
-//                 collision radius of 1.5 (1 aimed), its light (CreateLight), and for a spell the
+//                 collision sphere of 1.5 (1 aimed; 20.5 unaimed from race 49, 158 or 196), its light (CreateLight), and for a spell the
 //                 effect's missile stage (DoSpellEffect 1; 2 for those on the target).
 //   Then each frame, once 32 ms have gone by since the last step:
 //   MissileAI (@00503582)  turned toward its target (none, or dead, or the caster: straight on).
@@ -53,6 +53,7 @@ public:
 		render::Vec3 at;          // its center (the server's z)
 		float height_offset = 0;  // ModelHeightOffset
 		bool dead = false;        // StandingState 'x'
+		uint16_t race = 0;
 	};
 	struct World
 	{
