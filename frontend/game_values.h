@@ -23,6 +23,7 @@
 #include "zone_session.h"
 
 #include <cstdint>
+#include <functional>
 #include <map>
 
 class Buffs;
@@ -54,6 +55,7 @@ public:
 	bool range_ready = false; // __RangeAttackReady
 	float heading = 0;   // ours, 0..512 (a compass item points by it)
 	bool fv_rules = false, auto_identify = false; // OP_LogServer's (WorldSession)
+	std::function<bool(int16_t slot)> bag_open; // the bag in a slot has its window open (EQ_Container::Open)
 
 	int Gauge(int eq_type, std::string &text) override;
 	bool Label(int eq_type, std::string &text, uint32_t &color) override;

@@ -2,6 +2,7 @@
 #include "chat_text.h"
 #include "game_values.h"
 #include "game_windows.h"
+#include "inventory.h"
 #include "spell_file.h"
 #include "spell_focus.h"
 #include "world_client.h"
@@ -157,10 +158,10 @@ namespace
 	}
 
 	// CanDrop(item, 0x29a) (@004ef773), for the display: a no drop item, or a bag with one in it,
-	// can't be. On FV's rules all can but for EQ_Item::IsSpecialNoDrop's ids (not here).
+	// can't be. On FV's rules all can but for EQ_Item::IsSpecialNoDrop's ids.
 	bool CanDrop(const GameValues &values, const ZoneItem &item)
 	{
-		if (values.fv_rules)
+		if (values.fv_rules && !Inventory::IsSpecialNoDrop(item))
 			return true;
 		if (item.no_drop == 0)
 			return false;
@@ -549,7 +550,8 @@ std::string ItemDisplayText(const GameValues &values, const ZoneItem &item)
 	case 1: {
 		out += " ";
 		lore();
-		const bool open = false; // CContainerMgr's: no bag windows yet
+		// EQ_Container::Open: its bag window's up (CContainerMgr).
+		const bool open = values.bag_open && values.bag_open(item.slot);
 		out += (open ? Text(values, 3040, "Container: OPEN.") : Text(values, 3041, "Container: CLOSED.")) + Br;
 		out += StatusString(values, item) + Br;
 		out += Text(values, 3042, "WT: %1    Weight Reduction: %2", {WeightText(item), Number(item.bag_wr) + "%"}) + Br;

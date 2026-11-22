@@ -24,9 +24,8 @@
 // A container: open or closed, the status, the weight and its weight reduction, the capacity and
 // the largest size it holds. A book or note: open or closed (unrolled or rolled up), the status,
 // the weight and size.
-// What we don't have: on FV's rules (@0079975c) everything drops but for a list of item ids
-// (EQ_Item::IsSpecialNoDrop) that isn't here, so nothing says NO DROP; bags are always closed
-// (no bag windows yet).
+// A container is open while its bag window's up (GameValues::bag_open). NO DROP is CanDrop's: on
+// FV's rules everything drops but EQ_Item::IsSpecialNoDrop's ids (Inventory::IsSpecialNoDrop).
 
 #include <string>
 

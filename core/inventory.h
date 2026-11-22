@@ -98,6 +98,9 @@ namespace Inventory
 	void AddCoins(ZoneProfile &me, int32_t copper);
 	// CanDrop (@004ef773) with nothing to say (mode 0): not NO DROP, nor a bag with something NO DROP
 	// in it; anything under the FV rules (but EQ_Item::IsSpecialNoDrop's ids, not yet).
+	// EQ_Item::IsSpecialNoDrop: the item ids that stay no drop (their own flag still says) on FV's
+	// rules, where everything else drops.
+	bool IsSpecialNoDrop(const ZoneItem &item);
 	bool CanDrop(const std::map<int16_t, ZoneItem> &items, const ZoneItem &item, int16_t slot, bool fv_rules);
 	// HasLoreItem (@004f1469): a lore item ('*') we already have one of, anywhere: worn, carried,
 	// in a bag, in the bank.

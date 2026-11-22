@@ -2272,6 +2272,7 @@ void FrontEnd::BuildZoneWindows(bool reload, bool use_ini)
 	m_game_values.eqstr = m_ui.eqstr;
 	m_game_values.spells = m_ui.spells;
 	m_game_values.fv_rules = m_world.FvRules();
+	m_game_values.bag_open = [this](int16_t slot) { return m_containers.IsOpen(slot); };
 	m_game_values.auto_identify = m_world.AutoIdentify();
 	for (const auto &window : ZoneWindows) {
 		std::string error;

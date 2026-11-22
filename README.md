@@ -765,7 +765,7 @@ build/eqclient -u USER -p PASS [options]
 
 ```
 build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|train|ground|commands|group|duel|bazaar|raid|guild|skills|aa]]
-build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez|cameras|packets|spells|switches|friends|chatwindows|multiline|inspect|tracking|breath|ladder]]
+build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez|cameras|packets|spells|switches|itemdisplay|friends|chatwindows|multiline|inspect|tracking|breath|ladder]]
 ```
 
 This drives the real front-end code with scripted input and writes PNG snapshots. Text is
@@ -882,7 +882,9 @@ bind, blindness, what we steer and the view actor after each: Bind Affinity ours
 Shadow Step, Blinding Smog, a fear and a charm, an Eye of Zomm with an "Eye_of_<name>00" spawn
 put in (before and after the 6 s tick, then its despawn) and Succor; `switches` lists the zone's door
 models and types, then puts a pressure plate (a copy of the first door's model) under our feet and
-shows its `OP_ClickDoor`s)
+shows its `OP_ClickDoor`s; `itemdisplay` puts an item in a loot, trade, merchant and world container
+slot and a bag with an item in it in a general slot, Alt+clicks each slot (the bag shut and open)
+and prints the item display's title and text)
 and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,
 opens, minimizes, resizes and closes windows (the layout goes to OUTDIR), types into the chat window
 (a say, commands, /target) and prints what the chat window holds, then stands near the target to
@@ -3882,7 +3884,14 @@ details and the nearest spawns at the top left and the radar at the top right.
   - elemental and bane damage, skill mod, faction, stats and saves
   - recommended and required levels, effect and focus spells, food and drink sizes
   - weight, range and size, and the classes, races and deities that can use it
-  `LORE:` shows only when `OP_LogServer` says the world auto-identifies.
+  `LORE:` shows only when `OP_LogServer` says the world auto-identifies. It goes by each slot's own
+  item, so a loot, trade, merchant or bag slot shows the item in it like an inventory slot. A
+  container says "Container: OPEN." (3040) while its bag window's up (`EQ_Container::Open`,
+  `CContainerMgr`), else CLOSED (3041). NO DROP is `CanDrop` (@004ef773): on FV's rules
+  (`OP_LogServer` at 0, DAT_0079975c) everything drops but the ids `EQ_Item::IsSpecialNoDrop`
+  (@004cdfe9) names, 75 ranges between 1079 and 31960 worked out by running the decompiled
+  function over every id (`Inventory::IsSpecialNoDrop`); those keep their own flag. The same
+  `CanDrop` decides dropping, trading, selling and looting.
 - **Spell display** (`ToggleSpellDisplay`, `CItemDisplayWnd::SetSpell` @00425957): the item display
   shows a spell too. The title is eqstr 3101 "Spell:", two spaces and the name; the icon is
   `SetBuffIcon`'s (the `A_SpellIcons` cell on `Red`/`BlueIconBackground`), and `ItemValid` goes to

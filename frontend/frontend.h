@@ -205,6 +205,7 @@ public:
 	AlarmWindow &AlarmForTests() { return m_alarm; }
 	HelpWindow &HelpForTests() { return m_help_window; }
 	LoadskinWindow &LoadskinForTests() { return m_loadskin; }
+	Containers &ContainersForTests() { return m_containers; }
 	const std::string &SkinName() const { return m_skin_name; } // the skin the UI is built from
 	const SidlTextures *UiTextures() const { return m_ui.textures; }
 	void SetAirForTests(int air) { m_air = air; }

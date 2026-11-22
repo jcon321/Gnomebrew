@@ -225,8 +225,8 @@ no rules of its own.
      named by type (OpenWorldContainer), their items from OP_ObjectItemPacket at 4000 + n,
      OP_ClearObject emptying them, Combine as slot 1000, closed by Done, Escape or walking off 20
      (CContainerMgr::Process) with OP_ClickObjectAction, and not closeable with a NO DROP item in
-     (CheckCloseable). Still to do: CanGoInBag's checks for a world container's slots, and the bag's
-     open flag (EQ_Container::Open).
+     (CheckCloseable). A bag's open flag (EQ_Container::Open) is its window's, which the item
+     display reads. Still to do: CanGoInBag's checks for a world container's slots.
    - Equipping: our model's armor, weapons and light follow what we have on
      (`ZoneSession::UpdateAppearance`), a flame out with our body in water (`UpdateLight`,
      `SetBodyInWater`), dual wield from the class table (`CanItemEquipInSlot`'s `HasSkill(0x16)`),
@@ -260,9 +260,10 @@ no rules of its own.
      the right button go closes it. A link clicked in the chat shows its item (the zone's
      OP_ItemLinkResponse), and clicking the icon links the item in the chat line
      (`CItemDisplayWnd::WndNotification`; so does Shift+click on a slot while typing, our own).
-     Still to do: FV's always-no-drop item ids (`EQ_Item::IsSpecialNoDrop`), open bags, items in
-     other windows (loot, trade, merchants), and the item+0xdc check WndNotification makes
-     before linking (unknown field).
+     Any slot's item shows (loot, trade, merchant, bag and world container slots: checked on
+     replay, `frontend_preview ... itemdisplay`), a bag says OPEN while its window's up, and FV's
+     always-no-drop ids are `Inventory::IsSpecialNoDrop` (in `CanDrop`, here and everywhere).
+     Still to do: the item+0xdc check WndNotification makes before linking (unknown field).
    - Skills window: the skills HasSkill gives us and our languages, listed as CSkillsWnd::Activate
      lists them, with their ranks (UpdateSkill: 254's "LEVEL: %1", 255 as HasSkill's value), kept
      up to date by OP_SkillUpdate. A press on a row selects it (CListWnd's own), none selected as

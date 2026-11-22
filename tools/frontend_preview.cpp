@@ -2387,6 +2387,90 @@ namespace
 		return 0;
 	}
 
+	// Replay "itemdisplay": an item put in a loot, a trade (theirs), a merchant's and a world
+	// container's slot, and a bag with an item in it in a general slot; each window shown (the bag
+	// opened), Alt+click on the slot, and what the item display then shows (its title and text).
+	int ItemDisplayTest(FrontEnd &frontend, Harness &h)
+	{
+		ZoneSession &zone = frontend.ZoneForTests();
+		WindowManager &windows = frontend.Windows();
+		h.RunUntil([] { return false; }, 800);
+		auto item = [](int16_t slot, const std::string &name, uint16_t id) {
+			ZoneItem it;
+			it.slot = slot;
+			it.id = id;
+			it.name = name;
+			it.icon = 600;
+			it.weight = 10;
+			it.slots = 1 << 13;
+			return it;
+		};
+		auto &items = zone.EditItems();
+		items[Inventory::FirstLoot] = item(Inventory::FirstLoot, "Looted Sword", 5001);
+		items[Inventory::FirstHisTrade] = item(Inventory::FirstHisTrade, "Their Shield", 5002);
+		items[Inventory::FirstMerchant] = item(Inventory::FirstMerchant, "Merchant Dagger", 5003);
+		items[Inventory::WorldContainer] = item(Inventory::WorldContainer, "Forge Ingot", 5004);
+		int16_t general = -1;
+		for (int16_t slot = 22; slot <= 29 && general < 0; ++slot)
+			if (!items.count(slot))
+				general = slot;
+		if (general >= 0) {
+			ZoneItem bag = item(general, "Test Bag", 5005);
+			bag.item_class = 1;
+			bag.bag_slots = 8;
+			bag.bag_size = 2;
+			items[general] = bag;
+			int16_t inside = Inventory::BagSlot(general, 0);
+			items[inside] = item(inside, "Bagged Gem", 5006);
+		}
+		auto alt_click = [&](const std::string &window, const std::string &control) {
+			SidlWindow *wnd = windows.Find(window);
+			const SidlWindow::Control *c = wnd ? wnd->Find(control) : nullptr;
+			if (!c) {
+				printf("[preview] %s: no %s\n", window.c_str(), control.c_str());
+				return;
+			}
+			windows.Show("ItemDisplayWindow", false);
+			frontend.Update(NowMs());
+			const Rect &r = c->rect;
+			Rect area = frontend.ScreenArea();
+			int x = area.x + r.x + r.w / 2, y = area.y + r.y + r.h / 2;
+			frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+			InputEvent event{InputEvent::Type::MouseDown, x, y};
+			event.alt = true;
+			frontend.OnEvent(event);
+			event.type = InputEvent::Type::MouseUp;
+			frontend.OnEvent(event);
+			frontend.Update(NowMs());
+			const SidlWindow *display = windows.Find("ItemDisplayWindow");
+			const SidlWindow::Control *text = display ? display->Find("ItemDescription") : nullptr;
+			printf("[preview] alt+click %s %s: item display %s '%s', text '%s'\n", window.c_str(), control.c_str(),
+				windows.Shown("ItemDisplayWindow") ? "shown" : "hidden", display ? display->Root().text.c_str() : "",
+				text ? text->text.c_str() : "");
+		};
+		auto alone = [&](const std::string &window, const std::string &control) {
+			windows.Show(window, true);
+			windows.Raise(window);
+			alt_click(window, control);
+			windows.Show(window, false);
+		};
+		alone("LootWnd", "LW_LootSlot0");
+		alone("TradeWnd", "TRDW_TradeSlot8");
+		alone("MerchantWnd", "MW_MerchantSlot0");
+		if (general >= 0) {
+			windows.Show("InventoryWindow", true);
+			windows.Raise("InventoryWindow");
+			alt_click("InventoryWindow", "InvSlot" + std::to_string(general));
+			frontend.ContainersForTests().Open(general);
+			h.RunUntil([] { return false; }, 200);
+			alt_click("InventoryWindow", "InvSlot" + std::to_string(general));
+			for (int n = 1; n <= 8; ++n)
+				if (std::string name = "BagInv" + std::to_string(n); windows.Find(name) && windows.Shown(name))
+					alt_click(name, "ContainerSlot1");
+		}
+		return 0;
+	}
+
 	// Replay "packets": what the zone sends that changes our state, injected into any recording:
 	// OP_LevelUpdate (up, the same and down), OP_DeleteCharge (one off a stack, its last, an empty
 	// slot), OP_Reward's coins, OP_ResetSkill on a waiting skill, OP_Disarm's two answers, and the
@@ -4441,6 +4525,7 @@ int main(int argc, char **argv)
 	bool packets_test = argc == 7 && std::string(argv[6]) == "packets";
 	bool spells_test = argc == 7 && std::string(argv[6]) == "spells";
 	bool switches_test = argc == 7 && std::string(argv[6]) == "switches";
+	bool item_display_test = argc == 7 && std::string(argv[6]) == "itemdisplay";
 	if (argc >= 6 && !replay) {
 		std::string login = argv[3];
 		size_t colon = login.rfind(':');
@@ -4546,6 +4631,8 @@ int main(int argc, char **argv)
 			return SpellsTest(frontend, h);
 		if (switches_test)
 			return SwitchesTest(frontend, h);
+		if (item_display_test)
+			return ItemDisplayTest(frontend, h);
 		h.RunUntil([] { return false; }, 500);
 		h.Snapshot("r0-zone");
 		// Toggle UI Display (F10, ExecuteCmd 0x15): the windows and cursor gone, then back.
