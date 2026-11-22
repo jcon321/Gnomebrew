@@ -227,11 +227,12 @@ no rules of its own.
      (CContainerMgr::Process) with OP_ClickObjectAction, and not closeable with a NO DROP item in
      (CheckCloseable). Still to do: CanGoInBag's checks for a world container's slots, and the bag's
      open flag (EQ_Container::Open).
-   - Equipping: our model's armor, weapons and light follow what we have on (`ZoneSession::UpdateAppearance`).
-     Still to do: dual wield
-     from the class table rather than the zone's 254/255, the casting check (no moves but from the
-     cursor while casting), /showhelm, and a carried light going out underwater (`UpdateLight`'s
-     check of the body's environment; it's only not drawn there now).
+   - Equipping: our model's armor, weapons and light follow what we have on
+     (`ZoneSession::UpdateAppearance`), a flame out with our body in water (`UpdateLight`,
+     `SetBodyInWater`), dual wield from the class table (`CanItemEquipInSlot`'s `HasSkill(0x16)`),
+     and no slot clicks while casting but a bard's song (`CInvSlot::HandleLButtonUp`). /showhelm is
+     Zeal's, not eqgame's: out of the base client. Still to do: the console client's `--move auto`
+     passes no dual wield (it doesn't link the skill table); none of these checked live.
    - The item on the cursor: clicking a spawn with it (or coins) gives it to them through a trade
      (`DropItemOrMoneyOnPlayer`, below), clicking the ground drops it (item 11), and AutoInventory
      with no room drops it (AutoGenInventory: "There was no place to put that!", eqstr 12937; a

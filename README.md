@@ -1831,8 +1831,16 @@ the rejection).
 - **Our look** (`ZoneSession::UpdateAppearance`): after our items move, `CEverQuest_UpdatePlayerAppearance`
   and `CDisplay::HandleMaterial` per armor slot (the worn item's material and tint, a custom helm's IT
   number), `UpdateEquipmentDisplay`'s weapons (the ranged item in the left hand when both hands are
-  empty) and `UpdateLight` (the brightest worn light, a lightstone in a general slot over it). The
-  slots that changed go to the zone as `OP_WearChange` and the light as `OP_SpawnAppearance`.
+  empty) and `UpdateLight` (@004f0c7b: the brightest worn light, a lightstone in a general slot
+  over it, and a flame, light types 1, 2, 4 and 6, out while ActorInfo+0xa1, SwimmingWaterType,
+  says our body's in water; `DoMainLoop` runs it every frame, so the light comes back as we leave
+  the water: `ZoneSession::SetBodyInWater`). The slots that changed go to the zone as
+  `OP_WearChange` and the light as `OP_SpawnAppearance`. `CanItemEquipInSlot` (@004f0db4) lets a
+  weapon into the secondary hand by `EQ_Character::HasSkill(0x16)`, the class table's Dual Wield
+  (`Skills::HasSkill`), not the profile's value alone. `CInvSlot::HandleLButtonUp` does nothing at
+  all (no pick up, put down, merchant pick) while we cast anything but a bard's own song
+  (ActorInfo's CastingSpellId, `EQ_Character_BardCastBard`), after the Bazaar search's slots and the
+  wait for the zone's answer. /showhelm isn't eqgame's: it's Zeal's (`helm_manager`).
   Velious materials 17..23 come from `global17_amr.s3d`..`global23_amr.s3d`, or stand in as leather,
   chain or plate without them (`CDisplay_SwapMaterial`; 4 and 23 are leather on all but a monk).
   Helms 240 and 241 are each race's Velious helm by gender (IT530..IT656), anything from 240 its IT

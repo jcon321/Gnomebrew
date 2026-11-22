@@ -195,6 +195,7 @@ struct GameWindowState
 
 	// DAT_007d0254: a request the zone has yet to answer (a combine); the slots take no clicks.
 	bool busy = false;
+	bool casting = false; // SpellCast::CastingNonSong: the slots do nothing (HandleLButtonUp)
 	// The bank window's up: coins change into others (CEverQuest_MoveMoney).
 	bool bank_open = false;
 	// A trade (or the give window) is up, and with an NPC: our empty trade slots take items.

@@ -99,6 +99,9 @@ public:
 	void Frame(uint64_t now_ms); // CCastingWnd::OnProcessFrame: the casting window up while casting
 
 	bool Casting() const; // IsValidSpellIndex(CastingSpellId)
+	// Casting anything but a bard's own song (EQ_Character_BardCastBard): CInvSlot::HandleLButtonUp
+	// does nothing then.
+	bool CastingNonSong() const { return Casting() && !BardSong(Spell(m_spell)); }
 	// RefreshSpellGemButtons: the gem can be cast (its spell's there, its recast and the recovery
 	// past, nothing being cast).
 	bool GemReady(int gem, uint64_t now_ms) const;

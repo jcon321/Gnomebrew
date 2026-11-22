@@ -1466,6 +1466,14 @@ void ZoneSession::WornLook(uint16_t material[9], uint32_t color[9]) const
 	material[8] = it_number(left);
 }
 
+void ZoneSession::SetBodyInWater(bool in_water)
+{
+	if (in_water == m_body_in_water)
+		return;
+	m_body_in_water = in_water;
+	UpdateAppearance();
+}
+
 void ZoneSession::UpdateAppearance()
 {
 	uint16_t material[9];
@@ -1519,6 +1527,9 @@ void ZoneSession::UpdateAppearance()
 	for (int16_t slot = 22; slot <= 29; ++slot)
 		if (const ZoneItem *item = at(slot); item && item->light >= 9 && item->light <= 13 && item->light > intensity(item->light))
 			light = item->light;
+	// A flame with our body in water goes out.
+	if (m_body_in_water && light != 0 && (light < 3 || light == 4 || light == 6))
+		light = 0;
 	if (light != m_self.light) {
 		m_self.light = light;
 		// CDisplay::ChangeLight -> CEverQuest_SendLightInfo: SpawnAppearance_Struct {u16 spawn, u16 type, u32 value}.

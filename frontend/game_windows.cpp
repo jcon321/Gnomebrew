@@ -1003,7 +1003,7 @@ bool InventoryClick(WindowManager &windows, GameWindowState &state, ZoneSession 
 	if (window == "InventoryWindow" && control == "IW_CharacterView") {
 		if (items.count(Cursor)) {
 			result.sound = true;
-			AutoInventory(zone, &result.message, state.fv_rules);
+			AutoInventory(zone, &result.message, state.fv_rules, Skills::HasSkill(zone.Profile(), 22) != 0);
 			result.message_color = 15;
 		}
 		return true;
@@ -1012,8 +1012,9 @@ bool InventoryClick(WindowManager &windows, GameWindowState &state, ZoneSession 
 	const SidlWindow::Control *slot_control = wnd ? wnd->Find(control) : nullptr;
 	if (!slot_control || slot_control->def->type != "InvSlot")
 		return false;
-	// Nothing while the quantity window's up, or while the zone has a combine to answer.
-	if (state.QuantityUp() || state.busy)
+	// Nothing while the quantity window's up, or while the zone has a combine to answer, or while
+	// we cast anything but a bard's own song.
+	if (state.QuantityUp() || state.busy || state.casting)
 		return true;
 	// A button on the cursor goes; then the slot does what it does with an item or none.
 	state.ClearCursor();
@@ -1038,7 +1039,7 @@ bool InventoryClick(WindowManager &windows, GameWindowState &state, ZoneSession 
 	}
 	const ZoneProfile &me = zone.Profile();
 	if (slot > 0 && slot <= LastGeneral) {
-		if (!CanEquip(me, items, held->second, slot))
+		if (!CanEquip(me, items, held->second, slot, Skills::HasSkill(me, 22) != 0))
 			return true;
 		if (slot < FirstGeneral && !CanUse(me, held->second)) {
 			result.message = CantEquip;

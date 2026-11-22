@@ -54,7 +54,10 @@ namespace Inventory
 	int16_t BagSlot(int16_t slot, int n);
 	int16_t BagOf(int16_t slot);
 
-	bool CanEquip(const ZoneProfile &me, const std::map<int16_t, ZoneItem> &items, const ZoneItem &item, int16_t slot);
+	// CanItemEquipInSlot (@004f0db4). `dual_wield`: EQ_Character::HasSkill(0x16), the class table's
+	// (Skills::HasSkill), for a weapon in the secondary hand.
+	bool CanEquip(const ZoneProfile &me, const std::map<int16_t, ZoneItem> &items, const ZoneItem &item, int16_t slot,
+		bool dual_wield);
 	bool CanUse(const ZoneProfile &me, const ZoneItem &item); // our class, deity, race and level
 	uint32_t BagRefusal(const ZoneItem &item, const ZoneItem &bag); // why it can't go in, or 0
 
@@ -107,5 +110,5 @@ namespace Inventory
 	// ground where we stand, at once (no confirmation; "There was no place to put that!  The item has
 	// dropped to the ground!", eqstr 12937, color 15), or keeps a NO DROP one on the cursor (CanDrop's
 	// 12921 or 12922). False when it's still on the cursor; `message` the eqstr id to say, or 0.
-	bool AutoInventory(ZoneSession &zone, uint32_t *message = nullptr, bool fv_rules = false);
+	bool AutoInventory(ZoneSession &zone, uint32_t *message = nullptr, bool fv_rules = false, bool dual_wield = false);
 }

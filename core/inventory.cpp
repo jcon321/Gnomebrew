@@ -20,7 +20,6 @@ namespace Inventory
 			TwoHandPierce = 35, FishingBait = 37, Alcohol = 38, Type43 = 43, Type44 = 44,
 		};
 		constexpr uint8_t Quiver = 2, Bandolier = 8; // bag types
-		constexpr int DualWield = 22;               // skill
 
 		bool TwoHanded(const ZoneItem &item)
 		{
@@ -37,12 +36,6 @@ namespace Inventory
 		{
 			uint8_t t = item.item_type;
 			return t != Arrow && t != Type28 && t != Type43 && t != Type44 && item.damage != 0;
-		}
-
-		// EQ_Character::HasSkill, from what the zone sends: 254 we'll have it at a later level, 255 never.
-		bool HasSkill(const ZoneProfile &me, int skill)
-		{
-			return me.skills[skill] < 254;
 		}
 
 		uint8_t Charges(const ZoneItem &item)
@@ -151,7 +144,8 @@ namespace Inventory
 		return -1;
 	}
 
-	bool CanEquip(const ZoneProfile &me, const std::map<int16_t, ZoneItem> &items, const ZoneItem &item, int16_t slot)
+	bool CanEquip(const ZoneProfile &me, const std::map<int16_t, ZoneItem> &items, const ZoneItem &item, int16_t slot,
+		bool dual_wield)
 	{
 		if (slot >= FirstGeneral && slot <= LastGeneral)
 			return true;
@@ -180,7 +174,7 @@ namespace Inventory
 		}
 		if (slot != Secondary)
 			return true;
-		if (TwoHanded(item) || (IsWeapon(item) && !HasSkill(me, DualWield)))
+		if (TwoHanded(item) || (IsWeapon(item) && !dual_wield))
 			return false;
 		if (!primary)
 			return true;
@@ -489,7 +483,7 @@ namespace Inventory
 		return out;
 	}
 
-	bool AutoInventory(ZoneSession &zone, uint32_t *message, bool fv_rules)
+	bool AutoInventory(ZoneSession &zone, uint32_t *message, bool fv_rules, bool dual_wield)
 	{
 		if (message)
 			*message = 0;
@@ -503,12 +497,12 @@ namespace Inventory
 		if (Stacks(*held()))
 			for (int16_t slot = Ammo; slot >= FirstWorn && held(); --slot) {
 				const ZoneItem *there = Find(items, slot);
-				if (there && there->id == held()->id && CanEquip(me, items, *held(), slot) && CanUse(me, *held()))
+				if (there && there->id == held()->id && CanEquip(me, items, *held(), slot, dual_wield) && CanUse(me, *held()))
 					Combine(zone, Cursor, slot);
 			}
 		if (held() && held()->item_class == 0)
 			for (int16_t slot = Ammo; slot >= FirstWorn && held(); --slot)
-				if (!Find(items, slot) && CanEquip(me, items, *held(), slot) && CanUse(me, *held()))
+				if (!Find(items, slot) && CanEquip(me, items, *held(), slot, dual_wield) && CanUse(me, *held()))
 					Put(zone, slot);
 		// AutoGenInventory: onto the same in the general slots, then in the bags.
 		if (held() && Stacks(*held())) {

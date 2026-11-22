@@ -148,6 +148,7 @@ public:
 	void StopDucking() { m_movement.StopDucking(); }
 	bool Swimming() const { return m_movement.Swimming(); }    // ActorInfo SwimmingWaterType over 4
 	render::Environment HeadEnvironment() const { return m_movement.HeadEnvironment(); } // IsSwimmingUnderwater
+	render::Environment BodyEnvironment() const { return m_movement.BodyEnvironment(); } // SwimmingWaterType
 	// EQPlayer::ChangeStance's animations for us: 110 sitting (P02), 105 kneeling (P05) and 115
 	// lying (D05, held as a death is) go down and stay there; 100 from them gets up (kneeling's
 	// P05 backwards, the others' P02), all of it, even as we move off. In first person the view

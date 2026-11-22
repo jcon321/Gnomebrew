@@ -1088,6 +1088,10 @@ public:
 	// counting the looks); each change goes to the zone, OP_WearChange and OP_SpawnAppearance, as
 	// eqgame tells it.
 	void UpdateAppearance();
+	// Our body in water (ActorInfo+0xa1, SwimmingWaterType) as DoMainLoop's UpdateLight reads it each
+	// frame: a flame (light types 1, 2, 4, 6) goes out (light 0, told to the zone), and comes back
+	// out of it. Runs UpdateAppearance's light part when it changes.
+	void SetBodyInWater(bool in_water);
 	// The guild names, from the world (SetGuilds, before Begin) and then the zone.
 	void SetGuilds(const GuildNames &guilds) { m_guilds = guilds; }
 	const GuildNames &Guilds() const { return m_guilds; }
@@ -1172,6 +1176,7 @@ private:
 	std::map<uint16_t, ZoneSpawn> m_spawns;
 	ZoneSpawn m_self;
 	uint16_t m_my_id = 0;
+	bool m_body_in_water = false; // SetBodyInWater
 	bool m_berserk = false;
 	int m_chat_language = 0;
 	// CheckDupLoreItems (@004f13d2) after items arrive (the inventory, OP_MerchantItemPacket, a

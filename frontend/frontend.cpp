@@ -931,7 +931,9 @@ void FrontEnd::Update(uint64_t now_ms)
 			m_ranged_look = false;
 			m_zone_view->SetPlayer(PlayerAppearance(m_zone, m_last_attack == 11), me.walk_speed, me.run_speed);
 		}
-		m_zone_view->SetMyLight(me.light);
+		// DoMainLoop's UpdateLight: with our body in water a flame goes out.
+		m_zone.SetBodyInWater(m_zone_view->Placed() && m_zone_view->BodyEnvironment() != render::Environment::Dry);
+		m_zone_view->SetMyLight(m_zone.Self().light);
 		m_zone_view->SetMyLevel(m_zone.Profile().level);
 		m_zone_view->SetDebugDraw(m_debug.Drawing());
 		VehiclePassageOfTime(now_ms);
@@ -983,6 +985,7 @@ void FrontEnd::Update(uint64_t now_ms)
 		                      m_abilities.Busy();
 		m_window_state.hot_buttons_refused = m_zone.Self().stance == 102 || ZoneAnswerWaiting();
 		m_window_state.fv_rules = m_game_values.fv_rules;
+		m_window_state.casting = m_spell_cast.CastingNonSong();
 		HandleWindowClicks();
 		m_bank.Frame(now_ms);
 		m_merchant.Frame(now_ms);
@@ -3169,8 +3172,9 @@ void FrontEnd::HandleWindowClicks()
 		    m_bazaar.Click(click.window, click.control, click.shift, click.ctrl) ||
 		    m_bazaar_search.Click(click.window, click.control))
 			continue;
-		// While a merchant's up, a slot anywhere is picked to buy or sell (CInvSlot::HandleLButtonUp).
-		if (m_merchant.SlotClick(click.window, click.control))
+		// While a merchant's up, a slot anywhere is picked to buy or sell (CInvSlot::HandleLButtonUp),
+		// but not while we cast (the slots do nothing then: InventoryClick).
+		if (!m_window_state.casting && m_merchant.SlotClick(click.window, click.control))
 			continue;
 		// The trade and give windows' buttons.
 		if (m_trade.Click(click.window, click.control))
