@@ -3410,7 +3410,7 @@ void FrontEnd::BuffEffect(const SpellInfo &spell, int slot, int level, bool land
 				break;
 			case 42:
 				if (slot < 0)
-					SpellShadowStep(Buffs::Value(spell, level, i, nullptr));
+					SpellShadowStep(m_buffs.OurValue(spell, level, i, nullptr));
 				break;
 			case 83: case 88: case 145:
 				if (slot < 0)
@@ -3441,7 +3441,7 @@ void FrontEnd::BuffEffect(const SpellInfo &spell, int slot, int level, bool land
 				break;
 			case 87: // the lens (SetViewAngle)
 				if (m_zone_view)
-					m_zone_view->SetViewAngle(static_cast<float>(Buffs::Value(spell, level, i, buff)));
+					m_zone_view->SetViewAngle(static_cast<float>(m_buffs.OurValue(spell, level, i, buff)));
 				break;
 			default:
 				break;
@@ -3704,7 +3704,7 @@ void FrontEnd::HandleSpecialPCAffects()
 			SetBlind(true);
 		for (int i = 0; i < 12; ++i)
 			if (spell->spas[i] == 87 && m_zone_view)
-				m_zone_view->SetViewAngle(static_cast<float>(Buffs::Value(*spell, m_buffs.Slot(slot).level, i, &m_buffs.Slot(slot))));
+				m_zone_view->SetViewAngle(static_cast<float>(m_buffs.OurValue(*spell, m_buffs.Slot(slot).level, i, &m_buffs.Slot(slot))));
 	}
 }
 

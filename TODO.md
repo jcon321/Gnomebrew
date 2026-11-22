@@ -744,13 +744,17 @@ no rules of its own.
     HP (`CalculateMaxHPAA`), the run speed (Innate Run Speed, Fleet of Foot), Innate Metabolism, the
     trap, feign and hide timers, Nimble Evasion, 2 Hand Bash, New Tanaan Crafting Mastery,
     Acrobatics, Endless Quiver, the spell display's `GetAACastingTimeModifier` and Permanent
-    Illusion's duration. Still to do:
-    - the passive abilities whose systems aren't ours yet: `DoMeditation`'s 0x77 and 0xe0, the archery and throwing rolls (`CheckArcherySuccess` 0xba, 0xbb and
-      `CalculateArcheryBonusFromAbilities`, `CheckThrowingSkill` 0x51), a bard's
-      `CalculateBardSongMod` (instrument and singing mastery) and the book's 0x7b, Jam Fest (0x5e) in
-      `CalcAffectChange`, Viscid Roots (0xbe) in `HitBySpell`, `HandleSpecialPCAffects`' 0x37, the
-      pet window's (`CPetInfoWnd::Update`), Stalwart Endurance and the ability recast (above), and
-      Permanent Illusion in a decaying buff's value (`Buffs::Value` passes no rank);
+    Illusion's duration, `DoMeditation`'s 0x77 and 0xe0, and Jam Fest (0x5e: a bard's own songs
+    count 1, 3 or 5 levels more in `CalcAffectChange`, `Buffs::OurValue`) and Permanent Illusion
+    in a decaying buff's value. Nothing to do on the client: the "archery and throwing rolls"
+    (`CheckArcherySuccess` 0xba..0xbd, `CheckThrowingSkill` 0x51) are DoAttack 13 and 14's double
+    attack and dual wield rolls, which send nothing; a bard's instrument and singing mastery
+    (`CalculateBardSongMod`) is `CastingRequirementsMet`'s, offline only (the zone sends the
+    song's modifier in `OP_Action`); Viscid Roots (0xbe) in `HitBySpell` only goes to
+    `EQ_Character_SetLocalVar`, an empty stub. Still to do:
+    - the passive abilities whose systems aren't ours yet: the book's 0x7b, the pet window's
+      (`CPetInfoWnd::Update`), Stalwart Endurance and the ability recast (above);
+    - Jam Fest not checked live (no bard test character);
     - not checked live: the PoP pages trainable (61 and up with the Planes of Power), a GM's "(ID#n)".
 29. ~~**Friends, ignore, inspect and notes.**~~ Done (`frontend/friends.*`, `frontend/inspect_window.*`,
     `frontend/player_notes.*`): `CFriendsWnd`, /friends, /ignore, /who all friend (OP_FriendsWho),

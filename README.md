@@ -3163,10 +3163,21 @@ details and the nearest spawns at the top left and the radar at the top right.
     (SPA 0x3a) with a duration lasts 10000 ticks.
   - **The zone's:** Channeling Focus (0x18) and Elemental Pact (0x43) in `CastingRequirementsMet`
     and Spell Casting Mastery (0x14) in `SpellFizzled`, eqgame's offline-only rolls (see Spells).
-  - **Not ours yet**, waiting on their systems: `DoMeditation`'s 0x77 and 0xe0, the archery and
-    throwing rolls (0xba, 0xbb, 0x51, `CalculateArcheryBonusFromAbilities`), a bard's instrument and
-    singing mastery (`CalculateBardSongMod`), Jam Fest (0x5e) in `CalcAffectChange`, Viscid Roots
-    (0xbe) in `HitBySpell`, `HandleSpecialPCAffects`' 0x37, Stalwart Endurance (0xde) against
+  - **Bard songs.** `CalcAffectChange` on a bard with Jam Fest (0x5e): a spell bards get
+    (`EQ_Character_BardCastBard`: our class 8 and the spell's bard level, EQ_Spell+0xa4, not 0
+    nor 255) counts 1, 3 or 5 levels more (rank 1, 2, 3; a byte), its decay too
+    (`Buffs::OurValue`, which also passes Permanent Illusion to a decaying formula's
+    `CalculateSpellDuration`). A bard's instrument and singing mastery (`CalculateBardSongMod`
+    @004c589a, `CalculateInstrumentMasteryMod`, `CalculateSingingMasteryMod`) only run from
+    `CastingRequirementsMet`, the offline build's: online the zone sends the song's modifier in
+    `OP_Action`.
+  - **Nothing on the client:** `CheckArcherySuccess` (@004bdb36: skill 0x14, Double Attack, or AA
+    0xba / 0xbb for a class without it, plus `CalculateArcheryBonusFromAbilities`' 3 a rank of
+    0xba..0xbd, out of 500) and `CheckThrowingSkill` (@004bdaaa: skill 0x16, Dual Wield, plus
+    level and 32 with Ambidexterity 0x51, out of 375) are DoAttack 13 and 14's second swings,
+    which send nothing; Viscid Roots (0xbe) in `HitBySpell` is `GetAbility` of the caster handed
+    to `EQ_Character_SetLocalVar` (@004c3fa9), which returns its argument and does nothing.
+  - **Not ours yet**, waiting on their systems: Stalwart Endurance (0xde) against
     `ApplyDamage`'s stun, the pet window's, and `AdjustSpellRecastTimeByClassAbility` (Fervent
     Blessing 200, Touch of the Wicked 0xc9: 12 min a rank off Lay on Hands and Harm Touch).
     `CalculateMitigationBoost` (Combat Stability 0x21, Physical Enhancement, Innate Defense 0x98) is

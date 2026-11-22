@@ -37,8 +37,8 @@
 //     ProcessControls adds it to the run or walk speed, at most 1.092006 (more with Fleet of Foot);
 //     running with none, Innate Run Speed's;
 // What a buff's effects do as it lands or fades is the game's (`effects`, FrontEnd::BuffEffect).
-// Not done: the mana and fatigue a buff gives each tick (the zone's updates carry them), the AAs (a bard's instrument
-// mastery, Jam Fest), the item effects TotalSpellAffects adds, and a buff's caster's
+// Not done: the mana and fatigue a buff gives each tick (the zone's updates carry them), the item
+// effects TotalSpellAffects adds, and a buff's caster's
 // level for its stacking when it came with the profile (it has the level it was cast at).
 
 #include "zone_session.h"
@@ -120,8 +120,14 @@ public:
 	// with a duration lasts 10000.
 	static int Duration(const SpellInfo &spell, int level, int permanent_illusion = 0);
 	// EQ_Character::CalcAffectChange: an effect's value at a caster's level (a decaying formula's
-	// from how long `buff` has had, if there's one).
-	static int Value(const SpellInfo &spell, int level, int effect, const ZoneBuff *buff);
+	// from how long `buff` has had, if there's one). On a bard with Jam Fest (AA 0x5e, `jam_fest`
+	// its rank) a spell bards get (EQ_Character_BardCastBard: its bard level, EQ_Spell+0xa4, not 0
+	// nor 255) counts 1, 3 or 5 levels more; `permanent_illusion` goes to the decay's
+	// CalculateSpellDuration.
+	static int Value(const SpellInfo &spell, int level, int effect, const ZoneBuff *buff, int jam_fest = 0,
+		int permanent_illusion = 0);
+	// CalcAffectChange on us (pinstPCData): Value with our Jam Fest (a bard's) and Permanent Illusion.
+	int OurValue(const SpellInfo &spell, int level, int effect, const ZoneBuff *buff) const;
 
 private:
 	struct Caster

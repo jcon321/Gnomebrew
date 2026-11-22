@@ -297,8 +297,8 @@ int Buffs::FindAffectSlot(int id, const SpellInfo &spell, const Caster &caster)
 
 			if ((good && (!old_good || old->HasSpa(58))) || old_spa == 101 || Unoverwritable(old_id))
 				return -1;
-			int old_value = Value(*old, b.level, i, nullptr);
-			int value = Value(spell, caster.level, i, nullptr);
+			int old_value = OurValue(*old, b.level, i, nullptr);
+			int value = OurValue(spell, caster.level, i, nullptr);
 			if (CountsNegative(id) || old_id == 1814)
 				value = -1;
 			if (CountsNegative(old_id))
@@ -473,7 +473,7 @@ int Buffs::Total(int spa) const
 		for (int i = 0; i < 12; ++i) {
 			if (spell->spas[i] != spa)
 				continue;
-			int value = Value(*spell, b.level, i, &b);
+			int value = OurValue(*spell, b.level, i, &b);
 			if (b.bard_modifier > 10)
 				value = value * b.bard_modifier / 10;
 			if (value < 0)
@@ -505,7 +505,7 @@ int Buffs::WornTotal(int spa) const
 			continue;
 		for (int i = 0; i < 12; ++i)
 			if (spell->spas[i] == spa)
-				sum += static_cast<int16_t>(Value(*spell, item.effect_level, i, nullptr));
+				sum += static_cast<int16_t>(OurValue(*spell, item.effect_level, i, nullptr));
 	}
 	return sum;
 }
@@ -518,7 +518,7 @@ uint16_t Buffs::WhoPutThisEffectOnMe(int spa) const
 		if (!spell)
 			continue;
 		for (int i = 0; i < 12; ++i)
-			if (spell->spas[i] == spa && Value(*spell, b.level, i, &b) < 0)
+			if (spell->spas[i] == spa && OurValue(*spell, b.level, i, &b) < 0)
 				return m_casters[slot];
 	}
 	return 0;
@@ -534,11 +534,11 @@ int Buffs::AttackSpeed() const
 		for (int i = 0; i < 12; ++i) {
 			int spa = spell->spas[i];
 			if (spa == 98)
-				over = std::max(over, Value(*spell, b.level, i, &b));
+				over = std::max(over, OurValue(*spell, b.level, i, &b));
 			else if (spa == 119)
-				bard = std::max(bard, Value(*spell, b.level, i, &b));
+				bard = std::max(bard, OurValue(*spell, b.level, i, &b));
 			else if (spa == 11) {
-				int value = static_cast<int16_t>(Value(*spell, b.level, i, &b));
+				int value = static_cast<int16_t>(OurValue(*spell, b.level, i, &b));
 				if (value < 100) {
 					if (value < slow && value > 0)
 						slow = value;
@@ -566,7 +566,7 @@ int Buffs::AttackSpeed() const
 			for (int i = 0; i < 12; ++i) {
 				if (spell->spas[i] != 11)
 					continue;
-				int value = static_cast<int16_t>(Value(*spell, item.effect_level, i, nullptr));
+				int value = static_cast<int16_t>(OurValue(*spell, item.effect_level, i, nullptr));
 				if (value < 100) {
 					if (value < item_slow && value > 0)
 						item_slow = value;
@@ -662,11 +662,23 @@ int Buffs::Duration(const SpellInfo &spell, int level, int permanent_illusion)
 	return static_cast<int16_t>(ticks);
 }
 
-int Buffs::Value(const SpellInfo &spell, int level, int effect, const ZoneBuff *buff)
+int Buffs::OurValue(const SpellInfo &spell, int level, int effect, const ZoneBuff *buff) const
+{
+	if (!m_zone)
+		return Value(spell, level, effect, buff);
+	const ZoneProfile &me = m_zone->Profile();
+	return Value(spell, level, effect, buff, me.class_id == 8 ? me.aa_ranks[0x5e] : 0, me.aa_ranks[0x37]);
+}
+
+int Buffs::Value(const SpellInfo &spell, int level, int effect, const ZoneBuff *buff, int jam_fest, int permanent_illusion)
 {
 	int base = spell.base[effect], max = spell.max[effect];
 	int magnitude = std::abs(base);
 	int calc = static_cast<int8_t>(spell.formula[effect]);
+	// Jam Fest: 1, 3 or 5 levels more (a rank past 3, none), the level still a byte.
+	int bard_level = spell.ClassLevel(8);
+	if (jam_fest >= 1 && jam_fest <= 3 && bard_level != 0 && bard_level != 255)
+		level = static_cast<uint8_t>(level + (jam_fest == 1 ? 1 : jam_fest == 2 ? 3 : 5));
 	int l = static_cast<uint8_t>(level);
 	// So much a level over `from`.
 	auto over = [l](int from, int times) { return l - from > 0 ? (l - from) * times : 0; };
@@ -674,7 +686,7 @@ int Buffs::Value(const SpellInfo &spell, int level, int effect, const ZoneBuff *
 	auto decay = [&](int times) {
 		if (spell.duration_formula == 0 || !buff)
 			return 0;
-		return -static_cast<int>(static_cast<uint16_t>(Duration(spell, l) - buff->duration)) * times;
+		return -static_cast<int>(static_cast<uint16_t>(Duration(spell, l, permanent_illusion) - buff->duration)) * times;
 	};
 	int add = 0;
 	switch (calc) {
