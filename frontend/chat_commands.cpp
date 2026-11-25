@@ -28,7 +28,7 @@ namespace
 		AlternateAdv, Pet, SoundDriver, Duel, Decline, Bazaar, Trader, Nothing, ParticleDensity, RTarget, Inspect,
 		ChatFontSize, Language, Note, TrackPlayers, TrackSort, TrackFilter, Help, BugReport, Feedback, Petition, Report,
 		Discipline, Surname, SafeLock, HotButton, MouseSpeed, DynamicLights, ShowSpellEffects, Viewport, ShowGrass,
-		HitsMode,
+		HitsMode, ShowNpcNames,
 	};
 
 	struct CommandEntry
@@ -52,7 +52,7 @@ namespace
 		{"/assist", 13960, 0, 1, Command::Assist}, {"/duel", 13961, 0, 1, Command::Duel}, {"/decline", 13962, 0, 1, Command::Decline},
 		{"/split", 13963, 0, 1, Command::Split}, {"/autosplit", 13964, 0, 1, Command::AutoSplit}, {"/quit", 13965, 0, 1, Command::Quit},
 		{"/stopsong", 13966, 0, 1, Command::StopSong}, {"/friends", 13967, 0, 1, Command::Friends}, {"/shield", 14212, 0, 1, Command::Shield},
-		{"/shownames", 13968, 0, 1, Command::ShowNames}, {"/shownpcnames", 13969, 10, 0, Command::None}, {"/emote", 13970, 0, 1, Command::Emote},
+		{"/shownames", 13968, 0, 1, Command::ShowNames}, {"/shownpcnames", 13969, 10, 0, Command::ShowNpcNames}, {"/emote", 13970, 0, 1, Command::Emote},
 		{":", 13971, 0, 1, Command::Emote}, {"/say", 13972, 0, 1, Command::Say}, {"'", 13973, 0, 1, Command::Say}, {"/tell", 13974, 0, 1, Command::Tell},
 		{"/msg", 13975, 0, 1, Command::Tell}, {"/send", 13976, 0, 1, Command::Tell}, {"/ttell", 13977, 0, 1, Command::TargetTell}, {"/gsay", 13978, 0, 1, Command::Group},
 		{"/shout", 13979, 0, 1, Command::Shout}, {"/auction", 13980, 0, 1, Command::Auction}, {"/ooc", 13981, 0, 1, Command::Ooc},
@@ -2421,6 +2421,16 @@ void FrontEnd::InterpretCommand(const std::string &typed, bool direct)
 	case Command::HitsMode:
 		HitsMode(args);
 		break;
+	case Command::ShowNpcNames: {
+		// /shownpcnames (@004ff9d9, GM level 10): a first word starting "off" (12946, 3 letters) hides the
+		// name sprites of all but players, anything else shows them, until the next zone
+		// (StartWorldDisplay's, by the Display page's setting). TAKP's TurnNPCNameSpritesOn and Off are
+		// each the other's.
+		std::string rest = args;
+		m_npc_name_sprites = !SamePrefix(GrabFirstWord(rest), format(12946, "off", {}), 3);
+		ChatOut(m_npc_name_sprites ? "SHOWNPCNAMES *ON*" : "SHOWNPCNAMES *OFF*", ChatType::Default);
+		break;
+	}
 	case Command::ShowGrass: {
 		// /showgrass (@004faa05): "on" or "off", the whole of it in any case, kept as it changes;
 		// anything else says how and what it is. (13180, "after zoning", is for before we're in one.)

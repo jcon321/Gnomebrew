@@ -409,6 +409,7 @@ private:
 	int m_music_volume = 10, m_sound_volume = 10; // DAT_00798afc and b00 ([Sound] MusicVolume, SoundVolume)
 	// The Display page's (eqOptions1.opt and eqclient.ini in eqgame; my-client.ini's [Defaults]
 	// here, the windows' fades in the layout's [Main]).
+	bool m_npc_name_sprites = true; // DAT_0063d6cc: m_npc_names, or /shownpcnames's until the next zone
 	bool m_pc_names = true, m_npc_names = true; // __PCNames, DAT_00798af8: the name sprites over players', NPCs' heads
 	bool m_level_of_detail = true;              // DAT_00798ae8 (s3dSetDynamicLOD: not ours)
 	int m_sky = 2;                              // DAT_00798ae0: 0 off, 1 one layer, 2 two (eqgame's 1; ours both)

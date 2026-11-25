@@ -189,7 +189,7 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 				return std::clamp(f, low, high);
 			};
 			m_pc_names = number("Defaults", "PCNames", 1, 0, 1) == 1;
-			m_npc_names = number("Defaults", "NPCNames", 1, 0, 1) == 1;
+			m_npc_names = m_npc_name_sprites = number("Defaults", "NPCNames", 1, 0, 1) == 1;
 			m_level_of_detail = number("Defaults", "LevelOfDetail", 1, 0, 1) == 1;
 			m_sky = number("Defaults", "Sky", 2, 0, 2); // both layers to start with (eqgame: 1)
 			m_particle_density = number("Defaults", "ParticleDensity", 3, 0, 3); // 3
@@ -2095,7 +2095,7 @@ void FrontEnd::BuildNameSprites(uint64_t now_ms)
 			spawn = &it->second;
 		}
 		// SetNameSpriteState's state: players' (us too) with Show PC Names, the rest with Show NPC Names.
-		if (spawn->npc == 0 ? !m_pc_names : !m_npc_names)
+		if (spawn->npc == 0 ? !m_pc_names : !m_npc_name_sprites)
 			continue;
 		std::string text = NameSpriteText(*spawn, m_config.show_names, m_zone.Guilds(), m_ui.eqstr, targeted,
 			m_zone.Profile().zone_id == 151);
@@ -5300,7 +5300,7 @@ void FrontEnd::SetDisplayOption(OptionsWindow::Host::Display setting, float valu
 		SaveSetting("Defaults", "PCNames", m_pc_names ? 1 : 0);
 		break;
 	case Display::NPCNames: // TAKP's TurnNPCNameSpritesOff (which turns them on) / On
-		m_npc_names = value != 0;
+		m_npc_names = m_npc_name_sprites = value != 0;
 		SaveSetting("Defaults", "NPCNames", m_npc_names ? 1 : 0);
 		break;
 	case Display::LevelOfDetail:
@@ -5759,6 +5759,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			m_knocked_out = false; // a new zone's StunnedState is the profile's: not knocked out
 			m_hidden_corpses.clear();
 			m_safelock.clear(); // StartWorldDisplay
+			m_npc_name_sprites = m_npc_names; // and its TurnNPCNameSprites
 			m_cycle_index = -1;    // Zeal's CycleTarget::on_zone
 			m_toggle_target = 0; // CEverQuest_EnterZone
 			m_duel.Reset();      // CEverQuest_EnterZone

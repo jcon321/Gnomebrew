@@ -865,12 +865,11 @@ no rules of its own.
     (@004f3ddb, `CEverQuest_Surname`; the same), /safelock (@004ff689; it leaves the window's
     close box alone, where `EverQuest_wndproc`'s WM_CLOSE is /quit, refused while locked or frozen) and
     /hotbutton (@004ff36a, `RegisterHotButton`), /mousespeed (@004f9e87; the cursor scaled by the
-    host, not checked on Windows), /hitsmode (@00500373, `FrontEnd::HitsMode`) and /clearhits (@00500dba), /dynamiclights (@004fda22),
+    host, not checked on Windows), /hitsmode (@00500373, `FrontEnd::HitsMode`) and /clearhits (@00500dba), /shownpcnames (@004ff9d9), /dynamiclights (@004fda22),
     /showspelleffects (@004f9f4d), /viewport (@004ffb00; the GPU renderer's not checked on Windows) and /showgrass
     (@004faa05).
     Still to do:
-    - /facepick (23), /mp3, /music and /gems (34),
-      /shownpcnames (9).
+    - /facepick (23), /mp3, /music and /gems (34).
     - The chat channels, all through `CEverQuest::ChatServerMessage` (@00524de9) to the chat
       server the world names (`OP_SetChatServer`; `ChatServerConnect` @00524cae,
       `ChatServerGiveTime` @00524885 from `DoMainLoop`, `CshOnMessage` @00524b2c,
@@ -1015,9 +1014,7 @@ no rules of its own.
    (`ZoneView::DrawNameSprites`). A Bazaar trader's "Trader " (5503) in the Bazaar, in place of an
    AA title, and its 0x40ffff (SetNameSpriteState, SetNameSpriteTint) are done. Still to do:
    the names eqgame hides in some animations (skeletons, gargoyles and mimics lying or feigning:
-   animations 0x10, 0x21, 0x26), `/shownpcnames` (@004ff9d9, GM level 10: "off" is
-   `CDisplay::TurnNPCNameSpritesOff` @004b14a4, anything else `TurnNPCNameSpritesOn` @004b14da, said
-   as "SHOWNPCNAMES *OFF*" or "*ON*"), and the guild list in packet logs (replays show "Unknown
+   animations 0x10, 0x21, 0x26), and the guild list in packet logs (replays show "Unknown
    Guild"). Zeal's raid shownames isn't the base client's. An HP
    bar over heads isn't eqgame's; leave it to an option if ever. Character select's name is still
    drawn on the 2D canvas (`DrawNameSprite`) at the model's top, not the head point. A 1-2 pixel

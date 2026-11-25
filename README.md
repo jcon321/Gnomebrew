@@ -910,7 +910,8 @@ effects landing on us, `/viewport` with snapshots, and `/showgrass`; `keys` runs
 commands that only show in the view, the chat line or a file (Take a screenshot, its BMPs in
 OUTDIR; Toggle mouse look; Center view in each view; Use centerscreen on the first few spawns; the
 netstat from made-up stats; the clip plane keys; the chat line's caret keys, the chat's page keys and
-Toggle help window on Ctrl+H, put in OUTDIR/my-client.ini; `/hitsmode`'s usage and what it keeps); `mouse` works the options' Mouse page,
+Toggle help window on Ctrl+H, put in OUTDIR/my-client.ini; `/hitsmode`'s usage and what it keeps;
+`/shownpcnames`, snapshots of an NPC's name); `mouse` works the options' Mouse page,
 printing what it shows and keeps, and how far a move with the right button held turns and pitches us)
 and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,
 opens, minimizes, resizes and closes windows (the layout goes to OUTDIR), types into the chat window
@@ -2806,6 +2807,11 @@ details and the nearest spawns at the top left and the radar at the top right.
   (-1 with none given: its check can't be true). Nothing's said. With the new UI, `CEverQuest`'s
   constructor puts the modes at 1 and `HandleMyHitsMode` and the others go by the chat window's Hit
   Modes, so none of it shows. **/clearhits** (@00500dba, `do_clearhits`) empties those windows' lines.
+- **/shownpcnames** (@004ff9d9, GM level 10): a first word starting "off" (`UTF8_strnicmp` 12946 over 3
+  letters) says "SHOWNPCNAMES *OFF*" and hides everyone's name sprites but players', anything else
+  "SHOWNPCNAMES *ON*" and shows them (both literal, 0x111). It sets `DAT_0063d6cc`, not the Display page's
+  Show NPC Names (`DAT_00798af8`), which `StartWorldDisplay` goes by again in the next zone.
+  `TurnNPCNameSpritesOn` (@004b14da) and `Off` (@004b14a4) are named the wrong way round.
 - **/viewport** (@004ffb00): "reset" anywhere in the line, or x, y, width and height (each `is_number`,
   none under 0), makes the 3D view that rectangle of the window: the size held to the window's, then
   x and y moved back for it to fit (`__ScreenX`, `__ScreenY`, `DAT_0079854c` and `DAT_0079854e` the

@@ -4374,8 +4374,17 @@ namespace
 			printf("[preview] used %s (type %d class %d race %d): target %d of %d\n", spawn.name.c_str(), spawn.npc,
 				spawn.class_id, spawn.race, frontend.Target(), id);
 			chat();
-			if (used == 1)
+			if (used == 1) {
 				h.Snapshot("k2-use");
+				// /shownpcnames, not a GM and as one: the NPC's name over its head off and on.
+				say("/shownpcnames off");
+				frontend.ZoneForTests().EditSelf().gm = 1;
+				for (const char *word : {"off", "", "OFFICE", "on"}) {
+					say(std::string("/shownpcnames ") + word);
+					h.Snapshot(std::string("k4-names-") + (*word ? word : "nothing"));
+				}
+				frontend.ZoneForTests().EditSelf().gm = 0;
+			}
 		}
 		return 0;
 	}
