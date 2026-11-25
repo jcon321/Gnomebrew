@@ -29,6 +29,7 @@ namespace
 		ChatFontSize, Language, Note, TrackPlayers, TrackSort, TrackFilter, Help, BugReport, Feedback, Petition, Report,
 		Discipline, Surname, SafeLock, HotButton, MouseSpeed, DynamicLights, ShowSpellEffects, Viewport, ShowGrass,
 		HitsMode, ShowNpcNames, FacePick,
+		Debug, // ours
 	};
 
 	struct CommandEntry
@@ -135,6 +136,8 @@ namespace
 		{"/raidinvite", 5090, 0, 0, Command::RaidInvite}, {"/raiddecline", 5091, 0, 0, Command::RaidDecline}, {"/raidaccept", 5092, 0, 0, Command::RaidAccept},
 		{"/raiddisband", 5093, 0, 0, Command::RaidDisband}, {"/setloottype", 5097, 0, 0, Command::SetLootType}, {"/addraidlooter", 5098, 0, 0, Command::AddRaidLooter},
 		{"/removeraidlooter", 5099, 0, 0, Command::RemoveRaidLooter}, {"/rsay", 5110, 0, 0, Command::RaidSay}, {"/quit", 0, 0, 0, Command::Quit},
+		// Ours, after eqgame's, so no abbreviation of theirs changes.
+		{"/debug", 0, 0, 0, Command::Debug},
 	};
 
 
@@ -2417,6 +2420,9 @@ void FrontEnd::InterpretCommand(const std::string &typed, bool direct)
 		ChatOut(m_dynamic_lights ? format(13268, "Dynamic Lights will be *ON* the next time you zone.", {})
 		                         : format(13269, "Dynamic Lights will be *OFF* the next time you zone.", {}),
 			ChatType::Default);
+		break;
+	case Command::Debug:
+		ToggleDebugMenu(); // ours: the debug menu
 		break;
 	case Command::FacePick:
 		ActivateFacePick(); // /facepick (@004fffcb): ExecuteCmd(210, 1, 0)

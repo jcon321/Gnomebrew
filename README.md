@@ -283,7 +283,7 @@ WeatherSounds=1
   packets arriving when they did (spawns, chat, doors, weather...). You can run around; what you send
   goes nowhere. When the log runs out you stay in the zone. Camping logs out when its timer runs, and
   zone lines are turned down. The console client and `frontend_preview` play the same files.
-- The rest of `[Debug]` is the debug menu's (F11): whether it's open, the stat card's folded
+- The rest of `[Debug]` is the debug menu's (`/debug`): whether it's open, the stat card's folded
   sections, its RENDER toggles and vision, and its SOUND switches. They're saved as you change
   them in the menu.
 - `[TextColors]` is optional: the chat's text colors, keyed as eqgame's (`User_<n>_Red`,
@@ -650,7 +650,9 @@ additions of ours, or ones taken from TAKP's eqgame.dll or Zeal rather than stoc
   Single Layer.
 - **Look up and Look down** tilt the view 5 degrees a press and keep going with Windows' key repeat;
   eqgame's `ProcessControls` speeds the tilt up while the key's held.
-- **Debug menu** (F11, ahead of the keymap's Toggle netstat): the stat card with its folding sections, the 2D radar, the RENDER toggles
+- **Debug menu** (`/debug`, a command eqgame doesn't have, after its own in the table so their
+  abbreviations stay; not in `/help`): the stat card with its folding sections, the 2D radar, the
+  RENDER toggles
   (wireframe, no fog, collision walls and our sphere, floor marker, no occlusion culling, no clip plane, no
   weather effects, Luclin spell effects, VSync, vision) and the SOUND switches, kept in `[Debug]`.
 - **Packet record and replay:** `RecordPackets=1` writes each zone session to an `.eqr`, and
@@ -908,8 +910,8 @@ commands, unlocked, and locked again with the right button down, `/hotbutton`'s 
 `/mousespeed`, `/dynamiclights` with a torch's light taken in hand and put away, `/showspelleffects` with old
 effects landing on us, `/viewport` with snapshots, and `/showgrass`; `keys` runs the keymap's
 commands that only show in the view, the chat line or a file (Take a screenshot, its BMPs in
-OUTDIR; Toggle mouse look; Center view in each view; Use centerscreen on the first few spawns; the
-netstat from made-up stats; the clip plane keys; the chat line's caret keys, the chat's page keys and
+OUTDIR; Toggle mouse look; Center view in each view; Use centerscreen on the first few spawns; `/debug` and
+F11; the netstat from made-up stats; the clip plane keys; the chat line's caret keys, the chat's page keys and
 Toggle help window on Ctrl+H, put in OUTDIR/my-client.ini; `/hitsmode`'s usage and what it keeps;
 `/shownpcnames`, snapshots of an NPC's name); `facepick` is `/facepick` with the Luclin models, refused and
 then each button, Cancel, Accept and Escape; `mouse` works the options' Mouse page,
@@ -2006,9 +2008,8 @@ details and the nearest spawns at the top left and the radar at the top right.
   others theirs to 0.001, looking at us. Look up and down and Pitch camera up and down are let go
   (`DAT_007ce088`, `8c`, `218`, `21c`) and the look speeds go to 0. Our chase camera isn't view 2: it
   goes back to its own level.
-- **Toggle netstat** (`ExecuteCmd` 30, F11; ours takes F11 for the debug menu first, see Custom
-  changes): in control, `__NetStatusToggle`, which `SetDefaultGameValues` turns on. While it's on
-  `RealRender_World` calls `DrawNetStatus` (@0054d3ae) when `connection_get_perf_stats`' last arrival
+- **Toggle netstat** (`ExecuteCmd` 30, F11): in control, `__NetStatusToggle`, which
+  `SetDefaultGameValues` turns on. While it's on `RealRender_World` calls `DrawNetStatus` (@0054d3ae) when `connection_get_perf_stats`' last arrival
   has changed since the last time (CDisplay+0x2878) or is over 1 s old, and puts its 128x32 overlay up
   every frame, 5 in from the 3D view's corner, over the windows; not in `__ScreenMode` 3. The texts
   (Arial 14, `WriteTextHD2`) are deferred, so they show only in the frames it runs:

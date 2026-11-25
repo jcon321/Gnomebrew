@@ -1,6 +1,6 @@
 #pragma once
 
-// The debug menu: our own overlay in the zone, not part of eqgame's UI. F11 toggles it.
+// The debug menu: our own overlay in the zone, not part of eqgame's UI. /debug toggles it.
 //   Top left, the stat card, in sections that a click on their title folds away:
 //     the zone and Norrath's clock (or the camp countdown), and our character;
 //     PERFORMANCE frame rate, world render time, triangles, models;

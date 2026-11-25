@@ -6569,6 +6569,12 @@ void FrontEnd::SaveScreenshot(const uint32_t *pixels, int width, int height, int
 	Log((Screenshot::WriteBmp(path, pixels, width, height, stride) ? "screenshot: " : "can't write ") + path);
 }
 
+void FrontEnd::ToggleDebugMenu()
+{
+	m_debug.open = !m_debug.open;
+	SaveDebugSettings();
+}
+
 void FrontEnd::ActivateFacePick()
 {
 	// ExecuteCmd 210: with Luclin or Planes of Power (Expansions 0xc) or as a GM, on a Luclin model
@@ -7508,12 +7514,6 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 	// The open spellbook's page keys (HandleKeys, ahead of the movement keys) and Delete.
 	if (m_spell_book.Key(event.key, m_now_ms))
 		return;
-	// F11 is the debug menu's, ahead of the keymap (ours: the keymap's Toggle netstat has it too).
-	if (event.key == InputEvent::Key::F11) {
-		m_debug.open = !m_debug.open;
-		SaveDebugSettings();
-		return;
-	}
 	switch (event.key) {
 	case InputEvent::Key::Enter:
 		// ProcessKeyDown's Enter: ExecuteCmd 0xce, the active chat window's input line.
@@ -7659,7 +7659,7 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 	if (world)
 		pieces.push_back({HelpPiece, [this, width, height](Canvas &c) {
 			std::string help = std::string("Arrows/WASD move   Space jump   Ctrl+R ") + (m_run ? "walk" : "run") +
-			                   "   Right drag look   Wheel zoom   F9 camera   F11 debug   Enter chat";
+			                   "   Right drag look   Wheel zoom   F9 camera   /debug menu   Enter chat";
 			TextSize size = m_text.Measure(help, FontSize::Small);
 			m_text.Draw(c, width - size.w - 10, height - size.h - 8, help, FontSize::Small, ZoneGrey);
 		}});

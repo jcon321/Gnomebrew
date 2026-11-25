@@ -32,7 +32,7 @@ namespace
 			"GDI, about 60 fps. d3d11 falls back to software when Direct3D 11 or d3dcompiler_47.dll isn't\n"
 			"there (my-client.log says why). --renderer overrides it."},
 		{"Display", "VSync", "1",
-			"1: wait for the monitor's refresh (d3d11). 0: run as fast as it can. The debug menu (F11)\n"
+			"1: wait for the monitor's refresh (d3d11). 0: run as fast as it can. The debug menu (/debug)\n"
 			"toggles it, kept on exit."},
 
 		{"Sound", "Sound", "1", "0: no sound at all (eqclient.ini's Sound=FALSE)."},
@@ -193,7 +193,7 @@ namespace
 			"1: each zone session's packets go to replays\\<character>-<time>.eqr next to the exe, to\n"
 			"play back with --replay."},
 		{"Debug", "MenuOpen", "1",
-			"1: the debug menu (F11) open, its stat card and radar over the zone. This key and the ones\n"
+			"1: the debug menu (/debug) open, its stat card and radar over the zone. This key and the ones\n"
 			"below are the menu's, kept as they change in it."},
 		{"Debug", "Folded", "ServerSync,Camera,Packets,Zone",
 			"The stat card's sections folded away, any of Performance, Movement, ServerSync, Camera,\n"

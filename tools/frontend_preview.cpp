@@ -203,7 +203,7 @@ namespace
 	// OP_Damage; the HP the zone sends back).
 	int PassageTest(FrontEnd &frontend, Harness &h)
 	{
-		h.Key(InputEvent::Key::F11);
+		frontend.ToggleDebugMenu();
 		size_t chat_seen = frontend.Chat().Lines().size();
 		auto chat = [&] {
 			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
@@ -254,7 +254,7 @@ namespace
 	int ReportsTest(FrontEnd &frontend, Harness &h)
 	{
 		WindowManager &windows = frontend.Windows();
-		h.Key(InputEvent::Key::F11); // the debug menu out of the way
+		frontend.ToggleDebugMenu(); // the debug menu out of the way
 		size_t chat_seen = frontend.Chat().Lines().size();
 		auto chat = [&](bool print = true) {
 			size_t n = 0;
@@ -351,7 +351,7 @@ namespace
 	{
 		WindowManager &windows = frontend.Windows();
 		const ZoneSession &zone = frontend.Zone();
-		h.Key(InputEvent::Key::F11); // the debug menu out of the way
+		frontend.ToggleDebugMenu(); // the debug menu out of the way
 		size_t chat_seen = frontend.Chat().Lines().size();
 		auto chat = [&] {
 			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
@@ -521,7 +521,7 @@ namespace
 	{
 		const ZoneSession &zone = frontend.Zone();
 		WindowManager &windows = frontend.Windows();
-		h.Key(InputEvent::Key::F11);
+		frontend.ToggleDebugMenu();
 		size_t chat_seen = frontend.Chat().Lines().size();
 		auto chat = [&] {
 			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
@@ -735,7 +735,7 @@ namespace
 	int DuelTest(FrontEnd &frontend, Harness &h)
 	{
 		const ZoneSession &zone = frontend.Zone();
-		h.Key(InputEvent::Key::F11);
+		frontend.ToggleDebugMenu();
 		size_t chat_seen = frontend.Chat().Lines().size();
 		auto chat = [&] {
 			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
@@ -809,7 +809,7 @@ namespace
 	int SkillsTest(FrontEnd &frontend, Harness &h)
 	{
 		const ZoneSession &zone = frontend.Zone();
-		h.Key(InputEvent::Key::F11);
+		frontend.ToggleDebugMenu();
 		size_t chat_seen = frontend.Chat().Lines().size();
 		auto chat = [&] {
 			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
@@ -880,7 +880,7 @@ namespace
 	{
 		WindowManager &windows = frontend.Windows();
 		const ZoneSession &zone = frontend.Zone();
-		h.Key(InputEvent::Key::F11);
+		frontend.ToggleDebugMenu();
 		size_t chat_seen = frontend.Chat().Lines().size();
 		auto chat = [&] {
 			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
@@ -1053,7 +1053,7 @@ namespace
 	int MultilineTest(FrontEnd &frontend, Harness &h)
 	{
 		WindowManager &windows = frontend.Windows();
-		h.Key(InputEvent::Key::F11); // the debug menu out of the way
+		frontend.ToggleDebugMenu(); // the debug menu out of the way
 		windows.Show("BookWindow", true);
 		windows.Raise("BookWindow");
 		h.RunUntil([] { return false; }, 200);
@@ -1144,7 +1144,7 @@ namespace
 		WindowManager &windows = frontend.Windows();
 		const ChatManager &chats = frontend.Chats();
 		ZoneSession &inject_to = frontend.ZoneForTests();
-		h.Key(InputEvent::Key::F11); // the debug menu out of the way
+		frontend.ToggleDebugMenu(); // the debug menu out of the way
 		h.RunUntil([] { return false; }, 300);
 		auto state = [&](const char *when) {
 			printf("[preview] %s: %d slots, active %d, locked %d, map say %d tell %d\n", when, chats.Count(),
@@ -1359,7 +1359,7 @@ namespace
 			printf("[preview] %s: at %.1f %.1f %.1f (server x y z) heading %.1f, climbing %d\n", what, m.x, m.y, m.z,
 				m.heading, view->Climbing() ? 1 : 0);
 		};
-		h.Key(InputEvent::Key::F11);
+		frontend.ToggleDebugMenu();
 		h.RunUntil([] { return false; }, 500);
 		// Far away, then beside its top.
 		printf("[preview] get on from here: %d\n", view->GetOnLadder(*ladder));
@@ -1399,7 +1399,7 @@ namespace
 				wnd && windows.Shown("BreathWindow") ? 1 : 0, gauge, frontend.Values().air_supply,
 				frontend.Values().max_air_supply, frontend.Values().CurHp());
 		};
-		h.Key(InputEvent::Key::F11);
+		frontend.ToggleDebugMenu();
 		h.RunUntil([] { return false; }, 1500);
 		chat();
 		state("breathing");
@@ -1467,7 +1467,7 @@ namespace
 			printf("[preview] dialog shown %d, OK %d, Yes %d: %s\n", windows.Shown("ConfirmationDialogBox") ? 1 : 0,
 				ok && ok->visible ? 1 : 0, yes && yes->visible ? 1 : 0, text ? text->text.c_str() : "");
 		};
-		h.Key(InputEvent::Key::F11);
+		frontend.ToggleDebugMenu();
 		run(500);
 		printf("[preview] alarm window shown %d\n", windows.Shown(AlarmWindow::Screen) ? 1 : 0);
 		h.Snapshot("alarm");
@@ -1507,7 +1507,7 @@ namespace
 	int SkinTest(FrontEnd &frontend, Harness &h, const std::string &eq_dir)
 	{
 		WindowManager &windows = frontend.Windows();
-		h.Key(InputEvent::Key::F11);
+		frontend.ToggleDebugMenu();
 		auto chat_all = [&] {
 			for (const auto &line : frontend.Chat().Lines())
 				printf("[preview] chat: %s\n", line.text.c_str());
@@ -1657,7 +1657,7 @@ namespace
 				help.Place(), help.Pages(), back && back->enabled ? 1 : 0, d ? d->stml_links.size() : 0,
 				d ? d->stml_link_rgb : 0, d ? d->stml_mlink_rgb : 0, d ? d->stml_rows.size() : 0, start.c_str());
 		};
-		h.Key(InputEvent::Key::F11);
+		frontend.ToggleDebugMenu();
 		windows.Show(HelpWindow::Screen, true);
 		windows.Raise(HelpWindow::Screen);
 		h.RunUntil([] { return false; }, 400);
@@ -1753,7 +1753,7 @@ namespace
 			frontend.OnEvent({InputEvent::Type::MouseUp, x, y});
 			run(300);
 		};
-		h.Key(InputEvent::Key::F11);
+		frontend.ToggleDebugMenu();
 		run(500);
 		const ZoneProfile &me = zone.Profile();
 		printf("[preview] class %d, level %d, tracking %d, time type %d\n", me.class_id, me.level, me.skills[53],
@@ -1863,7 +1863,7 @@ namespace
 			inject_to.InjectReplayPacket(ZoneOp::InspectAnswer, body.data(), body.size());
 			run(400);
 		};
-		h.Key(InputEvent::Key::F11); // the debug menu out of the way
+		frontend.ToggleDebugMenu(); // the debug menu out of the way
 		run(500);
 		// Someone else, the nearest other spawn, and one far off.
 		uint16_t near_id = 0, far_id = 0;
@@ -2022,7 +2022,7 @@ namespace
 				rows("FriendsList").c_str(), rows("IgnoreList").c_str(), enabled("AddButton"), enabled("DeleteButton"),
 				enabled("IgnoreAddButton"), enabled("IgnoreDeleteButton"));
 		};
-		h.Key(InputEvent::Key::F11); // the debug menu out of the way
+		frontend.ToggleDebugMenu(); // the debug menu out of the way
 		run(500);
 		for (const char *line : {"/ignore", "/ignore Somebody", "/ignore Someone_Else", "/ignore"})
 			type(line);
@@ -2167,7 +2167,7 @@ namespace
 			chat();
 		};
 		ZoneSession &inject_to = frontend.ZoneForTests();
-		h.Key(InputEvent::Key::F11); // the debug menu out of the way
+		frontend.ToggleDebugMenu(); // the debug menu out of the way
 		printf("[preview] %s\n", (last = state()).c_str());
 		watch(seconds * 1000, true);
 		if (!inject)
@@ -2904,7 +2904,7 @@ namespace
 			chat();
 		};
 		windows.Show("PetInfoWindow", true);
-		h.Key(InputEvent::Key::F11); // the debug menu out of the way
+		frontend.ToggleDebugMenu(); // the debug menu out of the way
 		printf("[preview] window up: %s\n", (last = state()).c_str());
 		uint64_t start = NowMs();
 		h.RunUntil([&] { return zone.MyPetId() != 0xffff; }, seconds * 1000);
@@ -2989,7 +2989,7 @@ namespace
 		}
 		// Riding: forward for 5 s (SetAccel's 0.02 a tick up to the horse's run speed), then let go
 		// (0.03 down), each half second.
-		h.Key(InputEvent::Key::F11); // the debug menu out of the way
+		frontend.ToggleDebugMenu(); // the debug menu out of the way
 		ZoneView *view = frontend.ZoneScene();
 		auto speeds = [&](const char *when, int halves) {
 			for (int i = 0; i < halves; ++i) {
@@ -3024,7 +3024,7 @@ namespace
 		WindowManager &windows = frontend.Windows();
 		const ZoneSession &zone = frontend.Zone();
 		const Group &group = frontend.GroupState();
-		h.Key(InputEvent::Key::F11);
+		frontend.ToggleDebugMenu();
 		size_t chat_seen = frontend.Chat().Lines().size();
 		auto chat = [&] {
 			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
@@ -3187,7 +3187,7 @@ namespace
 	{
 		WindowManager &windows = frontend.Windows();
 		const ZoneSession &zone = frontend.Zone();
-		h.Key(InputEvent::Key::F11);
+		frontend.ToggleDebugMenu();
 		size_t chat_seen = frontend.Chat().Lines().size();
 		auto chat = [&] {
 			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
@@ -3397,7 +3397,7 @@ namespace
 		WindowManager &windows = frontend.Windows();
 		const ZoneSession &zone = frontend.Zone();
 		const Raid &raid = frontend.RaidState();
-		h.Key(InputEvent::Key::F11);
+		frontend.ToggleDebugMenu();
 		size_t chat_seen = frontend.Chat().Lines().size();
 		auto chat = [&] {
 			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
@@ -3614,7 +3614,7 @@ namespace
 		WindowManager &windows = frontend.Windows();
 		const ZoneSession &zone = frontend.Zone();
 		ZoneView *view = frontend.ZoneScene();
-		h.Key(InputEvent::Key::F11); // the debug menu out of the way
+		frontend.ToggleDebugMenu(); // the debug menu out of the way
 		Rect area = frontend.ScreenArea();
 		auto press = [&](int x, int y) {
 			frontend.OnEvent({InputEvent::Type::MouseMove, area.x + x, area.y + y});
@@ -3852,7 +3852,7 @@ namespace
 			printf("[preview] no guildmaster of class %d in the zone\n", me.class_id + 16);
 			return 1;
 		}
-		h.Key(InputEvent::Key::F11);
+		frontend.ToggleDebugMenu();
 		for (const char *screen : {"InventoryWindow", "MainChat"})
 			windows.Show(screen, false);
 		int x = 0, y = 0;
@@ -3994,7 +3994,7 @@ namespace
 		}
 		uint16_t merchant_id = merchant->id;
 		printf("[preview] merchant %s (%d), %.0f away\n", merchant->name.c_str(), merchant_id, best);
-		h.Key(InputEvent::Key::F11); // the debug menu (open by default) out of the way
+		frontend.ToggleDebugMenu(); // the debug menu (open by default) out of the way
 		for (const char *screen : {"InventoryWindow", "MainChat"})
 			windows.Show(screen, false);
 		windows.MoveTo("MainChat", frontend.ScreenWidth() - 400, 10); // clear of the shop's Done
@@ -4256,6 +4256,23 @@ namespace
 			chat();
 		}
 
+		// /debug, the menu closed and open again by its place in the ini.
+		for (int i = 0; i < 2; ++i) {
+			say("/debug");
+			h.Snapshot(i ? "k2-debug-again" : "k2-debug");
+			IniFile ini;
+			ini.Load(settings_ini);
+			printf("[preview] [Debug] MenuOpen=%s\n", ini.Get("Debug", "MenuOpen", "-").c_str());
+		}
+		say("/deb");
+		say("/deb");
+
+		// F11 as the host sends it (its key and scan code): Toggle netstat, not the debug menu.
+		h.Key(InputEvent::Key::F11);
+		printf("[preview] netstat after F11: %s\n", frontend.NetStatusForTests() ? "on" : "off");
+		h.Key(InputEvent::Key::F11);
+		printf("[preview] netstat after F11: %s\n", frontend.NetStatusForTests() ? "on" : "off");
+
 		// Toggle netstat (F11), on to start with, from made-up stats (a replay has no connection): some
 		// loss, a lot of it with nothing for 4 s, nothing for 20 s; then off.
 		RdpStats net;
@@ -4429,7 +4446,7 @@ namespace
 				printf("[preview] chat: %s\n", frontend.Chat().Lines()[seen].text.c_str());
 		};
 		run(500);
-		h.Key(InputEvent::Key::F11); // the debug menu out of the way
+		frontend.ToggleDebugMenu(); // the debug menu out of the way
 		const ZoneProfile &profile = zone.Profile();
 		printf("[preview] profile: race %u expansions %x face %u hair %u/%u beard %u/%u eyes %u %u\n", profile.race,
 			profile.expansions, profile.face, profile.hair_style, profile.hair_color, profile.beard, profile.beard_color,
@@ -5280,7 +5297,7 @@ int main(int argc, char **argv)
 			if (const SidlWindow *w = windows.Find(screen))
 				if (const SidlWindow::Control *c = w->Find(control))
 					printf("[preview] tooltip %s.%s: '%s'\n", screen, control, c->tooltip.c_str());
-		h.Key(InputEvent::Key::F11); // the debug menu out of the way
+		frontend.ToggleDebugMenu(); // the debug menu out of the way
 		// A book's window (CBookWnd) with the zone's text for the Quintessence book: its pages as
 		// ParseAndFormatBookContent lays them out, Right and Left, Escape.
 		{
