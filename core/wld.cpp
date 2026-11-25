@@ -3,6 +3,7 @@
 #include "pfs.h"
 
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 
 namespace
@@ -128,7 +129,7 @@ void WldFile::ReadSpriteFrames(const Fragment *sprite, WldMaterial &material) co
 		uint32_t names = Get<uint32_t>(bitmap->offset) + 1;
 		size_t at = bitmap->offset + 4;
 		std::string first;
-		for (uint32_t n = 0; n < names && n < 2; ++n) {
+		for (uint32_t n = 0; n < names && n < 64; ++n) {
 			uint16_t length = Get<uint16_t>(at);
 			at += 2;
 			if (length == 0 || at + length > m_data.size())
@@ -141,10 +142,31 @@ void WldFile::ReadSpriteFrames(const Fragment *sprite, WldMaterial &material) co
 				first = name;
 				material.textures.push_back(name);
 			}
-			else if (i == 0 && name.size() > 6 && name.compare(name.size() - 6, 6, "_LAYER") == 0) {
+			else if (i != 0)
+				break;
+			else if (n == 1 && name.size() > 6 && name.compare(name.size() - 6, 6, "_LAYER") == 0) {
 				name.resize(name.size() - 6);
 				if (name != first)
 					material.layer = name;
+				break;
+			}
+			else if (size_t mark = name.find("_DETAIL"); n == 1 && mark != std::string::npos) {
+				material.detail = name.substr(0, mark);
+				material.detail_tile = mark + 8 < name.size() ? static_cast<uint32_t>(std::atoi(name.c_str() + mark + 8)) : 0;
+				break;
+			}
+			else if (n == 1)
+				material.palette = name;
+			else {
+				// Its number (not read), the tile, another number (read and not used), ", " and the file.
+				size_t one = name.find(','), two = one == std::string::npos ? one : name.find(',', one + 1);
+				size_t three = two == std::string::npos ? two : name.find(',', two + 1);
+				WldMaterial::PaletteEntry entry;
+				if (three != std::string::npos && three + 2 < name.size()) {
+					entry.tile = static_cast<uint32_t>(std::atoi(name.c_str() + one + 1));
+					entry.texture = name.substr(three + 2);
+				}
+				material.palette_entries.push_back(std::move(entry));
 			}
 		}
 	}

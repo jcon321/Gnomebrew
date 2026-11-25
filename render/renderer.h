@@ -33,6 +33,10 @@ namespace render
 		Masked,      // texels with alpha < 128 are skipped
 		Translucent, // blended at Material::opacity, drawn after opaque, back to front
 		Additive,
+		// Over what's solid, in the order drawn, before the sky and the sorted ones: blended by each
+		// vertex's own alpha (its color's top byte), its color as it is (no SetVertexLight), drawn on
+		// what's the same distance away too and writing no depth (eqgfx's detail textures).
+		Detail,
 	};
 
 	struct Material
@@ -165,6 +169,8 @@ namespace render
 		{
 			return Normalize(m_forward + m_right * ((x - m_width * 0.5f) / m_focal) - m_up * ((y - m_height * 0.5f) / m_focal));
 		}
+		// A vertex's light as Draw would have it here (SetVertexLight, SetDynamicLights), 0x00RRGGBB.
+		uint32_t LitColor(const Vertex &vertex) const;
 		// After Finish: whether something drawn is in front of the point (name tags behind walls).
 		virtual bool Occluded(const Vec3 &point) const = 0;
 

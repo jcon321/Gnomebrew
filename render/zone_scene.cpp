@@ -218,6 +218,7 @@ namespace render
 		m_object_count = 0;
 		m_objects.clear();
 		m_doors.clear();
+		m_palettes.clear();
 		m_lighting = lighting;
 		auto progress = [this](float fraction) {
 			if (m_load_progress)
@@ -550,6 +551,8 @@ namespace render
 				found = batch_of.emplace(t.material, target.batches.size()).first;
 				target.batches.push_back(std::move(batch));
 			}
+			if (!info.unlit && (!source.detail.empty() || !source.palette.empty()))
+				AddDetails(source, t.v, out);
 			auto &indices = target.batches[found->second].indices;
 			for (int k = 0; k < 3; ++k) {
 				if (!info.unlit) {
@@ -630,7 +633,119 @@ namespace render
 			DrawStaticMesh(renderer, mesh, now_ms, &m_vertices);
 		}
 		DrawDoors(renderer, now_ms, lights, sun);
+		DrawDetails(renderer, lights, sun);
 		renderer.SetDynamicLights(false, 0);
+	}
+
+	void ZoneScene::AddDetails(const WldMaterial &material, const uint16_t (&v)[3], StaticMesh &mesh)
+	{
+		constexpr float DetailFade = 600, PaletteFade = 400; // renderMeshElement's
+		auto add = [&](const std::string &name, float scale, float fade, uint8_t at) {
+			const Texture *texture = name.empty() ? nullptr : m_textures.Get(name, false);
+			if (texture && scale > 0)
+				mesh.details.push_back({{v[0], v[1], v[2]}, texture, scale, fade, at});
+		};
+		if (!material.detail.empty()) {
+			add(material.detail, static_cast<float>(material.detail_tile), DetailFade, 7);
+			return;
+		}
+		auto [it, added] = m_palettes.try_emplace(material.palette);
+		DetailPalette &palette = it->second;
+		std::vector<uint8_t> file;
+		if (added && m_zone_archive.Read(material.palette, file))
+			ReadBmpIndices(file, palette.width, palette.height, palette.indices);
+		if (palette.indices.empty())
+			return;
+		// The palette's entry at each vertex, its texture coordinates around (the same u and v as the
+		// base texture's); then a triangle for each entry, whole where it's at all three.
+		uint8_t entry[3];
+		for (int k = 0; k < 3; ++k) {
+			const Vertex &vertex = mesh.vertices[v[k]];
+			uint32_t y = static_cast<uint32_t>(static_cast<int64_t>(vertex.v * palette.height)) % palette.height;
+			uint32_t x = static_cast<uint32_t>(static_cast<int64_t>(vertex.u * palette.width)) % palette.width;
+			entry[k] = palette.indices[static_cast<size_t>(y) * palette.width + x];
+		}
+		auto add_entry = [&](uint8_t e, uint8_t at) {
+			if (e < material.palette_entries.size())
+				add(material.palette_entries[e].texture, (material.palette_entries[e].tile & 0xff) * 18.0f, PaletteFade, at);
+		};
+		add_entry(entry[0], static_cast<uint8_t>(1 | (entry[1] == entry[0] ? 2 : 0) | (entry[2] == entry[0] ? 4 : 0)));
+		if (entry[1] != entry[0])
+			add_entry(entry[1], static_cast<uint8_t>(2 | (entry[2] == entry[1] ? 4 : 0)));
+		if (entry[2] != entry[0] && entry[2] != entry[1])
+			add_entry(entry[2], 4);
+	}
+
+	void ZoneScene::DrawDetails(Renderer &renderer, const std::vector<PointLight> &lights, bool sun) const
+	{
+		m_details_drawn = 0;
+		if (!m_details)
+			return;
+		const Camera &camera = renderer.CurrentCamera();
+		const Vec3 &eye = camera.position;
+		const float fog = camera.fog ? camera.fog_end - 10 : 1e9f;
+		constexpr float Farthest = 600;
+		for (auto &[texture, vertices] : m_detail_vertices)
+			vertices.clear();
+		for (size_t m = 0; m < m_meshes.size(); ++m) {
+			const StaticMesh &mesh = m_meshes[m];
+			if (mesh.details.empty() || m_hidden[m])
+				continue;
+			float out_x = std::max({mesh.low.x - eye.x, eye.x - mesh.high.x, 0.0f});
+			float out_y = std::max({mesh.low.y - eye.y, eye.y - mesh.high.y, 0.0f});
+			if (out_x + out_y >= std::min(Farthest, fog) || !renderer.SphereVisible(mesh.center, mesh.radius))
+				continue;
+			// Lit as the mesh itself is.
+			uint32_t mask = 0;
+			for (size_t i = 0; i < lights.size() && i < Renderer::SceneLightLimit; ++i)
+				if (Length(lights[i].position - mesh.center) < lights[i].radius + mesh.radius)
+					mask |= 1u << i;
+			renderer.SetDynamicLights(sun, mask);
+			const Vertex *vertices = m_vertices.vertices.data() + mesh.first_vertex;
+			constexpr uint32_t Unlit = 0xff000000;
+			m_detail_lit.assign(mesh.vertex_count, Unlit);
+			for (const StaticMesh::Detail &detail : mesh.details) {
+				// renderMeshElement: 1 less the distance along x and y together over the fade (or the fog's
+				// end less 10), of 255, 160 at most.
+				float fade = std::min(detail.fade, fog);
+				uint32_t alpha[3];
+				for (int k = 0; k < 3; ++k) {
+					const Vec3 &at = vertices[detail.v[k]].position;
+					float distance = std::fabs(at.x - eye.x) + std::fabs(at.y - eye.y);
+					alpha[k] = (detail.at & (1 << k)) && distance < fade
+					               ? std::min(static_cast<uint32_t>((1 - distance / fade) * 255), 160u) : 0;
+				}
+				if ((alpha[0] | alpha[1] | alpha[2]) == 0)
+					continue;
+				std::vector<Vertex> &to = m_detail_vertices[detail.texture];
+				float u0 = 1e30f, v0 = 1e30f;
+				for (uint32_t index : detail.v) {
+					u0 = std::min(u0, vertices[index].u * detail.scale);
+					v0 = std::min(v0, vertices[index].v * detail.scale);
+				}
+				for (int k = 0; k < 3; ++k) {
+					Vertex vertex = vertices[detail.v[k]];
+					uint32_t &lit = m_detail_lit[detail.v[k]];
+					if (lit == Unlit)
+						lit = renderer.LitColor(vertex);
+					vertex.u = vertex.u * detail.scale - std::floor(u0);
+					vertex.v = vertex.v * detail.scale - std::floor(v0);
+					vertex.color = lit | alpha[k] << 24;
+					to.push_back(vertex);
+				}
+				++m_details_drawn;
+			}
+		}
+		for (const auto &[texture, vertices] : m_detail_vertices) {
+			if (vertices.empty())
+				continue;
+			while (m_detail_indices.size() < vertices.size())
+				m_detail_indices.push_back(static_cast<uint32_t>(m_detail_indices.size()));
+			Material material;
+			material.texture = texture;
+			material.blend = Blend::Detail;
+			renderer.Draw(vertices.data(), vertices.size(), m_detail_indices.data(), vertices.size(), material);
+		}
 	}
 
 	bool ZoneScene::InView(const Vec3 &center, float radius) const

@@ -31,6 +31,18 @@ struct WldMaterial
 	// The bitmap's second name when it's "<file>_LAYER" (the Luclin models' armor over their
 	// skin, t3dDefineBMInfoMIPMapped): drawn over textures[0] by its alpha. Empty: none.
 	std::string layer;
+	// "<file>_DETAIL_<n>": a texture drawn over it near the camera, repeated n times as often.
+	std::string detail;
+	uint32_t detail_tile = 0;
+	// Any other second name: a terrain's detail palette, an 8 bit BMP whose pixels say which of the
+	// entries after it ("<number>, <tile>, <n>, <file>", numbered from 0 here) is drawn over it there.
+	struct PaletteEntry
+	{
+		std::string texture;
+		uint32_t tile = 1;
+	};
+	std::string palette;
+	std::vector<PaletteEntry> palette_entries;
 };
 
 // A DmSpriteDef2 (0x36): the zone's region meshes, objects and body parts.

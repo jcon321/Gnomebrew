@@ -107,6 +107,14 @@ namespace render
 		b = std::min(255.0f, b);
 	}
 
+	uint32_t Renderer::LitColor(const Vertex &vertex) const
+	{
+		float r, g, b;
+		LightVertex(vertex, r, g, b);
+		auto byte = [](float c) { return static_cast<uint32_t>(std::clamp(c, 0.0f, 255.0f)); };
+		return byte(r) << 16 | byte(g) << 8 | byte(b);
+	}
+
 	void DrawLine(uint32_t *pixels, int stride, int width, int height, float x0, float y0, float x1, float y1, uint32_t color)
 	{
 		// Liang-Barsky against the surface, then one pixel a step along the longer axis.

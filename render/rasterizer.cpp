@@ -130,7 +130,7 @@ namespace render
 		const Material &material, bool reuse_vertices)
 	{
 		auto same = [](const Vec3 &a, const Vec3 &b) { return a.x == b.x && a.y == b.y && a.z == b.z; };
-		bool transformed = reuse_vertices && m_view_source == vertices && m_view.size() == vertex_count &&
+		bool transformed = reuse_vertices && material.blend != Blend::Detail && m_view_source == vertices && m_view.size() == vertex_count &&
 		                   m_view_background == m_background && same(m_view_scale, m_light_scale) &&
 		                   same(m_view_add, m_light_add) && same(m_view_base, m_light_base) && m_view_lights == m_light_generation;
 		m_view.resize(vertex_count);
@@ -150,7 +150,14 @@ namespace render
 			out.z = Dot(d, m_forward);
 			out.u = in.u;
 			out.v = in.v;
-			LightVertex(in, out.r, out.g, out.b);
+			out.a = static_cast<float>(in.color >> 24);
+			if (material.blend == Blend::Detail) {
+				out.r = static_cast<float>((in.color >> 16) & 0xff);
+				out.g = static_cast<float>((in.color >> 8) & 0xff);
+				out.b = static_cast<float>(in.color & 0xff);
+			}
+			else
+				LightVertex(in, out.r, out.g, out.b);
 		}
 
 		const float near_z = m_camera.near_plane, far_z = m_camera.far_plane;
@@ -195,6 +202,7 @@ namespace render
 					m.r = a.r + (b.r - a.r) * s;
 					m.g = a.g + (b.g - a.g) * s;
 					m.b = a.b + (b.b - a.b) * s;
+					m.a = a.a + (b.a - a.a) * s;
 				}
 			}
 			for (int i = 1; i + 1 < count; ++i)
@@ -225,6 +233,7 @@ namespace render
 			attr[i][4] = in[i]->g;
 			attr[i][5] = in[i]->b;
 			attr[i][6] = m_fog_scale > 0 && !m_background && material.fog ? std::clamp((in[i]->z - m_camera.fog_start) * m_fog_scale, 0.0f, 1.0f) : 0;
+			attr[i][7] = in[i]->a;
 			far_depth = std::max(far_depth, in[i]->z);
 		}
 
@@ -341,8 +350,8 @@ namespace render
 
 		struct Span
 		{
-			float iw, uw, vw, r, g, b, fog;
-			float diw, duw, dvw, dr, dg, db, dfog;
+			float iw, uw, vw, r, g, b, fog, a;
+			float diw, duw, dvw, dr, dg, db, dfog, da;
 		};
 
 		// Filtered: bilinear (where the texture is magnified); otherwise the nearest texel
@@ -353,7 +362,7 @@ namespace render
 		{
 			float scale = 256.0f / static_cast<float>(1 << level);
 			for (int i = 0; i < count; ++i) {
-				if (Background ? depth[i] == 0 : s.iw > depth[i]) {
+				if (Background ? depth[i] == 0 : Mode == Blend::Detail ? s.iw >= depth[i] : s.iw > depth[i]) {
 					uint32_t c;
 					if (Textured) {
 						float w = 1.0f / s.iw;
@@ -382,7 +391,9 @@ namespace render
 					else
 						c = (static_cast<uint32_t>(s.r) << 16) | (static_cast<uint32_t>(s.g) << 8) | static_cast<uint32_t>(s.b);
 					c = Fog(c, fog_color, static_cast<int>(s.fog * 256));
-					if (Mode == Blend::Translucent)
+					if (Mode == Blend::Detail)
+						pixels[i] = Over(c, pixels[i], static_cast<int>(s.a));
+					else if (Mode == Blend::Translucent)
 						pixels[i] = Over(c, pixels[i], opacity);
 					else if (Mode == Blend::Additive)
 						pixels[i] = Add(c, pixels[i]);
@@ -400,6 +411,8 @@ namespace render
 				s.g += s.dg;
 				s.b += s.db;
 				s.fog += s.dfog;
+				if (Mode == Blend::Detail)
+					s.a += s.da;
 			}
 		}
 
@@ -429,6 +442,8 @@ namespace render
 				return PickSpan<Blend::Translucent>(textured, filtered, background);
 			case Blend::Additive:
 				return PickSpan<Blend::Additive>(textured, filtered, background);
+			case Blend::Detail:
+				return PickSpan<Blend::Detail>(textured, filtered, background);
 			default:
 				return PickSpan<Blend::Opaque>(textured, filtered, background);
 			}
@@ -476,6 +491,8 @@ namespace render
 				s.g = t.a[4] + t.dx[4] * ox + t.dy[4] * oy;
 				s.b = t.a[5] + t.dx[5] * ox + t.dy[5] * oy;
 				s.fog = t.a[6] + t.dx[6] * ox + t.dy[6] * oy;
+				s.a = t.a[7] + t.dx[7] * ox + t.dy[7] * oy;
+				s.da = t.dx[7];
 				s.diw = t.dx[0];
 				s.duw = t.dx[1];
 				s.dvw = t.dx[2];
@@ -495,6 +512,8 @@ namespace render
 				clamp_channel(s.r, s.dr);
 				clamp_channel(s.g, s.dg);
 				clamp_channel(s.b, s.db);
+				if (t.blend == Blend::Detail)
+					clamp_channel(s.a, s.da);
 				float fog_end = s.fog + s.dfog * (xe - xs - 1);
 				if (s.fog < 0 || s.fog > 1 || fog_end < 0 || fog_end > 1) {
 					s.fog = std::clamp(s.fog, 0.0f, 1.0f);
@@ -536,7 +555,7 @@ namespace render
 
 	void Rasterizer::Finish(uint32_t *pixels, int stride, uint32_t clear_color, bool clear)
 	{
-		// Opaque and masked first in draw order, then the background in draw order, then
+		// Opaque and masked first in draw order, the details over them, the background in draw order, then
 		// the rest back to front.
 		auto solid_blend = [](Blend blend) { return blend == Blend::Opaque || blend == Blend::Masked; };
 		m_order.clear();
@@ -544,11 +563,14 @@ namespace render
 			if (!m_triangles[i].background && solid_blend(m_triangles[i].blend))
 				m_order.push_back(i);
 		for (uint32_t i = 0; i < m_triangles.size(); ++i)
+			if (!m_triangles[i].background && m_triangles[i].blend == Blend::Detail)
+				m_order.push_back(i);
+		for (uint32_t i = 0; i < m_triangles.size(); ++i)
 			if (m_triangles[i].background)
 				m_order.push_back(i);
 		size_t solid = m_order.size();
 		for (uint32_t i = 0; i < m_triangles.size(); ++i)
-			if (!m_triangles[i].background && !solid_blend(m_triangles[i].blend))
+			if (!m_triangles[i].background && !solid_blend(m_triangles[i].blend) && m_triangles[i].blend != Blend::Detail)
 				m_order.push_back(i);
 		std::stable_sort(m_order.begin() + solid, m_order.end(),
 			[&](uint32_t a, uint32_t b) { return m_triangles[a].depth > m_triangles[b].depth; });

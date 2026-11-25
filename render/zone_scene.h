@@ -34,6 +34,17 @@ namespace render
 		std::vector<Vertex> vertices; // empty once a ZoneScene has moved them into its StaticVertices
 		size_t first_vertex = 0, vertex_count = 0; // where they went
 		std::vector<Batch> batches;
+		// A triangle drawn again near the camera with a detail texture (renderMeshElement's kinds 3 and
+		// 4): its texture coordinates times `scale`, its vertices (indices into the mesh's) faded by
+		// their distance out to `fade`, those not in `at` (bits 1, 2 and 4) all the way.
+		struct Detail
+		{
+			uint32_t v[3];
+			const Texture *texture;
+			float scale, fade;
+			uint8_t at;
+		};
+		std::vector<Detail> details;
 		bool unlit = false; // full bright (fire): no dynamic lights
 	};
 
@@ -72,6 +83,8 @@ namespace render
 		// The last Draw's meshes in the view and those of them the occlusion culling hid.
 		size_t MeshesInView() const { return m_meshes_in_view; }
 		size_t MeshesHidden() const { return m_meshes_hidden; }
+		size_t DetailsDrawn() const { return m_details_drawn; } // the last Draw's detail triangles
+		void SetDetails(bool on) { m_details = on; }            // the preview's
 		// Highest solid surface at or below `from` (searching down to `from.z - depth`), and how
 		// exposed it is to the ambient light (its vertices' alpha, 1 without colors).
 		// `actor`: the solid spawn (SetActor) that floor is, 0 the zone's; without `actors`, those
@@ -135,6 +148,9 @@ namespace render
 			std::vector<float> &exposure);
 		// An object's meshes from the _obj.s3d actor definition, skinned to its skeleton's rest pose.
 		std::vector<WldMesh> ObjectMeshes(int actor) const;
+		// A triangle's details by its material (renderStaticMesh @10051cf0).
+		void AddDetails(const WldMaterial &material, const uint16_t (&v)[3], StaticMesh &mesh);
+		void DrawDetails(Renderer &renderer, const std::vector<PointLight> &lights, bool sun) const;
 		void DrawDoors(Renderer &renderer, uint64_t now_ms, const std::vector<PointLight> &lights, bool sun) const;
 		void BuildGrid();
 		// The solid triangles (indices into m_collision / 3) a top-down box touches, in order.
@@ -166,7 +182,18 @@ namespace render
 		};
 		std::map<uint16_t, ActorShape> m_actor_shapes;
 		TextureCache m_textures;
+		// The detail palettes' pixels, by file.
+		struct DetailPalette
+		{
+			int width = 0, height = 0;
+			std::vector<uint8_t> indices;
+		};
+		std::map<std::string, DetailPalette> m_palettes;
+		mutable std::map<const Texture *, std::vector<Vertex>> m_detail_vertices; // DrawDetails'
+		mutable std::vector<uint32_t> m_detail_indices, m_detail_lit;
+		mutable size_t m_details_drawn = 0;
 		std::vector<StaticMesh> m_meshes;
+		bool m_details = true;
 		bool m_occlusion_culling = true;
 		std::function<void(float)> m_load_progress;
 		OcclusionBuffer m_occlusion;

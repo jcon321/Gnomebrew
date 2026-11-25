@@ -2776,6 +2776,28 @@ details and the nearest spawns at the top left and the radar at the top right.
   (@1002f260, 0x36) looks at the version (0x10000000): its texture coordinates are two 32-bit floats
   instead of two 16-bit numbers / 256. Checked: every 0x36 of the 21 ends within 3 bytes of its
   fragment's size, all of them load, and we stand on their floors and are in their water and lava.
+- **Detail textures** (`t3dDefineBMInfoMIPMapped` @1000edd0, `WldFile::ReadSpriteFrames`): a 0x03
+  bitmap's second name, when it isn't a `_LAYER`, is either `<file>_DETAIL_<n>` (n `atoi`'d: some
+  cliffs and trails of the newer zones, and of poknowledge and potorment) or a terrain's palette,
+  `<base>PAL.BMP`, with a name for each entry after it, `"<number>, <tile>, <n>, <file>"`: the first
+  number isn't read (they go from 0 as they come) and nothing here uses the third. All 21 of the
+  newer zones' base ground has a palette, 2 to 8 each; no object or item has either.
+  - `renderStaticMesh` (@10051cf0, `UseTnL` and `UseUmbra` on, as by default) draws a triangle with
+    one again (`renderMeshElement` @1006c7f0). Kind 4, `_DETAIL`: with the coordinates times n, out to
+    600. Kind 3, the palette: the 8 bit BMP's pixel at each vertex, rows as they are in the file, at
+    (v * height) and (u * width) (`__ftol`, around); each different entry at the three is drawn once,
+    its tile's low byte * 18 times the coordinates, out to 400, visible only at the vertices that
+    have it. An entry past the list is nothing.
+  - A vertex's alpha is 255 * (1 - d / out), 160 at most, d the distance along x plus along y from the
+    camera and `out` no more than the fog's end less 10; 0 where it hasn't the entry. Its color is the
+    base's own lit color. `flushSpecialEffects` draws them (the bucket marked -1) before the grass and
+    the translucent: the texture times the color over what's there by the vertex's alpha alone
+    (ALPHAOP SELECTARG2), fogged, no depth written.
+  - Ours: `ZoneScene::AddDetails` works the entries out as the zone loads and `DrawDetails` makes the
+    triangles near the camera each frame, as `Blend::Detail`: over what's solid, unsorted, the same
+    depth passing. eqgfx's back faces of a two-sided one fade the other way round (its vertices are
+    taken in reverse); ours don't. The palette's orientation was checked against the base textures:
+    the colors under each entry vary least with the rows as they are.
 - **/mousespeed** (@004f9e87): a number (`is_number`: a sign and digits) goes in `DAT_0079858c` and,
   as typed, in `[Defaults] MousePointerSpeedMod`; anything else says 13165 and 13166; then 13167.
   `CEverQuest::CEverQuest` reads it as 0 when missing, under 0 or over 10. Over 1, `GetMouseInputData`

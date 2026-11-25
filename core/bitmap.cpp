@@ -91,3 +91,29 @@ bool DecodeBmp(const std::vector<uint8_t> &d, Image &image, bool palette_key)
 	}
 	return true;
 }
+
+bool ReadBmpIndices(const std::vector<uint8_t> &file, int &width, int &height, std::vector<uint8_t> &indices)
+{
+	auto get = [&file](size_t at, size_t size) {
+		uint32_t value = 0;
+		for (size_t i = 0; i < size && at + i < file.size(); ++i)
+			value |= static_cast<uint32_t>(file[at + i]) << (8 * i);
+		return value;
+	};
+	if (file.size() < 54 || file[0] != 'B' || file[1] != 'M' || get(28, 2) != 8 || get(30, 4) != 0)
+		return false;
+	width = static_cast<int32_t>(get(18, 4));
+	height = static_cast<int32_t>(get(22, 4));
+	if (height < 0)
+		height = -height;
+	if (width <= 0 || height <= 0 || width > 8192 || height > 8192)
+		return false;
+	size_t start = get(10, 4), stride = (static_cast<size_t>(width) + 3) & ~size_t{3};
+	if (start + stride * height > file.size())
+		return false;
+	indices.resize(static_cast<size_t>(width) * height);
+	for (int y = 0; y < height; ++y)
+		for (int x = 0; x < width; ++x)
+			indices[static_cast<size_t>(y) * width + x] = file[start + stride * y + x];
+	return true;
+}

@@ -40,8 +40,9 @@ namespace render
 			float x, y, z; // view space: x right, y up, z forward
 			float u, v;
 			float r, g, b;
+			float a; // Blend::Detail's, 0..255
 		};
-		static constexpr int Attributes = 7; // 1/z, u/z, v/z, r, g, b, fog
+		static constexpr int Attributes = 8; // 1/z, u/z, v/z, r, g, b, fog, alpha
 		struct ScreenTriangle
 		{
 			float x[3], y[3]; // sorted by y
@@ -69,7 +70,7 @@ namespace render
 		uint32_t m_view_lights = 0; // Renderer::m_light_generation then
 		bool m_view_background = false;
 		std::vector<ScreenTriangle> m_triangles;
-		std::vector<uint32_t> m_order; // opaque in draw order, then translucent back to front
+		std::vector<uint32_t> m_order; // opaque in draw order, the details, the sky, then translucent back to front
 		std::vector<std::vector<uint32_t>> m_bins; // triangle indices per strip
 		std::vector<float> m_depth;
 		std::unique_ptr<Workers> m_workers;

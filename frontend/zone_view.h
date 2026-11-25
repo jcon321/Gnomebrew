@@ -270,6 +270,8 @@ public:
 	// wasn't (DAT_007cf26c).
 	void SetShowGrass(bool on);
 	const render::Grass &Grass() const { return m_grass; }
+	void SetDetails(bool on) { m_zone.SetDetails(on); }            // the preview's: the detail textures
+	size_t DetailsDrawn() const { return m_zone.DetailsDrawn(); } // triangles of them
 	// ShowSpellEffects (DAT_007cf290, /showspelleffects): the old spells.eff effects drawn.
 	void SetShowOldSpellEffects(bool on) { m_spell_effects.SetShowOld(on); }
 	size_t OldSpellEffectCount() const { return m_spell_effects.OldCount(); } // the preview's

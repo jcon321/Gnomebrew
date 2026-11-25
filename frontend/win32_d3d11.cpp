@@ -68,7 +68,7 @@ struct PixelIn
 	float2 uv : TEXCOORD0;
 	float4 color : COLOR0;
 	float depth : TEXCOORD1;
-	float texel_alpha : TEXCOORD2; // Material::texel_alpha: 1 translucent, 2 additive
+	float texel_alpha : TEXCOORD2; // Material::texel_alpha: 1 translucent, 2 additive (3, Blend::Detail, stops at the vertex)
 };
 
 PixelIn SceneVS(VertexIn input)
@@ -92,9 +92,9 @@ PixelIn SceneVS(VertexIn input)
 			}
 		}
 	}
-	output.color = float4(min(shade, 1), light_scale.a);
+	output.color = float4(min(shade, 1), dynamic_lights.w > 2.5 ? input.color.a : light_scale.a);
 	output.depth = dynamic_lights.z > 0 ? -1e6 : z; // clear of the fog's start
-	output.texel_alpha = dynamic_lights.w;
+	output.texel_alpha = dynamic_lights.w > 2.5 ? 0 : dynamic_lights.w;
 	return output;
 }
 
@@ -505,6 +505,8 @@ namespace
 			m_light_add.x / 255.0f, m_light_add.y / 255.0f, m_light_add.z / 255.0f, 0, m_dynamic_sun ? 1.0f : 0.0f,
 			static_cast<float>(m_point_mask), material.fog ? 0.0f : 1.0f, texel_alpha, m_light_base.x / 255.0f, m_light_base.y / 255.0f,
 			m_light_base.z / 255.0f, 0};
+		if (material.blend == render::Blend::Detail)
+			light = {1, 1, 1, 1, 0, 0, 0, 0, 0, 0, material.fog ? 0.0f : 1.0f, 3, 0, 0, 0, 0}; // the vertices' own color and alpha
 		m_batches.push_back(
 			{first, count, m.TextureView(material.texture), material.blend, material.two_sided, m_background, light, pool, buffer});
 		m_triangle_count += count / 3;
@@ -542,11 +544,11 @@ namespace
 		ID3D11DeviceContext *context = m.context.Get();
 		if (!m_state || m_state->blend != state.blend || m_state->background != state.background) {
 			context->PSSetShader(state.blend == render::Blend::Masked ? m.masked_ps.Get() : m.scene_ps.Get(), nullptr, 0);
-			ID3D11BlendState *blend = state.blend == render::Blend::Translucent ? m.blend_alpha.Get()
+			ID3D11BlendState *blend = state.blend == render::Blend::Translucent || state.blend == render::Blend::Detail ? m.blend_alpha.Get()
 			                          : state.blend == render::Blend::Additive  ? m.blend_add.Get()
 			                                                                    : m.blend_opaque.Get();
 			context->OMSetBlendState(blend, nullptr, 0xffffffff);
-			ID3D11DepthStencilState *depth = state.background ? m.depth_background.Get()
+			ID3D11DepthStencilState *depth = state.background || state.blend == render::Blend::Detail ? m.depth_background.Get()
 			                                 : state.Solid()  ? m.depth_write.Get()
 			                                                  : m.depth_test.Get();
 			context->OMSetDepthStencilState(depth, 0);
@@ -611,7 +613,7 @@ namespace
 		m_sorted.clear();
 		for (uint32_t b = 0; b < m_batches.size(); ++b) {
 			const Batch &batch = m_batches[b];
-			if (batch.background || batch.Solid())
+			if (batch.background || batch.Solid() || batch.blend == render::Blend::Detail)
 				continue;
 			for (uint32_t i = batch.first; i < batch.first + batch.count; i += 3) {
 				float depth = -1e30f;
@@ -693,6 +695,9 @@ namespace
 
 			// Opaque and masked, by material.
 			draw_batches(m_grouped, [](const Batch &) { return true; });
+
+			// The details over them, in draw order (the same distance away passes).
+			draw_batches(m_batches, [](const Batch &b) { return !b.background && b.blend == render::Blend::Detail; });
 
 			// The sky, in draw order, only where nothing was drawn: its depth is pinned to the
 			// far plane's 0, which passes only against the cleared 0.

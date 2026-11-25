@@ -18,3 +18,6 @@ struct Image
 // palette_key: for 8-bit images, palette index 0 becomes transparent (alpha 0), which is
 // how the 3D engine masks textures.
 bool DecodeBmp(const std::vector<uint8_t> &file, Image &image, bool palette_key = false);
+
+// An uncompressed 8-bit BMP's palette indices, its rows as they are in the file.
+bool ReadBmpIndices(const std::vector<uint8_t> &file, int &width, int &height, std::vector<uint8_t> &indices);

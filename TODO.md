@@ -1233,15 +1233,6 @@ no rules of its own.
       `EQSwitch::InitializeSwitchColors` (@005214f2, from the door loading code).
     - Type 56's 0x410f (MSG_REQ_HOUSELOCK) is Sony's housing: nothing to do.
 42. **Scenery and model odds and ends**, found in the decompile and not ours:
-    - Detail textures (`t3dDefineBMInfoMIPMapped` @1000edd0): a 0x03 bitmap's further names, of which
-      ours reads only `_LAYER`. `<file>_DETAIL_<n>` (its kind 3, +0x84 the texture, +0x88 the n; some
-      cliffs and trails, in poknowledge and potorment too) and the terrain's palette, in all 21 of
-      the newer WLDs (2 to 8 each, the base ground): `<base>.DDS`, `<base>PAL.BMP`, then
-      `"<index>, <n>, <n>, <file>"` each (a 0x514 byte record at DAT_10203808, `GetDetailPaletteInfo`
-      @10080630). Drawn over the base in a pass of its own near the camera (`renderMeshElement`'s
-      kinds 3 and 4, out to 400 and 600; `renderStaticMesh` @10051cf0, `renderPrimitive` @10066740,
-      `processSpecialEffects` @10053fb0; not traced further). Ours draw the base alone, so that
-      ground is smooth close up.
     - `CDisplay::ReplaceSpecialCloakMaterials` (@004a0d05, from `CDisplay_SwapMaterial`): a
       model's materials named `CLK??06`..`CLK??09` swapped for the one named `CLK` + the actor's
       tag + the rest. `ReplaceCloakMaterials` is ours (robes); check this one against a robed
