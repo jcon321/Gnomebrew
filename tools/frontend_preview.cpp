@@ -2695,6 +2695,53 @@ namespace
 		me.last_name = "Tester";
 		type("/surname Other");
 		me = was;
+
+		// /safelock: locked, the commands, keys, mouse and Escape do nothing, then the wrong password
+		// and the right one; a lock with a button held, which says so each frame.
+		type("/safelock");
+		type("/safelock abcdefghijklmnopqrstuvwxyzabcdef");
+		auto press = [&](uint8_t scan, int ms) {
+			InputEvent key;
+			key.type = InputEvent::Type::Key;
+			key.scan = scan;
+			frontend.OnEvent(key);
+			run(ms);
+			key.type = InputEvent::Type::KeyUp;
+			frontend.OnEvent(key);
+			run(100);
+		};
+		auto place = [&] { return frontend.ZoneScene() ? frontend.ZoneScene()->Movement() : ZoneMovement{}; };
+		auto tries = [&](const char *when) {
+			ZoneMovement from = place();
+			press(0x11, 500); // W
+			ZoneMovement to = place();
+			bool inventory = windows.Shown("InventoryWindow");
+			press(0x17, 100); // I
+			printf("[preview] %s: forward moved %.1f, the inventory key %s\n", when, std::hypot(to.x - from.x, to.y - from.y),
+				windows.Shown("InventoryWindow") == inventory ? "did nothing" : "toggled it");
+			frontend.OnEvent({InputEvent::Type::MouseMove, 321, 123});
+		};
+		tries("unlocked");
+		type("/safelock Se cret");
+		tries("locked");
+		h.Key(InputEvent::Key::Escape);
+		run(200);
+		type("hello");
+		type("/who");
+		type("/quit");
+		type("/safelock");
+		type("/safe wrong");
+		type("/SAFELOCK se CRET");
+		tries("unlocked");
+		h.Key(InputEvent::Key::Enter);
+		h.Key(InputEvent::Key::Up);
+		printf("[preview] history's last: %s\n", frontend.Chat().InputText().c_str());
+		h.Key(InputEvent::Key::Escape);
+		frontend.OnEvent({InputEvent::Type::RightDown, 640, 360});
+		type("/safelock x");
+		frontend.OnEvent({InputEvent::Type::RightUp, 640, 360});
+		type("/safelock x");
+		run(300);
 		return 0;
 	}
 

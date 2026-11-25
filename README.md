@@ -401,7 +401,7 @@ eqgame's `OP_MoveItem`.
   /random, /lootnodrop, /fastdrop, /autosplit, /roleplay, /targetgroupbuff (/tgb), /split, /yell,
   /consent, /duel, /decline, /trader, /bazaar, /loot, /ttell, /charinfo, /movelog, /stopsong, /shield, /quit (/exit), /log, /keys, /dismount,
   /adriver, /sdriver, /attack, /combatmusic, /doability, /rtarget, /inspect, /particledensity,
-  /help, /bugreport, /feedback, /petition, /report, /discipline, /surname, the
+  /help, /bugreport, /feedback, /petition, /report, /discipline, /surname, /safelock, the
   guild commands (see Guilds under In the zone),
   the raid commands (see Raids), /filter, /serverfilter and the socials (/smile, /wave and the
   other 86).
@@ -887,7 +887,8 @@ slot and a bag with an item in it in a general slot, Alt+clicks each slot (the b
 and prints the item display's title and text; `slash` types slash commands and prints what they say
 and send: `/discipline` as each class with nothing, a word it has and one it hasn't, under the
 level and without the expansions, `/surname`'s refusals, its question answered No and Yes and the
-zone's two answers)
+zone's two answers, and `/safelock`'s lock tried with the forward and inventory keys, Escape and
+commands, unlocked, and locked again with the right button down)
 and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,
 opens, minimizes, resizes and closes windows (the layout goes to OUTDIR), types into the chat window
 (a say, commands, /target) and prints what the chat window holds, then stands near the target to
@@ -2695,6 +2696,24 @@ details and the nearest spawns at the top left and the radar at the top right.
   4031 then 4034, the ability's description), or us, 4030; with a name, `DoPercentConvert` then
   `EQPlayer_get_player_partial_name` (nobody: nothing said), or us, 3278. Otherwise OP_Shielding
   (0x424b, {u16 spawn id}: EQPlayer+0x94); the server checks the class, level and its reuse timer.
+- **/safelock** (@004ff689): the line after it, under 32 characters (else 13292), is kept in
+  `DAT_007cf29c` and the interface is locked (13291); locked, the same line (`UTF8_stricmp`) unlocks
+  it (13289) and another says 13290. Nothing typed says 12095 locked, 13287 and 13288 not.
+  `StartWorldDisplay` (each zone) unlocks. While it's locked (`FrontEnd::m_safelock`):
+  - `CEverquest_InterpretCmd` takes only a word starting `/saf` (`strnicmp` 4) and says 12095 for
+    anything else, a `;` line and a social's lines included, so the checks in `allowslashcommand`
+    and /quit only matter to what calls them directly (the window's close box). Text eqgame hands
+    to a command itself still goes: the Hail key's `_hail`, a tap's `_say` and `send_social`.
+  - `CEverquest_ExecuteCmd`'s control flag is off (as with stance 0x66 or StunnedState over 2), so
+    commands 1..74, 78 and 198..200 (Escape) do nothing, pressed or let go, all but 11 Hail, 13
+    Send tell, 15 and 16 the look keys, 18 and 19 the zoom, 21 Toggle UI Display and 59 Reply. The
+    chat's and the window toggles run. Ours keeps Cycle nearest target from running too.
+  - `CEverQuest::ProcessControls` returns at once: no following, mouse look, camera keys or swings,
+    and our speed and turning stay what they were (locked on the run, we run on).
+  - `ProcessMouseEvent` doesn't read the mouse: the cursor stays, nothing's clicked. With a button
+    down as it was locked it says 12095 every frame, since the button is never seen let go.
+  - `CChatWindow::AddHistory` (@004149d4) never keeps a line whose first 4 are 14193's (`/saf`, case
+    and all).
 - **/quit** and **/exit** (@004fa8c5): only with nothing after them. Under /safelock's lock
   (`DAT_007cf29c`) 12095; while we've no control of ourselves (stance 0x66) nothing. Otherwise the
   world connection is closed (`connection_close` 1000) with no camp and no packet,

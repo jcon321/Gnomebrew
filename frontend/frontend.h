@@ -442,7 +442,9 @@ private:
 	// runs, call it off.
 	void StartCamp();
 	// CEverquest_InterpretCmd (chat_commands.cpp): a line typed into the chat window.
-	void InterpretCommand(const std::string &line);
+	// `direct`: what eqgame calls the command's handler for itself (the Hail key's _hail, a tap's
+	// _say and send_social), past InterpretCmd's interface lock.
+	void InterpretCommand(const std::string &line, bool direct = false);
 	// CEverQuest_Consider and PrintConsiderAssessment (@0052d0e6): the zone's answer to /consider.
 	void PrintConsider(const ZoneConsider &consider);
 	// Our target, and the zone told (OP_TargetMouse, or OP_TargetCommand for /target).
@@ -874,6 +876,10 @@ private:
 	std::string m_logout_text;      // why we're going to character select, when it isn't a camp
 	bool m_stunned = false;         // EQ_Character's StunnedState 1 (StunMe)
 	bool m_blind = false;           // ActorInfo+0x18d (SetBlind)
+	// /safelock's password, DAT_007cf29c: the interface locked until it's typed again, or another zone.
+	std::string m_safelock;
+	bool m_left_down = false, m_right_down = false; // the mouse buttons, as last seen (GetMouseInputData)
+	std::vector<InputEvent> m_locked_ups; // buttons let go of while locked, for when we're unlocked
 	bool m_frozen = false;          // EQ_Character's StunnedState 2 (OP_FreezeClientControl)
 	uint64_t m_stun_until_ms = 0;   // ActorInfo's stun timer (+0xc4): 0 not stunned
 	uint64_t m_death_ms = 0;        // ActorInfo's DeathTimer: when we lay down; 1 once told we're going home
@@ -914,6 +920,7 @@ private:
 	GroundItems m_ground;           // dropping and picking up
 	uint64_t m_right_world_ms = 0;  // when the right button went down on the world (0: it didn't)
 	bool m_jump_requested = false;
+	MoveControls m_last_controls; // ZoneControls' last, which go on while the interface is locked
 	bool m_crouch_sent = false; // the stance last sent for a standing jump's wind-up
 	// Mouse drags in the zone: the right button turns the character and tilts the view, the left
 	// button (in the chase view) circles the camera around them, and both run forward. Drags

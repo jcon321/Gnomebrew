@@ -504,9 +504,20 @@ void FrontEnd::OnEvent(const InputEvent &given)
 		m_chat_opened_by_key = false;
 		return;
 	}
+	// ProcessMouseEvent under /safelock's lock: the mouse isn't read at all, so the cursor stays and
+	// the buttons are as they were; what's let go meanwhile is seen once unlocked.
+	if (event.IsMouse() && m_screen == Screen::Zone && !m_safelock.empty() && !m_dialog.open) {
+		if (event.type == InputEvent::Type::MouseUp || event.type == InputEvent::Type::RightUp)
+			m_locked_ups.push_back(event);
+		return;
+	}
 	if (event.IsMouse()) {
 		m_mouse_x = event.x;
 		m_mouse_y = event.y;
+		if (event.type == InputEvent::Type::MouseDown || event.type == InputEvent::Type::DoubleClick || event.type == InputEvent::Type::MouseUp)
+			m_left_down = event.type != InputEvent::Type::MouseUp;
+		else if (event.type == InputEvent::Type::RightDown || event.type == InputEvent::Type::RightUp)
+			m_right_down = event.type == InputEvent::Type::RightDown;
 	}
 
 	// Held movement keys are let go even while a dialog has the input.
@@ -524,6 +535,7 @@ void FrontEnd::OnEvent(const InputEvent &given)
 		m_alt_down = false;
 		m_keys = HeldKeys{};
 		m_mouse_turn = m_mouse_pan = m_mouse_grabbed = false;
+		m_left_down = m_right_down = false;
 		return;
 	}
 	// Mouse drags end even if a dialog came up in the middle of one.
@@ -899,6 +911,17 @@ void FrontEnd::Update(uint64_t now_ms)
 	if (m_lost.shown)
 		return;
 	LoadingFrame(now_ms);
+	// /safelock's lock let go: the buttons let go of meanwhile. Locked with a button down, eqgame's
+	// ProcessMouseEvent says so every time it runs (the button's state isn't read again).
+	if (m_safelock.empty() && !m_locked_ups.empty()) {
+		std::vector<InputEvent> ups = std::move(m_locked_ups);
+		m_locked_ups.clear();
+		for (const InputEvent &up : ups)
+			if (up.type == InputEvent::Type::MouseUp ? m_left_down : m_right_down)
+				OnEvent(up);
+	}
+	if (m_screen == Screen::Zone && !m_safelock.empty() && (m_left_down || m_right_down) && m_zone.Self().stance != 102)
+		ChatOut(EqString(12095, "Interface locked.  Please use /safelock to unlock it."), ChatType::Default);
 	if (m_zone_view && m_screen == Screen::Zone) {
 		// Our movement, then OP_ClientUpdate (ZoneSession paces it like DoMainLoop).
 		int hour;
@@ -5341,8 +5364,8 @@ void FrontEnd::SpellDamaged(const ZoneCast &cast)
 	if (SpellCasting::TapReply(cast, me, *spell)) {
 		if (cast.damage < 1) {
 			if (m_zone.Self().level < 35) {
-				InterpretCommand("/smile");
-				InterpretCommand("/say " + EqString(12117, "Ahhh, I feel much better now..."));
+				InterpretCommand("/smile", true);
+				InterpretCommand("/say " + EqString(12117, "Ahhh, I feel much better now..."), true);
 			}
 		}
 		else {
@@ -5593,6 +5616,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			m_death_ms = 0;
 			m_knocked_out = false; // a new zone's StunnedState is the profile's: not knocked out
 			m_hidden_corpses.clear();
+			m_safelock.clear(); // StartWorldDisplay
 			m_cycle_index = -1;    // Zeal's CycleTarget::on_zone
 			m_toggle_target = 0; // CEverQuest_EnterZone
 			m_duel.Reset();      // CEverQuest_EnterZone
@@ -6391,6 +6415,15 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 	// (isCharacterAllowed of ConvertScanCodeToChar of the command's key).
 	if (m_chats.Typing() && KeyMap::TypedChar(static_cast<int>(m_key_bindings.Get(cmd, false) & 0xff)))
 		return;
+	// ExecuteCmd's local_14 under /safelock's lock: the commands that want control of ourselves do
+	// nothing, pressed or let go (a key held as it was locked stays held). Hail, the tells, the look
+	// and zoom keys, Toggle UI Display, the chat's and the windows' still run.
+	if (!m_safelock.empty() && cmd >= KeyMap::Autorun && cmd <= KeyMap::RunWalk && cmd != KeyMap::Hail && cmd != KeyMap::Tell &&
+	    cmd != KeyMap::PitchUp && cmd != KeyMap::PitchDown && cmd != KeyMap::ZoomIn && cmd != KeyMap::ZoomOut &&
+	    cmd != KeyMap::FullScreen && cmd != KeyMap::Reply)
+		return;
+	if (!m_safelock.empty() && (cmd == KeyMap::ScreenCap || cmd == KeyMap::CycleNearestTarget))
+		return; // ours, the last: as the target keys
 	bool in_zone = m_screen == Screen::Zone;
 	auto toggle = [&](const char *screen) {
 		if (down && in_zone)
@@ -6492,7 +6525,7 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 		InterpretCommand("/consider");
 		break;
 	case KeyMap::Hail:
-		InterpretCommand("/hail");
+		InterpretCommand("/hail", true);
 		break;
 	case KeyMap::Duck: {
 		// ExecuteCmd 10: in control of ourselves (not knocked out or dead, not stance 102), not as
@@ -6829,6 +6862,11 @@ void FrontEnd::CameraControls(uint64_t now_ms)
 	// process_physics' frame units for us: 50 ms ticks since the last frame, at most 12.
 	float units = m_controls_ms ? std::min((now_ms - m_controls_ms) * 0.02f, 12.0f) : 0;
 	m_controls_ms = now_ms;
+	// Under /safelock's lock ProcessControls does nothing.
+	if (!m_safelock.empty()) {
+		m_zone_view->DrunkView(m_zone.Profile().drunk);
+		return;
+	}
 	// ProcessControls: Zoom in and out held move a zoomable camera in or out 2 units a frame unit.
 	if (m_keys.zoom_in)
 		m_zone_view->ZoomBy(-2 * units);
@@ -6857,6 +6895,13 @@ void FrontEnd::CameraControls(uint64_t now_ms)
 
 MoveControls FrontEnd::ZoneControls()
 {
+	// Under /safelock's lock ProcessControls does nothing: our speed stays what it was.
+	if (!m_safelock.empty()) {
+		m_jump_requested = false;
+		MoveControls held = m_last_controls;
+		held.jump = false;
+		return held;
+	}
 	MoveControls controls;
 	bool can_move = ZoneCanMove();
 	// EQPlayer::ChangeStance: any change of our stance, ours or the server's, ends autorun.
@@ -6881,6 +6926,7 @@ MoveControls FrontEnd::ZoneControls()
 	}
 	controls.run = m_run;
 	m_jump_requested = false;
+	m_last_controls = controls;
 	return controls;
 }
 
@@ -7130,6 +7176,8 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			OpenChat();
 		break;
 	case InputEvent::Key::Escape: {
+		if (!m_safelock.empty()) // ExecuteCmd 200's local_14
+			break;
 		// A button on the cursor goes, and that's all (CDisplay_NewUIProcessEscape's RemoveAttachment).
 		if (m_window_state.Attached()) {
 			m_window_state.ClearCursor();

@@ -403,7 +403,7 @@ no rules of its own.
    - /afk: the chat server's "/afk on silent" (CEverQuest::ChatServerMessage), and the language
      and skill of its answer to a tell (CEverQuest_GetCurrentLanguage; ours common at 100, as all
      our tells);
-   - allowslashcommand's other checks (/safelock's eqstr 12095, the windows that block commands:
+   - allowslashcommand's other checks (the windows that block commands:
      IsNoSlashWnd and eqstr 12084), for /assist, /attack and the other commands that call it;
    - /played: the alarm's time left (no alarm window yet);
    - /consider: under the deity PvP rules (pvpcon 4) NotOnSameDeity lets a GM off, read here as
@@ -880,13 +880,9 @@ no rules of its own.
     no tells), /inspect (29) and /particledensity (@004ff0b3: `CDisplay::SetPCloudDensity` and
     the exe's two literal lines), /discipline (@004f4fb5, `frontend/disciplines.*`; checked on
     replay, `frontend_preview ... slash`, not live: the test characters are under 30) and /surname
-    (@004f3ddb, `CEverQuest_Surname`; the same). Still to do:
-    - /safelock (@004ff689): with a word and unlocked, it becomes the password (under 32
-      characters, else eqstr 13292) and locks the interface (13291); locked, the same word
-      unlocks (13289) and another says 13290; with no word, 12095 when locked, else 13287 and
-      13288. While locked (`DAT_007cf29c`) `CEverquest_InterpretCmd` runs only /safelock and says
-      12095 for anything else, /quit included, and /safelock lines stay out of the command
-      history. `allowslashcommand` (3) reads the same lock.
+    (@004f3ddb, `CEverQuest_Surname`; the same), /safelock (@004ff689; it leaves the window's
+    close box alone, where `EverQuest_wndproc`'s WM_CLOSE is /quit, refused while locked or frozen).
+    Still to do:
     - /facepick (23), /hitsmode and /clearhits (3), /mp3, /music and /gems (34),
       /shownpcnames (9).
     - /hotbutton (@004ff36a): `[Name] <Color> [Text]` makes a social of that name, color and

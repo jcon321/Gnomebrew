@@ -296,7 +296,9 @@ bool ChatWindow::OnKey(const InputEvent &event, std::string &line)
 	case InputEvent::Key::Enter:
 		line = input->text;
 		input->text.clear();
-		if (!line.empty()) {
+		// AddHistory (@004149d4): not a line starting as /safelock does (eqstr 14193's first 4, case
+		// and all): its password.
+		if (!line.empty() && line.compare(0, 4, "/saf") != 0) {
 			m_history.push_back(line);
 			if (m_history.size() > MaxHistory)
 				m_history.erase(m_history.begin());

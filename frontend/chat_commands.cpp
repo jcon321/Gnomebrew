@@ -26,7 +26,7 @@ namespace
 		RaidSay, RaidWindow, Channel, Loot, TargetTell, CharInfo, MoveLog, StopSong, Shield, Quit, Log, Keys, Dismount,
 		AlternateAdv, Pet, SoundDriver, Duel, Decline, Bazaar, Trader, Nothing, ParticleDensity, RTarget, Inspect,
 		ChatFontSize, Language, Note, TrackPlayers, TrackSort, TrackFilter, Help, BugReport, Feedback, Petition, Report,
-		Discipline, Surname,
+		Discipline, Surname, SafeLock,
 	};
 
 	struct CommandEntry
@@ -120,7 +120,7 @@ namespace
 		{"/tracksort", 14184, 0, 1, Command::TrackSort}, {"/trackfilter", 14185, 0, 1, Command::TrackFilter}, {"/mousespeed", 14186, 0, 1, Command::None},
 		{"/gems", 14187, 0, 1, Command::None}, {"/inspect", 14188, 0, 1, Command::Inspect}, {"/serverfilter", 14189, 0, 1, Command::ServerFilter},
 		{"/showspelleffects", 14190, 0, 1, Command::None}, {"/combatmusic", 7526, 0, 1, Command::CombatMusic}, {"/mixahead", 7527, 0, 1, Command::None},
-		{"/guildmotd", 14191, 0, 3, Command::GuildMotd}, {"/charinfo", 14192, 0, 1, Command::CharInfo}, {"/safelock", 14193, 0, 1, Command::None},
+		{"/guildmotd", 14191, 0, 3, Command::GuildMotd}, {"/charinfo", 14192, 0, 1, Command::CharInfo}, {"/safelock", 14193, 0, 1, Command::SafeLock},
 		{"/alternateadv", 14195, 0, 0, Command::AlternateAdv}, {"/targetgroupbuff", 14196, 0, 1, Command::TargetGroupBuff}, {"/tgb", 14197, 0, 1, Command::TargetGroupBuff},
 		{"/hotbutton", 14198, 0, 1, Command::None}, {"/particledensity", 14199, 0, 0, Command::ParticleDensity}, {"/facepick", 14200, 0, 0, Command::None},
 		{"/dismount", 14201, 0, 1, Command::Dismount}, {"/rtarget", 14202, 0, 1, Command::RTarget}, {"/showgrass", 14203, 0, 1, Command::None},
@@ -850,7 +850,7 @@ std::string FrontEnd::PercentConvert(const std::string &given) const
 	return text;
 }
 
-void FrontEnd::InterpretCommand(const std::string &typed)
+void FrontEnd::InterpretCommand(const std::string &typed, bool direct)
 {
 	size_t start = 0;
 	while (start < typed.size() && IsSpace(typed[start]))
@@ -863,8 +863,14 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 		return FormatEqString(m_ui.eqstr, id, fallback, args);
 	};
 	const ZoneProfile &me = m_zone.Profile();
+	// Under /safelock's lock (DAT_007cf29c) a word that doesn't start "/saf", and a ';' line, say so and
+	// that's all: the lock's checks in allowslashcommand and /quit never come up.
+	if (!m_safelock.empty() && !direct && !SamePrefix(line, "/safelock", 4)) {
+		ChatOut(format(12095, "Interface locked.  Please use /safelock to unlock it.", {}), ChatType::Default);
+		return;
+	}
 	// allowslashcommand (@004f3cbb): not while casting (but a bard's songs), nor while we've no control
-	// of ourselves (stance 102). (/safelock and the windows that block commands aren't ours yet.)
+	// of ourselves (stance 102). (The windows that block commands aren't ours yet.)
 	auto allow = [&] {
 		uint32_t why = 0;
 		const char *text = "";
@@ -1546,8 +1552,7 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 	case Command::Quit:
 		// /quit and /exit (@004fa8c5), with nothing after them and while we've control of ourselves:
 		// the connection closed without a camp, and the game ends (GameState 0xff). Nothing goes to
-		// the zone first: ProcessGameLoop's 0xca cleanup finds the connection gone. (Not under
-		// /safelock's interface lock, DAT_007cf29c, eqstr 12095: no /safelock yet.)
+		// the zone first: ProcessGameLoop's 0xca cleanup finds the connection gone.
 		if (!args.empty() || m_zone.Self().stance == 102)
 			break;
 		m_zone.Close();
@@ -2314,6 +2319,36 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 			ChatOut(format(result.message, result.text, {}), ChatType::Default);
 		if (result.discipline >= 0)
 			m_zone.Discipline(result.discipline);
+		break;
+	}
+	case Command::SafeLock: {
+		// /safelock (@004ff689): with a word and unlocked it's the password, and the interface is
+		// locked; locked, the same (UTF8_stricmp) unlocks it. The whole line after the command.
+		uint32_t id = 13287;
+		const char *text = "FORMAT: /safelock <password>";
+		if (args.empty() && !m_safelock.empty())
+			id = 12095, text = "Interface locked.  Please use /safelock to unlock it.";
+		else if (args.empty()) {
+			ChatOut(format(13287, text, {}), ChatType::Default);
+			id = 13288, text = "This command locks the EverQuest interface (mostly just mouse clicks, keyboard commands/movement, "
+				"and most slash commands) with the password that you supply to the command.  You must use this command a second "
+				"time, supplying the same password, to unlock the interface.  Passwords are NOT case-sensitive.";
+		}
+		else if (!m_safelock.empty()) {
+			if (SameText(args, m_safelock)) {
+				m_safelock.clear();
+				id = 13289, text = "Interface unlocked.";
+			}
+			else
+				id = 13290, text = "Incorrect password.";
+		}
+		else if (args.size() < 32) {
+			m_safelock = args;
+			id = 13291, text = "Interface locked.  Please use /safelock, followed by the password you just typed, when you want to unlock it.";
+		}
+		else
+			id = 13292, text = "The password you supplied is too long, please try a shorter one.";
+		ChatOut(format(id, text, {}), ChatType::Default);
 		break;
 	}
 	case Command::Surname: {

@@ -29,7 +29,7 @@ void FrontEnd::MeleeControls()
 	// another's control, stance 102), and not dead.
 	uint8_t stance = m_zone.Self().stance;
 	bool control = !m_dead && !m_stunned && (stance == Standing || stance == Crouching);
-	if (!m_attack || !control)
+	if (!m_attack || !control || !m_safelock.empty()) // nothing under /safelock's lock
 		return;
 	if (m_range_ready) {
 		m_range_ready = false;
