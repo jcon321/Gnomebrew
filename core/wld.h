@@ -1,8 +1,10 @@
 #pragma once
 
 // WLD world files (inside .s3d archives): the zone geometry, placed objects,
-// lights, and the character models with their skeletons. Only the old (0x15500)
-// format the TAKP client ships is handled.
+// lights, and the character models with their skeletons. t3dLoadWorldFile takes the
+// older version (0x15500) and the newer (0x1000xxxx; some Luclin and Planes of Power
+// zones' 0x1000c800), which differs only in a 0x36 mesh's texture coordinates: 32-bit
+// floats in place of 16-bit 256ths.
 //
 // Layout: 28-byte header {magic 0x54503d02, version, fragment count, region
 // count, max object bytes, string hash size, string count}, the string hash
@@ -213,6 +215,7 @@ private:
 	T Get(size_t offset) const;
 
 	std::vector<uint8_t> m_data;
+	bool m_new_version = false;
 	std::vector<char> m_strings;
 	std::vector<Fragment> m_fragments;
 	std::map<std::string, int> m_by_name; // lowercase

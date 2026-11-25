@@ -2766,9 +2766,16 @@ details and the nearest spawns at the top left and the radar at the top right.
   SRCALPHA over INVSRCALPHA, both sides, no depth written (renderMeshElement's kind 5, the bucket
   marked -2). **/showgrass** (@004faa05): "on" or "off" whole (12947, 12946), kept as `[Defaults]
   ShowGrass` (`DAT_007cf268`): 13179, 13181, 13182, 13183; turned on it's read there and then if the
-  zone didn't; anything else says 13184 and how it is. Those zones' WLD is the newer version, which
-  we don't load (see TODO): checked with made-up records in an older zone, and the coordinates
-  against the zones' own meshes.
+  zone didn't; anything else says 13184 and how it is.
+- **The WLD's two versions** (`t3dLoadWorldFile` @1002ac00, `WldFile::Load`): 0x15500 (bit 0 set, a
+  separate file beside it, which none here has) and 0x1000xxxx; anything else is refused. The newer,
+  0x1000c800, is only in the zone WLDs (not their objects.wld, lights.wld, _obj or _chr) of
+  dawnshroud, grimling, hollowshade, jaggedpine, letalis, maiden, mseru, nightmareb, podisease,
+  pofire, ponightmare, postorms, potranquility, povalor, powar, scarlet, shadeweaver, tenebrous,
+  thegrey, twilight and umbral. Of all the fragment readers only `createDetailedMeshSprite`
+  (@1002f260, 0x36) looks at the version (0x10000000): its texture coordinates are two 32-bit floats
+  instead of two 16-bit numbers / 256. Checked: every 0x36 of the 21 ends within 3 bytes of its
+  fragment's size, all of them load, and we stand on their floors and are in their water and lava.
 - **/mousespeed** (@004f9e87): a number (`is_number`: a sign and digits) goes in `DAT_0079858c` and,
   as typed, in `[Defaults] MousePointerSpeedMod`; anything else says 13165 and 13166; then 13167.
   `CEverQuest::CEverQuest` reads it as 0 when missing, under 0 or over 10. Over 1, `GetMouseInputData`

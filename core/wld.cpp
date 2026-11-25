@@ -8,7 +8,9 @@
 namespace
 {
 	constexpr uint32_t Magic = 0x54503d02;
+	// t3dLoadWorldFile's two versions. (Bit 0 of the older, a separate file beside it, no file here has.)
 	constexpr uint32_t OldVersion = 0x00015500;
+	bool NewVersion(uint32_t version) { return (version & 0xffff0000) == 0x10000000; }
 	const uint8_t HashKey[8] = {0x95, 0x3a, 0xc5, 0x2a, 0x95, 0x7a, 0x95, 0x6a};
 
 	void Decode(char *data, size_t size)
@@ -32,7 +34,8 @@ bool WldFile::Load(std::vector<uint8_t> data)
 	m_data = std::move(data);
 	m_fragments.clear();
 	m_by_name.clear();
-	if (m_data.size() < 28 || Get<uint32_t>(0) != Magic || Get<uint32_t>(4) != OldVersion)
+	m_new_version = NewVersion(Get<uint32_t>(4));
+	if (m_data.size() < 28 || Get<uint32_t>(0) != Magic || (Get<uint32_t>(4) != OldVersion && !m_new_version))
 		return false;
 
 	uint32_t count = Get<uint32_t>(8);
@@ -171,7 +174,8 @@ bool WldFile::ReadMesh(int index, WldMesh &mesh) const
 	int16_t scale_shift = Get<int16_t>(o + 90);
 	float scale = 1.0f / static_cast<float>(1 << (scale_shift & 31));
 
-	size_t need = 92 + vertices * 6u + uvs * 4u + normals * 3u + colors * 4u + polygons * 8u + pieces * 4u +
+	const size_t uv_size = m_new_version ? 8 : 4; // createDetailedMeshSprite (@1002f260)
+	size_t need = 92 + vertices * 6u + uvs * uv_size + normals * 3u + colors * 4u + polygons * 8u + pieces * 4u +
 	              polygon_textures * 4u;
 	if (need > f.size)
 		return false;
@@ -185,8 +189,12 @@ bool WldFile::ReadMesh(int index, WldMesh &mesh) const
 		p += 6;
 	}
 	mesh.uvs.assign(static_cast<size_t>(vertices) * 2, 0.0f);
-	for (uint16_t i = 0; i < uvs; ++i, p += 4) {
-		if (i < vertices) {
+	for (uint16_t i = 0; i < uvs; ++i, p += uv_size) {
+		if (i < vertices && m_new_version) {
+			mesh.uvs[i * 2] = Get<float>(p);
+			mesh.uvs[i * 2 + 1] = Get<float>(p + 4);
+		}
+		else if (i < vertices) {
 			mesh.uvs[i * 2] = Get<int16_t>(p) / 256.0f;
 			mesh.uvs[i * 2 + 1] = Get<int16_t>(p + 2) / 256.0f;
 		}
