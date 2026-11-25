@@ -489,7 +489,7 @@ no rules of its own.
      store the key's state. (200 Escape, 202 quit and 206 the chat line's Enter are ours by
      other roads.)
    - Toggle netstat's default key, F11, is the debug menu's (Custom changes), which has it first; the
-     netstat also lies over the debug menu's card. Not checked against a live connection.
+     netstat also lies over the debug menu's card.
    - Send tell for a GM helping a petitioner (`/tell <petitioner> `, CPetitionQWnd), and
      ExecuteCmd 0x81 and 0x82 (`;` and `/` command modes; not on the keyboard page).
    - Target myself's pet: eqgame takes the first in pinstSpawnList's order; ours the lowest id.
