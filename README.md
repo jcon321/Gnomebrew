@@ -909,7 +909,8 @@ commands, unlocked, and locked again with the right button down, `/hotbutton`'s 
 effects landing on us, `/viewport` with snapshots, and `/showgrass`; `keys` runs the keymap's
 commands that only show in the view, the chat line or a file (Take a screenshot, its BMPs in
 OUTDIR; Toggle mouse look; Center view in each view; Use centerscreen on the first few spawns; the
-netstat from made-up stats; the clip plane keys); `mouse` works the options' Mouse page,
+netstat from made-up stats; the clip plane keys; the chat line's caret keys, the chat's page keys and
+Toggle help window on Ctrl+H, put in OUTDIR/my-client.ini); `mouse` works the options' Mouse page,
 printing what it shows and keeps, and how far a move with the right button held turns and pitches us)
 and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,
 opens, minimizes, resizes and closes windows (the layout goes to OUTDIR), types into the chat window
@@ -1976,7 +1977,7 @@ details and the nearest spawns at the top left and the radar at the top right.
   Disband, Who, Target nearest PC and NPC, Toggle last two
   targets, Cycle reply forward and back, Send tell, Reply, Send tell to target, Command mode say
   and emote, the hot buttons and pages, the gems, Take a screenshot,
-  Toggle mouse look, Use centerscreen, Center view, Toggle netstat, Clip plane in and out,
+  the cursor keys (below), Page up and down, Toggle mouse look, Use centerscreen, Center view, Toggle netstat, Clip plane in and out,
   History up and down, the spellbook, inventory, Actions pages and the window toggles it has
   windows for (`implemented` in `frontend/key_map.cpp`).
 - **Take a screenshot** (`ExecuteCmd` 78, NPAD -): in control of ourselves, eqstr 12374 (color 15)
@@ -2024,6 +2025,13 @@ details and the nearest spawns at the top left and the radar at the top right.
 - **Clip plane in and out** (`ExecuteCmd` 75 and 76, Shift+- and Shift+=): with the chat line shut,
   in control or not, the Display page's slider (`DAT_00798b28`) one down or up in 0..20, the far
   clip (`_DAT_00799660`) that * 0.2 held to 0.1..4, and `saveOptions`.
+- **The chat line's cursor** (`ExecuteCmd` 81..84: left, right, beginning, end): with the chat line
+  open (`UI_ChatInputCheck` 2) they move `EQ_TextIO`'s cursor (`CEverQuest_ui_something` @00536bae),
+  which `InitOverlays` (@00544b75) makes only for the old UI, so here they do nothing but keep their
+  keys from other commands. The new UI's caret goes by `CEditWnd::HandleKeyboardMsg`: Shift with
+  Left, Right, Home and End, whatever the commands are bound to, and never the keypad.
+- **Toggle help window** (`ExecuteCmd` 104) isn't on the Keyboard page and has no default key; only
+  `KEYMAP_TOGGLE_HELPWIN` in `[KeyMaps]` gives it one.
 - **Target nearest PC and NPC** (`ExecuteCmd` 28 and 29, `CDisplay::GetNearestPlayerInView`
   @004ac17f with 500 and 0 or 1): of the actors `s3dGetWorldVisibleActorList` (flags 0x11) gives
   in the camera's view, not us, players (0) or NPCs (1) but not a player's pet, heard from in the

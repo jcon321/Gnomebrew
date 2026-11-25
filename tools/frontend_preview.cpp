@@ -4193,12 +4193,13 @@ namespace
 	// Replay "keys": the keymap's commands that only show in the view, the chat line or a file.
 	int KeysTest(FrontEnd &frontend, Harness &h)
 	{
-		auto key = [&](int scan, bool shift = false) {
+		auto key = [&](int scan, bool shift = false, bool ctrl = false) {
 			for (auto type : {InputEvent::Type::Key, InputEvent::Type::KeyUp}) {
 				InputEvent event;
 				event.type = type;
 				event.scan = scan;
 				event.shift = shift;
+				event.ctrl = ctrl;
 				frontend.OnEvent(event);
 				frontend.Update(NowMs());
 			}
@@ -4264,6 +4265,46 @@ namespace
 		printf("\n");
 		for (int i = 0; i < 20; ++i)
 			key(0x0d, true);
+
+		// The chat line's caret: Shift+Left, Home, Right and End (its edit box's), and the keypad's, which
+		// do nothing (the commands' other keys, the old UI's). Then Page up and down.
+		auto type = [&](const char *text) {
+			for (; *text; ++text) {
+				InputEvent event;
+				event.type = InputEvent::Type::Char;
+				event.ch = static_cast<uint32_t>(*text);
+				frontend.OnEvent(event);
+			}
+		};
+		h.Key(InputEvent::Key::Enter);
+		type("abc");
+		for (auto [scan, what, ch] : {std::tuple{0xcb, "Shift+Left", "1"}, std::tuple{0xc7, "Shift+Home", "2"},
+		         std::tuple{0xcd, "Shift+Right", "3"}, std::tuple{0xcf, "Shift+End", "4"},
+		         std::tuple{0x4b, "Shift+NPAD 4", "5"}, std::tuple{0x47, "Shift+NPAD 7", "6"}}) {
+			key(scan, true);
+			type(ch);
+			printf("[preview] chat line: %s then %s: '%s'\n", what, ch, frontend.Chat().InputText().c_str());
+		}
+		h.Key(InputEvent::Key::Escape);
+		for (int i = 0; i < 60; ++i)
+			frontend.ChatLineForTests("line " + std::to_string(i));
+		h.Render();
+		auto top = [&] { // the row at the top of the window
+			std::string shown = frontend.Chat().ShownText();
+			return shown.substr(0, shown.find('\n'));
+		};
+		printf("[preview] chat text from '%s'", top().c_str());
+		for (auto [scan, what] : {std::pair{0xc9, "page up"}, std::pair{0xc9, "page up"}, std::pair{0xd1, "page down"}}) {
+			key(scan, true);
+			h.Render();
+			printf(", %s: '%s'", what, top().c_str());
+		}
+		printf("\n");
+		for (int i = 0; i < 2; ++i) {
+			key(0x23, false, true);
+			printf("[preview] Toggle help window: %s\n", frontend.Windows().Shown(HelpWindow::Screen) ? "shown" : "hidden");
+		}
+		seen = frontend.Chat().Lines().size();
 
 		// Center view (NPAD 5) after Look up held (Page Up), in first person and in each other view.
 		ZoneView *view = frontend.ZoneScene();
@@ -4902,8 +4943,15 @@ int main(int argc, char **argv)
 	FrontEndConfig config;
 	config.ui_dir = argv[2];
 	// "settings": the plain replay, reading OUTDIR/my-client.ini (its [Filters] and the rest).
-	if (replay && argc >= 7 && (std::string(argv[6]) == "options" || std::string(argv[6]) == "settings" || std::string(argv[6]) == "mouse" || std::string(argv[6]) == "alarm"))
+	if (replay && argc >= 7 && (std::string(argv[6]) == "options" || std::string(argv[6]) == "settings" || std::string(argv[6]) == "mouse" || std::string(argv[6]) == "alarm" || std::string(argv[6]) == "keys"))
 		config.settings_ini = std::string(argv[2]) + "/my-client.ini"; // the keymap's saves
+	if (replay && argc >= 7 && std::string(argv[6]) == "keys") {
+		// Toggle help window isn't on the Keyboard page and has no default key: Ctrl+H, from the ini.
+		IniFile ini;
+		ini.Load(config.settings_ini);
+		KeyBindings::Store(ini, KeyMap::ToggleHelpWin, false, KeyMap::Ctrl | 0x23);
+		ini.Save(config.settings_ini);
+	}
 	bool stop_at_charselect = argc == 7 && std::string(argv[6]) == "charselect";
 	bool explore = argc == 7 && std::string(argv[6]) == "explore";
 	// createluclin: the same with every Luclin model on, a dwarf warrior whose face picker cycles

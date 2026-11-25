@@ -204,6 +204,7 @@ public:
 	int LootNoDrop() const { return m_config.loot_no_drop; }               // /lootnodrop, to remember
 	int FastDrop() const { return m_config.fast_drop; }                    // /fastdrop, to remember
 	const ZoneSession &Zone() const { return m_zone; }
+	void ChatLineForTests(const std::string &text) { AddZoneLog(text, 0xffffff); }
 	void SetNetStatsForTests(std::function<bool(RdpStats &)> stats) { m_net_stats_for_tests = std::move(stats); }
 	const Duel &DuelState() const { return m_duel; }
 	BazaarWindow &BazaarForTests() { return m_bazaar; }

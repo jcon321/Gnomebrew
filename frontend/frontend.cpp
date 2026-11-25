@@ -6920,6 +6920,13 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 		if (down && in_zone && ((m_zone.Profile().expansions & 4) || m_zone.Profile().gm))
 			m_aa_window.Toggle();
 		break;
+	case KeyMap::ChatLeft:
+	case KeyMap::ChatRight:
+	case KeyMap::ChatBegin:
+	case KeyMap::ChatEnd:
+		// ExecuteCmd 0x51..0x54 move the old UI's cursor (EQ_TextIO, which the new UI never makes): nothing
+		// here. The chat line's own keys are its edit box's (CEditWnd::HandleKeyboardMsg: EditBox::Key).
+		break;
 	case KeyMap::PageUp: // ExecuteCmd 0x55, 0x56: the active chat window a page up or down
 		if (down && in_zone)
 			ActiveChat().PageUp();

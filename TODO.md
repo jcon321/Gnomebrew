@@ -479,11 +479,10 @@ no rules of its own.
    - ExecuteCmd's (@0054050c) commands not done yet (the page's "No"):
      - 77, voice input (`InitializeVoiceRecognition` @0055785c; with /voice, /microphone and
        /vrdelay, see 35: kept out unless asked).
-     - 81..84 and 85, 86: the chat line's cursor left, right, to its start and end, and the chat
-       text a page up and down (`CChatWindow::ScrollChatWindowUp` @00414ad9, `Down` @00414b17).
-     - 104, the help window (`CHelpWnd_SetFile` then Activate, or its close), 106, the video modes
-       window (`CVideoModesWnd::Activate`), and 110, the music player window (34 for all three).
-     - Old UI only, nothing to do: 62 Backdrop, 89 Lock windows (`[Defaults] LockWindows`, eqstr
+     - 106, the video modes window (`CVideoModesWnd::Activate`), and 110, the music player window (34
+       for both).
+     - Old UI only, nothing to do: 81..84, the chat line's cursor (`EQ_TextIO`'s; the new UI's edit box
+       has its own keys, done), 62 Backdrop, 89 Lock windows (`[Defaults] LockWindows`, eqstr
        12376 and 12363) and 96 Toggle chat window (`HideChatWin`) return at once in the new UI.
    - ExecuteCmd's numbers past the page: 119 the petition queue window (36), 209 a line to our
      target (not traced), 210 the face picker (/facepick, 23), and 198, 199 and 205, which only
