@@ -93,7 +93,7 @@ namespace KeyMap
 			{ClipIn, 6540, "Clip plane in", Camera, false},
 			{ClipOut, 6541, "Clip plane out", Camera, false},
 			{VoiceOn, 6535, "Toggle voice input", Chat, false},
-			{ScreenCap, 6542, "Take a screenshot", Camera, false},
+			{ScreenCap, 6542, "Take a screenshot", Camera, true},
 			{HistoryUp, 6523, "History, up", Chat, true},
 			{HistoryDown, 6524, "History, down", Chat, true},
 			{ChatLeft, 6519, "Cursor, left", Chat, false},

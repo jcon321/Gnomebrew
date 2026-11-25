@@ -149,6 +149,7 @@ add_library(eqfrontend STATIC
     frontend/inspect_window.cpp
     frontend/player_notes.cpp
     frontend/bug_report.cpp
+    frontend/screenshot.cpp
     frontend/alarm_window.cpp
     frontend/help_window.cpp
     frontend/loadskin_window.cpp

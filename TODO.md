@@ -489,7 +489,6 @@ no rules of its own.
        `_DAT_00799660` that * 0.2 held to 0.1..4, saved (the Display page's slider is done).
      - 77, voice input (`InitializeVoiceRecognition` @0055785c; with /voice, /microphone and
        /vrdelay, see 35: kept out unless asked).
-     - 78, screenshots (15).
      - 81..84 and 85, 86: the chat line's cursor left, right, to its start and end, and the chat
        text a page up and down (`CChatWindow::ScrollChatWindowUp` @00414ad9, `Down` @00414b17).
      - 104, the help window (`CHelpWnd_SetFile` then Activate, or its close), 106, the video modes
@@ -1100,9 +1099,10 @@ no rules of its own.
     @004acb64), the video modes window (34), /viewport's rectangle read again for the
     new size, and
     `s3dSetDynamicLOD` (5).
-15. **Screenshots.** ExecuteCmd 78 (Take a screenshot) says eqstr 12374 "Taking a screenshot..."
-    and `CDisplay::RealRender_World` then calls `CaptureScreenshot` (@004aa6d1), which writes the
-    frame as `EQ%06d.bmp`, the next number free, in the game's folder.
+15. ~~**Screenshots.**~~ Done (`frontend/screenshot.*`, `FrontEnd::SaveScreenshot`,
+    `D3d11Device::Present`'s capture): ExecuteCmd 78 says eqstr 12374 and `CaptureScreenshot`
+    (@004aa6d1) writes the frame as `EQ%06d.bmp`, the next number free, next to our exe. Still to
+    do: the Direct3D capture isn't checked on Windows (the software frame's is, in the preview).
 21. **Luclin player models.** Done (`render/character_model.*`): `UseLuclin*` in my-client.ini
     picks them per race and sex (off by default), loaded in `CDisplay::InitWorld`'s order and rules;
     their variant tracks (by what they hold, `SetAnimVariation`) and source models, the `_LAYER` textures, faces, eyes

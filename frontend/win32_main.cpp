@@ -28,6 +28,7 @@
 #include <vector>
 #include <chrono>
 #include <cstdio>
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -694,13 +695,18 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 		};
 		if (gpu) {
 			// Present waits for the vertical blank with vsync; without it, frames run flat out.
-			if (!gpu->Present() && !gpu_lost_logged) {
+			std::function<void(const uint32_t *, int, int, int)> capture;
+			if (frontend.TakeScreenshotRequest())
+				capture = [&](const uint32_t *pixels, int w, int h, int stride) { frontend.SaveScreenshot(pixels, w, h, stride); };
+			if (!gpu->Present(capture) && !gpu_lost_logged) {
 				Log("Direct3D device lost");
 				gpu_lost_logged = true;
 			}
 			frontend.SetPresentMs(present_ms(), gpu->UploadMs());
 			continue;
 		}
+		if (frontend.TakeScreenshotRequest())
+			frontend.SaveScreenshot(g_app.surface.pixels, g_app.surface.width, g_app.surface.height, g_app.surface.width);
 		HDC dc = GetDC(g_app.window);
 		Present(dc);
 		ReleaseDC(g_app.window, dc);

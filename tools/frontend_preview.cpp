@@ -100,6 +100,8 @@ namespace
 			pixels.assign(static_cast<size_t>(w) * h, 0);
 			Canvas canvas(pixels.data(), w, h, w);
 			frontend.Render(canvas, NowMs());
+			if (frontend.TakeScreenshotRequest())
+				frontend.SaveScreenshot(pixels.data(), w, h, w);
 			std::string path = out_dir + "/" + name + ".png";
 			printf("[preview] %s %s\n", WritePng(path, pixels, w, h) ? "wrote" : "FAILED", path.c_str());
 		}
@@ -4188,6 +4190,37 @@ namespace
 		return 0;
 	}
 
+	// Replay "keys": the keymap's commands that only show in the view, the chat line or a file.
+	int KeysTest(FrontEnd &frontend, Harness &h)
+	{
+		auto key = [&](int scan, bool shift = false) {
+			for (auto type : {InputEvent::Type::Key, InputEvent::Type::KeyUp}) {
+				InputEvent event;
+				event.type = type;
+				event.scan = scan;
+				event.shift = shift;
+				frontend.OnEvent(event);
+				frontend.Update(NowMs());
+			}
+		};
+		size_t seen = 0;
+		auto chat = [&] {
+			for (; seen < frontend.Chat().Lines().size(); ++seen)
+				printf("[preview] chat: %s (%06x)\n", frontend.Chat().Lines()[seen].text.c_str(),
+					frontend.Chat().Lines()[seen].rgb);
+		};
+		h.RunUntil([] { return false; }, 500);
+		seen = frontend.Chat().Lines().size();
+
+		// Take a screenshot (NPAD -), twice: the next number each time.
+		for (const char *name : {"k0-screenshot", "k1-screenshot"}) {
+			key(0x4a);
+			h.Snapshot(name);
+			chat();
+		}
+		return 0;
+	}
+
 	// Replay "options": the Options window's keyboard page, and keys through the keymap.
 	int OptionsTest(FrontEnd &frontend, Harness &h, const std::string &settings_ini)
 	{
@@ -4939,6 +4972,8 @@ int main(int argc, char **argv)
 			return SwitchesTest(frontend, h);
 		if (replay && argc >= 7 && std::string(argv[6]) == "mouse")
 			return MouseTest(frontend, h, config.settings_ini);
+		if (replay && argc >= 7 && std::string(argv[6]) == "keys")
+			return KeysTest(frontend, h);
 		if (slash_test)
 			return SlashTest(frontend, h);
 		if (item_display_test)

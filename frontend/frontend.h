@@ -75,6 +75,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 struct FrontEndConfig
@@ -165,6 +166,10 @@ public:
 		m_present_ms = ms;
 		m_upload_ms = upload_ms;
 	}
+	// ExecuteCmd 78's screenshot (DAT_00798ac4): the host, its frame drawn and not yet shown, hands
+	// the frame over (0xXXRRGGBB, top down) when one's asked for (asking once, whatever comes of it).
+	bool TakeScreenshotRequest() { return std::exchange(m_screenshot, false); }
+	void SaveScreenshot(const uint32_t *pixels, int width, int height, int stride);
 	void SetUpdateMs(double ms) { m_update_ms = ms; } // how long the host's Update took this frame
 
 	// While a mouse drag turns the character or pans the camera, the cursor is hidden and held
@@ -297,6 +302,9 @@ private:
 	// CEverquest_ExecuteCmd: a command of the keymap's, its key down or let go; `typed` is the
 	// character the key types (ConvertScanCodeToChar), which runs nothing while the chat has the keys.
 	void ExecuteCmd(int cmd, bool down, int typed);
+	// ExecuteCmd's local_14: not under /safelock's lock, knocked out or dead (StunnedState over 2), nor
+	// without control of ourselves (stance 102).
+	bool InControl() const;
 	uint32_t KeyWithModifiers(const InputEvent &event) const; // the scan code and Shift, Ctrl, Alt bits
 	void SaveKeyBinding(int id, bool alternate, uint32_t key); // _writeKeyMapToIni
 	void ResetKeyBindings(); // DeleteKeyBindingFromConfig for all
@@ -950,6 +958,7 @@ private:
 	// Toggle UI Display (ExecuteCmd 0x15): __ScreenMode 3 rather than 2. DoMainLoop skips
 	// DrawWindows and DrawCursor (the windows still take the mouse: FindWnd goes by where they
 	// are), and the world takes no clicks but in mouse look. Shown again entering a zone.
+	bool m_screenshot = false; // DAT_00798ac4: ExecuteCmd 78's, until the frame's saved
 	bool m_ui_hidden = false;
 	bool m_mouse_grabbed = false;
 	int m_look_x = 0, m_look_y = 0;

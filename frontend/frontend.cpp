@@ -1,4 +1,5 @@
 #include "frontend.h"
+#include "screenshot.h"
 #include "babel.h"
 
 #include "actor_tags.h"
@@ -6509,6 +6510,20 @@ void FrontEnd::ZoneKey(const InputEvent &event)
 	}
 }
 
+bool FrontEnd::InControl() const
+{
+	return m_safelock.empty() && !m_knocked_out && !m_dead && m_zone.Self().stance != 102;
+}
+
+void FrontEnd::SaveScreenshot(const uint32_t *pixels, int width, int height, int stride)
+{
+	// CaptureScreenshot: in eqgame's own folder (ours our exe's), and nothing said of how it went.
+	if (m_config.ui_dir.empty())
+		return;
+	std::string path = Screenshot::NextPath(m_config.ui_dir);
+	Log((Screenshot::WriteBmp(path, pixels, width, height, stride) ? "screenshot: " : "can't write ") + path);
+}
+
 void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 {
 	(void)typed;
@@ -6747,6 +6762,13 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 		break;
 	case KeyMap::SitStand:
 		Sit();
+		break;
+	case KeyMap::ScreenCap:
+		// ExecuteCmd 78: RealRender_World captures this frame (DAT_00798ac4).
+		if (InControl()) {
+			ChatOut(EqString(12374, "Taking a screenshot..."), ChatType::Yellow);
+			m_screenshot = true;
+		}
 		break;
 	case KeyMap::RunWalk:
 		m_run = !m_run;

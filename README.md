@@ -906,7 +906,9 @@ level and without the expansions, `/surname`'s refusals, its question answered N
 zone's two answers, and `/safelock`'s lock tried with the forward and inventory keys, Escape and
 commands, unlocked, and locked again with the right button down, `/hotbutton`'s socials,
 `/mousespeed`, `/dynamiclights` with a torch's light taken in hand and put away, `/showspelleffects` with old
-effects landing on us, `/viewport` with snapshots, and `/showgrass`; `mouse` works the options' Mouse page,
+effects landing on us, `/viewport` with snapshots, and `/showgrass`; `keys` runs the keymap's
+commands that only show in the view, the chat line or a file (Take a screenshot, its BMPs in
+OUTDIR); `mouse` works the options' Mouse page,
 printing what it shows and keeps, and how far a move with the right button held turns and pitches us)
 and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,
 opens, minimizes, resizes and closes windows (the layout goes to OUTDIR), types into the chat window
@@ -1972,9 +1974,18 @@ details and the nearest spawns at the top left and the radar at the top right.
   Say hail, Camp, Sit/stand, Run/walk, Target myself, Target party member 1..5, Invite/follow,
   Disband, Who, Target nearest PC and NPC, Toggle last two
   targets, Cycle reply forward and back, Send tell, Reply, Send tell to target, Command mode say
-  and emote, the hot buttons and pages, the gems,
+  and emote, the hot buttons and pages, the gems, Take a screenshot,
   History up and down, the spellbook, inventory, Actions pages and the window toggles it has
   windows for (`implemented` in `frontend/key_map.cpp`).
+- **Take a screenshot** (`ExecuteCmd` 78, NPAD -): in control of ourselves, eqstr 12374 (color 15)
+  and `DAT_00798ac4`, for which `RealRender_World` calls `CaptureScreenshot` (@004aa6d1) after
+  the scene and before `ShowDisplay`: the first `EQ%06d.bmp` from 0 that doesn't open (`rb`, in
+  the working folder; ours next to our exe), and eqgfx's `t3dScreenCapture` (@1006beb0),
+  `D3DXSaveSurfaceToFile` of the back buffer as a BMP. The windows and the cursor are in it:
+  `t3dRenderPartialScene` draws the deferred 2D, queued by `DrawWindows` before it. D3DX
+  (`saveBitmapToFile` @1008fce5) writes 24 bits bottom up, 0xb12 pixels a meter, biSizeImage 0,
+  and pads the file to a multiple of 4. Nothing says whether it was written. Ours in
+  `frontend/screenshot.*`, the frame handed over by the host before it's shown.
 - **Target nearest PC and NPC** (`ExecuteCmd` 28 and 29, `CDisplay::GetNearestPlayerInView`
   @004ac17f with 500 and 0 or 1): of the actors `s3dGetWorldVisibleActorList` (flags 0x11) gives
   in the camera's view, not us, players (0) or NPCs (1) but not a player's pet, heard from in the

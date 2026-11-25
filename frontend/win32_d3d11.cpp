@@ -1194,7 +1194,7 @@ double D3d11Device::UploadMs() const
 	return m->upload_ms;
 }
 
-bool D3d11Device::Present()
+bool D3d11Device::Present(const std::function<void(const uint32_t *pixels, int width, int height, int stride)> &capture)
 {
 	if (m->lost)
 		return false;
@@ -1224,6 +1224,30 @@ bool D3d11Device::Present()
 	context->OMSetDepthStencilState(nullptr, 0);
 	context->RSSetState(m->cull_none.Get());
 	context->Draw(3, 0);
+
+	if (capture) {
+		// The back buffer, through a copy the CPU can read.
+		ComPtr<ID3D11Resource> back;
+		m->back_buffer->GetResource(&back);
+		D3D11_TEXTURE2D_DESC desc{};
+		desc.Width = static_cast<UINT>(m->width);
+		desc.Height = static_cast<UINT>(m->height);
+		desc.MipLevels = 1;
+		desc.ArraySize = 1;
+		desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+		desc.SampleDesc.Count = 1;
+		desc.Usage = D3D11_USAGE_STAGING;
+		desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+		ComPtr<ID3D11Texture2D> copy;
+		if (SUCCEEDED(m->device->CreateTexture2D(&desc, nullptr, &copy))) {
+			context->CopyResource(copy.Get(), back.Get());
+			D3D11_MAPPED_SUBRESOURCE mapped;
+			if (SUCCEEDED(context->Map(copy.Get(), 0, D3D11_MAP_READ, 0, &mapped))) {
+				capture(static_cast<const uint32_t *>(mapped.pData), m->width, m->height, static_cast<int>(mapped.RowPitch / 4));
+				context->Unmap(copy.Get(), 0);
+			}
+		}
+	}
 
 	HRESULT hr = m->swap_chain->Present(m->vsync ? 1 : 0, !m->vsync && m->tearing ? DXGI_PRESENT_ALLOW_TEARING : 0);
 	if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
