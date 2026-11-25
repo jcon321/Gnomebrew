@@ -1734,6 +1734,16 @@ void ZoneSession::MoveLog()
 		Send(ZoneOp::MoveLog, nullptr, 0, "OP_MoveLog");
 }
 
+void ZoneSession::Surname(const std::string &surname)
+{
+	// CConfirmationDialog::ProcessYes's 10.
+	uint8_t body[100] = {};
+	std::memcpy(body, m_profile.name.data(), std::min<size_t>(m_profile.name.size(), 63));
+	std::memcpy(body + 68, surname.data(), std::min<size_t>(surname.size(), 31));
+	if (m_state == State::InZone)
+		Send(ZoneOp::Surname, body, sizeof(body), "OP_Surname " + surname);
+}
+
 void ZoneSession::Discipline(int32_t id)
 {
 	if (m_state == State::InZone)
@@ -2724,6 +2734,14 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 	case ZoneOp::DisciplineChange:
 		if (data.size() >= 4)
 			m_discipline = Read<int32_t>(data, 0);
+		break;
+	case ZoneOp::Surname:
+		if (data.size() >= 100) {
+			Event e{Event::Type::SurnameAnswered};
+			e.value = Read<int32_t>(data, 64);
+			e.text = CString(data, 68, 32);
+			events.push_back(e);
+		}
 		break;
 	case ZoneOp::GMLastName:
 	case ZoneOp::GMNameChange: {

@@ -401,7 +401,7 @@ eqgame's `OP_MoveItem`.
   /random, /lootnodrop, /fastdrop, /autosplit, /roleplay, /targetgroupbuff (/tgb), /split, /yell,
   /consent, /duel, /decline, /trader, /bazaar, /loot, /ttell, /charinfo, /movelog, /stopsong, /shield, /quit (/exit), /log, /keys, /dismount,
   /adriver, /sdriver, /attack, /combatmusic, /doability, /rtarget, /inspect, /particledensity,
-  /help, /bugreport, /feedback, /petition, /report, the
+  /help, /bugreport, /feedback, /petition, /report, /discipline, /surname, the
   guild commands (see Guilds under In the zone),
   the raid commands (see Raids), /filter, /serverfilter and the socials (/smile, /wave and the
   other 86).
@@ -886,7 +886,8 @@ shows its `OP_ClickDoor`s; `itemdisplay` puts an item in a loot, trade, merchant
 slot and a bag with an item in it in a general slot, Alt+clicks each slot (the bag shut and open)
 and prints the item display's title and text; `slash` types slash commands and prints what they say
 and send: `/discipline` as each class with nothing, a word it has and one it hasn't, under the
-level and without the expansions)
+level and without the expansions, `/surname`'s refusals, its question answered No and Yes and the
+zone's two answers)
 and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,
 opens, minimizes, resizes and closes windows (the layout goes to OUTDIR), types into the chat window
 (a say, commands, /target) and prints what the chat window holds, then stands near the target to
@@ -2683,6 +2684,12 @@ details and the nearest spawns at the top left and the radar at the top right.
   no longer in a PvP immunity zone." (color 13) on a server of type 4 under level 6 outside a
   newbie zone (`EQWorldData::IsNewbieZone` @00523f15), which isn't ours. Checked live: the MOTD
   after "You have entered South Qeynos.".
+- **/surname** (@004f3ddb): with one already 12939, under level 20 12940, nothing typed 12941, 32
+  characters or more 2239 (color 15); else the first word (`GrabFirstWord2` into 20 bytes: 19 of
+  it) is asked back (`CEverQuest_Surname` @0053d8de: 10004 in the confirmation dialog, category 10,
+  10 s, nothing while it's up). Yes sends `OP_Surname` (0x41c4, 100 bytes {name[64], u32 0,
+  surname[32]}) and says 10005. The zone's answer is the same struct (`surnamePassedOrRejected`
+  @004e46d5): success 0 says 1374, else 1375; the name over our head is its `OP_GMLastName`.
 - **/shield** (@004fd688): nothing while `allowslashcommand` refuses or with a merchant, guildmaster
   or banker active. Not a warrior (class 1) of 30 and up: 4033. With nothing typed, our target (none:
   4031 then 4034, the ability's description), or us, 4030; with a name, `DoPercentConvert` then

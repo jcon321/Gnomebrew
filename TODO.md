@@ -879,18 +879,14 @@ no rules of its own.
     said), /rtarget (@004ff62d: /target of the name typed or of the last teller, eqstr 13286 with
     no tells), /inspect (29) and /particledensity (@004ff0b3: `CDisplay::SetPCloudDensity` and
     the exe's two literal lines), /discipline (@004f4fb5, `frontend/disciplines.*`; checked on
-    replay, `frontend_preview ... slash`, not live: the test characters are under 30). Still to do:
+    replay, `frontend_preview ... slash`, not live: the test characters are under 30) and /surname
+    (@004f3ddb, `CEverQuest_Surname`; the same). Still to do:
     - /safelock (@004ff689): with a word and unlocked, it becomes the password (under 32
       characters, else eqstr 13292) and locks the interface (13291); locked, the same word
       unlocks (13289) and another says 13290; with no word, 12095 when locked, else 13287 and
       13288. While locked (`DAT_007cf29c`) `CEverquest_InterpretCmd` runs only /safelock and says
       12095 for anything else, /quit included, and /safelock lines stay out of the command
       history. `allowslashcommand` (3) reads the same lock.
-    - /surname (@004f3ddb): with one already 12939, under level 20 12940, no word 12941, 32
-      characters or more 2239; else the first word (20 at most) asked back in the confirmation
-      dialog (`CEverQuest_Surname` @0053d8de, eqstr 10004), `OP_Surname` from `ProcessYes`, and the
-      zone's answer (0x41c4, @004e46d5): 1374 rejected, or 1375 "Congratulations, %1 %2, your
-      surname was approved." with the name over our head.
     - /facepick (23), /hitsmode and /clearhits (3), /mp3, /music and /gems (34),
       /shownpcnames (9).
     - /hotbutton (@004ff36a): `[Name] <Color> [Text]` makes a social of that name, color and

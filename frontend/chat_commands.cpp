@@ -26,7 +26,7 @@ namespace
 		RaidSay, RaidWindow, Channel, Loot, TargetTell, CharInfo, MoveLog, StopSong, Shield, Quit, Log, Keys, Dismount,
 		AlternateAdv, Pet, SoundDriver, Duel, Decline, Bazaar, Trader, Nothing, ParticleDensity, RTarget, Inspect,
 		ChatFontSize, Language, Note, TrackPlayers, TrackSort, TrackFilter, Help, BugReport, Feedback, Petition, Report,
-		Discipline,
+		Discipline, Surname,
 	};
 
 	struct CommandEntry
@@ -102,7 +102,7 @@ namespace
 		{"/kick", 14127, 4, 0, Command::None}, {"/kill", 14128, 3, 0, Command::None}, {"/delcorpse", 14129, 8, 0, Command::None},
 		{"/hideme", 14131, 3, 0, Command::None}, {"/servers", 14132, 3, 0, Command::None}, {"/height", 14133, 4, 0, Command::None},
 		{"/exit", 14134, 0, 1, Command::Quit}, {"/loot", 14135, 0, 1, Command::Loot}, {"/roleplay", 14136, 0, 1, Command::Roleplay},
-		{"/follow", 14137, 0, 1, Command::Follow}, {"/report", 14138, 0, 1, Command::Report}, {"/surname", 14139, 0, 1, Command::None},
+		{"/follow", 14137, 0, 1, Command::Follow}, {"/report", 14138, 0, 1, Command::Report}, {"/surname", 14139, 0, 1, Command::Surname},
 		{"/log", 14141, 0, 1, Command::Log}, {"/toggletell", 14142, 3, 0, Command::None}, {"/inquire", 14143, 3, 0, Command::None},
 		{"/praise", 14144, 3, 0, Command::None}, {"/warn", 14145, 3, 0, Command::None}, {"/edit", 14146, 3, 0, Command::None},
 		{"/voice", 14147, 0, 4, Command::None}, {"/microphone", 14148, 0, 4, Command::None}, {"/movelog", 14150, 0, 1, Command::MoveLog},
@@ -399,8 +399,9 @@ namespace
 	};
 
 	// CEverQuest_GrabFirstWord (@00545aae): past the spaces, a word up to a space (or a quoted one,
-	// ' or "), the rest after it.
-	std::string GrabFirstWord(std::string &rest)
+	// ' or "), the rest after it. GrabFirstWord2 (@00545b0f) stops it at size - 1 characters, what's
+	// left of it then the rest's.
+	std::string GrabFirstWord(std::string &rest, size_t size = std::string::npos)
 	{
 		size_t i = 0;
 		while (i < rest.size() && std::isspace(static_cast<unsigned char>(rest[i])))
@@ -409,9 +410,9 @@ namespace
 		if (i < rest.size() && (rest[i] == '\'' || rest[i] == '"'))
 			end = rest[i++];
 		std::string word;
-		while (i < rest.size() && rest[i] != end && rest[i] != '\x12')
+		while (i < rest.size() && rest[i] != end && rest[i] != '\x12' && word.size() + 1 < size)
 			word.push_back(rest[i++]);
-		if (i < rest.size() && rest[i] == end)
+		if (i < rest.size() && rest[i] == end && word.size() + 1 < size)
 			++i;
 		while (i < rest.size() && std::isspace(static_cast<unsigned char>(rest[i])))
 			++i;
@@ -2313,6 +2314,34 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 			ChatOut(format(result.message, result.text, {}), ChatType::Default);
 		if (result.discipline >= 0)
 			m_zone.Discipline(result.discipline);
+		break;
+	}
+	case Command::Surname: {
+		// /surname (@004f3ddb): once, from level 20; the first word (19 characters at most) asked back
+		// in the confirmation dialog (CEverQuest_Surname @0053d8de: category 10, 10 s, nothing while
+		// it's up) and sent on a Yes.
+		uint32_t why = 0;
+		const char *text = "";
+		if (!me.last_name.empty())
+			why = 12939, text = "You already have a surname.  Operation failed.";
+		else if (me.level < 20)
+			why = 12940, text = "You can only submit a surname upon reaching the 20th level.  Operation failed.";
+		else if (args.empty())
+			why = 12941, text = "Proper format is:  /surname namehere";
+		else if (args.size() >= 32)
+			why = 2239, text = "The surname you have entered is too long, please shorten it and try again.";
+		if (why != 0) {
+			ChatOut(format(why, text, {}), ChatType::Yellow);
+			break;
+		}
+		std::string rest = args;
+		std::string surname = GrabFirstWord(rest, 20);
+		AskInGame(format(10004, "Your last name will be %1 is this correct?", {surname}), 10000, [this, surname](bool yes) {
+			if (!yes)
+				return;
+			m_zone.Surname(surname);
+			ChatOut(EqString(10005, "Submitting surname to server for approval check..."), ChatType::Yellow);
+		});
 		break;
 	}
 	case Command::None:

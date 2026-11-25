@@ -2661,6 +2661,40 @@ namespace
 		me.expansions = 2;
 		type("/disc resistant");
 		me = was;
+
+		// /surname: each refusal, No, a long word cut to 19 and Yes, then the zone's two answers.
+		WindowManager &windows = frontend.Windows();
+		auto answer = [&](const char *button) {
+			const SidlWindow *dialog = windows.Find("ConfirmationDialogBox");
+			const SidlWindow::Control *text = dialog ? dialog->Find("TextOutput") : nullptr;
+			const SidlWindow::Control *control = dialog ? dialog->Find(button) : nullptr;
+			printf("[preview] dialog %s: %s\n", windows.Shown("ConfirmationDialogBox") ? "up" : "down", text ? text->text.c_str() : "");
+			if (control) {
+				h.Click(control->rect.x + control->rect.w / 2, control->rect.y + control->rect.h / 2);
+				run(300);
+			}
+		};
+		me.level = 19;
+		me.last_name.clear();
+		type("/surname Tester");
+		me.level = 20;
+		type("/surname");
+		type("/surname abcdefghijklmnopqrstuvwxyzabcdef");
+		type("/surname Tester Again");
+		answer("No_Button");
+		type("/surname abcdefghijklmnopqrstuvwxyz");
+		answer("Yes_Button");
+		for (uint32_t success : {0u, 1u}) {
+			uint8_t body[100] = {};
+			memcpy(body, me.name.data(), std::min<size_t>(me.name.size(), 63));
+			memcpy(body + 64, &success, 4);
+			memcpy(body + 68, "Tester", 6);
+			zone.InjectReplayPacket(ZoneOp::Surname, body, sizeof(body));
+			run(300);
+		}
+		me.last_name = "Tester";
+		type("/surname Other");
+		me = was;
 		return 0;
 	}
 

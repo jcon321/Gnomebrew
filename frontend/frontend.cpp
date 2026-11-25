@@ -6095,6 +6095,12 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			ChatOut(event.value != 0 ? EqString(12905, "You successfully applied the poison.")
 			                         : EqString(12906, "You failed to apply the poison."), 270);
 			break;
+		case Type::SurnameAnswered: // surnamePassedOrRejected (@004e46d5); the name is OP_GMLastName's
+			ChatOut(event.value == 0 ? EqString(1374, "Your new surname was rejected.  Please try a different name.")
+			                         : FormatEqString(m_ui.eqstr, 1375, "Congratulations, %1 %2, your surname was approved.",
+										   {m_zone.Profile().name, event.text}),
+				ChatType::Yellow);
+			break;
 		case Type::SkillUp: // msg_skillimprove
 			ChatOut(FormatEqString(m_ui.eqstr, 12091, "You have become better at %1! (%2)",
 				{SkillName(m_ui.eqstr, event.id), std::to_string(event.value)}), ChatType::Skills);
