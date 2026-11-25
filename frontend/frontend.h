@@ -362,6 +362,7 @@ private:
 	bool UseSkin(const std::string &name, std::string &message);
 	// The SIDL windows outside m_windows built again from the skin as they're next wanted.
 	void ForgetSkinWindows();
+	void HitsMode(const std::string &args); // /hitsmode (@00500373)
 	void LoadSkin(const std::string &args); // /loadskin (@004f8655)
 	void ReloadUI(bool use_ini);             // CDisplay::ReloadUI (@004a1465)
 	void DeactivateMainUI();                 // CDisplay_DeactivateMainUI's windows down

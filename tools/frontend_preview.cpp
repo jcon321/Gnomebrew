@@ -4191,7 +4191,7 @@ namespace
 	}
 
 	// Replay "keys": the keymap's commands that only show in the view, the chat line or a file.
-	int KeysTest(FrontEnd &frontend, Harness &h)
+	int KeysTest(FrontEnd &frontend, Harness &h, const std::string &settings_ini)
 	{
 		auto key = [&](int scan, bool shift = false, bool ctrl = false) {
 			for (auto type : {InputEvent::Type::Key, InputEvent::Type::KeyUp}) {
@@ -4219,6 +4219,36 @@ namespace
 			h.Snapshot(name);
 			chat();
 		}
+
+		// /hitsmode: its usage, and what it keeps; /clearhits. Nothing else is said.
+		auto say = [&](const std::string &line) {
+			seen = frontend.Chat().Lines().size();
+			printf("[preview] typing %s\n", line.c_str());
+			h.Key(InputEvent::Key::Enter);
+			h.Type(line);
+			h.Key(InputEvent::Key::Enter);
+			chat();
+		};
+		auto hits = [&] {
+			IniFile ini;
+			ini.Load(settings_ini);
+			for (const char *kind : {"MyHits", "OtherHitsMe", "OtherHitsOther"}) {
+				printf("[preview] %s:", kind);
+				for (const char *k : {"Mode", "X", "Y", "Count", "FontSize", "ShowHeader", "ShowBG", "BGWidth", "AlwaysDraw"})
+					printf(" %s=%s", k, ini.Get("HitsMode", std::string(kind) + k, "-").c_str());
+				printf("\n");
+			}
+		};
+		say("/hitsmode");
+		say("/hitsmode you on");
+		say("/hitsmode my loud");
+		say("/hitsmode me off");
+		say("/hitsmode my m5 100 200 5 2 0 1 250 1");
+		say("/hitsmode other M5 5000 -3 11 3 2");
+		hits();
+		say("/hitsmode my m3 x 300");
+		say("/clearhits");
+		hits();
 
 		// Toggle mouse look (F12), off and on.
 		for (int i = 0; i < 2; ++i) {
@@ -5109,7 +5139,7 @@ int main(int argc, char **argv)
 		if (replay && argc >= 7 && std::string(argv[6]) == "mouse")
 			return MouseTest(frontend, h, config.settings_ini);
 		if (replay && argc >= 7 && std::string(argv[6]) == "keys")
-			return KeysTest(frontend, h);
+			return KeysTest(frontend, h, config.settings_ini);
 		if (slash_test)
 			return SlashTest(frontend, h);
 		if (item_display_test)

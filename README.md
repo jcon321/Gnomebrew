@@ -910,7 +910,7 @@ effects landing on us, `/viewport` with snapshots, and `/showgrass`; `keys` runs
 commands that only show in the view, the chat line or a file (Take a screenshot, its BMPs in
 OUTDIR; Toggle mouse look; Center view in each view; Use centerscreen on the first few spawns; the
 netstat from made-up stats; the clip plane keys; the chat line's caret keys, the chat's page keys and
-Toggle help window on Ctrl+H, put in OUTDIR/my-client.ini); `mouse` works the options' Mouse page,
+Toggle help window on Ctrl+H, put in OUTDIR/my-client.ini; `/hitsmode`'s usage and what it keeps); `mouse` works the options' Mouse page,
 printing what it shows and keeps, and how far a move with the right button held turns and pitches us)
 and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,
 opens, minimizes, resizes and closes windows (the layout goes to OUTDIR), types into the chat window
@@ -2797,6 +2797,15 @@ details and the nearest spawns at the top left and the radar at the top right.
   its sprite and emitters aren't made, but a missile's stage 1 and the dragon breaths (effects
   61..64, `SpellUsesDragonBreathEffect`) are, and the stage's sound plays. The SpellsNew.eff effects
   go by the Display page's density and opacity alone.
+- **/hitsmode** (@00500373) sets up the old UI's hit windows (`DrawHits` @00501483, only from
+  `EQ_TextIO::draw`): my, me or other, then off, on or m2..m5 (0..5, m5 as m4 for all but my), any
+  case; anything else prints its 14 literal usage lines (0x111). The mode goes to eqclient.ini's
+  `[HitsMode]` `MyHitsMode`, `OtherHitsMeMode` or `OtherHitsOtherMode` (ours my-client.ini's), and for
+  m2 up the rest after the same prefix (X, Y, Count, FontSize, ShowHeader, ShowBG, BGWidth,
+  AlwaysDraw), each what it was when it isn't a number in its range, but the width, kept as it is
+  (-1 with none given: its check can't be true). Nothing's said. With the new UI, `CEverQuest`'s
+  constructor puts the modes at 1 and `HandleMyHitsMode` and the others go by the chat window's Hit
+  Modes, so none of it shows. **/clearhits** (@00500dba, `do_clearhits`) empties those windows' lines.
 - **/viewport** (@004ffb00): "reset" anywhere in the line, or x, y, width and height (each `is_number`,
   none under 0), makes the 3D view that rectangle of the window: the size held to the window's, then
   x and y moved back for it to fit (`__ScreenX`, `__ScreenY`, `DAT_0079854c` and `DAT_0079854e` the

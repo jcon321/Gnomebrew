@@ -627,13 +627,8 @@ no rules of its own.
       0xff: 12897 and the answer);
     - AllowedToAttack's server PvP types and the water;
     - /filter's client side: the chat channels and the bad word filter
-      (msg_new_text's `SpeakBabel`, see 3; `bad_word_class` @005054e4), and the old UI's hit modes
-      (only when DAT_008092d8, the new UI, is off; the new UI's are the chat menu's Hit Modes, done)
-      (/hitsmode @00500373: `HandleMyHitsMode` @00500f86, `HandleOtherHitsMeMode`,
-      `HandleOtherHitsOtherMode` and the three misses ones from `DoPassageOfTime`, each with its
-      `[Defaults]` Mode, X, Y, Count, FontSize, ShowBG, BGWidth, ShowHeader and AlwaysDraw; eqstr
-      2130's short form, the number only; /clearhits (@00500dba), `do_clearhits` @00500dbf, and
-      `DrawHits` @00501483);
+      (msg_new_text's `SpeakBabel`, see 3; `bad_word_class` @005054e4). (The old UI's hit windows,
+      `DrawHits` @00501483, stay out: 44. /hitsmode and /clearhits are done as the new UI has them.)
     - fatigue's own changes (`EQ_PC::ProcessFatigue` @004d0424, from `DoPassageOfTime`): up 1 out of
       food or drink, running and moving (DAT_0079856d), or swimming (water types 5..10); down 10
       when it hasn't changed since the last call and we're fed and watered; 0 under DAT_00798560
@@ -870,11 +865,11 @@ no rules of its own.
     (@004f3ddb, `CEverQuest_Surname`; the same), /safelock (@004ff689; it leaves the window's
     close box alone, where `EverQuest_wndproc`'s WM_CLOSE is /quit, refused while locked or frozen) and
     /hotbutton (@004ff36a, `RegisterHotButton`), /mousespeed (@004f9e87; the cursor scaled by the
-    host, not checked on Windows), /dynamiclights (@004fda22),
+    host, not checked on Windows), /hitsmode (@00500373, `FrontEnd::HitsMode`) and /clearhits (@00500dba), /dynamiclights (@004fda22),
     /showspelleffects (@004f9f4d), /viewport (@004ffb00; the GPU renderer's not checked on Windows) and /showgrass
     (@004faa05).
     Still to do:
-    - /facepick (23), /hitsmode and /clearhits (3), /mp3, /music and /gems (34),
+    - /facepick (23), /mp3, /music and /gems (34),
       /shownpcnames (9).
     - The chat channels, all through `CEverQuest::ChatServerMessage` (@00524de9) to the chat
       server the world names (`OP_SetChatServer`; `ChatServerConnect` @00524cae,
@@ -1258,7 +1253,7 @@ no rules of its own.
       `EQ_CharCreateS`, `EQ_CharSelS`, `EQ_CreateBS`, `EQ_DragItem`, `EQ_Guide`, `EQ_ItemData`,
       `EQ_3DView`'s drawing, `EQ_TextIO`, `EQ_Overlay`, `EQ_HSlider`, `EQ_Requestor`,
       `EQ_Columns` (the old UI's gems game), and every `DAT_008092d8 == 0` branch of the commands
-      and packets (/wincolor, /invwinlabels, Backdrop, Lock windows, Toggle chat window,
+      and packets (/wincolor, /invwinlabels, the hit windows (`DrawHits`), Backdrop, Lock windows, Toggle chat window,
       `msg_snd_trader_eq`, /note's `notes.txt` line).
     - Playing offline (`GameState` 1 or `DAT_00798620`): `SpellFizzled`,
       `CastingRequirementsMet` with `HasEnoughItemsForSpell` and `ExpendItemCharge`,

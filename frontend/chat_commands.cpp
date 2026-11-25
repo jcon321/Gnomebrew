@@ -28,6 +28,7 @@ namespace
 		AlternateAdv, Pet, SoundDriver, Duel, Decline, Bazaar, Trader, Nothing, ParticleDensity, RTarget, Inspect,
 		ChatFontSize, Language, Note, TrackPlayers, TrackSort, TrackFilter, Help, BugReport, Feedback, Petition, Report,
 		Discipline, Surname, SafeLock, HotButton, MouseSpeed, DynamicLights, ShowSpellEffects, Viewport, ShowGrass,
+		HitsMode,
 	};
 
 	struct CommandEntry
@@ -125,7 +126,7 @@ namespace
 		{"/alternateadv", 14195, 0, 0, Command::AlternateAdv}, {"/targetgroupbuff", 14196, 0, 1, Command::TargetGroupBuff}, {"/tgb", 14197, 0, 1, Command::TargetGroupBuff},
 		{"/hotbutton", 14198, 0, 1, Command::HotButton}, {"/particledensity", 14199, 0, 0, Command::ParticleDensity}, {"/facepick", 14200, 0, 0, Command::None},
 		{"/dismount", 14201, 0, 1, Command::Dismount}, {"/rtarget", 14202, 0, 1, Command::RTarget}, {"/showgrass", 14203, 0, 1, Command::ShowGrass},
-		{"/alias", 14204, 0, 1, Command::Nothing}, {"/hitsmode", 14205, 0, 1, Command::None}, {"/clearhits", 14206, 0, 1, Command::None},
+		{"/alias", 14204, 0, 1, Command::Nothing}, {"/hitsmode", 14205, 0, 1, Command::HitsMode}, {"/clearhits", 14206, 0, 1, Command::Nothing},
 		{"/dopropertinting", 14207, 0, 1, Command::None}, {"/makeleader", 5043, 0, 1, Command::MakeLeader}, {"/viewport", 14210, 0, 1, Command::Viewport},
 		{"/clearchat", 3127, 0, 1, Command::ClearChat}, {"/bazaar", 4501, 0, 1, Command::Bazaar}, {"/trader", 4502, 0, 1, Command::Trader},
 		{"/music", 6676, 0, 1, Command::None}, {"/bugreport", 13952, 0, 1, Command::BugReport}, {"/loadskin", 3123, 0, 1, Command::LoadSkin},
@@ -439,6 +440,84 @@ namespace
 				return true;
 		}
 		return true;
+	}
+}
+
+void FrontEnd::HitsMode(const std::string &args)
+{
+	// /hitsmode (@00500373): the old UI's hit windows, EQ_TextIO::draw's DrawHits. In the new UI only
+	// the usage and what's kept ([HitsMode], ours in my-client.ini) come of it, as here: melee lines go by
+	// the chat menu's Hit Modes (HandleMyHitsMode's new UI branch), and /clearhits (@00500dba) has nothing
+	// to clear. Nothing's said of a mode taken.
+	static const char *const Usage[] = {
+		"Usage: /hitsmode <my|me|other> <on|off|m2|m3|m4|m5> <X> <Y> <COUNT> <FONTSIZE> <HEADER> <BG> <WIDTH> <FORCEDRAW>",
+		" my = My Attacks, me = Me Getting Hit, other = Others Attacks",
+		"   on = the messages go to the chat window",
+		"   off = the messages are filtered out completely",
+		"   m2-m5 = the messages go to a seperate window",
+		" If you choose M2 through M5, then:",
+		"   <X> and <Y> are the screen location.",
+		"   <COUNT> is how many lines from 1 to 10",
+		"   <FONTSIZE> is a font size of 0, 1, or 2.",
+		"   <HEADER> is 1 or 0 to turn on or off the header.",
+		"   <BG> is 1 or 0 to turn on or off the background poly.",
+		"   <WIDTH> is the width of the background poly.",
+		"   <FORCEDRAW> is 1 to force the window to draw even if empty.",
+		"   note: m5 is only valid for My Attacks. It's ignored for other types and m4 is used instead.",
+	};
+	auto usage = [&] {
+		for (const char *line : Usage)
+			ChatOut(line, ChatType::Default);
+	};
+	if (args.empty())
+		return usage();
+	std::string rest = args, words[10];
+	for (std::string &word : words)
+		word = GrabFirstWord(rest, 0x40);
+	int which = SameText(words[0], "my") ? 0 : SameText(words[0], "me") ? 1 : SameText(words[0], "other") ? 2 : -1;
+	if (which < 0)
+		return usage();
+	int mode = -1;
+	static const char *const Modes[] = {"off", "on", "M2", "M3", "M4", "M5"};
+	for (int i = 0; i < 6; ++i)
+		if (SameText(words[1], Modes[i]))
+			mode = i;
+	if (mode < 0)
+		return usage();
+	if (mode == 5 && which != 0)
+		mode = 4;
+	// CEverQuest::CEverQuest's for each, [HitsMode]'s with what's out of range its default.
+	static const char *const Kinds[] = {"MyHits", "OtherHitsMe", "OtherHitsOther"};
+	struct Value
+	{
+		const char *key;
+		int lowest, highest, fallback;
+	};
+	const Value values[] = {{"X", 0, 0x640, 4}, {"Y", 0, 0x4b0, which == 0 ? 0x3c : which == 1 ? 0x70 : 0xa4},
+		{"Count", 1, 10, 3}, {"FontSize", 0, 2, 1}, {"ShowHeader", 0, 1, 1}, {"ShowBG", 0, 1, 0},
+		{"BGWidth", 1, 0x640, 0x14a}, {"AlwaysDraw", 0, 1, 0}};
+	const std::string kind = Kinds[which];
+	SaveSetting("HitsMode", (kind + "Mode").c_str(), mode);
+	if (mode < 2)
+		return;
+	IniFile ini;
+	if (!m_config.settings_ini.empty())
+		ini.Load(m_config.settings_ini);
+	const Rect view = m_viewport_set ? m_viewport : Rect{0, 0, m_game_width, m_game_height};
+	for (int i = 0; i < 8; ++i) {
+		const Value &value = values[i];
+		const std::string &word = words[i + 2], key = kind + value.key;
+		int number = IsNumber(word) ? std::atoi(word.c_str()) : -1;
+		// Out of range, what it was; the place's limits are the 3D view's right and bottom, and the width
+		// is taken as it is (its check asks for a width under 1 wider than the view).
+		int highest = i == 0 ? view.Right() : i == 1 ? view.Bottom() : value.highest;
+		if (i != 6 && (number < value.lowest || number > highest)) {
+			std::string kept = ini.Get("HitsMode", key);
+			number = kept.empty() ? value.fallback : std::atoi(kept.c_str());
+			if (number < value.lowest || number > value.highest)
+				number = value.fallback;
+		}
+		SaveSetting("HitsMode", key.c_str(), number);
 	}
 }
 
@@ -2338,6 +2417,9 @@ void FrontEnd::InterpretCommand(const std::string &typed, bool direct)
 		ChatOut(m_dynamic_lights ? format(13268, "Dynamic Lights will be *ON* the next time you zone.", {})
 		                         : format(13269, "Dynamic Lights will be *OFF* the next time you zone.", {}),
 			ChatType::Default);
+		break;
+	case Command::HitsMode:
+		HitsMode(args);
 		break;
 	case Command::ShowGrass: {
 		// /showgrass (@004faa05): "on" or "off", the whole of it in any case, kept as it changes;
