@@ -27,7 +27,7 @@ namespace
 		RaidSay, RaidWindow, Channel, Loot, TargetTell, CharInfo, MoveLog, StopSong, Shield, Quit, Log, Keys, Dismount,
 		AlternateAdv, Pet, SoundDriver, Duel, Decline, Bazaar, Trader, Nothing, ParticleDensity, RTarget, Inspect,
 		ChatFontSize, Language, Note, TrackPlayers, TrackSort, TrackFilter, Help, BugReport, Feedback, Petition, Report,
-		Discipline, Surname, SafeLock, HotButton, MouseSpeed, DynamicLights, ShowSpellEffects,
+		Discipline, Surname, SafeLock, HotButton, MouseSpeed, DynamicLights, ShowSpellEffects, Viewport,
 	};
 
 	struct CommandEntry
@@ -126,7 +126,7 @@ namespace
 		{"/hotbutton", 14198, 0, 1, Command::HotButton}, {"/particledensity", 14199, 0, 0, Command::ParticleDensity}, {"/facepick", 14200, 0, 0, Command::None},
 		{"/dismount", 14201, 0, 1, Command::Dismount}, {"/rtarget", 14202, 0, 1, Command::RTarget}, {"/showgrass", 14203, 0, 1, Command::None},
 		{"/alias", 14204, 0, 1, Command::Nothing}, {"/hitsmode", 14205, 0, 1, Command::None}, {"/clearhits", 14206, 0, 1, Command::None},
-		{"/dopropertinting", 14207, 0, 1, Command::None}, {"/makeleader", 5043, 0, 1, Command::MakeLeader}, {"/viewport", 14210, 0, 1, Command::None},
+		{"/dopropertinting", 14207, 0, 1, Command::None}, {"/makeleader", 5043, 0, 1, Command::MakeLeader}, {"/viewport", 14210, 0, 1, Command::Viewport},
 		{"/clearchat", 3127, 0, 1, Command::ClearChat}, {"/bazaar", 4501, 0, 1, Command::Bazaar}, {"/trader", 4502, 0, 1, Command::Trader},
 		{"/music", 6676, 0, 1, Command::None}, {"/bugreport", 13952, 0, 1, Command::BugReport}, {"/loadskin", 3123, 0, 1, Command::LoadSkin},
 		{"/newui", 14211, 0, 1, Command::None}, {"/webupdate", 14209, 0, 1, Command::None}, {"/viewpetition", 5056, 0, 1, Command::None},
@@ -2339,6 +2339,49 @@ void FrontEnd::InterpretCommand(const std::string &typed, bool direct)
 		                         : format(13269, "Dynamic Lights will be *OFF* the next time you zone.", {}),
 			ChatType::Default);
 		break;
+	case Command::Viewport: {
+		// /viewport (@004ffb00): "reset" anywhere in it, or x, y, width and height, held to the window
+		// (too far right or down goes back by its size) and kept for this window size in the UI ini;
+		// anything else says what it is and how.
+		int x = -1, y = -1, w = -1, h = -1;
+		if (args.find("reset") != std::string::npos)
+			x = y = 0, w = m_game_width, h = m_game_height;
+		else {
+			std::string rest = args;
+			for (int *n : {&x, &y, &w, &h}) {
+				std::string word = GrabFirstWord(rest, 64);
+				if (IsNumber(word))
+					*n = std::atoi(word.c_str());
+			}
+		}
+		if (args.empty() || x < 0 || y < 0 || w < 0 || h < 0) {
+			ChatOut("x=" + std::to_string(m_viewport.x) + " y=" + std::to_string(m_viewport.y) + " w=" + std::to_string(m_viewport.w) +
+			        " h=" + std::to_string(m_viewport.h),
+				ChatType::Default);
+			ChatOut(format(15008, "Usage: /viewport x y width height or /viewport reset", {}), ChatType::Default);
+			break;
+		}
+		w = std::min(w, m_game_width);
+		h = std::min(h, m_game_height);
+		if (x > m_game_width - w)
+			x = m_game_width - w;
+		if (y > m_game_height - h)
+			y = m_game_height - h;
+		m_viewport = {x, y, w, h};
+		m_viewport_set = true;
+		if (m_ui_layout_path.empty())
+			break;
+		IniFile ini;
+		ini.Load(m_ui_layout_path); // keep the rest
+		std::string section = "ViewPort" + std::to_string(m_game_width) + "x" + std::to_string(m_game_height);
+		ini.SetInt(section, "X", x);
+		ini.SetInt(section, "Y", y);
+		ini.SetInt(section, "W", w);
+		ini.SetInt(section, "H", h);
+		if (!ini.Save(m_ui_layout_path))
+			Log("UI: couldn't write " + m_ui_layout_path);
+		break;
+	}
 	case Command::ShowSpellEffects:
 		// /showspelleffects (@004f9f4d): "off", the whole of it in any case, or anything else for on,
 		// kept; nothing says how. Then how it is.

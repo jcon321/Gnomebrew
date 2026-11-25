@@ -2342,6 +2342,7 @@ void FrontEnd::BuildZoneWindows(bool reload, bool use_ini)
 		m_window_state.quantity_done = nullptr;
 	}
 	m_window_state.eqstr = m_ui.eqstr;
+	ReadViewport();
 	if (!m_ui_layout_path.empty()) {
 		std::string suffix = name + "_" + m_config.login_host.substr(0, 7) + ".ini";
 		IniFile ini;
@@ -4738,9 +4739,12 @@ void FrontEnd::WorldClick(int x, int y)
 	}
 	if (!m_trade.Active()) {
 		bool held = m_zone.Items().count(Inventory::Cursor) != 0;
-		if (held && m_ground.DropRequest(m_now_ms))
+		// What's held goes on the ground (the coins nowhere) only with the click in the 3D view.
+		const Rect &v = m_viewport;
+		bool inside = !m_viewport_set || (x >= v.x && y >= v.y && x <= v.Right() && y <= v.Bottom());
+		if (held && inside && m_ground.DropRequest(m_now_ms))
 			return;
-		if (!held && Inventory::CursorMoneyType(m_zone.Profile()))
+		if (!held && inside && Inventory::CursorMoneyType(m_zone.Profile()))
 			return;
 		uint32_t drop_id = 0;
 		if (!held && !m_containers.WorldOpen() && m_zone_view->PickGroundItem(x, y, m_zone.MySpawnId(), drop_id) && m_ground.PickUp(drop_id))
@@ -5261,6 +5265,30 @@ void FrontEnd::SetDisplayOption(OptionsWindow::Host::Display setting, float valu
 		// CVideoModesWnd::Activate: not ours yet (TODO).
 		break;
 	}
+}
+
+void FrontEnd::ReadViewport()
+{
+	m_viewport = {0, 0, m_game_width, m_game_height}; // InitCharSelectUI's
+	m_viewport_set = true;
+	if (m_ui_layout_path.empty())
+		return;
+	IniFile ini;
+	ini.Load(m_ui_layout_path);
+	std::string section = "ViewPort" + std::to_string(m_game_width) + "x" + std::to_string(m_game_height);
+	auto number = [&](const char *key, int fallback) {
+		std::string value = ini.Get(section, key);
+		return value.empty() ? fallback : std::atoi(value.c_str());
+	};
+	Rect &v = m_viewport;
+	v.x = number("X", 0);
+	v.y = number("Y", 0);
+	v.w = std::min(number("W", m_game_width), m_game_width);
+	v.h = std::min(number("H", m_game_height), m_game_height);
+	if (v.x + v.w > m_game_width)
+		v.x = m_game_width - v.w;
+	if (v.y + v.h > m_game_height)
+		v.y = m_game_height - v.h;
 }
 
 void FrontEnd::SetPCloudDensity(int level)
@@ -7308,6 +7336,8 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 		Clock::time_point tags_start = Clock::now();
 		BuildNameSprites(now_ms);
 		times.tags = since(tags_start);
+		if (m_viewport_set)
+			m_zone_view->SetViewport(m_viewport);
 		m_zone_view->Render(canvas, now_ms);
 		const ZoneView::RenderTimes &render_times = m_zone_view->Times();
 		times.zone = render_times.zone;

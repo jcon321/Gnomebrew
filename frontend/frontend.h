@@ -382,6 +382,8 @@ private:
 	bool m_guild_invites = true;      // DAT_00798adc, Receive Guild Invites ([Defaults] GuildInvites)
 	bool m_dynamic_lights = true;     // DAT_007cf25c, /dynamiclights ([Defaults] ShowDynamicLights)
 	bool m_show_spell_effects = true; // DAT_007cf290, /showspelleffects ([Defaults] ShowSpellEffects)
+	Rect m_viewport; // __ScreenX, __ScreenY and their size, /viewport (w 0 with no file to read: all of it)
+	bool m_viewport_set = false;
 	int m_mouse_speed = 0;            // DAT_0079858c, /mousespeed ([Defaults] MousePointerSpeedMod): times the cursor's movement
 	bool m_inspect_others = true;     // DAT_007cf28c, /inspect ([Defaults] InspectOthers): the right button inspects a player
 	int m_trade_with = 2;             // DAT_00798ad8, Allow trading with: 0 no one, 1 party members only, 2 everyone
@@ -400,6 +402,9 @@ private:
 	float DisplayOption(OptionsWindow::Host::Display setting) const;          // SyncDisplayPage's values
 	void SetDisplayOption(OptionsWindow::Host::Display setting, float value); // DisplayPageWndNotification
 	void ApplyDisplayOptions(); // the zone view's sky, clip plane and spell particles, the clouds' density
+	// ReadViewportSettingFromINI (@004ffdf5): the 3D view's rectangle from the UI ini's
+	// [ViewPort<w>x<h>] X, Y, W and H, the whole window without them.
+	void ReadViewport();
 	void SetPCloudDensity(int level); // CDisplay::SetPCloudDensity (@004a9507): 0 off .. 3 high
 	void SaveSetting(const char *section, const char *key, const std::string &value);
 	int GeneralOption(OptionsWindow::Host::General setting) const;          // SyncGeneralPage's values

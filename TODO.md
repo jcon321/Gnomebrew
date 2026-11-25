@@ -884,7 +884,7 @@ no rules of its own.
     close box alone, where `EverQuest_wndproc`'s WM_CLOSE is /quit, refused while locked or frozen) and
     /hotbutton (@004ff36a, `RegisterHotButton`), /mousespeed (@004f9e87; the cursor scaled by the
     host, not checked on Windows), /dynamiclights (@004fda22),
-    /showspelleffects (@004f9f4d).
+    /showspelleffects (@004f9f4d), /viewport (@004ffb00; the GPU renderer's not checked on Windows).
     Still to do:
     - /facepick (23), /hitsmode and /clearhits (3), /mp3, /music and /gems (34),
       /shownpcnames (9).
@@ -903,8 +903,6 @@ no rules of its own.
       - /showgrass (@004faa05, `ShowGrass`): eqstr 13179..13184, `CDisplay::loadGrassObjects`
         (@004b2043: `grass.s3d`, `LWEED1.DDS`) and `UpdateGrassRenderingPosition` (@004b1ffa, from
         `MovePlayer`); see 42.
-      - /viewport (@004ffb00): `x y width height` or `reset` (eqstr 15008), kept in the UI ini and
-        applied by `CDisplay::UpdateCameraAfterModeSwitch` (@004acb64): the 3D view's rectangle.
       - /mixahead (@004fa100, `SoundMixAhead` 1..100, `EqSoundManager::SetMixAhead`, eqstr 7528
         and 7529), /reversesound (@004fb9a2: normal or reverse, 13214..13218) and /audiodebug
         (@004f60f6: 13051 on, 13052 off): Miles' own; ask before giving them a meaning in our mix.
@@ -1103,7 +1101,8 @@ no rules of its own.
 14. **Graphics options:** fullscreen or windowed, resolution changes, gamma, anisotropic filtering,
     MSAA, draw distance and level of detail. eqgame's side of it: `CDisplay::ChangeVideoMode`
     (@004acc0f, with `CDisplay_SupportsVidMode` @004acac4 and `UpdateCameraAfterModeSwitch`
-    @004acb64), the video modes window (34), /viewport's rectangle for the 3D view (35), and
+    @004acb64), the video modes window (34), /viewport's rectangle read again for the
+    new size, and
     `s3dSetDynamicLOD` (5).
 15. **Screenshots.** ExecuteCmd 78 (Take a screenshot) says eqstr 12374 "Taking a screenshot..."
     and `CDisplay::RealRender_World` then calls `CaptureScreenshot` (@004aa6d1), which writes the

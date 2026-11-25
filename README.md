@@ -409,7 +409,7 @@ eqgame's `OP_MoveItem`.
   /consent, /duel, /decline, /trader, /bazaar, /loot, /ttell, /charinfo, /movelog, /stopsong, /shield, /quit (/exit), /log, /keys, /dismount,
   /adriver, /sdriver, /attack, /combatmusic, /doability, /rtarget, /inspect, /particledensity,
   /help, /bugreport, /feedback, /petition, /report, /discipline, /surname, /safelock, /hotbutton, /mousespeed, /dynamiclights,
-  /showspelleffects, the
+  /showspelleffects, /viewport, the
   guild commands (see Guilds under In the zone),
   the raid commands (see Raids), /filter, /serverfilter and the socials (/smile, /wave and the
   other 86).
@@ -897,8 +897,8 @@ and send: `/discipline` as each class with nothing, a word it has and one it has
 level and without the expansions, `/surname`'s refusals, its question answered No and Yes and the
 zone's two answers, and `/safelock`'s lock tried with the forward and inventory keys, Escape and
 commands, unlocked, and locked again with the right button down, `/hotbutton`'s socials,
-`/mousespeed`, `/dynamiclights` with a torch's light taken in hand and put away, and `/showspelleffects` with old
-effects landing on us)
+`/mousespeed`, `/dynamiclights` with a torch's light taken in hand and put away, `/showspelleffects` with old
+effects landing on us, and `/viewport` with snapshots)
 and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,
 opens, minimizes, resizes and closes windows (the layout goes to OUTDIR), types into the chat window
 (a say, commands, /target) and prints what the chat window holds, then stands near the target to
@@ -2718,6 +2718,18 @@ details and the nearest spawns at the top left and the radar at the top right.
   its sprite and emitters aren't made, but a missile's stage 1 and the dragon breaths (effects
   61..64, `SpellUsesDragonBreathEffect`) are, and the stage's sound plays. The SpellsNew.eff effects
   go by the Display page's density and opacity alone.
+- **/viewport** (@004ffb00): "reset" anywhere in the line, or x, y, width and height (each `is_number`,
+  none under 0), makes the 3D view that rectangle of the window: the size held to the window's, then
+  x and y moved back for it to fit (`__ScreenX`, `__ScreenY`, `DAT_0079854c` and `DAT_0079854e` the
+  far edges). Anything else prints `x=%d y=%d w=%d h=%d` and 15008. It's kept as X, Y, W and H in the
+  UI ini's `[ViewPort<width>x<height>]`, read as the game's UI is made (`ReadViewportSettingFromINI`
+  @004ffdf5, from `InitializeGameUserInterface`, a reload too); character select is the whole window.
+  The camera's aspect is the rectangle's (`UpdateCameraAfterModeSwitch`), and eqgfx clears the whole
+  window to black first when the view isn't all of it (`t3dRenderPartialScene`,
+  `t3dSetCameraRenderWindow`'s flag). A click picks by its place less the rectangle's corner
+  (`GetClickedActor`; `s3dPickObjectOnScreen` checks no bounds, so the ray goes on outside it), but an
+  item held goes on the ground, and coins nowhere, only inside it (`CEverQuest_LMouseUp`). Ours:
+  `ZoneView::SetViewport`, `FrontEnd::ReadViewport`.
 - **/mousespeed** (@004f9e87): a number (`is_number`: a sign and digits) goes in `DAT_0079858c` and,
   as typed, in `[Defaults] MousePointerSpeedMod`; anything else says 13165 and 13166; then 13167.
   `CEverQuest::CEverQuest` reads it as 0 when missing, under 0 or over 10. Over 1, `GetMouseInputData`

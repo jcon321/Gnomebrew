@@ -492,6 +492,13 @@ public:
 	Vision CurrentVision() const;
 	Vision OwnVision() const;
 	void SetDebugDraw(const DebugDraw &draw) { m_debug_draw = draw; }
+	// t3dSetCameraRenderWindow (/viewport): the rectangle of the window the world's drawn in, black
+	// round it; the whole window until it's set. The clicks' places stay the window's.
+	void SetViewport(const Rect &view)
+	{
+		m_viewport = view;
+		m_has_viewport = true;
+	}
 	// The debug draws that put lines straight onto the canvas (DrawDebugOverlays).
 	bool DrawsDebugLines() const { return m_debug_draw.wireframe || m_debug_draw.walls || m_debug_draw.floor; }
 	const render::Vec3 &Feet() const { return m_feet; }
@@ -778,6 +785,8 @@ private:
 
 	CameraSetup m_own_camera;
 	CameraSetup *m_cam = &m_own_camera;
+	Rect m_viewport, m_view; // SetViewport's, and where the last Render drew
+	bool m_has_viewport = false;
 	float m_aspect = 4.0f / 3; // the last Render's width over height, for the lens
 	float m_orbit = 0;      // chase camera heading relative to the character's
 	float m_pitch = -12;    // degrees, negative looks down

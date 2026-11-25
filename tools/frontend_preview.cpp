@@ -2813,6 +2813,20 @@ namespace
 		old_effect(61);
 		type("/showspelleffects anything");
 		old_effect(8);
+
+		// /viewport: what it is, a rectangle (snapshot; what's picked in its middle), one too big, reset.
+		type("/viewport");
+		type("/viewport 200 -5 10 10");
+		type("/viewport 300 100 640 360");
+		h.Snapshot("v0-viewport");
+		type("/viewport");
+		type("/viewport 1000 600 640 5000");
+		type("/viewport");
+		type("/viewport 1000 100 100 0");
+		h.Render();
+		type("/viewport please reset it");
+		type("/viewport");
+		h.Snapshot("v1-viewport-reset");
 		return 0;
 	}
 

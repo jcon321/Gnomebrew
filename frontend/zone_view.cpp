@@ -1453,7 +1453,7 @@ ZoneView::Picked ZoneView::Pick(int x, int y, uint16_t me) const
 	if (!m_loaded || !m_error.empty())
 		return picked;
 	render::Vec3 from = m_renderer->CurrentCamera().position;
-	render::Vec3 direction = m_renderer->ViewRay(static_cast<float>(x) + 0.5f, static_cast<float>(y) + 0.5f);
+	render::Vec3 direction = m_renderer->ViewRay(static_cast<float>(x - m_view.x) + 0.5f, static_cast<float>(y - m_view.y) + 0.5f);
 	float best = FarPlane();
 	float distance;
 	for (const auto &[id, view] : m_actors) {
@@ -1527,7 +1527,7 @@ ZoneDoors::Use ZoneView::ClickDoor(int x, int y, const ZoneDoors::Held &held, ui
 	if (!m_loaded || !m_error.empty())
 		return ZoneDoors::Use::Nothing;
 	render::Vec3 from = m_renderer->CurrentCamera().position;
-	render::Vec3 direction = m_renderer->ViewRay(static_cast<float>(x), static_cast<float>(y));
+	render::Vec3 direction = m_renderer->ViewRay(static_cast<float>(x - m_view.x), static_cast<float>(y - m_view.y));
 	float distance, fraction;
 	int door = m_zone.DoorHit(from, direction, FarPlane(), distance);
 	if (door < 0 || m_zone.SegmentHit(from, from + direction * distance, fraction, nullptr, false))
@@ -1541,7 +1541,7 @@ int ZoneView::ClickLadder(int x, int y)
 	if (!m_loaded || !m_error.empty())
 		return -1;
 	render::Vec3 from = m_renderer->CurrentCamera().position;
-	render::Vec3 direction = m_renderer->ViewRay(static_cast<float>(x), static_cast<float>(y));
+	render::Vec3 direction = m_renderer->ViewRay(static_cast<float>(x - m_view.x), static_cast<float>(y - m_view.y));
 	float best = FarPlane();
 	float door_distance;
 	if (m_zone.DoorHit(from, direction, best, door_distance) >= 0)
@@ -1734,10 +1734,27 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 			v.distance = 200;
 		v.height = std::clamp(v.height, 0.0f, 30.0f);
 	}
-	m_aspect = canvas.Height() > 0 ? static_cast<float>(canvas.Width()) / canvas.Height() : 4.0f / 3;
+	// The rectangle /viewport gives, black round it (t3dRenderPartialScene clears the whole window
+	// first when the view isn't all of it).
+	Rect whole{0, 0, canvas.Width(), canvas.Height()};
+	m_view = m_has_viewport ? m_viewport : whole;
+	m_view.x = std::clamp(m_view.x, 0, whole.w);
+	m_view.y = std::clamp(m_view.y, 0, whole.h);
+	m_view.w = std::min(m_view.w, whole.w - m_view.x);
+	m_view.h = std::min(m_view.h, whole.h - m_view.y);
+	if (m_view.w <= 0 || m_view.h <= 0) {
+		canvas.Fill(whole, 0x000000);
+		return;
+	}
+	if (m_view.w != whole.w || m_view.h != whole.h)
+		for (const Rect &edge : {Rect{0, 0, whole.w, m_view.y}, Rect{0, m_view.Bottom(), whole.w, whole.h - m_view.Bottom()},
+		                         Rect{0, m_view.y, m_view.x, m_view.h}, Rect{m_view.Right(), m_view.y, whole.w - m_view.Right(), m_view.h}})
+			if (edge.w > 0 && edge.h > 0)
+				canvas.Fill(edge, 0x000000);
+	m_aspect = static_cast<float>(m_view.w) / m_view.h;
 	float distance;
 	render::Camera camera = MakeCamera(distance);
-	m_renderer->Begin(canvas.Width(), canvas.Height(), camera);
+	m_renderer->Begin(m_view.w, m_view.h, camera);
 	// SetAmbientLight follows our floor's exposure 0.01 a frame (here 0.6 a second), and turns
 	// infravision's glow on when the sky's light falls under 0.53, off when it's over 0.7.
 	float elapsed = m_vision_ms && now_ms > m_vision_ms ? (now_ms - m_vision_ms) / 1000.0f : 0;
@@ -1813,7 +1830,7 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 		m_renderer->EndBackground();
 	}
 	m_triangles_drawn = m_renderer->TriangleCount();
-	m_renderer->Finish(canvas.Row(0), canvas.Stride(), sky ? ScaleColor(m_sky.HorizonColor(), sky_tint) : camera.fog_color);
+	m_renderer->Finish(canvas.Row(m_view.y) + m_view.x, canvas.Stride(), sky ? ScaleColor(m_sky.HorizonColor(), sky_tint) : camera.fog_color);
 	// RealRender_World: blind (our ActorInfo+0x18d), CDisplay::ClearScreen's eqgfx call (0) once
 	// the world's drawn, so only the windows show.
 	if (m_blind)
@@ -1978,11 +1995,11 @@ ZoneView::WeatherCounts ZoneView::WeatherParticles() const
 
 void ZoneView::DrawDebugOverlays(Canvas &canvas) const
 {
-	uint32_t *pixels = canvas.Row(0);
-	int stride = canvas.Stride(), width = canvas.Width(), height = canvas.Height();
+	uint32_t *pixels = canvas.Row(m_view.y) + m_view.x;
+	int stride = canvas.Stride(), width = m_view.w, height = m_view.h;
 	// Lines anywhere on it, straight into its pixels.
 	if (m_debug_draw.wireframe || m_debug_draw.walls || m_debug_draw.floor)
-		canvas.MarkDrawn({0, 0, width, height});
+		canvas.MarkDrawn(m_view);
 	auto line = [&](const render::Vec3 &a, const render::Vec3 &b, uint32_t color) {
 		float ax, ay, bx, by;
 		if (m_renderer->Project(a, ax, ay) && m_renderer->Project(b, bx, by))
@@ -1990,7 +2007,7 @@ void ZoneView::DrawDebugOverlays(Canvas &canvas) const
 	};
 	if (m_debug_draw.wireframe) {
 		// Everything drawn (after Finish, so name tags still hide behind walls), as outlines on black.
-		canvas.Fill({0, 0, width, height}, 0x000000);
+		canvas.Fill(m_view, 0x000000);
 		m_renderer->DrawEdges(pixels, stride, 0x40a060);
 	}
 	if (m_debug_draw.walls && m_placed) {
@@ -2740,7 +2757,7 @@ void ZoneView::DrawNameSprites(const render::Camera &camera)
 		}
 		float sx, sy, d;
 		if (m_renderer->Project(anchor, sx, sy, d))
-			m_name_tags.push_back({sprite.id, static_cast<int>(sx), static_cast<int>(sy), depth, m_renderer->Focal()});
+			m_name_tags.push_back({sprite.id, m_view.x + static_cast<int>(sx), m_view.y + static_cast<int>(sy), depth, m_renderer->Focal()});
 	}
 	std::sort(m_name_tags.begin(), m_name_tags.end(), [](const NameTag &a, const NameTag &b) { return a.depth < b.depth; });
 }
