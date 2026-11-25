@@ -306,6 +306,8 @@ private:
 	void SetKeyTooltip(const std::string &window, const std::string &control, int cmd);
 	void SaveUserColor(int index, uint32_t rgb); // COptionsWnd::SaveColors
 	void WriteUserColor(int index, uint32_t rgb); // only [TextColors] User_<index+1>_Red, _Green, _Blue
+	// CEverQuest_procMouse's limits on a mouse look move: how far to turn (512ths) and pitch (degrees).
+	void MouseLook(int moved_x, int moved_y, float &heading, float &degrees) const;
 	MoveControls ZoneControls();
 	void CameraControls(uint64_t now_ms); // ProcessControls' zoom and look keys
 	bool ZoneCanMove() const; // in the zone, with no dialog up
@@ -385,6 +387,10 @@ private:
 	Rect m_viewport; // __ScreenX, __ScreenY and their size, /viewport (w 0 with no file to read: all of it)
 	bool m_viewport_set = false;
 	bool m_show_grass = true;         // DAT_007cf268, /showgrass ([Defaults] ShowGrass)
+	// The options' Mouse page: the sensitivity 1..8 (DAT_00798b0c, 4 by default), Invert Y Axis
+	// (DAT_007985e8), Look Spring (DAT_00798b14) and Mouse Look (DAT_00798571).
+	int m_mouse_sensitivity = 4;
+	bool m_invert_mouse = false, m_look_spring = false, m_mouse_look = true;
 	int m_mouse_speed = 0;            // DAT_0079858c, /mousespeed ([Defaults] MousePointerSpeedMod): times the cursor's movement
 	bool m_inspect_others = true;     // DAT_007cf28c, /inspect ([Defaults] InspectOthers): the right button inspects a player
 	int m_trade_with = 2;             // DAT_00798ad8, Allow trading with: 0 no one, 1 party members only, 2 everyone
@@ -409,7 +415,9 @@ private:
 	void SetPCloudDensity(int level); // CDisplay::SetPCloudDensity (@004a9507): 0 off .. 3 high
 	void SaveSetting(const char *section, const char *key, const std::string &value);
 	int GeneralOption(OptionsWindow::Host::General setting) const;          // SyncGeneralPage's values
-	void SetGeneralOption(OptionsWindow::Host::General setting, int value); // GeneralPageWndNotification
+	void SetGeneralOption(OptionsWindow::Host::General setting, int value);
+	int MouseOption(OptionsWindow::Host::Mouse setting) const;
+	void SetMouseOption(OptionsWindow::Host::Mouse setting, int value); // GeneralPageWndNotification
 	void SaveSetting(const char *section, const char *key, int value);      // into my-client.ini
 	void DrawBuffTooltips(Canvas &canvas, int mouse_x, int mouse_y); // Alt held over the buff window
 	bool BuffSpellInfo(const std::string &control, const std::string &window); // a buff's spell shown; false: not a buff

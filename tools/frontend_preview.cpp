@@ -4102,6 +4102,92 @@ namespace
 
 namespace
 {
+	// Replay "mouse": the Options window's Mouse page, what it keeps, and the right button's mouse look
+	// with each setting.
+	int MouseTest(FrontEnd &frontend, Harness &h, const std::string &settings_ini)
+	{
+		WindowManager &windows = frontend.Windows();
+		auto run = [&](int ms) { h.RunUntil([] { return false; }, ms); };
+		run(500);
+		windows.Show("OptionsWindow", true);
+		windows.Raise("OptionsWindow");
+		SidlWindow *options = windows.Find("OptionsWindow");
+		SidlWindow::Control *tabs = options ? options->Find("OPTW_OptionsSubwindows") : nullptr;
+		if (!tabs)
+			return 1;
+		for (int i = 0; i < static_cast<int>(tabs->children.size()); ++i)
+			if (options->Item(tabs->children[i]).def->screen_id == "OptionsMousePage")
+				options->SelectTab(*tabs, i);
+		run(100);
+		h.Snapshot("m0-mouse-page");
+		auto state = [&](const char *what) {
+			std::string line;
+			for (const char *id : {"OMP_InvertYAxisCheckbox", "OMP_LookSpringCheckbox", "OMP_MouseLookCheckbox"})
+				if (const SidlWindow::Control *c = options->Find(id))
+					line += std::string(id + 4) + (c->visible ? "" : "(hidden)") + "=" + (c->checked ? "1 " : "0 ");
+			const SidlWindow::Control *slider = options->Find("OMP_MouseSensitivitySlider");
+			const SidlWindow::Control *label = options->Find("OMP_MouseSensitivityValueLabel");
+			IniFile ini;
+			ini.Load(settings_ini);
+			printf("[preview] %s: %sslider %d '%s'; kept MouseLook=%s MouseSensitivity=%s InvertMouse=%s LookSpring=%s\n", what,
+				line.c_str(), slider ? slider->slider_value : -1, label ? label->text.c_str() : "",
+				ini.Get("Defaults", "MouseLook").c_str(), ini.Get("Defaults", "MouseSensitivity").c_str(),
+				ini.Get("Defaults", "InvertMouse").c_str(), ini.Get("Defaults", "LookSpring").c_str());
+		};
+		auto click = [&](const char *id) {
+			if (const SidlWindow::Control *c = options->Find(id))
+				h.Click(c->rect.x + c->rect.w / 2, c->rect.y + c->rect.h / 2);
+			run(100);
+			state(id);
+		};
+		// The right button held on the world and the mouse moved, how far we turn and pitch.
+		auto look = [&](const char *what, int dx, int dy) {
+			ZoneView *view = frontend.ZoneScene();
+			windows.Show("OptionsWindow", false);
+			float heading = view->Movement().heading, pitch = view->Stats().camera_pitch;
+			frontend.OnEvent({InputEvent::Type::RightDown, 900, 400});
+			frontend.OnEvent({InputEvent::Type::MouseMove, 900 + dx, 400 + dy});
+			float turned = view->Movement().heading - heading, pitched = view->Stats().camera_pitch - pitch;
+			frontend.OnEvent({InputEvent::Type::RightUp, 900 + dx, 400 + dy});
+			printf("[preview] %s: moved %d,%d turned %.1f pitched %.2f\n", what, dx, dy, turned, pitched);
+			windows.Show("OptionsWindow", true);
+		};
+		state("to start");
+		look("sensitivity 4", 20, 10);
+		look("sensitivity 4, fast", 200, 200);
+		if (SidlWindow::Control *slider = options->Find("OMP_MouseSensitivitySlider"))
+			options->SetSlider(*slider, 0);
+		run(100);
+		state("slider to its left end");
+		look("sensitivity 1, fast", 200, 200);
+		if (SidlWindow::Control *slider = options->Find("OMP_MouseSensitivitySlider"))
+			options->SetSlider(*slider, 99);
+		run(100);
+		state("slider to its right end");
+		look("sensitivity 8, fast", 200, 200);
+		click("OMP_InvertYAxisCheckbox");
+		look("inverted", 0, 20);
+		click("OMP_MouseLookCheckbox");
+		look("mouse look off", 20, 20);
+		click("OMP_MouseLookCheckbox");
+		click("OMP_LookSpringCheckbox");
+		// Look spring, in first person only.
+		if (ZoneView *view = frontend.ZoneScene()) {
+			view->Pitch(20);
+			run(300);
+			printf("[preview] look spring in the chase view: pitch %.1f\n", view->Stats().camera_pitch);
+			view->SetCameraView(ZoneView::CameraView::FirstPerson);
+			for (float degrees : {30.0f, -30.0f}) {
+				view->Pitch(degrees);
+				float from = view->Stats().camera_pitch;
+				run(300);
+				printf("[preview] look spring in first person: pitch %.1f to %.1f\n", from, view->Stats().camera_pitch);
+			}
+		}
+		h.Snapshot("m1-mouse-page");
+		return 0;
+	}
+
 	// Replay "options": the Options window's keyboard page, and keys through the keymap.
 	int OptionsTest(FrontEnd &frontend, Harness &h, const std::string &settings_ini)
 	{
@@ -4695,7 +4781,7 @@ int main(int argc, char **argv)
 	FrontEndConfig config;
 	config.ui_dir = argv[2];
 	// "settings": the plain replay, reading OUTDIR/my-client.ini (its [Filters] and the rest).
-	if (replay && argc >= 7 && (std::string(argv[6]) == "options" || std::string(argv[6]) == "settings" || std::string(argv[6]) == "alarm"))
+	if (replay && argc >= 7 && (std::string(argv[6]) == "options" || std::string(argv[6]) == "settings" || std::string(argv[6]) == "mouse" || std::string(argv[6]) == "alarm"))
 		config.settings_ini = std::string(argv[2]) + "/my-client.ini"; // the keymap's saves
 	bool stop_at_charselect = argc == 7 && std::string(argv[6]) == "charselect";
 	bool explore = argc == 7 && std::string(argv[6]) == "explore";
@@ -4851,6 +4937,8 @@ int main(int argc, char **argv)
 			return SpellsTest(frontend, h);
 		if (switches_test)
 			return SwitchesTest(frontend, h);
+		if (replay && argc >= 7 && std::string(argv[6]) == "mouse")
+			return MouseTest(frontend, h, config.settings_ini);
 		if (slash_test)
 			return SlashTest(frontend, h);
 		if (item_display_test)

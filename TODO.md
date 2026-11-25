@@ -431,10 +431,9 @@ no rules of its own.
    page (SyncDisplayPage, DisplayPageWndNotification, DisplayPageOnProcessFrame: names, sky, particles,
    clip plane, the windows' global fades) is done; still to do there: Video Modes (CVideoModesWnd)
    and Level of Detail's effect (s3dSetDynamicLOD: models are always drawn whole); Gamma does
-   nothing, as in eqgame windowed. Still to do: the Mouse page, which shows empty
-   (`COptionsWnd::MousePageWndNotification` @0042c2d6 and InitKeyboardAssignments' mouse
-   settings; its sensitivity and invert, which `procMouse` reads,
-   are fixed at 4 and off); the reverb's drugged room (23) while drunk at 40 and
+   nothing, as in eqgame windowed. The Mouse page (SyncMousePage, MousePageWndNotification: Invert Y
+   Axis, Look Spring, Mouse Look and the sensitivity; `frontend_preview ... mouse`) is done. Still to
+   do: the reverb's drugged room (23) while drunk at 40 and
    over (DoPassageOfTime's drunkenness wearing off isn't ours); the Keyboard page's
    temporary red rows (commands not yet done) go once every command is done.
    A combo box's list that's down takes any press (CXWndManager's 0x34): off it, the list goes
@@ -473,12 +472,11 @@ no rules of its own.
    held pitch faster each frame, to 12 EQ units a frame unit. Toggle UI Display (0x15, __ScreenMode
    2 and 3) hides the windows and the cursor (DoMainLoop's DrawWindows and DrawCursor), the hidden
    windows still taking the mouse and the world only in mouse look, until it's pressed again or a
-   zone is entered; the mouse look check is our right button held (no Toggle mouse look yet). Still to do:
+   zone is entered; the mouse look check is our right button held. Still to do:
    - ExecuteCmd's (@0054050c) commands not done yet (the page's "No"):
-     - 7, Toggle mouse look: `DAT_00798571` flipped (on from the start; the Mouse page's check
-       box and `loadOptions` set it too), eqstr 12372 "Mouse control deactivated." or 12373
-       "Mouse control activated.  Use right mouse button.". `CEverQuest_RMouseDown` copies it to
-       `__MouseLook`, so off, the right button no longer turns us; ours always does.
+     - 7, Toggle mouse look: `DAT_00798571` flipped (the Mouse page's Mouse Look, done:
+       `FrontEnd::m_mouse_look`), eqstr 12372 "Mouse control deactivated." or 12373 "Mouse control
+       activated.  Use right mouse button.".
      - 14, Use centerscreen: with the chat line closed, the middle of the screen clicked:
        `CEverQuest_ClickedPlayer` there is `LeftClickedOnPlayer` and, with no target or an NPC's
        (Type 1), `RightClickedOnPlayer` too; nobody there, `CEverQuest_ClickedSwitch`.
@@ -509,8 +507,7 @@ no rules of its own.
      with a Rider and hands a horse's target to it). Both don't know whether we see invisible (EQ_Character::CanISeeInvis: SPA 13 and the races'), so
      an invisible spawn is never picked, nor a GM's VisibilityState.
    - Look up and down held (ProcessControls, DAT_0079974c and DAT_0079974e) pitch to EQ's 128
-     either way, but our view stops at -80 and 60 degrees (ZoneView::Pitch); and the pitch going
-     back to level by 10 a frame in first person with neither held (DAT_00798b14's option).
+     either way, but our view stops at -80 and 60 degrees (ZoneView::Pitch).
    - CDisplay_KeyMapUpdated: the buttons' key tooltips (CXWnd::SetKeyTooltip,
      CActionsWnd::KeyMapUpdated_UpdateActionWindowKeyTooltips, CSelectorWnd::KeyMapUpdated).
    - Character select's explore mode takes only the movement, Jump and Toggle camera view
@@ -1093,8 +1090,9 @@ no rules of its own.
       notch to 100, and its 2 off view 2's bearing), and we start in it, where eqgame starts in view 0.
     - `s3dCollideSphereWithWorld` for views 1, 3 and 4 (ours: a segment from our center, 1 short of
       what it hits), and `DoCamAi`'s `GetEnvironment` of the camera's region (`DAT_0063b7c8`).
-    - The mouse's sensitivity and invert (`_DAT_0079858a` from `DAT_00798b0c`, `DAT_007985e8`: the
-      Mouse page) are fixed at 4 and off.
+    - Mouse look's own rates in views 0 to 2 (`procMouse`: a count is 1 of 512 pitched, and a heading
+      speed of 1 turned; ours 0.25 degrees and 0.6 of a 512th a pixel, with eqgame's limits), by the
+      frame rather than the mouse message, and its 8 and 3 on a horse and a steered boat.
     - SPA 87 (magnification) as it lands or fades (under 2).
 14. **Graphics options:** fullscreen or windowed, resolution changes, gamma, anisotropic filtering,
     MSAA, draw distance and level of detail. eqgame's side of it: `CDisplay::ChangeVideoMode`

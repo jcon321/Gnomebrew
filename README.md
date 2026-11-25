@@ -139,6 +139,10 @@ FastDrop=0
 ShowDynamicLights=TRUE
 ShowGrass=TRUE
 ShowSpellEffects=1
+MouseLook=1
+MouseSensitivity=4
+InvertMouse=0
+LookSpring=0
 MousePointerSpeedMod=0
 InspectOthers=TRUE
 TrackPlayers=TRUE
@@ -253,6 +257,8 @@ WeatherSounds=1
   `ShowDynamicLights` is /dynamiclights (read as `InspectOthers` is, below).
   `ShowGrass` is /showgrass (read the same way).
   `ShowSpellEffects` is /showspelleffects (1 with no key or a value but 0 and 1).
+  `MouseLook`, `MouseSensitivity` (1 to 8), `InvertMouse` and `LookSpring` are the options' Mouse page
+  (eqgame keeps them in eqOptions1.opt), kept as they change.
   `MousePointerSpeedMod` is /mousespeed's multiplier of the cursor's movement, 0 to 10 (0 and 1 as
   the mouse moves it), kept as it changes.
   `InspectOthers` is `/inspect on|off` (`DAT_007cf28c`): whether the right button on a player
@@ -637,7 +643,7 @@ additions of ours, or ones taken from TAKP's eqgame.dll or Zeal rather than stoc
   open (see Keymap), the arrows don't move you while you type with these defaults; with the arrows
   as the keys and W A S D as the alternates, they would.
 - **Options window's not-implemented rows:** for now the Keyboard page lists a command Gnomebrew
-  doesn't do yet in red. The window keeps its EQUI size. The Mouse page shows empty.
+  doesn't do yet in red. The window keeps its EQUI size.
 - **Far Clip Plane** starts at its maximum (`[Defaults] ClipPlane=20` in my-client.ini, 4.0, the view
   out to the zone's max clip) where eqgame starts at 5 (1.0, the zone's own fog).
 - **Sky** starts at Double Layer (`[Defaults] Sky=2`, the cloud layer drawn) where eqgame starts at
@@ -775,7 +781,7 @@ build/eqclient -u USER -p PASS [options]
 
 ```
 build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|train|ground|commands|group|duel|bazaar|raid|guild|skills|aa]]
-build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez|cameras|packets|spells|switches|itemdisplay|slash|friends|chatwindows|multiline|inspect|tracking|breath|ladder]]
+build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez|cameras|packets|spells|switches|itemdisplay|slash|mouse|friends|chatwindows|multiline|inspect|tracking|breath|ladder]]
 ```
 
 This drives the real front-end code with scripted input and writes PNG snapshots. Text is
@@ -900,7 +906,8 @@ level and without the expansions, `/surname`'s refusals, its question answered N
 zone's two answers, and `/safelock`'s lock tried with the forward and inventory keys, Escape and
 commands, unlocked, and locked again with the right button down, `/hotbutton`'s socials,
 `/mousespeed`, `/dynamiclights` with a torch's light taken in hand and put away, `/showspelleffects` with old
-effects landing on us, `/viewport` with snapshots, and `/showgrass`)
+effects landing on us, `/viewport` with snapshots, and `/showgrass`; `mouse` works the options' Mouse page,
+printing what it shows and keeps, and how far a move with the right button held turns and pitches us)
 and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,
 opens, minimizes, resizes and closes windows (the layout goes to OUTDIR), types into the chat window
 (a say, commands, /target) and prints what the chat window holds, then stands near the target to
@@ -1597,8 +1604,21 @@ the rejection).
   `_DAT_0079858a` (4 by default): in views 3 and 4 the mouse's left and right move the heading (at
   most twice the sensitivity a move) and don't turn us, and up and down the distance (half the
   sensitivity, no nearer than 3; in water type 5, the pitch instead); in view 1 left and right turn
-  us and up and down the pitch (0.3 of the sensitivity). Ours leave our chase camera (view 2) out
+  us and up and down the pitch (0.3 of the sensitivity). In first person it turns us by the mouse's
+  move, at most 10 times the sensitivity (a speed: `MovementSpeedHeading`), and pitches by it, at most
+  4 times (512ths of a turn); so the sensitivity is only how fast a move may go. Invert Y Axis
+  (`DAT_007985e8`) turns up and down over in every view. Ours hold a move to those limits
+  (`FrontEnd::MouseLook`, the chase view too), but how far a pixel goes under them is ours (0.6 of a
+  512th turned, 0.25 degrees pitched), and a move is a mouse message rather than a frame's. Ours leave our chase camera (view 2) out
   of the camera keys. The wheel (`HandleMouseWheelZoom`) does nothing in views 1, 3 and 4.
+- **The options' Mouse page** (`InitKeyboardAssignments` @0042a82e, `MousePageWndNotification`
+  @0042c2d6, `OptionsWindow::SyncMousePage`): Invert Y Axis (`DAT_00798b10`), Look Spring
+  (`DAT_00798b14`) and Mouse Look (`DAT_00798b18`, on by default) check boxes, and the sensitivity
+  (`DAT_00798b0c`, 4; `loadOptions` makes it 4 outside 1..8) less 1 on an 8 tick slider, its label
+  the slider's value * 100 / 7. Set as the window's made and the page picked; anything on it runs
+  saveOptions. Mouse Look off, `CEverQuest_RMouseDown` (@0054699d) doesn't start mouse look; the
+  right button still clicks. Look Spring (`ProcessControls`): in first person out of mouse look, with
+  neither look key held, the pitch goes 10 (of 512) a frame back to level.
 - **First person** (view 0) puts the camera at the head bone
   (`ActorInfo::DagHeadPoint`) only for a combat swing (animations 1..11), riding (`Mount`),
   sitting (P02, 0x21) or kneeling (P05, 0x24); otherwise, dead (D05) included, at

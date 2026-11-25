@@ -132,6 +132,14 @@ namespace
 		{"Defaults", "ShowSpellEffects", "1",
 			"/showspelleffects: 1 shows the old spell effects (spells.eff: the spells without a Luclin one),\n"
 			"0 doesn't. The Luclin effects are the Display page's."},
+		{"Defaults", "MouseLook", "1",
+			"The options' Mouse page. MouseLook: 1 the right button held looks around, 0 it doesn't.\n"
+			"MouseSensitivity: 1 to 8, the most a fast move of the mouse turns you (4, as the real client\n"
+			"starts). InvertMouse: 1 turns up and down over. LookSpring: 1 the view goes back to level in\n"
+			"first person. Kept as they change."},
+		{"Defaults", "MouseSensitivity", "4", ""},
+		{"Defaults", "InvertMouse", "0", ""},
+		{"Defaults", "LookSpring", "0", ""},
 		{"Defaults", "MousePointerSpeedMod", "0",
 			"/mousespeed: how many times as fast the mouse cursor moves, 0 to 10 (0 and 1: as it does)."},
 		{"Defaults", "InspectOthers", "TRUE",

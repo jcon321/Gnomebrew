@@ -80,6 +80,18 @@ namespace
 		snprintf(text, sizeof(text), "%.1f", value);
 		return text;
 	}
+	const char *const MousePage = "OptionsMousePage";
+	using Mouse = OptionsWindow::Host::Mouse;
+	struct MouseCheck
+	{
+		const char *id;
+		Mouse setting;
+	};
+	constexpr MouseCheck MouseChecks[] = {{"OMP_InvertYAxisCheckbox", Mouse::InvertY},
+		{"OMP_LookSpringCheckbox", Mouse::LookSpring}, {"OMP_MouseLookCheckbox", Mouse::MouseLook}};
+	const char *const SensitivitySlider = "OMP_MouseSensitivitySlider";
+	const char *const SensitivityLabel = "OMP_MouseSensitivityValueLabel";
+	constexpr int SensitivityTicks = 8;
 	const char *const ChatPage = "OptionsChatPage";
 	// COptionsWnd's ChatArray ("Chat%d"): DAT_00798bf4..c18, 1 shown.
 	constexpr int32_t ChatFilters::*const ChatSwitches[] = {&ChatFilters::guild, &ChatFilters::socials,
@@ -132,16 +144,6 @@ void OptionsWindow::Attach(WindowManager &windows, KeyBindings &keys, Host host)
 	SidlWindow *wnd = windows.Find(Screen);
 	if (!wnd)
 		return;
-	// Every page's pieces hidden but the keyboard, filters and color pages' (ours, until the others
-	// do something).
-	if (SidlWindow::Control *tabs = wnd->Find(Tabs))
-		for (int page : tabs->children) {
-			SidlWindow::Control &p = wnd->Item(page);
-			const std::string &id = p.def->screen_id;
-			if (id != KeyboardPage && id != ColorPage && id != ChatPage && id != GeneralPage && id != DisplayPage)
-				for (int piece : p.children)
-					wnd->Item(piece).visible = false;
-		}
 	if (SidlWindow::Control *list = wnd->Find(AssignmentList))
 		list->header_color = 0x8aa3ff; // COptionsWnd::COptionsWnd: the list's +0x14c, 0xff8aa3ff
 	// COptionsWnd::COptionsWnd: every page's combo boxes SetColors(white, yellow, gray), their lists'
@@ -160,7 +162,12 @@ void OptionsWindow::Attach(WindowManager &windows, KeyBindings &keys, Host host)
 	m_confirming_colors = false;
 	m_color_page_shown = false;
 	m_chat_page_shown = false;
-	m_general_page_shown = false;
+	m_general_page_shown = m_mouse_page_shown = false;
+	if (SidlWindow::Control *slider = wnd->Find(SensitivitySlider)) {
+		slider->slider_ticks = SensitivityTicks;
+		wnd->SetSlider(*slider, slider->slider_value);
+		m_mouse_slider = slider->slider_value;
+	}
 	for (int i = 0; i < 3; ++i)
 		if (SidlWindow::Control *slider = wnd->Find(GeneralSliders[i].id)) {
 			slider->slider_ticks = SliderTicks;
@@ -176,7 +183,48 @@ void OptionsWindow::Attach(WindowManager &windows, KeyBindings &keys, Host host)
 	UpdateUserColors(); // COptionsWnd::COptionsWnd
 	SyncGeneralPage();
 	SyncDisplayPage();
+	SyncMousePage();
 	SyncChatPage();
+}
+
+void OptionsWindow::SyncMousePage()
+{
+	SidlWindow *wnd = m_windows ? m_windows->Find(Screen) : nullptr;
+	if (!wnd || !m_host.mouse)
+		return;
+	for (const MouseCheck &check : MouseChecks)
+		if (SidlWindow::Control *button = wnd->Find(check.id))
+			button->checked = m_host.mouse(check.setting) == 1;
+	if (SidlWindow::Control *slider = wnd->Find(SensitivitySlider))
+		wnd->SetSlider(*slider, m_host.mouse(Mouse::Sensitivity) - 1); // CSliderWnd::SetValue
+	MousePageSlider(); // its notification, if it moved
+}
+
+void OptionsWindow::MousePageSlider()
+{
+	SidlWindow *wnd = m_windows ? m_windows->Find(Screen) : nullptr;
+	const SidlWindow::Control *slider = wnd ? wnd->Find(SensitivitySlider) : nullptr;
+	if (!slider || slider->slider_value == m_mouse_slider)
+		return;
+	m_mouse_slider = slider->slider_value;
+	if (SidlWindow::Control *label = wnd->Find(SensitivityLabel))
+		label->text = Percent(m_mouse_slider * 100 / 7);
+	if (m_host.set_mouse)
+		m_host.set_mouse(Mouse::Sensitivity, m_mouse_slider + 1);
+}
+
+bool OptionsWindow::MousePageClick(const std::string &control)
+{
+	SidlWindow *wnd = m_windows->Find(Screen);
+	const SidlWindow::Control *clicked = wnd ? wnd->Find(control) : nullptr;
+	if (!clicked || !m_host.set_mouse)
+		return false;
+	for (const MouseCheck &check : MouseChecks)
+		if (control == check.id) {
+			m_host.set_mouse(check.setting, clicked->checked ? 1 : 0);
+			return true;
+		}
+	return false;
 }
 
 void OptionsWindow::SyncGeneralPage()
@@ -538,7 +586,7 @@ bool OptionsWindow::Click(const std::string &window, const std::string &control,
 		}
 		return true;
 	}
-	if (GeneralPageClick(control) || DisplayPageClick(control) || ChatPageClick(control))
+	if (GeneralPageClick(control) || DisplayPageClick(control) || MousePageClick(control) || ChatPageClick(control))
 		return true;
 	if (control.rfind("UserColor", 0) == 0) {
 		int index = -1;
@@ -657,6 +705,13 @@ void OptionsWindow::Frame(uint64_t now_ms)
 		DisplayPageSliders();
 		SyncDisplayPage();
 	}
+	// COptionsWnd_InitializeKeyboardTab, as the Mouse page is picked; its slider moved.
+	const SidlWindow::Control *mouse_page = options ? options->Find(MousePage) : nullptr;
+	bool mouse = mouse_page && mouse_page->visible;
+	if (mouse && !m_mouse_page_shown)
+		SyncMousePage();
+	m_mouse_page_shown = mouse;
+	MousePageSlider();
 	// ProcessChatOptionsTab's SyncChatPage, as the Filters page is picked.
 	const SidlWindow::Control *chat_page = options ? options->Find(ChatPage) : nullptr;
 	bool chat = chat_page && chat_page->visible;

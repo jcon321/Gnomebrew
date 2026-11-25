@@ -381,7 +381,10 @@ public:
 	// CEverQuest_procMouse with mouse look (the right button held) in the overhead and user views:
 	// `dx`, `dy` the mouse's move. The user cameras go round us (dx) and in or out (dy, no nearer
 	// than 3); the overhead camera pitches (dy). False in a view where the mouse turns us (dx).
-	bool MouseLookCamera(float dx, float dy);
+	// `sensitivity` the Mouse page's 1..8 (_DAT_0079858a); dy turned over already when inverted.
+	bool MouseLookCamera(float dx, float dy, int sensitivity);
+	// ProcessControls' look spring: in first person the pitch 10 (of 512) a frame back to level.
+	void SpringPitch();
 	void Orbit(float delta) { m_orbit += delta; }
 	void Turn(float delta);
 	void FaceCamera();

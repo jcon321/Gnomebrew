@@ -333,10 +333,18 @@ void ZoneView::CameraKeys(float raise, float slide, float pitch)
 		v.pitch = std::clamp(v.pitch + pitch, -128.0f, 128.0f);
 }
 
-bool ZoneView::MouseLookCamera(float dx, float dy)
+void ZoneView::SpringPitch()
 {
-	// CEverQuest_procMouse, the mouse sensitivity at its default of 4 (_DAT_0079858a).
-	constexpr float Sensitivity = 4;
+	if (m_cam->view != CameraView::FirstPerson)
+		return;
+	constexpr float Step = 10 * 360.0f / 512;
+	m_pitch = m_pitch > 0 ? std::max(m_pitch - Step, 0.0f) : std::min(m_pitch + Step, 0.0f);
+}
+
+bool ZoneView::MouseLookCamera(float dx, float dy, int sensitivity)
+{
+	// CEverQuest_procMouse.
+	const float Sensitivity = static_cast<float>(sensitivity);
 	CameraView view = m_cam->view;
 	CameraSetup::View &v = m_cam->Current();
 	bool user_view = view == CameraView::User1 || view == CameraView::User2;

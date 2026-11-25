@@ -150,6 +150,13 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 				// 1 with no key, or anything but 0 and 1.
 				std::string effects = ini.Get("Defaults", "ShowSpellEffects");
 				m_show_spell_effects = effects.empty() || std::atoi(effects.c_str()) != 0;
+				// CEverQuest_loadOptions (eqOptions1.opt there): the sensitivity 4 unless it's 1..8.
+				m_mouse_sensitivity = std::atoi(ini.Get("Defaults", "MouseSensitivity").c_str());
+				if (m_mouse_sensitivity < 1 || m_mouse_sensitivity > 8)
+					m_mouse_sensitivity = 4;
+				m_invert_mouse = number("Defaults", "InvertMouse", 0, 0, 1) == 1;
+				m_look_spring = number("Defaults", "LookSpring", 0, 0, 1) == 1;
+				m_mouse_look = number("Defaults", "MouseLook", 1, 0, 1) == 1;
 				// 0 with no key, under 0 or over 10 (written so).
 				m_mouse_speed = std::atoi(ini.Get("Defaults", "MousePointerSpeedMod").c_str());
 				if (m_mouse_speed < 0 || m_mouse_speed > 10) {
@@ -1735,7 +1742,7 @@ void FrontEnd::ExploreEvent(const InputEvent &event)
 	case InputEvent::Type::RightDown:
 		m_look_x = event.x;
 		m_look_y = event.y;
-		m_mouse_turn = true;
+		m_mouse_turn = m_mouse_look; // CEverQuest_RMouseDown
 		return;
 	case InputEvent::Type::MouseMove:
 		if (m_mouse_turn && m_charselect_view) {
@@ -1743,8 +1750,10 @@ void FrontEnd::ExploreEvent(const InputEvent &event)
 			if (moved_x == 0 && moved_y == 0)
 				return; // the host putting the cursor back
 			m_mouse_grabbed = true;
-			m_charselect_view->Turn(-0.6f * static_cast<float>(moved_x));
-			m_charselect_view->Pitch(-0.25f * static_cast<float>(moved_y));
+			float heading, degrees;
+			MouseLook(moved_x, moved_y, heading, degrees);
+			m_charselect_view->Turn(heading);
+			m_charselect_view->Pitch(degrees);
 		}
 		return;
 	case InputEvent::Type::Wheel:
@@ -2747,6 +2756,8 @@ void FrontEnd::BuildZoneWindows(bool reload, bool use_ini)
 	options_host.set_display = [this](OptionsWindow::Host::Display setting, float value) {
 		SetDisplayOption(setting, value);
 	};
+	options_host.mouse = [this](OptionsWindow::Host::Mouse setting) { return MouseOption(setting); };
+	options_host.set_mouse = [this](OptionsWindow::Host::Mouse setting, int value) { SetMouseOption(setting, value); };
 	options_host.filters = &m_filters;
 	options_host.filters_changed = [this] { FiltersChanged(); };
 	m_options.Attach(m_windows, m_key_bindings, std::move(options_host));
@@ -5105,6 +5116,42 @@ int FrontEnd::GeneralOption(OptionsWindow::Host::General setting) const
 	return 0;
 }
 
+int FrontEnd::MouseOption(OptionsWindow::Host::Mouse setting) const
+{
+	using Mouse = OptionsWindow::Host::Mouse;
+	switch (setting) {
+	case Mouse::InvertY: return m_invert_mouse ? 1 : 0;
+	case Mouse::LookSpring: return m_look_spring ? 1 : 0;
+	case Mouse::MouseLook: return m_mouse_look ? 1 : 0;
+	case Mouse::Sensitivity: return m_mouse_sensitivity;
+	}
+	return 0;
+}
+
+void FrontEnd::SetMouseOption(OptionsWindow::Host::Mouse setting, int value)
+{
+	// COptionsWnd::MousePageWndNotification (@0042c2d6), then saveOptions.
+	using Mouse = OptionsWindow::Host::Mouse;
+	switch (setting) {
+	case Mouse::InvertY:
+		m_invert_mouse = value != 0;
+		SaveSetting("Defaults", "InvertMouse", value != 0);
+		break;
+	case Mouse::LookSpring:
+		m_look_spring = value != 0;
+		SaveSetting("Defaults", "LookSpring", value != 0);
+		break;
+	case Mouse::MouseLook:
+		m_mouse_look = value != 0;
+		SaveSetting("Defaults", "MouseLook", value != 0);
+		break;
+	case Mouse::Sensitivity:
+		m_mouse_sensitivity = std::clamp(value, 1, 8);
+		SaveSetting("Defaults", "MouseSensitivity", m_mouse_sensitivity);
+		break;
+	}
+}
+
 void FrontEnd::SetGeneralOption(OptionsWindow::Host::General setting, int value)
 {
 	// COptionsWnd::GeneralPageWndNotification (@0042b532), then saveOptions.
@@ -6945,6 +6992,19 @@ void FrontEnd::CameraControls(uint64_t now_ms)
 		m_keys.pitch_down_speed = std::min(m_keys.pitch_down_speed + 1, 12);
 		m_zone_view->Pitch(-m_keys.pitch_down_speed * units * Degrees);
 	}
+	// The Mouse page's Look Spring, out of mouse look with neither held.
+	if (m_look_spring && !m_mouse_turn && !m_keys.pitch_up && !m_keys.pitch_down)
+		m_zone_view->SpringPitch();
+}
+
+void FrontEnd::MouseLook(int moved_x, int moved_y, float &heading, float &degrees) const
+{
+	// procMouse holds each move to 10 times the sensitivity in heading and 4 times in pitch (512ths
+	// of a turn), up and down turned over with Invert Y Axis. How far a pixel goes is ours.
+	float sensitivity = static_cast<float>(m_mouse_sensitivity);
+	heading = std::clamp(-0.6f * static_cast<float>(moved_x), -10 * sensitivity, 10 * sensitivity);
+	float most = 4 * sensitivity * 360 / 512;
+	degrees = std::clamp(-0.25f * static_cast<float>(m_invert_mouse ? -moved_y : moved_y), -most, most);
 }
 
 MoveControls FrontEnd::ZoneControls()
@@ -7084,8 +7144,9 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			m_look_x = event.x;
 			m_look_y = event.y;
 		}
-		m_mouse_turn = true;
-		if (m_zone_view && m_zone.Self().stance != 110) // sitting, the mouse doesn't turn us
+		// CEverQuest_RMouseDown: only with the Mouse page's Mouse Look on (DAT_00798571).
+		m_mouse_turn = m_mouse_look;
+		if (m_mouse_turn && m_zone_view && m_zone.Self().stance != 110) // sitting, the mouse doesn't turn us
 			m_zone_view->FaceCamera();
 		return;
 	case InputEvent::Type::MouseDown:
@@ -7133,12 +7194,15 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			m_mouse_grabbed = true;
 			float dx = -0.6f * static_cast<float>(moved_x);
 			float dy = -0.25f * static_cast<float>(moved_y);
+			if (turn)
+				MouseLook(moved_x, moved_y, dx, dy);
 			if (m_zone_view) {
 				ZoneView::CameraView view = m_zone_view->View();
 				if (turn && view != ZoneView::CameraView::FirstPerson && view != ZoneView::CameraView::Chase) {
 					// CEverQuest_procMouse in the overhead and user views: a user camera goes round us
 					// and in or out; the overhead one pitches, the mouse still turning us.
-					if (!m_zone_view->MouseLookCamera(static_cast<float>(moved_x), static_cast<float>(moved_y)) &&
+					if (!m_zone_view->MouseLookCamera(static_cast<float>(moved_x),
+					        static_cast<float>(m_invert_mouse ? -moved_y : moved_y), m_mouse_sensitivity) &&
 					    m_zone.Self().stance != 110)
 						m_zone_view->Turn(dx);
 					return;

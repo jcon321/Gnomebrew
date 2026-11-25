@@ -1,7 +1,12 @@
 #pragma once
 
-// eqgame's COptionsWnd on the "OptionsWindow" SIDL screen (EQUI_OptionsWindow.xml). So far its
-// General, Display, Keyboard, Filters and Colors pages do something; the Mouse page shows empty.
+// eqgame's COptionsWnd on the "OptionsWindow" SIDL screen (EQUI_OptionsWindow.xml).
+//
+// The Mouse page (InitKeyboardAssignments @0042a82e, MousePageWndNotification @0042c2d6): Invert Y
+// Axis, Look Spring and Mouse Look checked by their settings (1), and the sensitivity 1..8 on its
+// slider (8 ticks, the value less 1), whose label ("%d %c", the slider's value * 100 / 7) changes
+// only when it does. The page shows them as the window's made and as the page is picked; a click or
+// the slider moved sets the setting, which is kept.
 //
 // The Display page (SyncDisplayPage @0042a5e5, DisplayPageWndNotification @0042bba3): Show PC Names,
 // Show NPC Names and Level of Detail checked by their settings; Sky (3D sky off, one layer, two),
@@ -98,14 +103,18 @@ public:
 		};
 		std::function<float(Display)> display;
 		std::function<void(Display, float)> set_display;
+		// The Mouse page: a setting as eqgame keeps it (DAT_00798b10, b14 and b18 0 or 1; DAT_00798b0c
+		// 1..8), and one set from the page.
+		enum class Mouse { InvertY, LookSpring, MouseLook, Sensitivity };
+		std::function<int(Mouse)> mouse;
+		std::function<void(Mouse, int)> set_mouse;
 		// The Filters page: the /filter switches, and a click having changed one of them.
 		ChatFilters *filters = nullptr;
 		std::function<void()> filters_changed;
 	};
 
-	// The window's pages emptied but the general, keyboard, filters and colors pages', the keyboard
-	// page filled (UpdateKeyboardAssignmentList: the first category), and the general and filters
-	// pages set (SyncGeneralPage, SyncChatPage).
+	// The keyboard page filled (UpdateKeyboardAssignmentList: the first category), and the other
+	// pages set (SyncGeneralPage, SyncDisplayPage, InitKeyboardAssignments, SyncChatPage).
 	void Attach(WindowManager &windows, KeyBindings &keys, Host host);
 
 	// A click on the keyboard page, or on the confirmation dialog while it asks about the
@@ -133,6 +142,9 @@ private:
 	void SyncDisplayPage();
 	bool DisplayPageClick(const std::string &control); // DisplayPageWndNotification's clicks and picks
 	void DisplayPageSliders();                          // and its sliders (notification 0xd)
+	void SyncMousePage();                                // InitKeyboardAssignments
+	bool MousePageClick(const std::string &control);     // MousePageWndNotification's clicks
+	void MousePageSlider();                              // and its slider (notification 0xd)
 	void SyncChatPage();
 	bool ChatPageClick(const std::string &control); // ChatPageWndNotification
 
@@ -146,6 +158,8 @@ private:
 	bool m_color_page_shown = false;
 	bool m_chat_page_shown = false;
 	bool m_general_page_shown = false;
+	bool m_mouse_page_shown = false;
+	int m_mouse_slider = 0; // the Mouse page's slider as last seen
 	int m_display_sliders[7] = {}; // the Display page's sliders as last seen
 	int m_slider_values[3] = {}; // the General page's sliders as last seen (a change is CSliderWnd's 0xd)
 	uint64_t m_confirm_until_ms = 0;
