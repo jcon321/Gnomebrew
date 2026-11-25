@@ -2742,6 +2742,26 @@ namespace
 		frontend.OnEvent({InputEvent::Type::RightUp, 640, 360});
 		type("/safelock x");
 		run(300);
+
+		// /hotbutton: how, a social of its own with and without a color, one of the same name, a long
+		// name, then every place taken.
+		const GameWindowState &state = frontend.WindowState();
+		auto social = [&](const char *line) {
+			type(line);
+			int at = state.cursor.type == HotButton::Social ? state.cursor.value : -1;
+			if (at >= 0)
+				printf("[preview] social %d on the cursor: '%s' color %d '%s'\n", at, state.socials[at].name.c_str(),
+					state.socials[at].color, state.socials[at].lines[0].c_str());
+		};
+		type("/hotbutton");
+		social("/hotbutton Greet 5 /say hello there");
+		social("/hotbutton \"Two words\" /sit down");
+		social("/hotbutton GREET /say 5 again");
+		social("/hotbutton Averyveryverylongname 12");
+		for (Social &s : frontend.WindowStateForTests().socials)
+			if (s.name.empty())
+				s.name = "taken";
+		social("/hotbutton Another /sit");
 		return 0;
 	}
 

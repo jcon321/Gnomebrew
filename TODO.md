@@ -881,14 +881,11 @@ no rules of its own.
     the exe's two literal lines), /discipline (@004f4fb5, `frontend/disciplines.*`; checked on
     replay, `frontend_preview ... slash`, not live: the test characters are under 30) and /surname
     (@004f3ddb, `CEverQuest_Surname`; the same), /safelock (@004ff689; it leaves the window's
-    close box alone, where `EverQuest_wndproc`'s WM_CLOSE is /quit, refused while locked or frozen).
+    close box alone, where `EverQuest_wndproc`'s WM_CLOSE is /quit, refused while locked or frozen) and
+    /hotbutton (@004ff36a, `RegisterHotButton`).
     Still to do:
     - /facepick (23), /hitsmode and /clearhits (3), /mp3, /music and /gems (34),
       /shownpcnames (9).
-    - /hotbutton (@004ff36a): `[Name] <Color> [Text]` makes a social of that name, color and
-      first line in the first free one of the 120 (or the one of that name), `registerHotButton`
-      @004ff251, and puts it on the cursor (`CCursorAttachment::Activate` type 4) for a hot
-      button; eqstr 13278..13281 with no name, 13282 done, 13283 no room.
     - The chat channels, all through `CEverQuest::ChatServerMessage` (@00524de9) to the chat
       server the world names (`OP_SetChatServer`; `ChatServerConnect` @00524cae,
       `ChatServerGiveTime` @00524885 from `DoMainLoop`, `CshOnMessage` @00524b2c,

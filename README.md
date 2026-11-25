@@ -401,7 +401,7 @@ eqgame's `OP_MoveItem`.
   /random, /lootnodrop, /fastdrop, /autosplit, /roleplay, /targetgroupbuff (/tgb), /split, /yell,
   /consent, /duel, /decline, /trader, /bazaar, /loot, /ttell, /charinfo, /movelog, /stopsong, /shield, /quit (/exit), /log, /keys, /dismount,
   /adriver, /sdriver, /attack, /combatmusic, /doability, /rtarget, /inspect, /particledensity,
-  /help, /bugreport, /feedback, /petition, /report, /discipline, /surname, /safelock, the
+  /help, /bugreport, /feedback, /petition, /report, /discipline, /surname, /safelock, /hotbutton, the
   guild commands (see Guilds under In the zone),
   the raid commands (see Raids), /filter, /serverfilter and the socials (/smile, /wave and the
   other 86).
@@ -888,7 +888,7 @@ and prints the item display's title and text; `slash` types slash commands and p
 and send: `/discipline` as each class with nothing, a word it has and one it hasn't, under the
 level and without the expansions, `/surname`'s refusals, its question answered No and Yes and the
 zone's two answers, and `/safelock`'s lock tried with the forward and inventory keys, Escape and
-commands, unlocked, and locked again with the right button down)
+commands, unlocked, and locked again with the right button down, and `/hotbutton`'s socials)
 and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,
 opens, minimizes, resizes and closes windows (the layout goes to OUTDIR), types into the chat window
 (a say, commands, /target) and prints what the chat window holds, then stands near the target to
@@ -2696,6 +2696,12 @@ details and the nearest spawns at the top left and the radar at the top right.
   4031 then 4034, the ability's description), or us, 4030; with a name, `DoPercentConvert` then
   `EQPlayer_get_player_partial_name` (nobody: nothing said), or us, 3278. Otherwise OP_Shielding
   (0x424b, {u16 spawn id}: EQPlayer+0x94); the server checks the class, level and its reuse timer.
+- **/hotbutton** (@004ff36a): the name (`GrabFirstWord2`, quoted or not), then a color when the next
+  word is all digits (else 0), and the rest the text; no name says 13278..13281. `registerHotButton`
+  (@004ff251, place -1, so from the first) takes the first of the 120 socials that's empty or of
+  that name (any case), whose name (15 characters), color byte and first line (255) it sets, the
+  other lines kept, and puts it on the cursor (`CCursorAttachment::Activate` type 4, which takes the
+  quantity window down) for a hot button: 13282, or 13283 with none free.
 - **/safelock** (@004ff689): the line after it, under 32 characters (else 13292), is kept in
   `DAT_007cf29c` and the interface is locked (13291); locked, the same line (`UTF8_stricmp`) unlocks
   it (13289) and another says 13290. Nothing typed says 12095 locked, 13287 and 13288 not.

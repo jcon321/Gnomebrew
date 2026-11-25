@@ -9,6 +9,7 @@
 #include "item_display.h"
 #include "zone_names.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
@@ -26,7 +27,7 @@ namespace
 		RaidSay, RaidWindow, Channel, Loot, TargetTell, CharInfo, MoveLog, StopSong, Shield, Quit, Log, Keys, Dismount,
 		AlternateAdv, Pet, SoundDriver, Duel, Decline, Bazaar, Trader, Nothing, ParticleDensity, RTarget, Inspect,
 		ChatFontSize, Language, Note, TrackPlayers, TrackSort, TrackFilter, Help, BugReport, Feedback, Petition, Report,
-		Discipline, Surname, SafeLock,
+		Discipline, Surname, SafeLock, HotButton,
 	};
 
 	struct CommandEntry
@@ -122,7 +123,7 @@ namespace
 		{"/showspelleffects", 14190, 0, 1, Command::None}, {"/combatmusic", 7526, 0, 1, Command::CombatMusic}, {"/mixahead", 7527, 0, 1, Command::None},
 		{"/guildmotd", 14191, 0, 3, Command::GuildMotd}, {"/charinfo", 14192, 0, 1, Command::CharInfo}, {"/safelock", 14193, 0, 1, Command::SafeLock},
 		{"/alternateadv", 14195, 0, 0, Command::AlternateAdv}, {"/targetgroupbuff", 14196, 0, 1, Command::TargetGroupBuff}, {"/tgb", 14197, 0, 1, Command::TargetGroupBuff},
-		{"/hotbutton", 14198, 0, 1, Command::None}, {"/particledensity", 14199, 0, 0, Command::ParticleDensity}, {"/facepick", 14200, 0, 0, Command::None},
+		{"/hotbutton", 14198, 0, 1, Command::HotButton}, {"/particledensity", 14199, 0, 0, Command::ParticleDensity}, {"/facepick", 14200, 0, 0, Command::None},
 		{"/dismount", 14201, 0, 1, Command::Dismount}, {"/rtarget", 14202, 0, 1, Command::RTarget}, {"/showgrass", 14203, 0, 1, Command::None},
 		{"/alias", 14204, 0, 1, Command::Nothing}, {"/hitsmode", 14205, 0, 1, Command::None}, {"/clearhits", 14206, 0, 1, Command::None},
 		{"/dopropertinting", 14207, 0, 1, Command::None}, {"/makeleader", 5043, 0, 1, Command::MakeLeader}, {"/viewport", 14210, 0, 1, Command::None},
@@ -2319,6 +2320,29 @@ void FrontEnd::InterpretCommand(const std::string &typed, bool direct)
 			ChatOut(format(result.message, result.text, {}), ChatType::Default);
 		if (result.discipline >= 0)
 			m_zone.Discipline(result.discipline);
+		break;
+	}
+	case Command::HotButton: {
+		// /hotbutton (@004ff36a): a name, a color when the second word is all digits, and the first
+		// line (registerHotButton).
+		std::string text = args;
+		std::string button_name = GrabFirstWord(text, 64);
+		if (button_name.empty()) {
+			static const char *const usage[] = {"/Hotbutton [Name] <Color> [Text]",
+				"Name - A hotbutton will automatically be created with this name.",
+				"Color - Optional.  Uses this color number for the color of the text.",
+				"Text - Up to 60 character macro to be used for the hotbutton."};
+			for (uint32_t i = 0; i < 4; ++i)
+				ChatOut(format(13278 + i, usage[i], {}), ChatType::Default);
+			break;
+		}
+		std::string after = text;
+		std::string color = GrabFirstWord(after, 64);
+		bool number = std::all_of(color.begin(), color.end(), [](unsigned char c) { return std::isdigit(c) != 0; });
+		ChatOut(RegisterHotButton(m_windows, m_window_state, button_name, number ? after : text, number ? std::atoi(color.c_str()) : 0)
+		            ? format(13282, "Successfully created hotbutton", {})
+		            : format(13283, "Error.  Could not create hotbutton.  Type /hotbutton for help.", {}),
+			ChatType::Default);
 		break;
 	}
 	case Command::SafeLock: {

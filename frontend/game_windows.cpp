@@ -847,6 +847,31 @@ void AttachAltAbility(WindowManager &windows, GameWindowState &state, int id)
 	Attach(windows, state, {HotButton::Social, AltAdv::HotButtonBase + id});
 }
 
+bool RegisterHotButton(WindowManager &windows, GameWindowState &state, const std::string &name, const std::string &line, int color)
+{
+	for (int i = 0; i < SocialPages * SocialsPerPage; ++i) {
+		Social &social = state.socials[i];
+		if (!social.name.empty() && !std::equal(social.name.begin(), social.name.end(), name.begin(), name.end(), [](unsigned char x, unsigned char y) {
+			    return std::tolower(x) == std::tolower(y);
+		    }))
+			continue;
+		social.name = name.substr(0, SocialNameChars);
+		social.color = static_cast<uint8_t>(color);
+		social.lines[0] = line.substr(0, SocialLineChars);
+		social.changed = true;
+		state.socials_changed = true;
+		// CCursorAttachment::Activate, which takes the quantity window down first.
+		if (state.QuantityUp()) {
+			windows.Show("QuantityWnd", false);
+			state.quantity_slot = state.quantity_coin = -1;
+			state.quantity_done = nullptr;
+		}
+		Attach(windows, state, {HotButton::Social, i});
+		return true;
+	}
+	return false;
+}
+
 WindowButton GameWindowRightClick(WindowManager &windows, GameWindowState &state, const std::string &window,
 	const std::string &control)
 {

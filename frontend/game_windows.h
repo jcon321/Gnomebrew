@@ -232,6 +232,9 @@ WindowButton DoHotButton(WindowManager &windows, GameWindowState &state, int slo
 int HotButtonAltAbility(GameWindowState &state, const std::string &window, const std::string &control);
 // CAAWnd's Hotkey: the ability onto the cursor (CCursorAttachment::Activate type 4, 0x78 + id).
 void AttachAltAbility(WindowManager &windows, GameWindowState &state, int id);
+// registerHotButton (@004ff251) with no place given (/hotbutton): the first social free, or of that
+// name, takes the name, the color and its first line, and goes on the cursor. False: none free.
+bool RegisterHotButton(WindowManager &windows, GameWindowState &state, const std::string &name, const std::string &line, int color);
 // A button right clicked: a social's opens the social editor on it. A hot button's
 // (DoHotButtonRightClick) holding an item returns its slot to right click, one holding a spell gem
 // that gem to right click (forgetting it).
