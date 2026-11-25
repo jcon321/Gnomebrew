@@ -2827,6 +2827,11 @@ namespace
 		type("/viewport please reset it");
 		type("/viewport");
 		h.Snapshot("v1-viewport-reset");
+
+		// /showgrass: each way (the zone has none unless the recording's one of Luclin's).
+		for (const char *line : {"/showgrass", "/showgrass on", "/showgrass OFF", "/showgrass off", "/showgrass on"})
+			type(line);
+		printf("[preview] grass: %zu blades\n", frontend.ZoneScene() ? frontend.ZoneScene()->Grass().Count() : 0);
 		return 0;
 	}
 

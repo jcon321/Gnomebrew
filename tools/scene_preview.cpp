@@ -35,6 +35,7 @@
 // --luclin all|RACE:GENDER,... draws those player races with their Luclin models (all: every one), and
 // --hair STYLE COLOR, --beard STYLE COLOR and --eyes COLOR dress them (the character, or the --npc before).
 // --old-skeletons 0 draws skeletons with global6_chr's later model (LoadOldSkeletons=0).
+// --grass 0 leaves out the zone's grass (ShowGrass).
 // --frames renders N times and prints the average frame time. --size picks the
 // image size (default 640x480).
 
@@ -92,6 +93,7 @@ namespace
 	};
 	SoundCapture g_sound;
 	render::LuclinModels g_luclin; // --luclin
+	bool g_grass = true; // --grass
 
 	struct WeatherOption
 	{
@@ -193,6 +195,7 @@ namespace
 		auto t0 = std::chrono::steady_clock::now();
 		ZoneView view(eq_dir);
 		view.SetLuclinModels(g_luclin);
+		view.SetShowGrass(g_grass);
 		view.StartLoading(info);
 		while (!view.Loaded())
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -407,6 +410,7 @@ namespace
 			printf("\n");
 		}
 		ZoneView::DebugStats stats = view.Stats();
+		printf("grass %zu blades, %zu drawn\n", view.Grass().Count(), view.Grass().Drawn());
 		printf("zone meshes %zu in view, %zu hidden\n", stats.meshes_in_view, stats.meshes_hidden);
 		if (stats.have_floor)
 			printf("feet at z %.2f, floor %.2f below them\n", stats.feet_z, stats.feet_z - stats.floor_z);
@@ -645,6 +649,8 @@ int main(int argc, char **argv)
 			heading = static_cast<float>(atof(argv[++i]));
 		else if (arg == "--pitch" && i + 1 < argc)
 			pitch = static_cast<float>(atof(argv[++i]));
+		else if (arg == "--grass" && i + 1 < argc)
+			g_grass = atoi(argv[++i]) != 0;
 		else if (arg == "--frames" && i + 1 < argc)
 			frames = atoi(argv[++i]);
 		else if (arg == "--size" && i + 1 < argc)

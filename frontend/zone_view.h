@@ -14,6 +14,7 @@
 #include "canvas.h"
 #include "character_model.h"
 #include "day_light.h"
+#include "grass.h"
 #include "missiles.h"
 #include "particles.h"
 #include "player_movement.h"
@@ -265,6 +266,10 @@ public:
 	// ShowDynamicLights (DAT_007cf25c, /dynamiclights): off, CDisplay::ChangeLight does nothing, so
 	// the lights carried stay as they were and a spawn that comes in has none.
 	void SetDynamicLights(bool on) { m_dynamic_lights = on; }
+	// ShowGrass (DAT_007cf268, /showgrass): the zone's grass, read as the zone loads, or now if it
+	// wasn't (DAT_007cf26c).
+	void SetShowGrass(bool on);
+	const render::Grass &Grass() const { return m_grass; }
 	// ShowSpellEffects (DAT_007cf290, /showspelleffects): the old spells.eff effects drawn.
 	void SetShowOldSpellEffects(bool on) { m_spell_effects.SetShowOld(on); }
 	size_t OldSpellEffectCount() const { return m_spell_effects.OldCount(); } // the preview's
@@ -758,6 +763,8 @@ private:
 	bool m_infravision_glow = false;
 	uint64_t m_vision_ms = 0;
 	uint8_t m_my_light = 0; // our ZoneSpawn::light
+	render::Grass m_grass;
+	bool m_show_grass = false, m_grass_read = false;
 	uint8_t m_my_lit = 0;   // what of it ChangeLight made
 	bool m_dynamic_lights = true;
 	uint16_t m_my_id = 0;

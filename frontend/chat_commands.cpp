@@ -27,7 +27,7 @@ namespace
 		RaidSay, RaidWindow, Channel, Loot, TargetTell, CharInfo, MoveLog, StopSong, Shield, Quit, Log, Keys, Dismount,
 		AlternateAdv, Pet, SoundDriver, Duel, Decline, Bazaar, Trader, Nothing, ParticleDensity, RTarget, Inspect,
 		ChatFontSize, Language, Note, TrackPlayers, TrackSort, TrackFilter, Help, BugReport, Feedback, Petition, Report,
-		Discipline, Surname, SafeLock, HotButton, MouseSpeed, DynamicLights, ShowSpellEffects, Viewport,
+		Discipline, Surname, SafeLock, HotButton, MouseSpeed, DynamicLights, ShowSpellEffects, Viewport, ShowGrass,
 	};
 
 	struct CommandEntry
@@ -124,7 +124,7 @@ namespace
 		{"/guildmotd", 14191, 0, 3, Command::GuildMotd}, {"/charinfo", 14192, 0, 1, Command::CharInfo}, {"/safelock", 14193, 0, 1, Command::SafeLock},
 		{"/alternateadv", 14195, 0, 0, Command::AlternateAdv}, {"/targetgroupbuff", 14196, 0, 1, Command::TargetGroupBuff}, {"/tgb", 14197, 0, 1, Command::TargetGroupBuff},
 		{"/hotbutton", 14198, 0, 1, Command::HotButton}, {"/particledensity", 14199, 0, 0, Command::ParticleDensity}, {"/facepick", 14200, 0, 0, Command::None},
-		{"/dismount", 14201, 0, 1, Command::Dismount}, {"/rtarget", 14202, 0, 1, Command::RTarget}, {"/showgrass", 14203, 0, 1, Command::None},
+		{"/dismount", 14201, 0, 1, Command::Dismount}, {"/rtarget", 14202, 0, 1, Command::RTarget}, {"/showgrass", 14203, 0, 1, Command::ShowGrass},
 		{"/alias", 14204, 0, 1, Command::Nothing}, {"/hitsmode", 14205, 0, 1, Command::None}, {"/clearhits", 14206, 0, 1, Command::None},
 		{"/dopropertinting", 14207, 0, 1, Command::None}, {"/makeleader", 5043, 0, 1, Command::MakeLeader}, {"/viewport", 14210, 0, 1, Command::Viewport},
 		{"/clearchat", 3127, 0, 1, Command::ClearChat}, {"/bazaar", 4501, 0, 1, Command::Bazaar}, {"/trader", 4502, 0, 1, Command::Trader},
@@ -2339,6 +2339,27 @@ void FrontEnd::InterpretCommand(const std::string &typed, bool direct)
 		                         : format(13269, "Dynamic Lights will be *OFF* the next time you zone.", {}),
 			ChatType::Default);
 		break;
+	case Command::ShowGrass: {
+		// /showgrass (@004faa05): "on" or "off", the whole of it in any case, kept as it changes;
+		// anything else says how and what it is. (13180, "after zoning", is for before we're in one.)
+		bool on = SameText(args, format(12947, "on", {}));
+		const char *const is[] = {"Grass objects *OFF*", "Grass objects *ON*"};
+		if (!on && !SameText(args, format(12946, "off", {}))) {
+			ChatOut(format(13184, "Usage: /showgrass on|off", {}), ChatType::Default);
+			ChatOut(format(m_show_grass ? 13179 : 13182, is[m_show_grass], {}), ChatType::Default);
+		}
+		else if (on == m_show_grass)
+			ChatOut(on ? format(13181, "Grass objects already *ON*", {}) : format(13183, "Grass objects already *OFF*", {}),
+				ChatType::Default);
+		else {
+			m_show_grass = on;
+			ChatOut(format(on ? 13179 : 13182, is[on], {}), ChatType::Default);
+			SaveSetting("Defaults", "ShowGrass", on ? "TRUE" : "FALSE");
+			if (m_zone_view)
+				m_zone_view->SetShowGrass(on);
+		}
+		break;
+	}
 	case Command::Viewport: {
 		// /viewport (@004ffb00): "reset" anywhere in it, or x, y, width and height, held to the window
 		// (too far right or down goes back by its size) and kept for this window size in the UI ini;

@@ -884,7 +884,8 @@ no rules of its own.
     close box alone, where `EverQuest_wndproc`'s WM_CLOSE is /quit, refused while locked or frozen) and
     /hotbutton (@004ff36a, `RegisterHotButton`), /mousespeed (@004f9e87; the cursor scaled by the
     host, not checked on Windows), /dynamiclights (@004fda22),
-    /showspelleffects (@004f9f4d), /viewport (@004ffb00; the GPU renderer's not checked on Windows).
+    /showspelleffects (@004f9f4d), /viewport (@004ffb00; the GPU renderer's not checked on Windows) and /showgrass
+    (@004faa05; its zones don't load yet, 42).
     Still to do:
     - /facepick (23), /hitsmode and /clearhits (3), /mp3, /music and /gems (34),
       /shownpcnames (9).
@@ -900,9 +901,6 @@ no rules of its own.
     - The client settings, each a `[Defaults]` key in eqgame (ours go in my-client.ini):
       - /invwinlabels (@004fdc50, `InvWinLabels`, `DAT_007cf20c`): on, off or flipped, "Inventory
         Window Labels *ON*" or "*OFF*"; the labels are the old UI's.
-      - /showgrass (@004faa05, `ShowGrass`): eqstr 13179..13184, `CDisplay::loadGrassObjects`
-        (@004b2043: `grass.s3d`, `LWEED1.DDS`) and `UpdateGrassRenderingPosition` (@004b1ffa, from
-        `MovePlayer`); see 42.
       - /mixahead (@004fa100, `SoundMixAhead` 1..100, `EqSoundManager::SetMixAhead`, eqstr 7528
         and 7529), /reversesound (@004fb9a2: normal or reverse, 13214..13218) and /audiodebug
         (@004f60f6: 13051 on, 13052 off): Miles' own; ask before giving them a meaning in our mix.
@@ -1237,10 +1235,12 @@ no rules of its own.
       `EQSwitch::InitializeSwitchColors` (@005214f2, from the door loading code).
     - Type 56's 0x410f (MSG_REQ_HOUSELOCK) is Sony's housing: nothing to do.
 42. **Scenery and model odds and ends**, found in the decompile and not ours:
-    - Grass: `CDisplay::loadGrassObjects` (@004b2043, from `StartWorldDisplay` with `ShowGrass`
-      on: `grass.s3d` and `LWEED1.DDS`), `CDisplay_InitializeGrassRendering` (@004b1fd2) and
-      `UpdateGrassRenderingPosition` (@004b1ffa, from `MovePlayer`, keeping it round us);
-      /showgrass (35) turns it on and off. Which zones have any isn't checked.
+    - The newer WLD version (0x1000c800): `WldFile::Load` takes only the older one, so dawnshroud,
+      grimling, hollowshade, jaggedpine, letalis, maiden, mseru, nightmareb, podisease, pofire,
+      ponightmare, postorms, potranquility, povalor, powar, scarlet, shadeweaver, tenebrous,
+      thegrey, twilight and umbral don't load ("Couldn't read <zone>.wld"). Their 0x36
+      meshes keep the older header and vertices; the rest isn't traced. Grass (done, `render/grass.*`) is
+      only in some of these zones: check it there then.
     - `CDisplay::ReplaceSpecialCloakMaterials` (@004a0d05, from `CDisplay_SwapMaterial`): a
       model's materials named `CLK??06`..`CLK??09` swapped for the one named `CLK` + the actor's
       tag + the rest. `ReplaceCloakMaterials` is ours (robes); check this one against a robed

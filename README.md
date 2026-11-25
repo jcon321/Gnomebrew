@@ -137,6 +137,7 @@ CombatMusic=1
 LootNoDrop=0
 FastDrop=0
 ShowDynamicLights=TRUE
+ShowGrass=TRUE
 ShowSpellEffects=1
 MousePointerSpeedMod=0
 InspectOthers=TRUE
@@ -250,6 +251,7 @@ WeatherSounds=1
   `FastDrop` is `/fastdrop`: `1` drops an item clicked onto the ground at once, `0` asks first,
   `-1` never drops it (`DAT_0079966c`). Both are kept as they change.
   `ShowDynamicLights` is /dynamiclights (read as `InspectOthers` is, below).
+  `ShowGrass` is /showgrass (read the same way).
   `ShowSpellEffects` is /showspelleffects (1 with no key or a value but 0 and 1).
   `MousePointerSpeedMod` is /mousespeed's multiplier of the cursor's movement, 0 to 10 (0 and 1 as
   the mouse moves it), kept as it changes.
@@ -409,7 +411,7 @@ eqgame's `OP_MoveItem`.
   /consent, /duel, /decline, /trader, /bazaar, /loot, /ttell, /charinfo, /movelog, /stopsong, /shield, /quit (/exit), /log, /keys, /dismount,
   /adriver, /sdriver, /attack, /combatmusic, /doability, /rtarget, /inspect, /particledensity,
   /help, /bugreport, /feedback, /petition, /report, /discipline, /surname, /safelock, /hotbutton, /mousespeed, /dynamiclights,
-  /showspelleffects, /viewport, the
+  /showspelleffects, /viewport, /showgrass, the
   guild commands (see Guilds under In the zone),
   the raid commands (see Raids), /filter, /serverfilter and the socials (/smile, /wave and the
   other 86).
@@ -898,7 +900,7 @@ level and without the expansions, `/surname`'s refusals, its question answered N
 zone's two answers, and `/safelock`'s lock tried with the forward and inventory keys, Escape and
 commands, unlocked, and locked again with the right button down, `/hotbutton`'s socials,
 `/mousespeed`, `/dynamiclights` with a torch's light taken in hand and put away, `/showspelleffects` with old
-effects landing on us, and `/viewport` with snapshots)
+effects landing on us, `/viewport` with snapshots, and `/showgrass`)
 and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,
 opens, minimizes, resizes and closes windows (the layout goes to OUTDIR), types into the chat window
 (a say, commands, /target) and prints what the chat window holds, then stands near the target to
@@ -2730,6 +2732,23 @@ details and the nearest spawns at the top left and the radar at the top right.
   (`GetClickedActor`; `s3dPickObjectOnScreen` checks no bounds, so the ray goes on outside it), but an
   item held goes on the ground, and coins nowhere, only inside it (`CEverQuest_LMouseUp`). Ours:
   `ZoneView::SetViewport`, `FrontEnd::ReadViewport`.
+- **Grass** (`render/grass.*`; `CDisplay::loadGrassObjects` @004b2043 from `StartWorldDisplay`, eqgfx's
+  radial flora: `t3dSetRadialFloraObjectList` @10041000, drawn by `renderLightSources` @10041250, a
+  mislabel): `<zone>.dat` is 32 byte records {float a[3], b[3] (the foot's ends, WLD coordinates),
+  height, i32 texture}; dawnshroud, grimling, hollowshade, letalis, maiden, mseru, scarlet,
+  shadeweaver, tenebrous, twilight and umbral have one. The texture is a name of eqgfx's table of 124
+  (`PTR_s_LWEED1_DDS_100f5f90`, 36 different ones) in `grass.s3d`. Each frame, in the file's order,
+  the records within 200 of the camera across the ground (`UpdateGrassRenderingPosition` @004b1ffa,
+  from `MovePlayer`; the radius `_DAT_007cf270`) by `a` are drawn, 3000 at most; one whose y alone is
+  farther skips the 64 after it (the files go down by y, in passes). A quad stands on the foot, v 1
+  at it and 0 at the top (clamped), its color the ambient light + 0.15 alone and its alpha the
+  texture's times 255 - k, k = 255 times the squared distance over the squared radius, at least 20:
+  SRCALPHA over INVSRCALPHA, both sides, no depth written (renderMeshElement's kind 5, the bucket
+  marked -2). **/showgrass** (@004faa05): "on" or "off" whole (12947, 12946), kept as `[Defaults]
+  ShowGrass` (`DAT_007cf268`): 13179, 13181, 13182, 13183; turned on it's read there and then if the
+  zone didn't; anything else says 13184 and how it is. Those zones' WLD is the newer version, which
+  we don't load (see TODO): checked with made-up records in an older zone, and the coordinates
+  against the zones' own meshes.
 - **/mousespeed** (@004f9e87): a number (`is_number`: a sign and digits) goes in `DAT_0079858c` and,
   as typed, in `[Defaults] MousePointerSpeedMod`; anything else says 13165 and 13166; then 13167.
   `CEverQuest::CEverQuest` reads it as 0 when missing, under 0 or over 10. Over 1, `GetMouseInputData`

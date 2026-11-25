@@ -88,6 +88,7 @@ add_library(eqrender STATIC
     render/occlusion.cpp
     render/character_model.cpp
     render/actor_tags.cpp
+    render/grass.cpp
     render/sky.cpp
     render/particles.cpp
     render/spell_particles.cpp

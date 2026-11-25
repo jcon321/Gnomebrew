@@ -145,6 +145,8 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 				// CEverQuest::CEverQuest: on with no key, or for a value starting T, t or 1.
 				std::string lights = ini.Get("Defaults", "ShowDynamicLights");
 				m_dynamic_lights = lights.empty() || lights[0] == 'T' || lights[0] == 't' || lights[0] == '1';
+				std::string grass = ini.Get("Defaults", "ShowGrass");
+				m_show_grass = grass.empty() || grass[0] == 'T' || grass[0] == 't' || grass[0] == '1';
 				// 1 with no key, or anything but 0 and 1.
 				std::string effects = ini.Get("Defaults", "ShowSpellEffects");
 				m_show_spell_effects = effects.empty() || std::atoi(effects.c_str()) != 0;
@@ -5305,6 +5307,7 @@ void FrontEnd::ApplyDisplayOptions()
 		return;
 	m_zone_view->SetDynamicLights(m_dynamic_lights);
 	m_zone_view->SetShowOldSpellEffects(m_show_spell_effects);
+	m_zone_view->SetShowGrass(m_show_grass);
 	m_zone_view->SetSkyMode(m_sky);
 	m_zone_view->SetClipPlane(m_clip_plane);
 	m_zone_view->SetSpellParticles(m_spell_density, m_spell_opacity, m_spell_near_clip);

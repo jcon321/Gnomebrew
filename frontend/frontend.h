@@ -384,6 +384,7 @@ private:
 	bool m_show_spell_effects = true; // DAT_007cf290, /showspelleffects ([Defaults] ShowSpellEffects)
 	Rect m_viewport; // __ScreenX, __ScreenY and their size, /viewport (w 0 with no file to read: all of it)
 	bool m_viewport_set = false;
+	bool m_show_grass = true;         // DAT_007cf268, /showgrass ([Defaults] ShowGrass)
 	int m_mouse_speed = 0;            // DAT_0079858c, /mousespeed ([Defaults] MousePointerSpeedMod): times the cursor's movement
 	bool m_inspect_others = true;     // DAT_007cf28c, /inspect ([Defaults] InspectOthers): the right button inspects a player
 	int m_trade_with = 2;             // DAT_00798ad8, Allow trading with: 0 no one, 1 party members only, 2 everyone

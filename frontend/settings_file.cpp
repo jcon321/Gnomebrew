@@ -127,6 +127,8 @@ namespace
 			"0 asks first, -1 never drops it. Kept on exit."},
 		{"Defaults", "ShowDynamicLights", "TRUE",
 			"/dynamiclights: TRUE shows the lights people carry, FALSE doesn't (from the next zone)."},
+		{"Defaults", "ShowGrass", "TRUE",
+			"/showgrass: TRUE shows the grass of the zones that have any (some of Luclin's), FALSE doesn't."},
 		{"Defaults", "ShowSpellEffects", "1",
 			"/showspelleffects: 1 shows the old spell effects (spells.eff: the spells without a Luclin one),\n"
 			"0 doesn't. The Luclin effects are the Display page's."},

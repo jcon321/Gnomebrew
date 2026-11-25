@@ -95,6 +95,15 @@ void ZoneView::StartLoading(const ZoneInfo &info)
 	m_loader = std::thread([this] { Load(); });
 }
 
+void ZoneView::SetShowGrass(bool on)
+{
+	m_show_grass = on;
+	if (on && m_loaded && !m_grass_read) {
+		m_grass_read = true;
+		m_grass.Load(m_eq_dir, m_info.short_name);
+	}
+}
+
 void ZoneView::LoadProgress(int &percent, std::string &what) const
 {
 	std::lock_guard<std::mutex> lock(m_progress_mutex);
@@ -180,6 +189,11 @@ void ZoneView::Load()
 		m_effect_textures.AddArchive(&m_equipment);
 		m_rain_ring = m_effect_textures.Get("rainring.bmp", true);
 		m_snowflake = m_effect_textures.Get("snowflake.bmp", true);
+	}
+	// StartWorldDisplay's loadGrassObjects. (Turned on while this ran, SetShowGrass reads it later.)
+	if (m_show_grass && m_error.empty()) {
+		m_grass_read = true;
+		m_grass.Load(m_eq_dir, m_info.short_name);
 	}
 	SetLoadProgress(100, "Finished Loading World");
 	m_loaded = true;
@@ -1809,6 +1823,8 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 		m_held.Draw(*m_renderer, *m_model, placement, time, m_animation, !held, now_ms, light.ambient);
 	}
 	m_camera_position = camera.position;
+	if (m_show_grass)
+		m_grass.Draw(*m_renderer, camera.position, light.ambient);
 	DrawSpawns(now_ms);
 	DrawGroundItems(now_ms);
 	DrawMissiles(now_ms);
