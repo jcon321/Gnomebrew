@@ -24,6 +24,14 @@ struct RdpStats
 	uint64_t bytes_in = 0, bytes_out = 0;
 	uint64_t packets_in = 0, packets_out = 0;
 	uint64_t resent = 0; // reliable packets sent again
+	// connection_get_perf_stats: when a packet last came (the host's ms clock) and how long ago, the
+	// last 64 packets received (a bit each, the newest bit 0), the highest sequence number, the last
+	// round trip; and the endpoint's rdp_get_input_rate, bytes a second.
+	uint32_t last_arrival_ms = 0, arrival_age_ms = 0;
+	uint64_t sequence_history = 0;
+	uint16_t last_sequence = 0;
+	uint32_t last_ping_ms = 0;
+	uint32_t input_rate = 0;
 };
 
 class RdpSession

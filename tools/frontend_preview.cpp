@@ -4225,6 +4225,46 @@ namespace
 			chat();
 		}
 
+		// Toggle netstat (F11), on to start with, from made-up stats (a replay has no connection): some
+		// loss, a lot of it with nothing for 4 s, nothing for 20 s; then off.
+		RdpStats net;
+		frontend.SetNetStatsForTests([&net](RdpStats &stats) {
+			stats = net;
+			return true;
+		});
+		net.last_arrival_ms = 1000;
+		net.arrival_age_ms = 40;
+		net.sequence_history = ~0ull & ~0x00ff0000a0000010ull;
+		net.last_sequence = 1234;
+		net.last_ping_ms = 87;
+		net.input_rate = 2048;
+		h.Snapshot("k3-netstat");
+		h.Snapshot("k3-netstat-same-arrival"); // the bars only
+		net.last_arrival_ms = 1001;
+		net.arrival_age_ms = 4000;
+		net.sequence_history = 0xffffff0000ffffffull;
+		net.last_ping_ms = 650;
+		h.Snapshot("k3-netstat-stalled");
+		net.arrival_age_ms = 20000;
+		net.last_ping_ms = 950;
+		h.Snapshot("k3-netstat-nothing");
+		key(0x57);
+		h.Snapshot("k3-netstat-off");
+		frontend.SetNetStatsForTests(nullptr);
+
+		// Clip plane in (Shift+-) and out (Shift+=), past both ends.
+		ZoneView *clip_view = frontend.ZoneScene();
+		printf("[preview] clip plane %.1f", clip_view->ClipPlane());
+		for (auto [scan, presses] : {std::pair{0x0d, 2}, std::pair{0x0c, 3}, std::pair{0x0c, 25}, std::pair{0x0d, 4}}) {
+			for (int i = 0; i < presses; ++i)
+				key(scan, true);
+			h.Render();
+			printf(", %s x%d: %.1f", scan == 0x0d ? "out" : "in", presses, clip_view->ClipPlane());
+		}
+		printf("\n");
+		for (int i = 0; i < 20; ++i)
+			key(0x0d, true);
+
 		// Center view (NPAD 5) after Look up held (Page Up), in first person and in each other view.
 		ZoneView *view = frontend.ZoneScene();
 		for (int v = 0; v < ZoneView::CameraViews; ++v) {

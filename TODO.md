@@ -469,17 +469,14 @@ no rules of its own.
    (Cycle reply's name; eqstr 12364 and 12365 with no tells), `'` and `:`, without the key's
    own character after it. Toggle mouse look, Use centerscreen (`FrontEnd::UseCenterScreen`,
    `LeftClickedOnPlayer`, `ClickedSwitch`) and Center view (`ZoneView::CenterView`) are done
-   (ExecuteCmd 7, 14, 17). Zoom in and out held move the chase camera 2 units a frame unit
+   (ExecuteCmd 7, 14, 17), and Toggle netstat (30; `frontend/net_status.*`) and Clip plane in and out
+   (75, 76). Zoom in and out held move the chase camera 2 units a frame unit
    (ProcessControls; no nearer than our ModelHeightOffset, DoCamAi's 2..200), and Look up and down
    held pitch faster each frame, to 12 EQ units a frame unit. Toggle UI Display (0x15, __ScreenMode
    2 and 3) hides the windows and the cursor (DoMainLoop's DrawWindows and DrawCursor), the hidden
    windows still taking the mouse and the world only in mouse look, until it's pressed again or a
    zone is entered; the mouse look check is our right button held. Still to do:
    - ExecuteCmd's (@0054050c) commands not done yet (the page's "No"):
-     - 30, Toggle netstat: `__NetStatusToggle`, drawn by `DrawNetStatus` (@0054d3ae) and
-       `DrawPacketLossBar` (@0054d1a8) from `connection_get_perf_stats`.
-     - 75 and 76, the clip plane: `DAT_00798b28` down or up one in 0..20, the far clip
-       `_DAT_00799660` that * 0.2 held to 0.1..4, saved (the Display page's slider is done).
      - 77, voice input (`InitializeVoiceRecognition` @0055785c; with /voice, /microphone and
        /vrdelay, see 35: kept out unless asked).
      - 81..84 and 85, 86: the chat line's cursor left, right, to its start and end, and the chat
@@ -492,6 +489,8 @@ no rules of its own.
      target (not traced), 210 the face picker (/facepick, 23), and 198, 199 and 205, which only
      store the key's state. (200 Escape, 202 quit and 206 the chat line's Enter are ours by
      other roads.)
+   - Toggle netstat's default key, F11, is the debug menu's (Custom changes), which has it first; the
+     netstat also lies over the debug menu's card. Not checked against a live connection.
    - Send tell for a GM helping a petitioner (`/tell <petitioner> `, CPetitionQWnd), and
      ExecuteCmd 0x81 and 0x82 (`;` and `/` command modes; not on the keyboard page).
    - Target myself's pet: eqgame takes the first in pinstSpawnList's order; ours the lowest id.

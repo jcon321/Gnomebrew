@@ -908,7 +908,8 @@ commands, unlocked, and locked again with the right button down, `/hotbutton`'s 
 `/mousespeed`, `/dynamiclights` with a torch's light taken in hand and put away, `/showspelleffects` with old
 effects landing on us, `/viewport` with snapshots, and `/showgrass`; `keys` runs the keymap's
 commands that only show in the view, the chat line or a file (Take a screenshot, its BMPs in
-OUTDIR; Toggle mouse look; Center view in each view; Use centerscreen on the first few spawns); `mouse` works the options' Mouse page,
+OUTDIR; Toggle mouse look; Center view in each view; Use centerscreen on the first few spawns; the
+netstat from made-up stats; the clip plane keys); `mouse` works the options' Mouse page,
 printing what it shows and keeps, and how far a move with the right button held turns and pitches us)
 and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,
 opens, minimizes, resizes and closes windows (the layout goes to OUTDIR), types into the chat window
@@ -1975,7 +1976,7 @@ details and the nearest spawns at the top left and the radar at the top right.
   Disband, Who, Target nearest PC and NPC, Toggle last two
   targets, Cycle reply forward and back, Send tell, Reply, Send tell to target, Command mode say
   and emote, the hot buttons and pages, the gems, Take a screenshot,
-  Toggle mouse look, Use centerscreen, Center view,
+  Toggle mouse look, Use centerscreen, Center view, Toggle netstat, Clip plane in and out,
   History up and down, the spellbook, inventory, Actions pages and the window toggles it has
   windows for (`implemented` in `frontend/key_map.cpp`).
 - **Take a screenshot** (`ExecuteCmd` 78, NPAD -): in control of ourselves, eqstr 12374 (color 15)
@@ -2002,6 +2003,27 @@ details and the nearest spawns at the top left and the radar at the top right.
   others theirs to 0.001, looking at us. Look up and down and Pitch camera up and down are let go
   (`DAT_007ce088`, `8c`, `218`, `21c`) and the look speeds go to 0. Our chase camera isn't view 2: it
   goes back to its own level.
+- **Toggle netstat** (`ExecuteCmd` 30, F11; ours takes F11 for the debug menu first, see Custom
+  changes): in control, `__NetStatusToggle`, which `SetDefaultGameValues` turns on. While it's on
+  `RealRender_World` calls `DrawNetStatus` (@0054d3ae) when `connection_get_perf_stats`' last arrival
+  has changed since the last time (CDisplay+0x2878) or is over 1 s old, and puts its 128x32 overlay up
+  every frame, 5 in from the 3D view's corner, over the windows; not in `__ScreenMode` 3. The texts
+  (Arial 14, `WriteTextHD2`) are deferred, so they show only in the frames it runs:
+  - the last round trip, `%3d`: green (0x00f000) under 600 ms, yellow (0xf0f000) under 900, red
+    (0xf00000);
+  - 32 to the right, `%2.1f%%` of the last 64 packets lost, (1 - bits / 64) * 100 of the received
+    sequence history, after shifting it on one for each 500 ms past the last round trip once nothing
+    has come for that and 500 ms: green under 35, yellow under 45, else red;
+  - 32 on, within 15 s of the last arrival, the same of the history as it is;
+  - 32 on, `%3d` of `rdp_get_input_rate` (bytes a second), in the color before it.
+  `DrawPacketLossBar` (@0054d1a8) draws each history under its text, 14 down, a pixel a packet (the
+  first the newest on the right, the other on the left), in A1R5G5B5: ticks every 8 pixels, (highest
+  sequence number) % 8 in (7 less that in the first), and three rows of the packets that came: full
+  color (255, or 200 for green) between 3/4 rows in a run, 3/4 between halves at its ends, half all
+  over for one alone. Ours in `frontend/net_status.*`, from `RdpSession::Stats`.
+- **Clip plane in and out** (`ExecuteCmd` 75 and 76, Shift+- and Shift+=): with the chat line shut,
+  in control or not, the Display page's slider (`DAT_00798b28`) one down or up in 0..20, the far
+  clip (`_DAT_00799660`) that * 0.2 held to 0.1..4, and `saveOptions`.
 - **Target nearest PC and NPC** (`ExecuteCmd` 28 and 29, `CDisplay::GetNearestPlayerInView`
   @004ac17f with 500 and 0 or 1): of the actors `s3dGetWorldVisibleActorList` (flags 0x11) gives
   in the camera's view, not us, players (0) or NPCs (1) but not a player's pet, heard from in the

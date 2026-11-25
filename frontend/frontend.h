@@ -204,6 +204,7 @@ public:
 	int LootNoDrop() const { return m_config.loot_no_drop; }               // /lootnodrop, to remember
 	int FastDrop() const { return m_config.fast_drop; }                    // /fastdrop, to remember
 	const ZoneSession &Zone() const { return m_zone; }
+	void SetNetStatsForTests(std::function<bool(RdpStats &)> stats) { m_net_stats_for_tests = std::move(stats); }
 	const Duel &DuelState() const { return m_duel; }
 	BazaarWindow &BazaarForTests() { return m_bazaar; }
 	BazaarSearch &BazaarSearchForTests() { return m_bazaar_search; }
@@ -964,6 +965,11 @@ private:
 	// Toggle UI Display (ExecuteCmd 0x15): __ScreenMode 3 rather than 2. DoMainLoop skips
 	// DrawWindows and DrawCursor (the windows still take the mouse: FindWnd goes by where they
 	// are), and the world takes no clicks but in mouse look. Shown again entering a zone.
+	bool m_net_status = true; // __NetStatusToggle (SetDefaultGameValues: on)
+	// DrawNetStatus's last drawing: what it drew (its overlay), and CDisplay+0x2878, the arrival then.
+	RdpStats m_net_stats;
+	bool m_net_drawn = false;
+	std::function<bool(RdpStats &)> m_net_stats_for_tests;
 	bool m_screenshot = false; // DAT_00798ac4: ExecuteCmd 78's, until the frame's saved
 	bool m_ui_hidden = false;
 	bool m_mouse_grabbed = false;

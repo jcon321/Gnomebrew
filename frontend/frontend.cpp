@@ -1,4 +1,5 @@
 #include "frontend.h"
+#include "net_status.h"
 #include "screenshot.h"
 #include "babel.h"
 
@@ -1397,8 +1398,10 @@ void FrontEnd::HandleWorldEvents(const std::vector<WorldSession::Event> &events)
 			break;
 		case Type::ZoneServer:
 			m_entering_world = false;
-			if (!m_zoning)
+			if (!m_zoning) {
 				m_guild.EnteringGame(); // SetDefaultGameValues
+				m_net_status = true;
+			}
 			m_zone.SetGuilds(m_world.Guilds());
 			if (!m_zone.Begin(m_world.ZoneAddress(), m_world.ZonePort(), m_world.EnteringCharacter())) {
 				ShowLostConnection(false); // the zone connection never connected
@@ -6800,6 +6803,10 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 	case KeyMap::SitStand:
 		Sit();
 		break;
+	case KeyMap::NetStat:
+		if (InControl())
+			m_net_status = !m_net_status; // ExecuteCmd 30
+		break;
 	case KeyMap::MouseLook:
 		// ExecuteCmd 7: the Mouse page's Mouse Look (DAT_00798571, DAT_00798b18).
 		if (InControl()) {
@@ -6821,6 +6828,14 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 			m_keys.pitch_up = m_keys.pitch_down = m_keys.cam_up = m_keys.cam_down = false;
 			m_keys.pitch_up_speed = m_keys.pitch_down_speed = 0;
 		}
+		break;
+	case KeyMap::ClipIn:
+	case KeyMap::ClipOut:
+		// ExecuteCmd 75 and 76: the Display page's clip plane slider one down or up in 0..20 (in control
+		// of ourselves or not), and saveOptions.
+		if (!m_chats.Typing())
+			SetDisplayOption(OptionsWindow::Host::Display::ClipPlane,
+				static_cast<float>(std::clamp(m_clip_slider + (cmd == KeyMap::ClipOut ? 1 : -1), 0, 20)));
 		break;
 	case KeyMap::ScreenCap:
 		// ExecuteCmd 78: RealRender_World captures this frame (DAT_00798ac4).
@@ -7501,7 +7516,7 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 	Clock::time_point ui_start = Clock::now();
 	const TextStats text_before = m_text.stats;
 	// The 2D drawing over the world, a piece at a time (RetainedUi), in order.
-	enum : uint64_t { HelpPiece = 2, AltTooltipsPiece, StatCardPiece, CursorPiece };
+	enum : uint64_t { HelpPiece = 2, AltTooltipsPiece, StatCardPiece, CursorPiece, NetStatusPiece };
 	std::vector<RetainedUi::Piece> pieces;
 	if (world)
 		pieces.push_back({HelpPiece, [this, width, height](Canvas &c) {
@@ -7552,6 +7567,24 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 			if (!m_windows.DrawCursor(c, m_mouse_x, m_mouse_y, now_ms))
 				c.Blit(m_art.Get("cursor.bmp"), m_mouse_x, m_mouse_y, true);
 		}});
+
+	// RealRender_World's netstat, over the windows and the cursor (the deferred 2D's order): drawn anew
+	// as a packet's come since, or once none has for 1 s, its texts only then. Neither with the UI hidden
+	// (__ScreenMode 3).
+	if (m_net_status && world && !m_ui_hidden) {
+		RdpStats stats;
+		if (m_net_stats_for_tests ? m_net_stats_for_tests(stats) : m_zone.NetworkStats(stats)) {
+			bool texts = !m_net_drawn || stats.last_arrival_ms != m_net_stats.last_arrival_ms ||
+			             stats.arrival_age_ms > NetStatus::RefreshMs;
+			if (texts)
+				m_net_stats = stats;
+			m_net_drawn = true;
+			int x = (m_viewport_set ? m_viewport.x : 0) + 5, y = (m_viewport_set ? m_viewport.y : 0) + 5;
+			pieces.push_back({NetStatusPiece, [this, x, y, texts](Canvas &c) {
+				NetStatus::Draw(c, m_text, x, y, m_net_stats, texts);
+			}});
+		}
+	}
 
 	// Kept from frame to frame on a GPU host's canvas when it's all ours over the view: the world
 	// fills the window and Finish cleared all of it, no dialog darkens it, and no debug lines are

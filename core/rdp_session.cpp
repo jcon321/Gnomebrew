@@ -6,8 +6,24 @@
 #include <cstring>
 #include <mutex>
 
+#ifdef _WIN32
+#include <windows.h>
+#include <mmsystem.h>
+#endif
+
 namespace
 {
+	// rdplib's time_get_ms.
+	uint32_t ClockMs()
+	{
+#ifdef _WIN32
+		return timeGetTime();
+#else
+		return static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::steady_clock::now().time_since_epoch()).count());
+#endif
+	}
+
 	// rdplib allows one runtime per process, but login and world sessions overlap
 	// (the GUI keeps the login session object while world connects), so share it.
 	std::mutex g_runtime_mutex;
@@ -204,6 +220,15 @@ bool RdpSession::Stats(RdpStats &out) const
 	out.packets_in = static_cast<uint64_t>(counters.reliable_packets_rx) + counters.unreliable_packets_rx;
 	out.packets_out = static_cast<uint64_t>(counters.reliable_packets_tx) + counters.unreliable_packets_tx;
 	out.resent = counters.reliable_packets_retransmitted;
+	out.last_arrival_ms = perf.last_packet_receive_time_ms;
+	out.arrival_age_ms = ClockMs() - perf.last_packet_receive_time_ms;
+	if (out.arrival_age_ms > 0x7fffffff) // one that came since the snapshot
+		out.arrival_age_ms = 0;
+	out.sequence_history = perf.received_packet_sequence_history;
+	out.last_sequence = perf.last_received_packet_sequence;
+	out.last_ping_ms = perf.last_ping_sample_ms;
+	rdplib_endpoint_input_rate_t rate{};
+	out.input_rate = m_endpoint && rdplib_endpoint_get_input_rate(m_endpoint, &rate) == RDPLIB_OK ? rate.bytes_per_second : 0;
 	return true;
 }
 
