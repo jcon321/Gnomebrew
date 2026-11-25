@@ -1734,6 +1734,12 @@ void ZoneSession::MoveLog()
 		Send(ZoneOp::MoveLog, nullptr, 0, "OP_MoveLog");
 }
 
+void ZoneSession::Discipline(int32_t id)
+{
+	if (m_state == State::InZone)
+		Send(ZoneOp::Discipline, &id, sizeof(id), "OP_Discipline " + std::to_string(id));
+}
+
 bool ZoneSession::SendBug(const std::vector<uint8_t> &body)
 {
 	return m_state == State::InZone && Send(ZoneOp::Bug, body.data(), body.size(), "OP_Bug");

@@ -765,7 +765,7 @@ build/eqclient -u USER -p PASS [options]
 
 ```
 build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|train|ground|commands|group|duel|bazaar|raid|guild|skills|aa]]
-build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez|cameras|packets|spells|switches|itemdisplay|friends|chatwindows|multiline|inspect|tracking|breath|ladder]]
+build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez|cameras|packets|spells|switches|itemdisplay|slash|friends|chatwindows|multiline|inspect|tracking|breath|ladder]]
 ```
 
 This drives the real front-end code with scripted input and writes PNG snapshots. Text is
@@ -884,7 +884,9 @@ put in (before and after the 6 s tick, then its despawn) and Succor; `switches` 
 models and types, then puts a pressure plate (a copy of the first door's model) under our feet and
 shows its `OP_ClickDoor`s; `itemdisplay` puts an item in a loot, trade, merchant and world container
 slot and a bag with an item in it in a general slot, Alt+clicks each slot (the bag shut and open)
-and prints the item display's title and text)
+and prints the item display's title and text; `slash` types slash commands and prints what they say
+and send: `/discipline` as each class with nothing, a word it has and one it hasn't, under the
+level and without the expansions)
 and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,
 opens, minimizes, resizes and closes windows (the layout goes to OUTDIR), types into the chat window
 (a say, commands, /target) and prints what the chat window holds, then stands near the target to
@@ -2970,6 +2972,15 @@ details and the nearest spawns at the top left and the radar at the top right.
   page those that aren't passive (`SetTypesToDisplay(2)`), on the abilities page all of them (3); a
   click puts one on the button. A left click, the hot button, or `/doability 1..10` (1..6 the
   abilities page's, 7..10 the combat page's; else eqstr 13256, 13257) uses it.
+- **Disciplines** (`/discipline` @004f4fb5, `frontend/disciplines.*`): nothing without an expansion
+  (a paladin's, ranger's, shadow knight's and bard's want 0x1e of Expansions, a beastlord's 4); a
+  class with none is told 12976. Nothing typed says the class's usage (12996..13003) and sends
+  `OP_Discipline` (0x41e6, {u32 id}) with 0, which the zone answers with how long until the next. A
+  word is compared with the class's of eqstr 1280..1314 by its first 3 to 5 letters, any case; one
+  it hasn't is the usage again and nothing sent, one over our level 13004, else its id is sent. The
+  ids aren't one to a word: 6 is furious, whirlwind and counterattack, 14 fellstrike, innerflame,
+  duelist and bestial rage. Resistant (30) and fearless (31) take 30 and 40 of a warrior, monk or
+  rogue, 51 and 54 of the rest. The zone starts it (`OP_DisciplineChange`, see Items and stats).
 - **Timers** (`DoPassageOfTime`): an ability is ready (`__DoAbilityAvailable`) once its reuse time
   has gone by since its last use (`DAT_007cd650`); mend at its own time (`DAT_007cd6d0`, the
   table's entry 32) and hide at its (`DAT_007cd6c4`, entry 29), which hold when they're ready

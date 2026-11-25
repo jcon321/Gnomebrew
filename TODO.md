@@ -878,18 +878,14 @@ no rules of its own.
     12379 only), /reverb, /resetwindows, /popmail and /alias (@0043777e, a bare `ret`: nothing
     said), /rtarget (@004ff62d: /target of the name typed or of the last teller, eqstr 13286 with
     no tells), /inspect (29) and /particledensity (@004ff0b3: `CDisplay::SetPCloudDensity` and
-    the exe's two literal lines). Still to do:
+    the exe's two literal lines), /discipline (@004f4fb5, `frontend/disciplines.*`; checked on
+    replay, `frontend_preview ... slash`, not live: the test characters are under 30). Still to do:
     - /safelock (@004ff689): with a word and unlocked, it becomes the password (under 32
       characters, else eqstr 13292) and locks the interface (13291); locked, the same word
       unlocks (13289) and another says 13290; with no word, 12095 when locked, else 13287 and
       13288. While locked (`DAT_007cf29c`) `CEverquest_InterpretCmd` runs only /safelock and says
       12095 for anything else, /quit included, and /safelock lines stay out of the command
       history. `allowslashcommand` (3) reads the same lock.
-    - /discipline (@004f4fb5): by class, the usage of eqstr 12996..13003 (12976 for a class with
-      none); the word matched against the keywords of eqstr 1280..1314, the level it needs
-      (13004), then `OP_Discipline` (0x41e6). The zone's `OP_DisciplineChange` (0x41f2,
-      @004e3bc1) puts the discipline running in ActorInfo+0x2e8+0x34, and its timer comes as
-      `OP_ResetSkill`'s kind (done, 37).
     - /surname (@004f3ddb): with one already 12939, under level 20 12940, no word 12941, 32
       characters or more 2239; else the first word (20 at most) asked back in the confirmation
       dialog (`CEverQuest_Surname` @0053d8de, eqstr 10004), `OP_Surname` from `ProcessYes`, and the
@@ -985,7 +981,6 @@ no rules of its own.
         `DisplayName`.
     - Sent by EQMacEmu, handled by eqgame, dropped here (found by matching the packets the
       server builds against `ZoneSession`'s cases):
-      - `OP_DisciplineChange` (0x41f2, @004e3bc1): the discipline running (35).
       - `OP_MultiLineMsg` (0x4014): the text a line at a time (`ParseNextLine`), color 10 in the
         old UI; the new UI's path (color 0x145 at `LAB_004ecdca`) isn't traced.
       - `OP_SetTitle` (0x40d4, MSG_GRANT_TITLE, @004e45eb): eqgame reads a name at 0, a title at

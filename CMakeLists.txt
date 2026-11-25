@@ -152,6 +152,7 @@ add_library(eqfrontend STATIC
     frontend/help_window.cpp
     frontend/loadskin_window.cpp
     frontend/tracking.cpp
+    frontend/disciplines.cpp
     frontend/duel.cpp
     frontend/bazaar_window.cpp
     frontend/bazaar_search.cpp

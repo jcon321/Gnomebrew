@@ -290,6 +290,8 @@ namespace ZoneOp
 	// ClientDiscipline_Struct {u32 discipline}: the discipline now active, 0 none
 	// (HandleWorldMessage's 0x41f2, setActorMovementParameters: ActorInfo's +0x31c).
 	constexpr uint16_t DisciplineChange = 0x41f2;
+	// The same struct from us (/discipline): the one to use, 0 to ask how long until we can.
+	constexpr uint16_t Discipline = 0x41e6;
 	// GMLastName_Struct {char name[64], char gm[64] @64, char surname[64] @128, u16 @192, i16
 	// response @194}: someone's surname changed (HandleWorldMessage's 0x416e, CDisplay_UpdateNameSprite
 	// @004e4651), when the response isn't 0.
@@ -636,6 +638,7 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::BerserkStart, "OP_BerserkStart"},
 	{ZoneOp::BerserkEnd, "OP_BerserkEnd"},
 	{ZoneOp::DisciplineChange, "OP_DisciplineChange"},
+	{ZoneOp::Discipline, "OP_Discipline"},
 	{ZoneOp::GMLastName, "OP_GMLastName"},
 	{ZoneOp::GMNameChange, "OP_GMNameChange"},
 	{ZoneOp::CorpsePosition, "OP_CorpsePosition"},

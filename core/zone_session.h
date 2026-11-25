@@ -822,6 +822,7 @@ public:
 	void Split(int32_t platinum, int32_t gold, int32_t silver, int32_t copper);
 	void YellForHelp();                     // OP_YellForHelp
 	void MoveLog();                         // MSG_MOVELOG (/movelog yes)
+	void Discipline(int32_t id);            // OP_Discipline (/discipline); 0 asks how long until the next
 	// OP_Bug and OP_Feedback with their whole structs, OP_Petition and OP_Report with the text and its 0.
 	bool SendBug(const std::vector<uint8_t> &body);
 	bool SendFeedback(const std::vector<uint8_t> &body);

@@ -4,6 +4,7 @@
 
 #include "frontend.h"
 #include "../core/alt_adv.h"
+#include "disciplines.h"
 #include "ini_file.h"
 #include "item_display.h"
 #include "zone_names.h"
@@ -25,6 +26,7 @@ namespace
 		RaidSay, RaidWindow, Channel, Loot, TargetTell, CharInfo, MoveLog, StopSong, Shield, Quit, Log, Keys, Dismount,
 		AlternateAdv, Pet, SoundDriver, Duel, Decline, Bazaar, Trader, Nothing, ParticleDensity, RTarget, Inspect,
 		ChatFontSize, Language, Note, TrackPlayers, TrackSort, TrackFilter, Help, BugReport, Feedback, Petition, Report,
+		Discipline,
 	};
 
 	struct CommandEntry
@@ -95,7 +97,7 @@ namespace
 		{"/yawn", 14108, 0, 2, Command::Social}, {"/smack", 14110, 0, 2, Command::Social}, {"/pat", 14111, 0, 2, Command::Social},
 		{"/fidget", 14112, 0, 2, Command::Social}, {"/flex", 14113, 0, 2, Command::Social}, {"/nudge", 14114, 0, 2, Command::Social},
 		{"/purr", 14115, 0, 2, Command::Social}, {"/kiss", 14116, 0, 0, Command::Social}, {"/time", 14117, 0, 1, Command::Time},
-		{"/discipline", 14118, 0, 1, Command::None}, {"/random", 14120, 0, 1, Command::Random}, {"/summon", 14121, 3, 0, Command::None},
+		{"/discipline", 14118, 0, 1, Command::Discipline}, {"/random", 14120, 0, 1, Command::Random}, {"/summon", 14121, 3, 0, Command::None},
 		{"/broadcast", 14122, 4, 0, Command::None}, {"/lastname", 14125, 4, 0, Command::None}, {"/zone", 14126, 3, 0, Command::None},
 		{"/kick", 14127, 4, 0, Command::None}, {"/kill", 14128, 3, 0, Command::None}, {"/delcorpse", 14129, 8, 0, Command::None},
 		{"/hideme", 14131, 3, 0, Command::None}, {"/servers", 14132, 3, 0, Command::None}, {"/height", 14133, 4, 0, Command::None},
@@ -2302,6 +2304,15 @@ void FrontEnd::InterpretCommand(const std::string &typed)
 			text.resize(0x2004);
 		m_zone.Report(text);
 		ChatOut(format(12944, "Reporting last 10 lines in chat display concerning %1.", {args}), ChatType::Yellow);
+		break;
+	}
+	case Command::Discipline: {
+		// /discipline (@004f4fb5); the zone starts it (OP_DisciplineChange) or says why not.
+		Disciplines::Result result = Disciplines::Command(m_ui.eqstr, me.class_id, me.level, me.expansions, args);
+		if (result.message != 0)
+			ChatOut(format(result.message, result.text, {}), ChatType::Default);
+		if (result.discipline >= 0)
+			m_zone.Discipline(result.discipline);
 		break;
 	}
 	case Command::None:

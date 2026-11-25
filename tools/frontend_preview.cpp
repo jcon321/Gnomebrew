@@ -2616,6 +2616,54 @@ namespace
 		return 0;
 	}
 
+	// Replay "slash": slash commands typed into any recording, printing what they say and (as the
+	// zone's log) what they send.
+	int SlashTest(FrontEnd &frontend, Harness &h)
+	{
+		ZoneSession &zone = frontend.ZoneForTests();
+		size_t chat_seen = frontend.Chat().Lines().size();
+		auto run = [&](int ms) {
+			h.RunUntil([] { return false; }, ms);
+			for (; chat_seen < frontend.Chat().Lines().size(); ++chat_seen)
+				printf("[preview] chat %06x: %s\n", frontend.Chat().Lines()[chat_seen].rgb, frontend.Chat().Lines()[chat_seen].text.c_str());
+		};
+		auto type = [&](const std::string &line) {
+			printf("[preview] typing %s\n", line.c_str());
+			h.Key(InputEvent::Key::Enter);
+			h.Type(line);
+			h.Key(InputEvent::Key::Enter);
+			run(300);
+		};
+		run(500);
+
+		// /discipline: each class with nothing, a word it has and one it hasn't, then under the level,
+		// and without the expansions.
+		ZoneProfile &me = zone.EditProfile();
+		const ZoneProfile was = me;
+		me.level = 60;
+		me.expansions = 0x1f;
+		static const struct { uint8_t class_id; const char *word; } classes[] = {{1, "mightystrike"}, {7, "hundredfist"},
+			{9, "DUELIST"}, {3, "holy"}, {4, "trueshot"}, {5, "leechcurse"}, {8, "puretone"}, {15, "beastialrage"}, {2, "resistant"}};
+		for (const auto &c : classes) {
+			me.class_id = c.class_id;
+			printf("[preview] class %u\n", c.class_id);
+			type("/discipline");
+			type(std::string("/disc ") + c.word);
+			type("/disc nothing");
+		}
+		me.class_id = 1;
+		me.level = 30;
+		type("/disc resistant");
+		type("/disc fearless");
+		me.expansions = 0;
+		type("/disc resistant");
+		me.class_id = 15;
+		me.expansions = 2;
+		type("/disc resistant");
+		me = was;
+		return 0;
+	}
+
 	// A replay of a horse summoned (the zone's "<name>`s_Mount00", race 216): who's on what, which
 	// horses aren't drawn, what the chat says, then /dismount.
 	// Replay "pet": the pet window (CPetInfoWnd) through a session where a pet is made and given
@@ -4525,6 +4573,7 @@ int main(int argc, char **argv)
 	bool packets_test = argc == 7 && std::string(argv[6]) == "packets";
 	bool spells_test = argc == 7 && std::string(argv[6]) == "spells";
 	bool switches_test = argc == 7 && std::string(argv[6]) == "switches";
+	bool slash_test = argc == 7 && std::string(argv[6]) == "slash";
 	bool item_display_test = argc == 7 && std::string(argv[6]) == "itemdisplay";
 	if (argc >= 6 && !replay) {
 		std::string login = argv[3];
@@ -4631,6 +4680,8 @@ int main(int argc, char **argv)
 			return SpellsTest(frontend, h);
 		if (switches_test)
 			return SwitchesTest(frontend, h);
+		if (slash_test)
+			return SlashTest(frontend, h);
 		if (item_display_test)
 			return ItemDisplayTest(frontend, h);
 		h.RunUntil([] { return false; }, 500);
