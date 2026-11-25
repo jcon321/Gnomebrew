@@ -2789,6 +2789,30 @@ namespace
 		torch(0);
 		type("/dynamiclights");
 		type("/dynamiclights");
+
+		// /showspelleffects: an old effect landing on us, and a dragon breath, on and off.
+		auto old_effect = [&](int effect) {
+			ZoneView *view = frontend.ZoneScene();
+			if (!view)
+				return;
+			ZoneView::DebugDraw draw;
+			draw.new_spell_effects = false;
+			view->SetDebugDraw(draw);
+			size_t before = view->OldSpellEffectCount();
+			SpellEffects::Request request;
+			request.caster = request.target = zone.MySpawnId();
+			request.stage = 2;
+			request.old_effect = effect;
+			view->StartSpellEffect(request);
+			printf("[preview] old effect %d: %zu sprites and clouds made\n", effect, view->OldSpellEffectCount() - before);
+		};
+		type("/showspelleffects");
+		old_effect(8);
+		type("/showspelleffects off");
+		old_effect(8);
+		old_effect(61);
+		type("/showspelleffects anything");
+		old_effect(8);
 		return 0;
 	}
 

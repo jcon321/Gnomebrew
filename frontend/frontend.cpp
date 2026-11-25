@@ -145,6 +145,9 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 				// CEverQuest::CEverQuest: on with no key, or for a value starting T, t or 1.
 				std::string lights = ini.Get("Defaults", "ShowDynamicLights");
 				m_dynamic_lights = lights.empty() || lights[0] == 'T' || lights[0] == 't' || lights[0] == '1';
+				// 1 with no key, or anything but 0 and 1.
+				std::string effects = ini.Get("Defaults", "ShowSpellEffects");
+				m_show_spell_effects = effects.empty() || std::atoi(effects.c_str()) != 0;
 				// 0 with no key, under 0 or over 10 (written so).
 				m_mouse_speed = std::atoi(ini.Get("Defaults", "MousePointerSpeedMod").c_str());
 				if (m_mouse_speed < 0 || m_mouse_speed > 10) {
@@ -5273,6 +5276,7 @@ void FrontEnd::ApplyDisplayOptions()
 	if (!m_zone_view)
 		return;
 	m_zone_view->SetDynamicLights(m_dynamic_lights);
+	m_zone_view->SetShowOldSpellEffects(m_show_spell_effects);
 	m_zone_view->SetSkyMode(m_sky);
 	m_zone_view->SetClipPlane(m_clip_plane);
 	m_zone_view->SetSpellParticles(m_spell_density, m_spell_opacity, m_spell_near_clip);

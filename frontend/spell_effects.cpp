@@ -345,8 +345,8 @@ void SpellEffects::Start(const Request &request, const FindActor &find)
 		m_play_sound(request, on, sound);
 	if (uses_new)
 		StartNew(request, find);
-	else
-		StartOld(request, find);
+	else if (m_show_old || request.stage == 1 || (request.old_effect > 60 && request.old_effect < 65) || request.tag != 0)
+		StartOld(request, find); // a switch's (its tag) is DoParticleEffect itself
 }
 
 void SpellEffects::StopTagged(int tag)

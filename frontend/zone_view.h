@@ -265,6 +265,9 @@ public:
 	// ShowDynamicLights (DAT_007cf25c, /dynamiclights): off, CDisplay::ChangeLight does nothing, so
 	// the lights carried stay as they were and a spawn that comes in has none.
 	void SetDynamicLights(bool on) { m_dynamic_lights = on; }
+	// ShowSpellEffects (DAT_007cf290, /showspelleffects): the old spells.eff effects drawn.
+	void SetShowOldSpellEffects(bool on) { m_spell_effects.SetShowOld(on); }
+	size_t OldSpellEffectCount() const { return m_spell_effects.OldCount(); } // the preview's
 	size_t CarriedLightCount() const { return m_carried_lights.size(); } // the preview's
 	void SetMyLevel(uint8_t level) { m_my_level = level; } // which of a spell effect's emitters our casts get
 	// A spell's effect (DoSpellEffect's stage) on the spawns it names, our own id for us; once

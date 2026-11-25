@@ -883,7 +883,8 @@ no rules of its own.
     (@004f3ddb, `CEverQuest_Surname`; the same), /safelock (@004ff689; it leaves the window's
     close box alone, where `EverQuest_wndproc`'s WM_CLOSE is /quit, refused while locked or frozen) and
     /hotbutton (@004ff36a, `RegisterHotButton`), /mousespeed (@004f9e87; the cursor scaled by the
-    host, not checked on Windows), /dynamiclights (@004fda22).
+    host, not checked on Windows), /dynamiclights (@004fda22),
+    /showspelleffects (@004f9f4d).
     Still to do:
     - /facepick (23), /hitsmode and /clearhits (3), /mp3, /music and /gems (34),
       /shownpcnames (9).
@@ -899,8 +900,6 @@ no rules of its own.
     - The client settings, each a `[Defaults]` key in eqgame (ours go in my-client.ini):
       - /invwinlabels (@004fdc50, `InvWinLabels`, `DAT_007cf20c`): on, off or flipped, "Inventory
         Window Labels *ON*" or "*OFF*"; the labels are the old UI's.
-      - /showspelleffects (@004f9f4d, `ShowSpellEffects`): eqstr 13168..13171; off draws no spell
-        particles (world and weapon ones stay).
       - /showgrass (@004faa05, `ShowGrass`): eqstr 13179..13184, `CDisplay::loadGrassObjects`
         (@004b2043: `grass.s3d`, `LWEED1.DDS`) and `UpdateGrassRenderingPosition` (@004b1ffa, from
         `MovePlayer`); see 42.
@@ -1083,8 +1082,7 @@ no rules of its own.
     OP_Projectile (EQMacEmu sends them to the shooter too); DoAttack's own EQMissile is only for a
     shot with no target, which `CanIHitTarget` stops online. Still to do: the
     static kind 9 missiles' checks on who walks into them (MoveMissile's sentinel and trap
-    spells), /showspelleffects (35: the Display page's spell particle settings are done, the command's
-    on and off isn't), `DoParticleEffectNew` (@004e8208) and
+    spells), `DoParticleEffectNew` (@004e8208) and
     `t3dParticleSystemDestroyTaggedEmitters` (@004e81ef) for OP 0x4265 to 0x4267 (destroy or start
     a cast's emitters; this server never sends them).
 13. ~~**The other camera modes F9 cycles through**~~: done (`ZoneView::CameraSetup`, `ToggleView`,

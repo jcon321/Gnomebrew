@@ -41,8 +41,8 @@
 //   The sprites move as CDisplay::ProcessEffects and process_physics move an EQEffect: put back
 //   on the target each frame, then pushed out along their heading (turning) at most every 32 ms.
 //   A sprite flash (kind 1) carries a light while it lasts (EQEffect's CreateLight: type 6, the
-//   lglantern's, out to 250). The old kind is eqgame's ShowSpellEffects (/showspelleffects, on by
-//   default) here always on, and the dragon breaths (effects 61..64) go off a second after their
+//   lglantern's, out to 250). The old kind is drawn only with ShowSpellEffects
+//   (/showspelleffects, on by default; not a missile's stage or a dragon breath), and the dragon breaths (effects 61..64) go off a second after their
 //   casting begins.
 //
 // Either way the stage's sound (the record's: SpellsNew.eff's +0x40, spells.eff's +0x224; -1 none)
@@ -137,6 +137,10 @@ public:
 	// cleared), not the bone it was on. The spells.eff clouds and sprites aren't the particle
 	// system's and stay as they are.
 	void MoveToRoot(uint16_t spawn);
+	// ShowSpellEffects (DAT_007cf290, DoSpellEffect): off, the old spells.eff effects aren't drawn but a
+	// missile's stage and the dragon breaths (effects 61..64); their sounds still play.
+	void SetShowOld(bool on) { m_show_old = on; }
+	size_t OldCount() const { return m_sprites.size() + m_clouds.size(); } // the preview's
 	// The options' Spell Particle Density (0, 0.25, 0.5 or 1) and Opacity (0..1).
 	void SetDetail(float density, float opacity)
 	{
@@ -246,6 +250,7 @@ private:
 	std::vector<Record> m_records;
 	render::SpellParticles m_particles;
 	float m_density = 1, m_opacity = 1;
+	bool m_show_old = true; // SetShowOld
 	bool m_new_effects = true;
 	std::map<std::pair<const render::CharacterModel *, int>, int> m_bones; // by model and attach point
 

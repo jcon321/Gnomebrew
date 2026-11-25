@@ -137,6 +137,7 @@ CombatMusic=1
 LootNoDrop=0
 FastDrop=0
 ShowDynamicLights=TRUE
+ShowSpellEffects=1
 MousePointerSpeedMod=0
 InspectOthers=TRUE
 TrackPlayers=TRUE
@@ -249,6 +250,7 @@ WeatherSounds=1
   `FastDrop` is `/fastdrop`: `1` drops an item clicked onto the ground at once, `0` asks first,
   `-1` never drops it (`DAT_0079966c`). Both are kept as they change.
   `ShowDynamicLights` is /dynamiclights (read as `InspectOthers` is, below).
+  `ShowSpellEffects` is /showspelleffects (1 with no key or a value but 0 and 1).
   `MousePointerSpeedMod` is /mousespeed's multiplier of the cursor's movement, 0 to 10 (0 and 1 as
   the mouse moves it), kept as it changes.
   `InspectOthers` is `/inspect on|off` (`DAT_007cf28c`): whether the right button on a player
@@ -407,7 +409,7 @@ eqgame's `OP_MoveItem`.
   /consent, /duel, /decline, /trader, /bazaar, /loot, /ttell, /charinfo, /movelog, /stopsong, /shield, /quit (/exit), /log, /keys, /dismount,
   /adriver, /sdriver, /attack, /combatmusic, /doability, /rtarget, /inspect, /particledensity,
   /help, /bugreport, /feedback, /petition, /report, /discipline, /surname, /safelock, /hotbutton, /mousespeed, /dynamiclights,
-  the
+  /showspelleffects, the
   guild commands (see Guilds under In the zone),
   the raid commands (see Raids), /filter, /serverfilter and the socials (/smile, /wave and the
   other 86).
@@ -895,7 +897,8 @@ and send: `/discipline` as each class with nothing, a word it has and one it has
 level and without the expansions, `/surname`'s refusals, its question answered No and Yes and the
 zone's two answers, and `/safelock`'s lock tried with the forward and inventory keys, Escape and
 commands, unlocked, and locked again with the right button down, `/hotbutton`'s socials,
-`/mousespeed`, and `/dynamiclights` with a torch's light taken in hand and put away)
+`/mousespeed`, `/dynamiclights` with a torch's light taken in hand and put away, and `/showspelleffects` with old
+effects landing on us)
 and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,
 opens, minimizes, resizes and closes windows (the layout goes to OUTDIR), types into the chat window
 (a say, commands, /target) and prints what the chat window holds, then stands near the target to
@@ -2709,6 +2712,12 @@ details and the nearest spawns at the top left and the radar at the top right.
   carried lights there are stay as they are, a spawn that comes in has none, and a change of ours
   isn't told the zone (`CEverQuest_SendLightInfo` is in it). Turned on, a light is made as it next
   changes. The missiles', spell sprites' and zone's lights aren't ChangeLight's and stay.
+- **/showspelleffects** (@004f9f4d): "off" (12946, the whole word) or anything else for on, kept as
+  `[Defaults] ShowSpellEffects` (`DAT_007cf290`); nothing typed says 13168 and 13169; then 13170 or
+  13171. Only `DoSpellEffect` (@0052ca8d) reads it, for a spell without a SpellsNew.eff record: off,
+  its sprite and emitters aren't made, but a missile's stage 1 and the dragon breaths (effects
+  61..64, `SpellUsesDragonBreathEffect`) are, and the stage's sound plays. The SpellsNew.eff effects
+  go by the Display page's density and opacity alone.
 - **/mousespeed** (@004f9e87): a number (`is_number`: a sign and digits) goes in `DAT_0079858c` and,
   as typed, in `[Defaults] MousePointerSpeedMod`; anything else says 13165 and 13166; then 13167.
   `CEverQuest::CEverQuest` reads it as 0 when missing, under 0 or over 10. Over 1, `GetMouseInputData`

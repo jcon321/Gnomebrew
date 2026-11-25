@@ -27,7 +27,7 @@ namespace
 		RaidSay, RaidWindow, Channel, Loot, TargetTell, CharInfo, MoveLog, StopSong, Shield, Quit, Log, Keys, Dismount,
 		AlternateAdv, Pet, SoundDriver, Duel, Decline, Bazaar, Trader, Nothing, ParticleDensity, RTarget, Inspect,
 		ChatFontSize, Language, Note, TrackPlayers, TrackSort, TrackFilter, Help, BugReport, Feedback, Petition, Report,
-		Discipline, Surname, SafeLock, HotButton, MouseSpeed, DynamicLights,
+		Discipline, Surname, SafeLock, HotButton, MouseSpeed, DynamicLights, ShowSpellEffects,
 	};
 
 	struct CommandEntry
@@ -120,7 +120,7 @@ namespace
 		{"/reversesound", 14181, 0, 1, Command::None}, {"/emotezone", 14182, 4, 0, Command::None}, {"/invwinlabels", 14183, 0, 1, Command::None},
 		{"/tracksort", 14184, 0, 1, Command::TrackSort}, {"/trackfilter", 14185, 0, 1, Command::TrackFilter}, {"/mousespeed", 14186, 0, 1, Command::MouseSpeed},
 		{"/gems", 14187, 0, 1, Command::None}, {"/inspect", 14188, 0, 1, Command::Inspect}, {"/serverfilter", 14189, 0, 1, Command::ServerFilter},
-		{"/showspelleffects", 14190, 0, 1, Command::None}, {"/combatmusic", 7526, 0, 1, Command::CombatMusic}, {"/mixahead", 7527, 0, 1, Command::None},
+		{"/showspelleffects", 14190, 0, 1, Command::ShowSpellEffects}, {"/combatmusic", 7526, 0, 1, Command::CombatMusic}, {"/mixahead", 7527, 0, 1, Command::None},
 		{"/guildmotd", 14191, 0, 3, Command::GuildMotd}, {"/charinfo", 14192, 0, 1, Command::CharInfo}, {"/safelock", 14193, 0, 1, Command::SafeLock},
 		{"/alternateadv", 14195, 0, 0, Command::AlternateAdv}, {"/targetgroupbuff", 14196, 0, 1, Command::TargetGroupBuff}, {"/tgb", 14197, 0, 1, Command::TargetGroupBuff},
 		{"/hotbutton", 14198, 0, 1, Command::HotButton}, {"/particledensity", 14199, 0, 0, Command::ParticleDensity}, {"/facepick", 14200, 0, 0, Command::None},
@@ -2332,9 +2332,29 @@ void FrontEnd::InterpretCommand(const std::string &typed, bool direct)
 		else
 			m_dynamic_lights = !m_dynamic_lights;
 		SaveSetting("Defaults", "ShowDynamicLights", m_dynamic_lights ? "TRUE" : "FALSE");
-		ApplyDisplayOptions();
+		m_zone.SetDynamicLights(m_dynamic_lights);
+		if (m_zone_view)
+			m_zone_view->SetDynamicLights(m_dynamic_lights);
 		ChatOut(m_dynamic_lights ? format(13268, "Dynamic Lights will be *ON* the next time you zone.", {})
 		                         : format(13269, "Dynamic Lights will be *OFF* the next time you zone.", {}),
+			ChatType::Default);
+		break;
+	case Command::ShowSpellEffects:
+		// /showspelleffects (@004f9f4d): "off", the whole of it in any case, or anything else for on,
+		// kept; nothing says how. Then how it is.
+		if (args.empty()) {
+			ChatOut(format(13168, "FORMAT: /showspelleffects <ON | OFF> (default is ON)", {}), ChatType::Default);
+			ChatOut(format(13169, "This command allows you to turn on/off all spell particle effects (NOT world or weapon particles).", {}),
+				ChatType::Default);
+		}
+		else {
+			m_show_spell_effects = !SameText(args, format(12946, "off", {}));
+			SaveSetting("Defaults", "ShowSpellEffects", m_show_spell_effects ? 1 : 0);
+			if (m_zone_view)
+				m_zone_view->SetShowOldSpellEffects(m_show_spell_effects);
+		}
+		ChatOut(m_show_spell_effects ? format(13170, "Spell particle effects are currently ON.", {})
+		                             : format(13171, "Spell particle effects are currently OFF.", {}),
 			ChatType::Default);
 		break;
 	case Command::MouseSpeed:
