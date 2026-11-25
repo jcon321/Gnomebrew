@@ -434,7 +434,7 @@ no rules of its own.
    nothing, as in eqgame windowed. Still to do: the Mouse page, which shows empty
    (`COptionsWnd::MousePageWndNotification` @0042c2d6 and InitKeyboardAssignments' mouse
    settings; its sensitivity and invert, which `procMouse` reads,
-   are fixed at 4 and off; /mousespeed is 35's); the reverb's drugged room (23) while drunk at 40 and
+   are fixed at 4 and off); the reverb's drugged room (23) while drunk at 40 and
    over (DoPassageOfTime's drunkenness wearing off isn't ours); the Keyboard page's
    temporary red rows (commands not yet done) go once every command is done.
    A combo box's list that's down takes any press (CXWndManager's 0x34): off it, the list goes
@@ -882,7 +882,8 @@ no rules of its own.
     replay, `frontend_preview ... slash`, not live: the test characters are under 30) and /surname
     (@004f3ddb, `CEverQuest_Surname`; the same), /safelock (@004ff689; it leaves the window's
     close box alone, where `EverQuest_wndproc`'s WM_CLOSE is /quit, refused while locked or frozen) and
-    /hotbutton (@004ff36a, `RegisterHotButton`).
+    /hotbutton (@004ff36a, `RegisterHotButton`), /mousespeed (@004f9e87; the cursor scaled by the
+    host, not checked on Windows).
     Still to do:
     - /facepick (23), /hitsmode and /clearhits (3), /mp3, /music and /gems (34),
       /shownpcnames (9).
@@ -905,7 +906,6 @@ no rules of its own.
       - /showgrass (@004faa05, `ShowGrass`): eqstr 13179..13184, `CDisplay::loadGrassObjects`
         (@004b2043: `grass.s3d`, `LWEED1.DDS`) and `UpdateGrassRenderingPosition` (@004b1ffa, from
         `MovePlayer`); see 42.
-      - /mousespeed (@004f9e87, `MousePointerSpeedMod`): eqstr 13165..13167.
       - /viewport (@004ffb00): `x y width height` or `reset` (eqstr 15008), kept in the UI ini and
         applied by `CDisplay::UpdateCameraAfterModeSwitch` (@004acb64): the 3D view's rectangle.
       - /mixahead (@004fa100, `SoundMixAhead` 1..100, `EqSoundManager::SetMixAhead`, eqstr 7528

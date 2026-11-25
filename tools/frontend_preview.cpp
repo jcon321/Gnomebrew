@@ -2762,6 +2762,12 @@ namespace
 			if (s.name.empty())
 				s.name = "taken";
 		social("/hotbutton Another /sit");
+
+		// /mousespeed: how, a number and not one; the cursor's speed for the host.
+		for (const char *line : {"/mousespeed", "/mousespeed 3", "/mousespeed fast", "/mousespeed -1", "/mousespeed 0"}) {
+			type(line);
+			printf("[preview] cursor speed %d\n", frontend.CursorSpeed());
+		}
 		return 0;
 	}
 

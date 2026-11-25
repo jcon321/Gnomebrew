@@ -136,6 +136,7 @@ AttackOnAssist=0
 CombatMusic=1
 LootNoDrop=0
 FastDrop=0
+MousePointerSpeedMod=0
 InspectOthers=TRUE
 TrackPlayers=TRUE
 TrackSortType=NORMAL
@@ -246,6 +247,8 @@ WeatherSounds=1
   for what you can't use, `2` never (eqgame's `DAT_00799674`, kept in its `eqOptions2.opt`).
   `FastDrop` is `/fastdrop`: `1` drops an item clicked onto the ground at once, `0` asks first,
   `-1` never drops it (`DAT_0079966c`). Both are kept as they change.
+  `MousePointerSpeedMod` is /mousespeed's multiplier of the cursor's movement, 0 to 10 (0 and 1 as
+  the mouse moves it), kept as it changes.
   `InspectOthers` is `/inspect on|off` (`DAT_007cf28c`): whether the right button on a player
   inspects them. eqgame reads it in `CEverQuest::CEverQuest`: on with no key (and `TRUE` written),
   or for a value starting `T`, `t` or `1`; /inspect writes `TRUE` or `FALSE` as it changes.
@@ -401,7 +404,7 @@ eqgame's `OP_MoveItem`.
   /random, /lootnodrop, /fastdrop, /autosplit, /roleplay, /targetgroupbuff (/tgb), /split, /yell,
   /consent, /duel, /decline, /trader, /bazaar, /loot, /ttell, /charinfo, /movelog, /stopsong, /shield, /quit (/exit), /log, /keys, /dismount,
   /adriver, /sdriver, /attack, /combatmusic, /doability, /rtarget, /inspect, /particledensity,
-  /help, /bugreport, /feedback, /petition, /report, /discipline, /surname, /safelock, /hotbutton, the
+  /help, /bugreport, /feedback, /petition, /report, /discipline, /surname, /safelock, /hotbutton, /mousespeed, the
   guild commands (see Guilds under In the zone),
   the raid commands (see Raids), /filter, /serverfilter and the socials (/smile, /wave and the
   other 86).
@@ -888,7 +891,8 @@ and prints the item display's title and text; `slash` types slash commands and p
 and send: `/discipline` as each class with nothing, a word it has and one it hasn't, under the
 level and without the expansions, `/surname`'s refusals, its question answered No and Yes and the
 zone's two answers, and `/safelock`'s lock tried with the forward and inventory keys, Escape and
-commands, unlocked, and locked again with the right button down, and `/hotbutton`'s socials)
+commands, unlocked, and locked again with the right button down, `/hotbutton`'s socials, and
+`/mousespeed`)
 and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,
 opens, minimizes, resizes and closes windows (the layout goes to OUTDIR), types into the chat window
 (a say, commands, /target) and prints what the chat window holds, then stands near the target to
@@ -2696,6 +2700,13 @@ details and the nearest spawns at the top left and the radar at the top right.
   4031 then 4034, the ability's description), or us, 4030; with a name, `DoPercentConvert` then
   `EQPlayer_get_player_partial_name` (nobody: nothing said), or us, 3278. Otherwise OP_Shielding
   (0x424b, {u16 spawn id}: EQPlayer+0x94); the server checks the class, level and its reuse timer.
+- **/mousespeed** (@004f9e87): a number (`is_number`: a sign and digits) goes in `DAT_0079858c` and,
+  as typed, in `[Defaults] MousePointerSpeedMod`; anything else says 13165 and 13166; then 13167.
+  `CEverQuest::CEverQuest` reads it as 0 when missing, under 0 or over 10. Over 1, `GetMouseInputData`
+  (@0055b3b9) multiplies the cursor's movement (`__Mouse`, held to the screen) by it; the raw counts
+  mouse look uses (`DAT_008092f0`, `DAT_008092f4`) aren't. eqgame moves its cursor by DirectInput's
+  raw counts; ours is Windows' cursor (its speed and acceleration), which the host puts as much
+  further on again (`FrontEnd::CursorSpeed`, from character select on).
 - **/hotbutton** (@004ff36a): the name (`GrabFirstWord2`, quoted or not), then a color when the next
   word is all digits (else 0), and the rest the text; no name says 13278..13281. `registerHotButton`
   (@004ff251, place -1, so from the first) takes the first of the 120 socials that's empty or of

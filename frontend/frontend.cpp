@@ -142,6 +142,12 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 			m_guild_invites = number("Defaults", "GuildInvites", 1, 0, 1) == 1;
 			{
 				// CEverQuest::CEverQuest: on with no key, or for a value starting T, t or 1.
+				// CEverQuest::CEverQuest: 0 with no key, under 0 or over 10 (written so).
+				m_mouse_speed = std::atoi(ini.Get("Defaults", "MousePointerSpeedMod").c_str());
+				if (m_mouse_speed < 0 || m_mouse_speed > 10) {
+					m_mouse_speed = 0;
+					SaveSetting("Defaults", "MousePointerSpeedMod", 0);
+				}
 				std::string inspect = ini.Get("Defaults", "InspectOthers");
 				m_inspect_others = inspect.empty() || inspect[0] == 'T' || inspect[0] == 't' || inspect[0] == '1';
 				// DAT_007cf208, the same way.
@@ -1328,6 +1334,14 @@ void FrontEnd::Render(Canvas &canvas, uint64_t now_ms)
 	if (m_cursor_visible && !m_mouse_grabbed &&
 	    !(m_screen == Screen::Zone && !m_dialog.open && m_windows.DrawCursor(screen, m_mouse_x - area.x, m_mouse_y - area.y, now_ms)))
 		canvas.Blit(m_art.Get("cursor.bmp"), m_mouse_x, m_mouse_y, true);
+}
+
+int FrontEnd::CursorSpeed() const
+{
+	if (m_screen != Screen::CharacterSelect && m_screen != Screen::CharacterCreate && m_screen != Screen::Zone)
+		return 1; // eqmain's cursor
+	bool pan = m_mouse_pan && m_zone_view && m_zone_view->View() == ZoneView::CameraView::Chase;
+	return m_mouse_turn || pan ? 1 : std::max(m_mouse_speed, 1);
 }
 
 bool FrontEnd::MouseGrab(int &x, int &y) const

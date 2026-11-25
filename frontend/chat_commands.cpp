@@ -27,7 +27,7 @@ namespace
 		RaidSay, RaidWindow, Channel, Loot, TargetTell, CharInfo, MoveLog, StopSong, Shield, Quit, Log, Keys, Dismount,
 		AlternateAdv, Pet, SoundDriver, Duel, Decline, Bazaar, Trader, Nothing, ParticleDensity, RTarget, Inspect,
 		ChatFontSize, Language, Note, TrackPlayers, TrackSort, TrackFilter, Help, BugReport, Feedback, Petition, Report,
-		Discipline, Surname, SafeLock, HotButton,
+		Discipline, Surname, SafeLock, HotButton, MouseSpeed,
 	};
 
 	struct CommandEntry
@@ -118,7 +118,7 @@ namespace
 		{"/mcicontrol", 14175, 0, 1, Command::None}, {"/popmail", 14176, 0, 0, Command::Nothing}, {"/audiodebug", 14177, 0, 1, Command::None},
 		{"/dynamiclights", 14178, 0, 1, Command::None}, {"/chatfontsize", 14179, 0, 1, Command::ChatFontSize}, {"/lootnodrop", 14180, 0, 1, Command::LootNoDrop},
 		{"/reversesound", 14181, 0, 1, Command::None}, {"/emotezone", 14182, 4, 0, Command::None}, {"/invwinlabels", 14183, 0, 1, Command::None},
-		{"/tracksort", 14184, 0, 1, Command::TrackSort}, {"/trackfilter", 14185, 0, 1, Command::TrackFilter}, {"/mousespeed", 14186, 0, 1, Command::None},
+		{"/tracksort", 14184, 0, 1, Command::TrackSort}, {"/trackfilter", 14185, 0, 1, Command::TrackFilter}, {"/mousespeed", 14186, 0, 1, Command::MouseSpeed},
 		{"/gems", 14187, 0, 1, Command::None}, {"/inspect", 14188, 0, 1, Command::Inspect}, {"/serverfilter", 14189, 0, 1, Command::ServerFilter},
 		{"/showspelleffects", 14190, 0, 1, Command::None}, {"/combatmusic", 7526, 0, 1, Command::CombatMusic}, {"/mixahead", 7527, 0, 1, Command::None},
 		{"/guildmotd", 14191, 0, 3, Command::GuildMotd}, {"/charinfo", 14192, 0, 1, Command::CharInfo}, {"/safelock", 14193, 0, 1, Command::SafeLock},
@@ -2322,6 +2322,21 @@ void FrontEnd::InterpretCommand(const std::string &typed, bool direct)
 			m_zone.Discipline(result.discipline);
 		break;
 	}
+	case Command::MouseSpeed:
+		// /mousespeed (@004f9e87): a number (is_number) is the multiplier, kept as typed; anything else
+		// says how. Then what it is.
+		if (IsNumber(args)) {
+			m_mouse_speed = std::atoi(args.c_str());
+			SaveSetting("Defaults", "MousePointerSpeedMod", args);
+		}
+		else {
+			ChatOut(format(13165, "FORMAT: /mousespeed <speed multiplier> (0 or 1 for default, 2 = double the speed, 3 = triple, etc...)", {}),
+				ChatType::Default);
+			ChatOut(format(13166, "This command speeds up the movement of the mouse cursor by an amount specified by the speed multiplier.", {}),
+				ChatType::Default);
+		}
+		ChatOut(format(13167, "Current mouse speed multiplier is %1.", {std::to_string(m_mouse_speed)}), ChatType::Default);
+		break;
 	case Command::HotButton: {
 		// /hotbutton (@004ff36a): a name, a color when the second word is all digits, and the first
 		// line (registerHotButton).

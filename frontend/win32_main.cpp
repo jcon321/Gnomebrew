@@ -98,6 +98,8 @@ namespace
 	// Moves the real cursor to (x, y) in the window's client area.
 	void PlaceCursor(int x, int y)
 	{
+		g_app.mouse_x = x;
+		g_app.mouse_y = y;
 		POINT point{x, y};
 		ClientToScreen(g_app.window, &point);
 		POINT now{};
@@ -206,6 +208,18 @@ namespace
 				return 0;
 			break;
 		case WM_MOUSEMOVE:
+			// /mousespeed: the cursor goes on as far again, inside the window (GetMouseInputData's
+			// __Mouse, held to the screen). Where it lands comes as a move of its own from there.
+			if (int speed = g_app.frontend ? g_app.frontend->CursorSpeed() : 1;
+				speed > 1 && g_app.tracking_mouse && !g_app.grabbed && GetForegroundWindow() == window) {
+				int x = static_cast<short>(LOWORD(lparam)), y = static_cast<short>(HIWORD(lparam));
+				int to_x = std::clamp(g_app.mouse_x + (x - g_app.mouse_x) * speed, 0, std::max(g_app.surface.width - 1, 0));
+				int to_y = std::clamp(g_app.mouse_y + (y - g_app.mouse_y) * speed, 0, std::max(g_app.surface.height - 1, 0));
+				if (to_x != x || to_y != y) {
+					PlaceCursor(to_x, to_y);
+					lparam = MAKELPARAM(to_x, to_y);
+				}
+			}
 			if (!g_app.tracking_mouse) {
 				TRACKMOUSEEVENT track{sizeof(track), TME_LEAVE, window, 0};
 				g_app.tracking_mouse = TrackMouseEvent(&track) != FALSE;
