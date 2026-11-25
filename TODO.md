@@ -467,22 +467,15 @@ no rules of its own.
    Command mode say and emote (ExecuteCmd 13, 59, 100, 87, 88; `FrontEnd::OpenChatLine`) open the
    chat line with `/tell `, `/tell <name> ` (`;tell` for a name with a dot), `/rtarget <name> `
    (Cycle reply's name; eqstr 12364 and 12365 with no tells), `'` and `:`, without the key's
-   own character after it. Zoom in and out held move the chase camera 2 units a frame unit
+   own character after it. Toggle mouse look, Use centerscreen (`FrontEnd::UseCenterScreen`,
+   `LeftClickedOnPlayer`, `ClickedSwitch`) and Center view (`ZoneView::CenterView`) are done
+   (ExecuteCmd 7, 14, 17). Zoom in and out held move the chase camera 2 units a frame unit
    (ProcessControls; no nearer than our ModelHeightOffset, DoCamAi's 2..200), and Look up and down
    held pitch faster each frame, to 12 EQ units a frame unit. Toggle UI Display (0x15, __ScreenMode
    2 and 3) hides the windows and the cursor (DoMainLoop's DrawWindows and DrawCursor), the hidden
    windows still taking the mouse and the world only in mouse look, until it's pressed again or a
    zone is entered; the mouse look check is our right button held. Still to do:
    - ExecuteCmd's (@0054050c) commands not done yet (the page's "No"):
-     - 7, Toggle mouse look: `DAT_00798571` flipped (the Mouse page's Mouse Look, done:
-       `FrontEnd::m_mouse_look`), eqstr 12372 "Mouse control deactivated." or 12373 "Mouse control
-       activated.  Use right mouse button.".
-     - 14, Use centerscreen: with the chat line closed, the middle of the screen clicked:
-       `CEverQuest_ClickedPlayer` there is `LeftClickedOnPlayer` and, with no target or an NPC's
-       (Type 1), `RightClickedOnPlayer` too; nobody there, `CEverQuest_ClickedSwitch`.
-     - 17, Center view: in view 0 our pitch to 0 (the horse's or boat's when it's the char spawn),
-       in view 1 `_DAT_007996b4` to -100, another view's own pitch to 0.001; the held look keys'
-       state cleared.
      - 30, Toggle netstat: `__NetStatusToggle`, drawn by `DrawNetStatus` (@0054d3ae) and
        `DrawPacketLossBar` (@0054d1a8) from `connection_get_perf_stats`.
      - 75 and 76, the clip plane: `DAT_00798b28` down or up one in 0..20, the far clip

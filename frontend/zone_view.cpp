@@ -333,6 +333,25 @@ void ZoneView::CameraKeys(float raise, float slide, float pitch)
 		v.pitch = std::clamp(v.pitch + pitch, -128.0f, 128.0f);
 }
 
+void ZoneView::CenterView()
+{
+	switch (m_cam->view) {
+	case CameraView::FirstPerson:
+		m_pitch = 0;
+		break;
+	case CameraView::Chase:
+		m_pitch = -12.0f; // as ToggleView starts it
+		break;
+	case CameraView::Overhead:
+		m_cam->Current().pitch = -100;
+		break;
+	case CameraView::User1:
+	case CameraView::User2:
+		m_cam->Current().pitch = CameraSetup::LookAtUs;
+		break;
+	}
+}
+
 void ZoneView::SpringPitch()
 {
 	if (m_cam->view != CameraView::FirstPerson)

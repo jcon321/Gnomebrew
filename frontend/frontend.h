@@ -441,9 +441,15 @@ private:
 	// RightClickedOnPlayer's CEverQuest_doInspect, when nothing's on the cursor, /inspect is on and
 	// our deity isn't 20000.
 	void InspectClicked(uint16_t spawn);
-	bool IsOkToTransact() const;
+	bool IsOkToTransact() const; // CEverQuest_IsOkToTransact: no window that deals with someone up
 	void FaceSpawn(uint16_t id); // EQPlayer::FacePlayer
-	void WorldClick(int x, int y); // CEverQuest_LMouseUp on the world (window pixels) // CEverQuest_IsOkToTransact: no window that deals with someone up
+	void WorldClick(int x, int y); // CEverQuest_LMouseUp on the world (window pixels)
+	// CEverQuest::LeftClickedOnPlayer (@0053271e): our target, but for an untargetable body type;
+	// what's on the cursor goes to them (DropItemOrMoneyOnPlayer).
+	void LeftClickedOnPlayer(uint16_t spawn);
+	// CEverQuest_ClickedSwitch (@00547034): the door or switch under (x, y). False with none there.
+	bool ClickedSwitch(int x, int y);
+	void UseCenterScreen(); // ExecuteCmd 14
 	void AddZoneLog(const std::string &text, uint32_t color); // a line of chat in this color
 	void ChatOut(const std::string &text, int type, bool log = true); // in a chat color type (ChatType); log: eqlog it too
 	void EqLog(const std::string &text);                      // eqlog: a chat line to the log, while /log is on

@@ -4218,6 +4218,54 @@ namespace
 			h.Snapshot(name);
 			chat();
 		}
+
+		// Toggle mouse look (F12), off and on.
+		for (int i = 0; i < 2; ++i) {
+			key(0x58);
+			chat();
+		}
+
+		// Center view (NPAD 5) after Look up held (Page Up), in first person and in each other view.
+		ZoneView *view = frontend.ZoneScene();
+		for (int v = 0; v < ZoneView::CameraViews; ++v) {
+			view->SetCameraView(static_cast<ZoneView::CameraView>(v));
+			InputEvent look;
+			look.type = InputEvent::Type::Key;
+			look.scan = v == 0 || v == 2 ? 0xc9 : 0x49; // Look up, else Alt+NPAD 9's Pitch camera up
+			look.alt = v != 0 && v != 2;
+			frontend.OnEvent(look);
+			h.RunUntil([] { return false; }, 300);
+			float before = view->Stats().camera_pitch, table = view->CurrentCameraPitch();
+			key(0x4c);
+			h.RunUntil([] { return false; }, 200); // the key's still down, its state let go
+			printf("[preview] view %d: pitch %.1f (table %.3f), centered %.1f (table %.3f)\n", v, before, table,
+				view->Stats().camera_pitch, view->CurrentCameraPitch());
+			look.type = InputEvent::Type::KeyUp;
+			frontend.OnEvent(look);
+		}
+
+		// Use centerscreen (U) on the nearest spawns, each faced in first person from close by.
+		view->SetCameraView(ZoneView::CameraView::FirstPerson);
+		int used = 0, tried = 0;
+		for (const auto &[id, spawn] : frontend.Zone().Spawns()) {
+			if (id == frontend.Zone().MySpawnId() || used == 4 || ++tried > 30)
+				continue;
+			float size = std::max(spawn.size, 1.0f);
+			view->SetPlayerPosition(spawn.x, spawn.y - 8 - size, spawn.z, 0);
+			h.RunUntil([] { return false; }, 200);
+			h.Render();
+			h.Render();
+			if (view->PickSpawn(frontend.ScreenWidth() / 2, frontend.ScreenHeight() / 2, frontend.Zone().MySpawnId()) != id)
+				continue;
+			key(0x16);
+			h.RunUntil([] { return false; }, 100);
+			++used;
+			printf("[preview] used %s (type %d class %d race %d): target %d of %d\n", spawn.name.c_str(), spawn.npc,
+				spawn.class_id, spawn.race, frontend.Target(), id);
+			chat();
+			if (used == 1)
+				h.Snapshot("k2-use");
+		}
 		return 0;
 	}
 

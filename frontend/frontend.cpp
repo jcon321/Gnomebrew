@@ -4742,13 +4742,45 @@ void FrontEnd::ChangeStance(uint8_t stance)
 		m_spell_book.StoodUp();
 }
 
+void FrontEnd::LeftClickedOnPlayer(uint16_t spawn)
+{
+	auto it = m_zone.Spawns().find(spawn);
+	bool untargetable = false;
+	if (it != m_zone.Spawns().end() && it->second.race < 0x8cd) {
+		int16_t body = it->second.body_type;
+		untargetable = body == 11 || body == 65 || body == 67 || body == 60;
+	}
+	if (!untargetable)
+		SetTarget(spawn);
+	if (m_zone.Items().count(Inventory::Cursor) || Inventory::CursorMoneyType(m_zone.Profile()))
+		m_trade.DropOnPlayer(spawn);
+}
+
+void FrontEnd::UseCenterScreen()
+{
+	// ExecuteCmd 14 (the new UI's branch): the middle of the 3D view. Whoever's there, as the left
+	// button does, then with no target or an NPC's, as the right one does too; with nobody, only a
+	// door or switch (no ground item or ladder, nothing held dropped).
+	if (!m_zone_view)
+		return;
+	const Rect view = m_viewport_set ? m_viewport : Rect{0, 0, m_game_width, m_game_height};
+	int x = (view.x + view.Right()) / 2, y = (view.y + view.Bottom()) / 2;
+	uint16_t id = m_zone_view->PickSpawn(x, y, m_zone.MySpawnId());
+	if (!id) {
+		ClickedSwitch(x, y);
+		return;
+	}
+	LeftClickedOnPlayer(id);
+	auto target = m_zone.Spawns().find(m_game_values.target);
+	if (m_game_values.target == 0 || (target != m_zone.Spawns().end() && target->second.npc == 1))
+		RightClickedOnPlayer(id);
+}
+
 void FrontEnd::WorldClick(int x, int y)
 {
 	if (uint16_t id = m_zone_view->PickSpawn(x, y, m_zone.MySpawnId())) {
-		SetTarget(id);
+		LeftClickedOnPlayer(id);
 		m_group.Clicked(id); // EQ_3DView_MouseUp: a member clicked is the one selected
-		if (m_zone.Items().count(Inventory::Cursor) || Inventory::CursorMoneyType(m_zone.Profile()))
-			m_trade.DropOnPlayer(id);
 		return;
 	}
 	if (!m_trade.Active()) {
@@ -4764,6 +4796,13 @@ void FrontEnd::WorldClick(int x, int y)
 		if (!held && !m_containers.WorldOpen() && m_zone_view->PickGroundItem(x, y, m_zone.MySpawnId(), drop_id) && m_ground.PickUp(drop_id))
 			return;
 	}
+	// No switch: CEverQuest_ClickedObject, which gets on a ladder (CDisplay::GetOnActor).
+	if (!ClickedSwitch(x, y) && m_zone_view->ClickLadder(x, y) == 1)
+		ChatOut(EqString(12008, "You are too far away from the ladder, get closer."), 0x111);
+}
+
+bool FrontEnd::ClickedSwitch(int x, int y)
+{
 	// CEverQuest_ClickedSwitch (@00547034): a trap takes our Disarm Traps skill and nothing held;
 	// else what's on the cursor goes with the click: lockpicks (item type 12) with our Pick Lock
 	// skill, an item of type 39 with its HouseLockID, a key (33), a container, a book or any other
@@ -4785,16 +4824,14 @@ void FrontEnd::WorldClick(int x, int y)
 	switch (m_zone_view->ClickDoor(x, y, held, door, item, skill)) {
 	case ZoneDoors::Use::Ask:
 		m_zone.ClickDoor(door, item, skill);
-		break;
+		return true;
 	case ZoneDoors::Use::TooFar:
 		AddZoneLog(EqString(1462, "You can't reach that, get closer."), ZoneYellow);
-		break;
+		return true;
 	case ZoneDoors::Use::Nothing:
-		// No switch: CEverQuest_ClickedObject, which gets on a ladder (CDisplay::GetOnActor).
-		if (m_zone_view->ClickLadder(x, y) == 1)
-			ChatOut(EqString(12008, "You are too far away from the ladder, get closer."), 0x111);
 		break;
 	}
+	return false;
 }
 
 void FrontEnd::FaceSpawn(uint16_t id)
@@ -6762,6 +6799,28 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 		break;
 	case KeyMap::SitStand:
 		Sit();
+		break;
+	case KeyMap::MouseLook:
+		// ExecuteCmd 7: the Mouse page's Mouse Look (DAT_00798571, DAT_00798b18).
+		if (InControl()) {
+			SetMouseOption(OptionsWindow::Host::Mouse::MouseLook, !m_mouse_look);
+			ChatOut(m_mouse_look ? EqString(12373, "Mouse control activated.  Use right mouse button.")
+			                     : EqString(12372, "Mouse control deactivated."),
+				ChatType::Default);
+		}
+		break;
+	case KeyMap::Use:
+		if (InControl() && !m_chats.Typing())
+			UseCenterScreen();
+		break;
+	case KeyMap::CenterView:
+		// ExecuteCmd 17: the view level, and the look and camera pitch keys let go.
+		if (InControl()) {
+			if (m_zone_view)
+				m_zone_view->CenterView();
+			m_keys.pitch_up = m_keys.pitch_down = m_keys.cam_up = m_keys.cam_down = false;
+			m_keys.pitch_up_speed = m_keys.pitch_down_speed = 0;
+		}
 		break;
 	case KeyMap::ScreenCap:
 		// ExecuteCmd 78: RealRender_World captures this frame (DAT_00798ac4).

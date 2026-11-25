@@ -908,7 +908,7 @@ commands, unlocked, and locked again with the right button down, `/hotbutton`'s 
 `/mousespeed`, `/dynamiclights` with a torch's light taken in hand and put away, `/showspelleffects` with old
 effects landing on us, `/viewport` with snapshots, and `/showgrass`; `keys` runs the keymap's
 commands that only show in the view, the chat line or a file (Take a screenshot, its BMPs in
-OUTDIR); `mouse` works the options' Mouse page,
+OUTDIR; Toggle mouse look; Center view in each view; Use centerscreen on the first few spawns); `mouse` works the options' Mouse page,
 printing what it shows and keeps, and how far a move with the right button held turns and pitches us)
 and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,
 opens, minimizes, resizes and closes windows (the layout goes to OUTDIR), types into the chat window
@@ -1975,6 +1975,7 @@ details and the nearest spawns at the top left and the radar at the top right.
   Disband, Who, Target nearest PC and NPC, Toggle last two
   targets, Cycle reply forward and back, Send tell, Reply, Send tell to target, Command mode say
   and emote, the hot buttons and pages, the gems, Take a screenshot,
+  Toggle mouse look, Use centerscreen, Center view,
   History up and down, the spellbook, inventory, Actions pages and the window toggles it has
   windows for (`implemented` in `frontend/key_map.cpp`).
 - **Take a screenshot** (`ExecuteCmd` 78, NPAD -): in control of ourselves, eqstr 12374 (color 15)
@@ -1986,6 +1987,21 @@ details and the nearest spawns at the top left and the radar at the top right.
   (`saveBitmapToFile` @1008fce5) writes 24 bits bottom up, 0xb12 pixels a meter, biSizeImage 0,
   and pads the file to a multiple of 4. Nothing says whether it was written. Ours in
   `frontend/screenshot.*`, the frame handed over by the host before it's shown.
+- **Toggle mouse look** (`ExecuteCmd` 7, F12): in control of ourselves, the Mouse page's Mouse Look
+  (`DAT_00798571`, kept as `DAT_00798b18`) flipped, with eqstr 12373 on and 12372 off (0x111). eqgame
+  keeps it when `saveOptions` next runs; ours at once.
+- **Use centerscreen** (`ExecuteCmd` 14, U, the new UI's branch): in control and the chat line shut,
+  the middle of the 3D view (`(__ScreenX + DAT_0079854c) >> 1` and the y's). Whoever
+  `CEverQuest_ClickedPlayer` finds there gets `LeftClickedOnPlayer` and, with no target or a Type 1
+  (NPC) one after that, `RightClickedOnPlayer`; a ridden horse stays the horse (only `LMouseUp` gives
+  its rider). Nobody there: `CEverQuest_ClickedSwitch` and nothing else, so no ground item, ladder
+  or dropping. `LeftClickedOnPlayer` (@0053271e) leaves the target as it was for body types 11, 60,
+  65 and 67 below race 2253, and what's on the cursor still goes to them.
+- **Center view** (`ExecuteCmd` 17, NPAD 5 and Home): in first person the pitch of `pinstCharSpawn`
+  (ours, when that's a horse, race 216, or a boat, 141) to 0; in view 1 its pitch to -100; in the
+  others theirs to 0.001, looking at us. Look up and down and Pitch camera up and down are let go
+  (`DAT_007ce088`, `8c`, `218`, `21c`) and the look speeds go to 0. Our chase camera isn't view 2: it
+  goes back to its own level.
 - **Target nearest PC and NPC** (`ExecuteCmd` 28 and 29, `CDisplay::GetNearestPlayerInView`
   @004ac17f with 500 and 0 or 1): of the actors `s3dGetWorldVisibleActorList` (flags 0x11) gives
   in the camera's view, not us, players (0) or NPCs (1) but not a player's pet, heard from in the

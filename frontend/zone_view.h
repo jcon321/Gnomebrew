@@ -72,6 +72,7 @@ public:
 		const View &Current() const { return views[static_cast<int>(view)]; }
 	};
 	// The front end's setup, kept from zone to zone; without one the view has its own.
+	float CurrentCameraPitch() const { return m_cam->Current().pitch; } // the view's own (the preview)
 	void SetCameraSetup(CameraSetup *setup) { m_cam = setup ? setup : &m_own_camera; }
 	using Vision = ::Vision; // day_light.h
 	static Vision RaceVision(uint16_t race) { return ::RaceVision(race); }
@@ -385,6 +386,10 @@ public:
 	// than 3); the overhead camera pitches (dy). False in a view where the mouse turns us (dx).
 	// `sensitivity` the Mouse page's 1..8 (_DAT_0079858a); dy turned over already when inverted.
 	bool MouseLookCamera(float dx, float dy, int sensitivity);
+	// ExecuteCmd 17 (Center view): first person level, the overhead camera pitched -100 again, a user
+	// camera looking at us (its table's pitch 0.001). Our chase camera, which always looks at us, goes
+	// back to its own level.
+	void CenterView();
 	// ProcessControls' look spring: in first person the pitch 10 (of 512) a frame back to level.
 	void SpringPitch();
 	void Orbit(float delta) { m_orbit += delta; }
