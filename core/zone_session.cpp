@@ -1533,7 +1533,7 @@ void ZoneSession::UpdateAppearance()
 	if (light != m_self.light) {
 		m_self.light = light;
 		// CDisplay::ChangeLight -> CEverQuest_SendLightInfo: SpawnAppearance_Struct {u16 spawn, u16 type, u32 value}.
-		if (tell) {
+		if (tell && m_dynamic_lights) {
 			uint8_t body[8] = {};
 			memcpy(body, &m_my_id, 2);
 			uint16_t type = AppearanceLight;

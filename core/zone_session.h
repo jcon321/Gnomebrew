@@ -1095,6 +1095,9 @@ public:
 	// Our body in water (ActorInfo+0xa1, SwimmingWaterType) as DoMainLoop's UpdateLight reads it each
 	// frame: a flame (light types 1, 2, 4, 6) goes out (light 0, told to the zone), and comes back
 	// out of it. Runs UpdateAppearance's light part when it changes.
+	// ShowDynamicLights (DAT_007cf25c, /dynamiclights): off, a change of our light isn't told the zone
+	// (CDisplay::ChangeLight does nothing).
+	void SetDynamicLights(bool on) { m_dynamic_lights = on; }
 	void SetBodyInWater(bool in_water);
 	// The guild names, from the world (SetGuilds, before Begin) and then the zone.
 	void SetGuilds(const GuildNames &guilds) { m_guilds = guilds; }
@@ -1181,6 +1184,7 @@ private:
 	ZoneSpawn m_self;
 	uint16_t m_my_id = 0;
 	bool m_body_in_water = false; // SetBodyInWater
+	bool m_dynamic_lights = true; // SetDynamicLights
 	bool m_berserk = false;
 	int m_chat_language = 0;
 	// CheckDupLoreItems (@004f13d2) after items arrive (the inventory, OP_MerchantItemPacket, a

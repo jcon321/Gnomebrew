@@ -142,7 +142,10 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 			m_guild_invites = number("Defaults", "GuildInvites", 1, 0, 1) == 1;
 			{
 				// CEverQuest::CEverQuest: on with no key, or for a value starting T, t or 1.
-				// CEverQuest::CEverQuest: 0 with no key, under 0 or over 10 (written so).
+				// CEverQuest::CEverQuest: on with no key, or for a value starting T, t or 1.
+				std::string lights = ini.Get("Defaults", "ShowDynamicLights");
+				m_dynamic_lights = lights.empty() || lights[0] == 'T' || lights[0] == 't' || lights[0] == '1';
+				// 0 with no key, under 0 or over 10 (written so).
 				m_mouse_speed = std::atoi(ini.Get("Defaults", "MousePointerSpeedMod").c_str());
 				if (m_mouse_speed < 0 || m_mouse_speed > 10) {
 					m_mouse_speed = 0;
@@ -5266,8 +5269,10 @@ void FrontEnd::SetPCloudDensity(int level)
 void FrontEnd::ApplyDisplayOptions()
 {
 	SetPCloudDensity(m_particle_density);
+	m_zone.SetDynamicLights(m_dynamic_lights);
 	if (!m_zone_view)
 		return;
+	m_zone_view->SetDynamicLights(m_dynamic_lights);
 	m_zone_view->SetSkyMode(m_sky);
 	m_zone_view->SetClipPlane(m_clip_plane);
 	m_zone_view->SetSpellParticles(m_spell_density, m_spell_opacity, m_spell_near_clip);

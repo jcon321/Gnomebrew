@@ -27,7 +27,7 @@ namespace
 		RaidSay, RaidWindow, Channel, Loot, TargetTell, CharInfo, MoveLog, StopSong, Shield, Quit, Log, Keys, Dismount,
 		AlternateAdv, Pet, SoundDriver, Duel, Decline, Bazaar, Trader, Nothing, ParticleDensity, RTarget, Inspect,
 		ChatFontSize, Language, Note, TrackPlayers, TrackSort, TrackFilter, Help, BugReport, Feedback, Petition, Report,
-		Discipline, Surname, SafeLock, HotButton, MouseSpeed,
+		Discipline, Surname, SafeLock, HotButton, MouseSpeed, DynamicLights,
 	};
 
 	struct CommandEntry
@@ -116,7 +116,7 @@ namespace
 		{"/invite", 14169, 0, 1, Command::Invite}, {"/disband", 14170, 0, 1, Command::Disband}, {"/note", 14171, 0, 1, Command::Note},
 		{"/wincolor", 14172, 0, 5, Command::None}, {"/usercolor", 14173, 0, 1, Command::UserColor}, {"/resetwindows", 14174, 0, 0, Command::Nothing},
 		{"/mcicontrol", 14175, 0, 1, Command::None}, {"/popmail", 14176, 0, 0, Command::Nothing}, {"/audiodebug", 14177, 0, 1, Command::None},
-		{"/dynamiclights", 14178, 0, 1, Command::None}, {"/chatfontsize", 14179, 0, 1, Command::ChatFontSize}, {"/lootnodrop", 14180, 0, 1, Command::LootNoDrop},
+		{"/dynamiclights", 14178, 0, 1, Command::DynamicLights}, {"/chatfontsize", 14179, 0, 1, Command::ChatFontSize}, {"/lootnodrop", 14180, 0, 1, Command::LootNoDrop},
 		{"/reversesound", 14181, 0, 1, Command::None}, {"/emotezone", 14182, 4, 0, Command::None}, {"/invwinlabels", 14183, 0, 1, Command::None},
 		{"/tracksort", 14184, 0, 1, Command::TrackSort}, {"/trackfilter", 14185, 0, 1, Command::TrackFilter}, {"/mousespeed", 14186, 0, 1, Command::MouseSpeed},
 		{"/gems", 14187, 0, 1, Command::None}, {"/inspect", 14188, 0, 1, Command::Inspect}, {"/serverfilter", 14189, 0, 1, Command::ServerFilter},
@@ -2322,6 +2322,21 @@ void FrontEnd::InterpretCommand(const std::string &typed, bool direct)
 			m_zone.Discipline(result.discipline);
 		break;
 	}
+	case Command::DynamicLights:
+		// /dynamiclights (@004fda22): "off" by its first 3 letters, "on" by its first 2, anything else
+		// turned over; kept, and said as for the next zone (ChangeLight goes by it at once).
+		if (SamePrefix(args, format(12946, "off", {}), 3))
+			m_dynamic_lights = false;
+		else if (SamePrefix(args, format(12947, "on", {}), 2))
+			m_dynamic_lights = true;
+		else
+			m_dynamic_lights = !m_dynamic_lights;
+		SaveSetting("Defaults", "ShowDynamicLights", m_dynamic_lights ? "TRUE" : "FALSE");
+		ApplyDisplayOptions();
+		ChatOut(m_dynamic_lights ? format(13268, "Dynamic Lights will be *ON* the next time you zone.", {})
+		                         : format(13269, "Dynamic Lights will be *OFF* the next time you zone.", {}),
+			ChatType::Default);
+		break;
 	case Command::MouseSpeed:
 		// /mousespeed (@004f9e87): a number (is_number) is the multiplier, kept as typed; anything else
 		// says how. Then what it is.

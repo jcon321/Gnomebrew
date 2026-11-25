@@ -2349,6 +2349,8 @@ void ZoneView::UpdateSpawns(const std::map<uint16_t, ZoneSpawn> &spawns, uint16_
 		float size = spawn->size > 0 ? spawn->size : (render::IsPlayerRace(spawn->race) ? render::RaceHeight(spawn->race) : 6);
 		view.actor.auto_attack = m_auto_attack;
 		view.actor.Update(*spawn, size, m_info.gravity, now_ms);
+		if (view.light != spawn->light && m_dynamic_lights)
+			view.lit = spawn->light;
 		view.light = spawn->light;
 		view.warm = spawn->body_type != 3 && spawn->body_type != 5 && spawn->body_type != 8 && spawn->body_type != 12;
 		view.center_height = size / 5 * 3.125f;
@@ -2388,9 +2390,9 @@ void ZoneView::PlaceCarriedLights(uint64_t now_ms)
 		m_carried_light_regions.push_back(m_zone.Regions().RegionsTouched(light.position, light.radius));
 	};
 	if (m_placed)
-		add(m_my_light, m_feet, m_height / 5 * 3.125f, m_heading, m_movement.BodyEnvironment());
+		add(m_my_lit, m_feet, m_height / 5 * 3.125f, m_heading, m_movement.BodyEnvironment());
 	for (const auto &[id, view] : m_actors)
-		add(view.light, view.Feet(), view.center_height, view.actor.Heading(), view.actor.BodyEnvironment());
+		add(view.lit, view.Feet(), view.center_height, view.actor.Heading(), view.actor.BodyEnvironment());
 	// The missiles' (CreateLight, MoveLight): right where they are.
 	for (const Missiles::Missile &missile : m_missiles.All()) {
 		render::PointLight light;
@@ -2484,6 +2486,8 @@ void ZoneView::PoseSpawn(SpawnView &view, const ZoneSpawn &spawn, uint64_t now_m
 	float size = spawn.size > 0 ? spawn.size : (render::IsPlayerRace(spawn.race) ? render::RaceHeight(spawn.race) : 6);
 	view.actor.auto_attack = m_auto_attack;
 	view.actor.Update(spawn, size, m_info.gravity, now_ms);
+	if (view.light != spawn.light && m_dynamic_lights)
+		view.lit = spawn.light;
 	view.light = spawn.light;
 	view.warm = spawn.body_type != 3 && spawn.body_type != 5 && spawn.body_type != 8 && spawn.body_type != 12;
 	view.center_height = size / 5 * 3.125f;

@@ -256,7 +256,16 @@ public:
 	bool SteeringBoat() const { return m_driven != 0 && !m_drive_walk; }
 	ZoneMovement SteeredMovement() const; // its OP_ClientUpdate (the server's terms, its center)
 	// The light we carry (our ZoneSpawn::light; we're not among the spawns).
-	void SetMyLight(uint8_t light) { m_my_light = light; }
+	void SetMyLight(uint8_t light)
+	{
+		if (light != m_my_light && m_dynamic_lights)
+			m_my_lit = light;
+		m_my_light = light;
+	}
+	// ShowDynamicLights (DAT_007cf25c, /dynamiclights): off, CDisplay::ChangeLight does nothing, so
+	// the lights carried stay as they were and a spawn that comes in has none.
+	void SetDynamicLights(bool on) { m_dynamic_lights = on; }
+	size_t CarriedLightCount() const { return m_carried_lights.size(); } // the preview's
 	void SetMyLevel(uint8_t level) { m_my_level = level; } // which of a spell effect's emitters our casts get
 	// A spell's effect (DoSpellEffect's stage) on the spawns it names, our own id for us; once
 	// loaded. They follow the spawns from then on, drawn with the rest.
@@ -670,6 +679,7 @@ private:
 		std::string animation;
 		bool loops = true;
 		uint8_t light = 0;         // ZoneSpawn::light
+		uint8_t lit = 0;           // what of it ChangeLight made
 		bool warm = true;          // body type not 3, 5, 8 or 12 (SetPlayerConstantAmbient2)
 		float center_height = 0;   // ModelHeightOffset: the server's z over the feet
 		float size = 6;
@@ -738,6 +748,8 @@ private:
 	bool m_infravision_glow = false;
 	uint64_t m_vision_ms = 0;
 	uint8_t m_my_light = 0; // our ZoneSpawn::light
+	uint8_t m_my_lit = 0;   // what of it ChangeLight made
+	bool m_dynamic_lights = true;
 	uint16_t m_my_id = 0;
 	uint8_t m_my_level = 1;
 	// Our model as Render last posed it, for the spell effects on us.

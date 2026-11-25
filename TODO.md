@@ -883,7 +883,7 @@ no rules of its own.
     (@004f3ddb, `CEverQuest_Surname`; the same), /safelock (@004ff689; it leaves the window's
     close box alone, where `EverQuest_wndproc`'s WM_CLOSE is /quit, refused while locked or frozen) and
     /hotbutton (@004ff36a, `RegisterHotButton`), /mousespeed (@004f9e87; the cursor scaled by the
-    host, not checked on Windows).
+    host, not checked on Windows), /dynamiclights (@004fda22).
     Still to do:
     - /facepick (23), /hitsmode and /clearhits (3), /mp3, /music and /gems (34),
       /shownpcnames (9).
@@ -899,8 +899,6 @@ no rules of its own.
     - The client settings, each a `[Defaults]` key in eqgame (ours go in my-client.ini):
       - /invwinlabels (@004fdc50, `InvWinLabels`, `DAT_007cf20c`): on, off or flipped, "Inventory
         Window Labels *ON*" or "*OFF*"; the labels are the old UI's.
-      - /dynamiclights (@004fda22, `ShowDynamicLights`, `DAT_007cf25c`): eqstr 13268 on and 13269
-        off, from the next zone.
       - /showspelleffects (@004f9f4d, `ShowSpellEffects`): eqstr 13168..13171; off draws no spell
         particles (world and weapon ones stay).
       - /showgrass (@004faa05, `ShowGrass`): eqstr 13179..13184, `CDisplay::loadGrassObjects`
@@ -1246,8 +1244,6 @@ no rules of its own.
       on: `grass.s3d` and `LWEED1.DDS`), `CDisplay_InitializeGrassRendering` (@004b1fd2) and
       `UpdateGrassRenderingPosition` (@004b1ffa, from `MovePlayer`, keeping it round us);
       /showgrass (35) turns it on and off. Which zones have any isn't checked.
-    - Dynamic lights off (`ShowDynamicLights`, `DAT_007cf25c`, /dynamiclights): ours are always
-      on.
     - `CDisplay::ReplaceSpecialCloakMaterials` (@004a0d05, from `CDisplay_SwapMaterial`): a
       model's materials named `CLK??06`..`CLK??09` swapped for the one named `CLK` + the actor's
       tag + the rest. `ReplaceCloakMaterials` is ours (robes); check this one against a robed

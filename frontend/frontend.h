@@ -380,6 +380,7 @@ private:
 	// The options' General page settings eqgame keeps in eqOptions1.opt, in my-client.ini here.
 	bool m_fast_item_destroy = false; // DAT_00798b1c, Fast Item Destroy ([Defaults] FastItemDestroy)
 	bool m_guild_invites = true;      // DAT_00798adc, Receive Guild Invites ([Defaults] GuildInvites)
+	bool m_dynamic_lights = true;     // DAT_007cf25c, /dynamiclights ([Defaults] ShowDynamicLights)
 	int m_mouse_speed = 0;            // DAT_0079858c, /mousespeed ([Defaults] MousePointerSpeedMod): times the cursor's movement
 	bool m_inspect_others = true;     // DAT_007cf28c, /inspect ([Defaults] InspectOthers): the right button inspects a player
 	int m_trade_with = 2;             // DAT_00798ad8, Allow trading with: 0 no one, 1 party members only, 2 everyone

@@ -136,6 +136,7 @@ AttackOnAssist=0
 CombatMusic=1
 LootNoDrop=0
 FastDrop=0
+ShowDynamicLights=TRUE
 MousePointerSpeedMod=0
 InspectOthers=TRUE
 TrackPlayers=TRUE
@@ -247,6 +248,7 @@ WeatherSounds=1
   for what you can't use, `2` never (eqgame's `DAT_00799674`, kept in its `eqOptions2.opt`).
   `FastDrop` is `/fastdrop`: `1` drops an item clicked onto the ground at once, `0` asks first,
   `-1` never drops it (`DAT_0079966c`). Both are kept as they change.
+  `ShowDynamicLights` is /dynamiclights (read as `InspectOthers` is, below).
   `MousePointerSpeedMod` is /mousespeed's multiplier of the cursor's movement, 0 to 10 (0 and 1 as
   the mouse moves it), kept as it changes.
   `InspectOthers` is `/inspect on|off` (`DAT_007cf28c`): whether the right button on a player
@@ -404,7 +406,8 @@ eqgame's `OP_MoveItem`.
   /random, /lootnodrop, /fastdrop, /autosplit, /roleplay, /targetgroupbuff (/tgb), /split, /yell,
   /consent, /duel, /decline, /trader, /bazaar, /loot, /ttell, /charinfo, /movelog, /stopsong, /shield, /quit (/exit), /log, /keys, /dismount,
   /adriver, /sdriver, /attack, /combatmusic, /doability, /rtarget, /inspect, /particledensity,
-  /help, /bugreport, /feedback, /petition, /report, /discipline, /surname, /safelock, /hotbutton, /mousespeed, the
+  /help, /bugreport, /feedback, /petition, /report, /discipline, /surname, /safelock, /hotbutton, /mousespeed, /dynamiclights,
+  the
   guild commands (see Guilds under In the zone),
   the raid commands (see Raids), /filter, /serverfilter and the socials (/smile, /wave and the
   other 86).
@@ -891,8 +894,8 @@ and prints the item display's title and text; `slash` types slash commands and p
 and send: `/discipline` as each class with nothing, a word it has and one it hasn't, under the
 level and without the expansions, `/surname`'s refusals, its question answered No and Yes and the
 zone's two answers, and `/safelock`'s lock tried with the forward and inventory keys, Escape and
-commands, unlocked, and locked again with the right button down, `/hotbutton`'s socials, and
-`/mousespeed`)
+commands, unlocked, and locked again with the right button down, `/hotbutton`'s socials,
+`/mousespeed`, and `/dynamiclights` with a torch's light taken in hand and put away)
 and snapshots the zone once it's in, then every 3 seconds for SECONDS (default 10), then drags,
 opens, minimizes, resizes and closes windows (the layout goes to OUTDIR), types into the chat window
 (a say, commands, /target) and prints what the chat window holds, then stands near the target to
@@ -2700,6 +2703,12 @@ details and the nearest spawns at the top left and the radar at the top right.
   4031 then 4034, the ability's description), or us, 4030; with a name, `DoPercentConvert` then
   `EQPlayer_get_player_partial_name` (nobody: nothing said), or us, 3278. Otherwise OP_Shielding
   (0x424b, {u16 spawn id}: EQPlayer+0x94); the server checks the class, level and its reuse timer.
+- **/dynamiclights** (@004fda22): "off" (12946, 3 letters), "on" (12947, 2) or anything else turned
+  over, kept as `[Defaults] ShowDynamicLights` (`DAT_007cf25c`) and said as for the next zone (13268,
+  13269). `CDisplay::ChangeLight` (@004af2a3) does nothing at all while it's off, from then on: the
+  carried lights there are stay as they are, a spawn that comes in has none, and a change of ours
+  isn't told the zone (`CEverQuest_SendLightInfo` is in it). Turned on, a light is made as it next
+  changes. The missiles', spell sprites' and zone's lights aren't ChangeLight's and stay.
 - **/mousespeed** (@004f9e87): a number (`is_number`: a sign and digits) goes in `DAT_0079858c` and,
   as typed, in `[Defaults] MousePointerSpeedMod`; anything else says 13165 and 13166; then 13167.
   `CEverQuest::CEverQuest` reads it as 0 when missing, under 0 or over 10. Over 1, `GetMouseInputData`

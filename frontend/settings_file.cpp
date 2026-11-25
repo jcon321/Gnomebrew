@@ -125,6 +125,8 @@ namespace
 		{"Defaults", "FastDrop", "0",
 			"/fastdrop and the General page's Fast Drop: 1 drops an item clicked onto the ground at once,\n"
 			"0 asks first, -1 never drops it. Kept on exit."},
+		{"Defaults", "ShowDynamicLights", "TRUE",
+			"/dynamiclights: TRUE shows the lights people carry, FALSE doesn't (from the next zone)."},
 		{"Defaults", "MousePointerSpeedMod", "0",
 			"/mousespeed: how many times as fast the mouse cursor moves, 0 to 10 (0 and 1: as it does)."},
 		{"Defaults", "InspectOthers", "TRUE",

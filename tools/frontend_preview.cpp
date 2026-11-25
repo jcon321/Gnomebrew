@@ -2768,6 +2768,27 @@ namespace
 			type(line);
 			printf("[preview] cursor speed %d\n", frontend.CursorSpeed());
 		}
+
+		// /dynamiclights: each way; off, a torch taken in hand isn't told the zone.
+		auto torch = [&](uint8_t light) {
+			ZoneItem &item = zone.EditItems()[13];
+			item.slot = 13;
+			item.item_class = 0;
+			item.light = light;
+			zone.UpdateAppearance();
+			run(200);
+			h.Render();
+			printf("[preview] our light %u, carried lights %zu\n", zone.Self().light,
+				frontend.ZoneScene() ? frontend.ZoneScene()->CarriedLightCount() : 0);
+		};
+		torch(2);
+		type("/dynamiclights off");
+		torch(0);
+		torch(2);
+		type("/dynamiclights on");
+		torch(0);
+		type("/dynamiclights");
+		type("/dynamiclights");
 		return 0;
 	}
 
