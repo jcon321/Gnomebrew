@@ -340,6 +340,7 @@ public:
 	// HasOwnModel).
 	bool LuclinPcModels() const { return m_loaded && m_models.LuclinPcModels(); }
 	bool IsLuclinModel(uint16_t race, uint8_t gender);
+	render::CharacterModels *Models() { return m_loaded ? &m_models : nullptr; } // what CFacePick asks
 	bool HasOwnModel(uint16_t race, uint8_t gender) const { return m_loaded && m_models.HasOwnModel(race, gender); }
 	// The name sprites the last Render drew: their head point's screen position, nearest first.
 	std::vector<NameTag> NameTags(float yon) const;
@@ -390,6 +391,11 @@ public:
 	// camera looking at us (its table's pitch 0.001). Our chase camera, which always looks at us, goes
 	// back to its own level.
 	void CenterView();
+	// CFacePick::Activate's camera: view 3 in front of our face (CDisplay_SetCCreateCamera(100)'s distance
+	// and height for a Luclin model of `race`, 1.5 more out), level, looking at us; and Deactivate's:
+	// F9's view again, view 3's place its default.
+	void FacePickCamera(uint16_t race, uint8_t gender);
+	void EndFacePickCamera();
 	// ProcessControls' look spring: in first person the pitch 10 (of 512) a frame back to level.
 	void SpringPitch();
 	void Orbit(float delta) { m_orbit += delta; }

@@ -150,6 +150,7 @@ add_library(eqfrontend STATIC
     frontend/player_notes.cpp
     frontend/bug_report.cpp
     frontend/screenshot.cpp
+    frontend/face_pick.cpp
     frontend/net_status.cpp
     frontend/alarm_window.cpp
     frontend/help_window.cpp

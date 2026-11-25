@@ -371,6 +371,9 @@ namespace ZoneOp
 	// RequestClientZoneChange_Struct {u32 zone, float y @4, x @8, z @12, heading @16, u32 type @20}:
 	// MSG_TELEPORT_PC, the zone moving us (HandleWorldMessage's 0x414d, CDisplay::DoTeleportB).
 	constexpr uint16_t RequestClientZoneChange = 0x414d;
+	// 7 bytes: our hair color, beard color, eye colors (left, right), hair style, beard and face, as
+	// /facepick's Accept has them. The zone keeps them and passes it on, but eqgame takes no 0x4225.
+	constexpr uint16_t FaceChange = 0x4225;
 	// 4 bytes, "KEY\0" (/keys): the zone answers with our key ring's items (KeyRingList).
 	constexpr uint16_t Key = 0x425d;
 	// Guilds. GuildCommand_Struct (136 bytes) {char other[64], char me[64] @64, i16 guild @128, u16,
@@ -669,6 +672,7 @@ inline const OpcodeEntry ZoneOpcodes[] = {
 	{ZoneOp::Illusion, "OP_Illusion"},
 	{ZoneOp::RequestClientZoneChange, "OP_RequestClientZoneChange"},
 	{ZoneOp::Key, "OP_Key"},
+	{ZoneOp::FaceChange, "OP_FaceChange"},
 	{ZoneOp::GuildInvite, "OP_GuildInvite"},
 	{ZoneOp::GuildRemove, "OP_GuildRemove"},
 	{ZoneOp::GuildInviteAccept, "OP_GuildInviteAccept"},

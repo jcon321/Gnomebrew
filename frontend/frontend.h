@@ -21,6 +21,7 @@
 #include "debug_menu.h"
 #include "eq_sound.h"
 #include "eqtext.h"
+#include "face_pick.h"
 #include "game_values.h"
 #include "game_windows.h"
 #include "key_map.h"
@@ -307,6 +308,14 @@ private:
 	// ExecuteCmd's local_14: not under /safelock's lock, knocked out or dead (StunnedState over 2), nor
 	// without control of ourselves (stance 102).
 	bool InControl() const;
+	// /facepick (@004fffcb), ExecuteCmd 210: CFacePick::Activate (@0041a316) on our own Luclin model;
+	// its clicks (WndNotification @0041a4b0), Deactivate (@0041a3e6: the camera's, the look stays as
+	// it is) and OnProcessFrame (@0041a484).
+	void ActivateFacePick();
+	bool FacePickClick(const std::string &window, const std::string &control);
+	void DeactivateFacePick();
+	void FacePickFrame();
+	void WearFacePick(); // what's picked onto our model
 	uint32_t KeyWithModifiers(const InputEvent &event) const; // the scan code and Shift, Ctrl, Alt bits
 	void SaveKeyBinding(int id, bool alternate, uint32_t key); // _writeKeyMapToIni
 	void ResetKeyBindings(); // DeleteKeyBindingFromConfig for all
@@ -946,6 +955,8 @@ private:
 	BugReport m_bug_report;   // CBugReportWnd, /bugreport
 	Feedback m_feedback;      // CFeedbackWnd, /feedback
 	AlarmWindow m_alarm;      // CAlarmWnd and its alarm
+	FacePick m_face_pick;     // CFacePick in the zone (/facepick)
+	bool m_face_picking = false; // Activated
 	HelpWindow m_help_window; // CHelpWnd and its pages
 	LoadskinWindow m_loadskin; // CLoadskinWnd
 	bool m_report_allowed = false; // DAT_00798550 1: /report not used since OP_SendExpZonein

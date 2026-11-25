@@ -352,6 +352,58 @@ void ZoneView::CenterView()
 	}
 }
 
+void ZoneView::FacePickCamera(uint16_t race, uint8_t gender)
+{
+	// CDisplay_SetCCreateCamera (@0049fa4e) for a Luclin model.
+	float distance = 1.8f, height = 0;
+	switch (race) {
+	case 1: distance = gender == 0 ? 1.4f : 1.8f; break;
+	case 2: distance = 2.1f; break;
+	case 3: distance = gender == 0 ? 1.8f : 2.0f; break;
+	case 6: distance = 1.6f; break;
+	case 7: distance = 1.7f; break;
+	case 8:
+		if (gender != 0)
+			distance = 1.6f;
+		else
+			height = -0.25f;
+		break;
+	case 9:
+		height = gender == 1 ? -0.3f : -0.5f;
+		if (gender == 1)
+			distance = 2.2f;
+		break;
+	case 10: distance = gender == 0 ? 3.5f : 3.8f; break;
+	case 12:
+		height = -0.1f;
+		distance = 1.5f;
+		break;
+	case 128:
+		distance = gender == 1 ? 2.1f : 2.35f;
+		height = gender == 1 ? 0 : 0.1f;
+		break;
+	case 130:
+		height = gender == 0 ? -0.1f : 0;
+		distance = 2.5f;
+		break;
+	default: break;
+	}
+	m_cam->view = CameraView::User1;
+	CameraSetup::View &v = m_cam->Current();
+	v.distance = distance + 1.5f;
+	v.height = height;
+	v.bearing = CameraSetup::LookAtUs;
+	v.heading = m_heading;
+	v.pitch = 0;
+}
+
+void ZoneView::EndFacePickCamera()
+{
+	SwitchToDefaultCamera();
+	constexpr int User1 = static_cast<int>(CameraView::User1);
+	m_cam->views[User1] = CameraSetup().views[User1];
+}
+
 void ZoneView::SpringPitch()
 {
 	if (m_cam->view != CameraView::FirstPerson)

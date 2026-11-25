@@ -485,7 +485,7 @@ no rules of its own.
        has its own keys, done), 62 Backdrop, 89 Lock windows (`[Defaults] LockWindows`, eqstr
        12376 and 12363) and 96 Toggle chat window (`HideChatWin`) return at once in the new UI.
    - ExecuteCmd's numbers past the page: 119 the petition queue window (36), 209 a line to our
-     target (not traced), 210 the face picker (/facepick, 23), and 198, 199 and 205, which only
+     target (not traced), and 198, 199 and 205, which only
      store the key's state. (200 Escape, 202 quit and 206 the chat line's Enter are ours by
      other roads.)
    - Toggle netstat's default key, F11, is the debug menu's (Custom changes), which has it first; the
@@ -532,11 +532,10 @@ no rules of its own.
       `CExploreModeWnd::Activate` does to EXW_ExploreModeWindow3 (`CXWnd::_`) isn't known.
     - load2's particle effects: its switches of type 53 (`CRATEG`, the parameter the effect), which
       `ZoneDoors` doesn't do.
-    - The face picker in the zone: /facepick (@004fffcb) is ExecuteCmd 210, which opens `CFacePick`
-      only with the Luclin expansion (`Expansions & 0xc`, or PCData+0x1362) and on a Luclin model
-      (the actor's +0x3b0), not while it's already up (`DAT_007cf258`). Its Accept sends 0x4225
-      with the face, hair and beard, and says eqstr 0x2efc; `Deactivate` (@0041a3e6) puts the old
-      look back.
+    - The face picker in the zone (/facepick, `FrontEnd::ActivateFacePick`, `frontend/face_pick.*`,
+      which character creation shares): not checked live (`OP_FaceChange`). At character creation the
+      close-up is `CDisplay_SetCCreateCamera`'s for an old model whatever the model (the zone's has
+      the Luclin distances), and /facepick's height goes by DoCamAi's 0..30.
 24. **Auto attack and melee.** Done (`frontend/combat.*`, `FrontEnd::ToggleAutoAttack`): auto attack
     (`__Attack`) goes on and off by the Autoattack key, the Actions window's Attack button
     (CombatPageWndNotification) and /attack (ExecuteCmd 8's checks and eqstr 12368..12371), off
@@ -865,11 +864,12 @@ no rules of its own.
     (@004f3ddb, `CEverQuest_Surname`; the same), /safelock (@004ff689; it leaves the window's
     close box alone, where `EverQuest_wndproc`'s WM_CLOSE is /quit, refused while locked or frozen) and
     /hotbutton (@004ff36a, `RegisterHotButton`), /mousespeed (@004f9e87; the cursor scaled by the
-    host, not checked on Windows), /hitsmode (@00500373, `FrontEnd::HitsMode`) and /clearhits (@00500dba), /shownpcnames (@004ff9d9), /dynamiclights (@004fda22),
+    host, not checked on Windows), /hitsmode (@00500373, `FrontEnd::HitsMode`) and /clearhits (@00500dba), /shownpcnames (@004ff9d9), /facepick
+    (@004fffcb, 23), /dynamiclights (@004fda22),
     /showspelleffects (@004f9f4d), /viewport (@004ffb00; the GPU renderer's not checked on Windows) and /showgrass
     (@004faa05).
     Still to do:
-    - /facepick (23), /mp3, /music and /gems (34).
+    - /mp3, /music and /gems (34).
     - The chat channels, all through `CEverQuest::ChatServerMessage` (@00524de9) to the chat
       server the world names (`OP_SetChatServer`; `ChatServerConnect` @00524cae,
       `ChatServerGiveTime` @00524885 from `DoMainLoop`, `CshOnMessage` @00524b2c,

@@ -65,6 +65,9 @@ struct ZoneProfile
 	// OP_RespondAA's points spent.
 	uint8_t aa_ranks[227] = {};
 	uint8_t gm = 0; // the profile's GM flag (EQ_Character+0x1362): the AA window shows ids
+	// Our features as the profile came (EQ_Character+0xae and 0x152e..0x1533), what CFacePick's Cancel puts back.
+	uint8_t face = 0, hair_color = 0xff, beard_color = 0xff, eye_color1 = 0xff, eye_color2 = 0xff, hair_style = 0xff,
+		beard = 0xff;
 	int16_t str = 0, sta = 0, cha = 0, dex = 0, int_ = 0, agi = 0, wis = 0; // base stats, without items or spells
 	int8_t fatigue = 0; // 0 rested .. 100 exhausted (OP_Stamina keeps it up to date)
 	int32_t hunger = 0, thirst = 0; // 0 .. 6000 eaten and drunk (the profile's, then OP_Stamina's)
@@ -833,6 +836,7 @@ public:
 	bool Report(const std::string &text);
 	void Shield(uint16_t id);               // OP_Shielding (/shield)
 	void Keys();                            // OP_Key (/keys)
+	void FaceChange(const uint8_t (&body)[7]); // OP_FaceChange (CFacePick's Accept)
 	void Consent(const std::string &name);  // OP_Consent
 	// Duels: OP_RequestDuel {target, us} (and OP_DuelAccept after it when `accept`: /duel taking up
 	// a challenge), OP_DuelResponse {to, us, type} and OP_DuelWon {loser, us}.

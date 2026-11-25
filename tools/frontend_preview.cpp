@@ -4389,6 +4389,84 @@ namespace
 		return 0;
 	}
 
+	// Replay "facepick": /facepick with every Luclin model on.
+	int FacePickTest(FrontEnd &frontend, Harness &h)
+	{
+		ZoneSession &zone = frontend.ZoneForTests();
+		WindowManager &windows = frontend.Windows();
+		auto run = [&](int ms) { h.RunUntil([] { return false; }, ms); };
+		size_t seen = 0;
+		auto say = [&](const std::string &line) {
+			seen = frontend.Chat().Lines().size();
+			printf("[preview] typing %s\n", line.c_str());
+			h.Key(InputEvent::Key::Enter);
+			h.Type(line);
+			h.Key(InputEvent::Key::Enter);
+			run(200);
+			h.Render();
+			for (; seen < frontend.Chat().Lines().size(); ++seen)
+				printf("[preview] chat: %s (%06x)\n", frontend.Chat().Lines()[seen].text.c_str(),
+					frontend.Chat().Lines()[seen].rgb);
+		};
+		auto look = [&](const char *what) {
+			const ZoneSpawn &me = zone.Self();
+			printf("[preview] %s: window %s, view %d, face %u hair %u/%u beard %u/%u eyes %u %u\n", what,
+				windows.Shown(FacePick::Screen) ? "up" : "down", static_cast<int>(frontend.ZoneScene()->View()), me.face,
+				me.hair_style, me.hair_color, me.beard, me.beard_color, me.eye_color1, me.eye_color2);
+		};
+		auto click = [&](const char *id) {
+			SidlWindow *window = windows.Find(FacePick::Screen);
+			const SidlWindow::Control *c = window ? window->Find(id) : nullptr;
+			if (!c || !c->visible) {
+				printf("[preview] %s isn't there\n", id);
+				return;
+			}
+			seen = frontend.Chat().Lines().size();
+			h.Click(c->rect.x + c->rect.w / 2, c->rect.y + c->rect.h / 2);
+			run(200);
+			look(id);
+			for (; seen < frontend.Chat().Lines().size(); ++seen)
+				printf("[preview] chat: %s\n", frontend.Chat().Lines()[seen].text.c_str());
+		};
+		run(500);
+		h.Key(InputEvent::Key::F11); // the debug menu out of the way
+		const ZoneProfile &profile = zone.Profile();
+		printf("[preview] profile: race %u expansions %x face %u hair %u/%u beard %u/%u eyes %u %u\n", profile.race,
+			profile.expansions, profile.face, profile.hair_style, profile.hair_color, profile.beard, profile.beard_color,
+			profile.eye_color1, profile.eye_color2);
+		look("to start");
+		zone.EditProfile().expansions = 3;
+		say("/facepick"); // without Luclin: nothing
+		look("no Luclin");
+		zone.EditProfile().expansions = 0xf;
+		ZoneSpawn &me = zone.EditSelf();
+		const uint16_t race = me.race;
+		me.race = 128;
+		say("/facepick"); // an illusion
+		me.race = 75;
+		say("/facepick"); // no Luclin model
+		me.race = race;
+		say("/facepick");
+		look("/facepick");
+		h.Snapshot("f0-facepick");
+		for (const char *id : {"Face_Up_Button", "Hair_Up_Button", "Hair_Color_Up_Button", "Eyes_Up_Button", "Beard_Up_Button",
+		         "Beard_Color_Up_Button", "Wode_Up_Button", "Random_Button"})
+			click(id);
+		h.Snapshot("f1-random");
+		click("Cancel_Button");
+		h.Snapshot("f2-cancelled");
+		say("/facepick");
+		click("Face_Down_Button");
+		click("Accept_Button");
+		h.Snapshot("f3-accepted");
+		say("/facepick");
+		click("Face_Down_Button");
+		h.Key(InputEvent::Key::Escape); // Deactivate: the look stays
+		run(100);
+		look("Escape");
+		return 0;
+	}
+
 	// Replay "options": the Options window's keyboard page, and keys through the keymap.
 	int OptionsTest(FrontEnd &frontend, Harness &h, const std::string &settings_ini)
 	{
@@ -4997,7 +5075,7 @@ int main(int argc, char **argv)
 	// each feature (printing what the model has) before it's created.
 	bool create_luclin = argc == 7 && std::string(argv[6]) == "createluclin";
 	bool create = argc == 7 && (std::string(argv[6]) == "create" || create_luclin);
-	if (create_luclin)
+	if (create_luclin || (replay && argc >= 7 && std::string(argv[6]) == "facepick"))
 		for (auto &race : config.luclin_models.use)
 			race[0] = race[1] = true;
 	bool shop = argc == 7 && std::string(argv[6]) == "shop";
@@ -5149,6 +5227,8 @@ int main(int argc, char **argv)
 			return MouseTest(frontend, h, config.settings_ini);
 		if (replay && argc >= 7 && std::string(argv[6]) == "keys")
 			return KeysTest(frontend, h, config.settings_ini);
+		if (replay && argc >= 7 && std::string(argv[6]) == "facepick")
+			return FacePickTest(frontend, h);
 		if (slash_test)
 			return SlashTest(frontend, h);
 		if (item_display_test)

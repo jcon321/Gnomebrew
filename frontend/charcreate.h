@@ -17,6 +17,7 @@
 
 #include "character_model.h"
 #include "creation_rules.h"
+#include "face_pick.h"
 #include "sidl.h"
 #include "world_client.h"
 
@@ -43,7 +44,7 @@ public:
 	// `shown`: the character select model it starts from (null: none).
 	void Activate(int width, int height, uint32_t expansions, const render::CharacterAppearance *shown = nullptr);
 	// The models, for what CFacePick asks of them (CDisplay::SetFHEB); without, they're all old ones.
-	void SetModels(render::CharacterModels *models) { m_models = models; }
+	void SetModels(render::CharacterModels *models) { m_face.SetModels(models); }
 	Action OnEvent(const InputEvent &event);
 	void Draw(Canvas &canvas, TextRenderer &text, SidlTextures &textures, uint64_t now_ms) const;
 
@@ -87,28 +88,7 @@ private:
 	void StartFacePick();
 	void EndFacePick(bool accept);
 
-	// The faces and Luclin features, as EQPlayer and EQ_PC keep them.
-	struct Features
-	{
-		uint8_t face = 0;
-		uint8_t hair_style = 0, hair_color = 0, beard = 0, beard_color = 0, eye1 = 0, eye2 = 0;
-	};
-	// EQPlayer's checks on the model shown.
-	bool ModelIsLuclin() const;
-	int HasAttachedHair() const;  // 0 none, 1 hair, 2 a head variant (an Erudite's)
-	int HasAttachedBeard() const; // 0 none, 1 a beard, 2 a face variant
-	bool IsFemaleTrollOrOgre() const; // EQPlayer::isFemaleTrollOrOgre_or_BeardRelated: also any man
-	void AllowedHairColors(int &low, int &high) const; // GetAllowedHairColorIndexRange
-	// CDisplay_SwapFace on the model: the face, and on a Luclin model its eyes' defaults.
-	void SwapFace(uint8_t face);
-	bool SetEyeMaterial(bool right, uint8_t color); // CDisplay_SetEyeMaterial
-	bool SetHairOrBeard(unsigned it);               // CDisplay::SetHairOrBeard (1000 + style, 2000 + style)
-	bool SetFHEB(int value, int which);             // which: 1 face, 2 hair, 3 eyes, 4 beard
-	bool SetFHEB_Color(int value, int which);
-	void SetDefaultFacialFeaturesByFace(int face, bool force, bool random);
-	void SetFaceSelectionsFromPlayer();
-	void CycleThroughFHEB(bool up, int which, bool color);
-	void ShowFacialFeatureRows(); // CFacePick's Activate (TAKP's SetDefaultFacialFeaturesByFace__)
+	using Features = FacePick::Features;
 
 	const CreationRules &m_rules;
 	const EqStr *m_strings;
@@ -126,17 +106,8 @@ private:
 	uint8_t m_class = 1;
 	uint8_t m_gender = 0;
 	Features m_pc;     // EQ_PC's: what's sent
-	Features m_player; // the model's
-	uint16_t m_model_race = 1; // the model's race and gender (it changes after RandomizeFacialFeatures)
-	uint8_t m_model_gender = 0;
-	render::CharacterModels *m_models = nullptr;
-	// CFacePick's selections (+0x1a0..0x1a7) and the feature it's cycling (+0x19c).
-	struct Selections
-	{
-		uint8_t face = 0, eye1 = 0, eye2 = 0, hair_style = 0, beard = 0, hair_color = 0, beard_color = 0, variant = 0;
-	};
-	Selections m_selections;
-	int m_cycling = 1;
+	FacePick m_face;   // the model's, and CFacePick's hands on them
+	Features &m_player = m_face.Model();
 	int m_deity = 0; // CC1_Deity button
 	int m_city = -1;
 	int m_stats[CreationRules::StatCount] = {};

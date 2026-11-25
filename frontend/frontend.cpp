@@ -1058,6 +1058,7 @@ void FrontEnd::Update(uint64_t now_ms)
 			AnswerInGame(false);
 		m_options.Frame(now_ms);
 		m_alarm.Frame(); // CAlarmWnd::ProcessAlarmTrigger
+		FacePickFrame();
 		m_help_window.Frame(now_ms);
 		m_spell_book.Frame(now_ms);
 		m_spell_cast.Frame(now_ms);
@@ -2288,7 +2289,7 @@ namespace
 		{BazaarWindow::Screen, false}, {BazaarSearch::Screen, false}, {InspectWindow::Screen, false},
 		{PlayerNotes::Screen, false}, {Tracking::Screen, false}, {"BreathWindow", false},
 		{BugReport::Screen, false}, {Feedback::Screen, false}, {AlarmWindow::Screen, false},
-		{LoadskinWindow::Screen, false},
+		{LoadskinWindow::Screen, false}, {FacePick::Screen, false},
 	};
 
 	// The selector's buttons (EQUI_SelectorWnd.xml) and the windows they open and close.
@@ -2862,6 +2863,7 @@ void FrontEnd::DeactivateMainUI()
 	m_bank.Deactivate(false);
 	m_spell_book.Deactivate();
 	m_train.Deactivate();
+	DeactivateFacePick();
 }
 
 void FrontEnd::ActivateMainUI()
@@ -3221,7 +3223,8 @@ void FrontEnd::HandleWindowClicks()
 		    m_pet_window.Click(click.window, click.control) || m_friends.Click(click.window, click.control) ||
 		    m_text_entry.Click(click.window, click.control) || m_bug_report.Click(click.window, click.control) ||
 		    m_feedback.Click(click.window, click.control) || m_alarm.Click(click.window, click.control) ||
-		    m_help_window.Click(click.window, click.control) || m_loadskin.Click(click.window, click.control))
+		    m_help_window.Click(click.window, click.control) || m_loadskin.Click(click.window, click.control) ||
+		    FacePickClick(click.window, click.control))
 			continue;
 		// CInventoryWnd::WndNotification: the Alt. Adv. button opens the AA window, or closes it.
 		if (click.window == "InventoryWindow" && click.control == "IW_AltAdvBtn") {
@@ -5995,6 +5998,7 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 		case Type::ZoneApproved:
 			// MoveToZone_2: "LOADING, PLEASE WAIT...", then the zone lets us go (Departed).
 			m_zoning = true;
+			DeactivateFacePick(); // CDisplay_DeactivateMainUI's
 			m_zone_view.reset();
 			m_loading.Reset();
 			m_loading_percent = -1;
@@ -6563,6 +6567,125 @@ void FrontEnd::SaveScreenshot(const uint32_t *pixels, int width, int height, int
 		return;
 	std::string path = Screenshot::NextPath(m_config.ui_dir);
 	Log((Screenshot::WriteBmp(path, pixels, width, height, stride) ? "screenshot: " : "can't write ") + path);
+}
+
+void FrontEnd::ActivateFacePick()
+{
+	// ExecuteCmd 210: with Luclin or Planes of Power (Expansions 0xc) or as a GM, on a Luclin model
+	// (the actor's +0x3b0), else eqstr 12377 in red.
+	const ZoneProfile &me = m_zone.Profile();
+	ZoneSpawn &self = m_zone.EditSelf();
+	if (!m_zone_view || !m_zone_view->Loaded() || (!(me.expansions & 0xc) && !me.gm))
+		return;
+	uint16_t race = self.race ? self.race : me.race;
+	if (!m_zone_view->IsLuclinModel(race, self.gender)) {
+		ChatOut(EqString(12377, "This command does not work for the pre-Luclin PC models."), ChatType::Red);
+		return;
+	}
+	// CFacePick::Activate: not while we're another race (an illusion).
+	if (race != me.race) {
+		ChatOut(EqString(4035, "You cannot change your face while under an illusion."), ChatType::Default);
+		return;
+	}
+	SidlWindow *window = m_windows.Find(FacePick::Screen);
+	if (!window)
+		return;
+	m_face_pick.SetModels(m_zone_view->Models());
+	m_face_pick.SetModel(race, self.gender);
+	FacePick::Features &model = m_face_pick.Model();
+	model.face = self.face;
+	model.hair_style = self.hair_style;
+	model.hair_color = self.hair_color;
+	model.beard = self.beard;
+	model.beard_color = self.beard_color;
+	model.eye1 = self.eye_color1;
+	model.eye2 = self.eye_color2;
+	m_face_pick.Start(*window);
+	m_zone_view->PlayAnimation(0x47);
+	m_zone_view->FacePickCamera(race, self.gender);
+	m_windows.MoveTo(FacePick::Screen, 0, (m_game_height - window->Bounds().h) / 2); // CXWnd::Left
+	m_windows.Show(FacePick::Screen, true);
+	m_windows.Raise(FacePick::Screen);
+	m_face_picking = true;
+}
+
+void FrontEnd::WearFacePick()
+{
+	ZoneSpawn &self = m_zone.EditSelf();
+	const FacePick::Features &model = m_face_pick.Model();
+	self.face = model.face;
+	self.hair_style = model.hair_style;
+	self.hair_color = model.hair_color;
+	self.beard = model.beard;
+	self.beard_color = model.beard_color;
+	self.eye_color1 = model.eye1;
+	self.eye_color2 = model.eye2;
+	self.default_features = false;
+	++self.look_serial; // CDisplay::UpdateAppearance
+}
+
+bool FrontEnd::FacePickClick(const std::string &window, const std::string &control)
+{
+	if (!m_face_picking || window != FacePick::Screen)
+		return false;
+	switch (m_face_pick.Click(control)) {
+	case FacePick::Action::None:
+		break;
+	case FacePick::Action::Changed:
+		WearFacePick();
+		break;
+	case FacePick::Action::Accept: {
+		// OP_FaceChange, and the profile's features as they were (so a Cancel in this zone goes back
+		// past it).
+		m_face_pick.Accept();
+		WearFacePick();
+		const FacePick::Features &model = m_face_pick.Model();
+		const uint8_t body[7] = {model.hair_color, model.beard_color, model.eye1, model.eye2, model.hair_style, model.beard,
+			model.face};
+		m_zone.FaceChange(body);
+		ChatOut(EqString(12028, "Facial features accepted."), ChatType::Default);
+		DeactivateFacePick();
+		break;
+	}
+	case FacePick::Action::Cancel: {
+		const ZoneProfile &me = m_zone.Profile();
+		FacePick::Features was;
+		was.face = me.face;
+		was.hair_style = me.hair_style;
+		was.hair_color = me.hair_color;
+		was.beard = me.beard;
+		was.beard_color = me.beard_color;
+		was.eye1 = me.eye_color1;
+		was.eye2 = me.eye_color2;
+		m_face_pick.Cancel(was);
+		WearFacePick();
+		DeactivateFacePick();
+		break;
+	}
+	}
+	return true;
+}
+
+void FrontEnd::DeactivateFacePick()
+{
+	if (!m_face_picking)
+		return;
+	m_face_picking = false;
+	if (m_zone_view)
+		m_zone_view->EndFacePickCamera();
+	m_windows.Show(FacePick::Screen, false);
+}
+
+void FrontEnd::FacePickFrame()
+{
+	// OnProcessFrame: our race changed under it, the selections and rows again.
+	const ZoneSpawn &self = m_zone.Self();
+	uint16_t race = self.race ? self.race : m_zone.Profile().race;
+	SidlWindow *window = m_windows.Find(FacePick::Screen);
+	if (!m_face_picking || !window || race == m_face_pick.Race())
+		return;
+	m_face_pick.SetModel(race, self.gender);
+	m_face_pick.Start(*window);
 }
 
 void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
@@ -7407,13 +7530,13 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 		}
 		// ExecuteCmd's escape: no target, then CDisplay_NewUIProcessEscape closes the first of its
 		// windows that's open (of the ones we have: the item display, quantity, the bank, a merchant,
-		// loot, a trade, a book, a note, help, the AA window, skills, then every bag window at once, options, the
+		// loot, a trade, a book, a note, help, the face picker, the AA window, skills, then every bag window at once, options, the
 		// spellbook, the social editor, inventory).
 		SetTarget(0);
 		ChatOut(EqString(12375, "You no longer have a target."), ChatType::Default);
 		for (const char *screen :
 			{"ItemDisplayWindow", "QuantityWnd", "BankWnd", "MerchantWnd", "LootWnd", "TradeWnd", "BookWindow",
-			 "NoteWindow", "HelpWindow", "AAWindow", "SkillsWindow", "", "OptionsWindow", "SpellBookWnd", "TrainWindow", "SocialEditWnd",
+			 "NoteWindow", "HelpWindow", FacePick::Screen, "AAWindow", "SkillsWindow", "", "OptionsWindow", "SpellBookWnd", "TrainWindow", "SocialEditWnd",
 			 "InventoryWindow", BazaarSearch::Screen, BazaarWindow::Screen}) {
 			if (!*screen) {
 				if (m_containers.CloseAll())
@@ -7423,6 +7546,13 @@ void FrontEnd::ZoneEvent(const InputEvent &event)
 			if (std::string(screen) == "BankWnd") {
 				if (m_bank.Active()) {
 					m_bank.Deactivate(true);
+					break;
+				}
+				continue;
+			}
+			if (std::string(screen) == FacePick::Screen) {
+				if (m_face_picking) {
+					DeactivateFacePick();
 					break;
 				}
 				continue;

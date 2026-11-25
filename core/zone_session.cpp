@@ -1784,6 +1784,12 @@ void ZoneSession::Keys()
 		Send(ZoneOp::Key, body, sizeof(body), "OP_Key");
 }
 
+void ZoneSession::FaceChange(const uint8_t (&body)[7])
+{
+	if (m_state == State::InZone)
+		Send(ZoneOp::FaceChange, body, sizeof(body), "OP_FaceChange");
+}
+
 void ZoneSession::Consent(const std::string &name)
 {
 	if (m_state == State::InZone)
@@ -2470,6 +2476,13 @@ void ZoneSession::HandlePacket(uint16_t opcode, std::vector<uint8_t> &data, std:
 		p.aa_unspent = Read<int16_t>(data, 5902);
 		p.aa_percentage = Read<int8_t>(data, 5425);
 		p.gm = data[4966];
+		p.face = data[178];
+		p.hair_color = data[5426];
+		p.beard_color = data[5427];
+		p.eye_color1 = data[5428];
+		p.eye_color2 = data[5429];
+		p.hair_style = data[5430];
+		p.beard = data[5431];
 		// EQPlayer::EQPlayer: with Luclin or later (Expansions 0x1c), the 120 aa_array entries, each
 		// a word of the id (the low 12 bits; 0 none, past 226 an error) and the rank (the top 4).
 		if (p.expansions & 0x1c)

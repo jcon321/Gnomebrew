@@ -28,7 +28,7 @@ namespace
 		AlternateAdv, Pet, SoundDriver, Duel, Decline, Bazaar, Trader, Nothing, ParticleDensity, RTarget, Inspect,
 		ChatFontSize, Language, Note, TrackPlayers, TrackSort, TrackFilter, Help, BugReport, Feedback, Petition, Report,
 		Discipline, Surname, SafeLock, HotButton, MouseSpeed, DynamicLights, ShowSpellEffects, Viewport, ShowGrass,
-		HitsMode, ShowNpcNames,
+		HitsMode, ShowNpcNames, FacePick,
 	};
 
 	struct CommandEntry
@@ -124,7 +124,7 @@ namespace
 		{"/showspelleffects", 14190, 0, 1, Command::ShowSpellEffects}, {"/combatmusic", 7526, 0, 1, Command::CombatMusic}, {"/mixahead", 7527, 0, 1, Command::None},
 		{"/guildmotd", 14191, 0, 3, Command::GuildMotd}, {"/charinfo", 14192, 0, 1, Command::CharInfo}, {"/safelock", 14193, 0, 1, Command::SafeLock},
 		{"/alternateadv", 14195, 0, 0, Command::AlternateAdv}, {"/targetgroupbuff", 14196, 0, 1, Command::TargetGroupBuff}, {"/tgb", 14197, 0, 1, Command::TargetGroupBuff},
-		{"/hotbutton", 14198, 0, 1, Command::HotButton}, {"/particledensity", 14199, 0, 0, Command::ParticleDensity}, {"/facepick", 14200, 0, 0, Command::None},
+		{"/hotbutton", 14198, 0, 1, Command::HotButton}, {"/particledensity", 14199, 0, 0, Command::ParticleDensity}, {"/facepick", 14200, 0, 0, Command::FacePick},
 		{"/dismount", 14201, 0, 1, Command::Dismount}, {"/rtarget", 14202, 0, 1, Command::RTarget}, {"/showgrass", 14203, 0, 1, Command::ShowGrass},
 		{"/alias", 14204, 0, 1, Command::Nothing}, {"/hitsmode", 14205, 0, 1, Command::HitsMode}, {"/clearhits", 14206, 0, 1, Command::Nothing},
 		{"/dopropertinting", 14207, 0, 1, Command::None}, {"/makeleader", 5043, 0, 1, Command::MakeLeader}, {"/viewport", 14210, 0, 1, Command::Viewport},
@@ -2417,6 +2417,9 @@ void FrontEnd::InterpretCommand(const std::string &typed, bool direct)
 		ChatOut(m_dynamic_lights ? format(13268, "Dynamic Lights will be *ON* the next time you zone.", {})
 		                         : format(13269, "Dynamic Lights will be *OFF* the next time you zone.", {}),
 			ChatType::Default);
+		break;
+	case Command::FacePick:
+		ActivateFacePick(); // /facepick (@004fffcb): ExecuteCmd(210, 1, 0)
 		break;
 	case Command::HitsMode:
 		HitsMode(args);
