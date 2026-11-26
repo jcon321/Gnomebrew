@@ -18,7 +18,7 @@
 // Transparency (230, alpha value + 26, as a percentage of 255), Fade-to Transparency (256, the
 // alpha) and the spell particles' Opacity (101, hundredths). DisplayPageOnProcessFrame sets the
 // page from the settings every frame it's up, so it follows what changes them elsewhere (the
-// window menu's levels, /shownames). Video Modes is CVideoModesWnd (not ours).
+// window menu's levels, /shownames). Video Modes is CVideoModesWnd (video_modes_window.h).
 //
 // The General page (SyncGeneralPage @0042a4b2, GeneralPageWndNotification @0042b532): Fast Item
 // Destroy, Receive Guild Invites, Autosplit, Anonymous and Roleplaying checked by their settings

@@ -32,6 +32,13 @@ public:
 	bool VSync() const;
 	void SetVSync(bool on); // from the next Present
 
+	// A new size for the swap chain, its depth buffer and the canvas's texture (a video mode
+	// change); SetCanvas again after it. The window is the host's to size. False, with why, and
+	// the device lost, when it fails.
+	bool Resize(int width, int height, std::string &error);
+	int Width() const;
+	int Height() const;
+
 	// The canvas the front end draws into, the size of the window. A renderer's Finish into
 	// a block of it draws the 3D view in that part of the window.
 	void SetCanvas(uint32_t *pixels, int width, int height, int stride);

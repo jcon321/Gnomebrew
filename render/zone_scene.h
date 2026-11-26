@@ -29,6 +29,10 @@ namespace render
 		Vec3 center;
 		float radius = 0;
 		Vec3 low, high; // bounds
+		// A placed object's: its actor's location and scaled bounding radius, for the dynamic LOD
+		// (OutsideLodDistance). A radius under 0: part of the zone's own meshes, always drawn.
+		Vec3 actor_position;
+		float actor_radius = -1;
 		// Umbra's write model: the solid triangles with an opaque, unmasked material, 3 vertices each.
 		std::vector<Vec3> occluders;
 		std::vector<Vertex> vertices; // empty once a ZoneScene has moved them into its StaticVertices
@@ -78,6 +82,9 @@ namespace render
 		// With occlusion culling on, only what the zone's meshes don't hide (OcclusionBuffer).
 		void Draw(Renderer &renderer, uint64_t now_ms, const std::vector<PointLight> &lights = {}, bool sun = false);
 		void SetOcclusionCulling(bool on) { m_occlusion_culling = on; }
+		// The options' Level of Detail (s3dSetDynamicLOD): placed objects and doors past
+		// OutsideLodDistance aren't drawn.
+		void SetDynamicLod(bool on) { m_dynamic_lod = on; }
 		// After Draw: whether a sphere could be seen past the zone (spawns); always, with culling off.
 		bool InView(const Vec3 &center, float radius) const;
 		// The last Draw's meshes in the view and those of them the occlusion culling hid.
@@ -195,6 +202,7 @@ namespace render
 		std::vector<StaticMesh> m_meshes;
 		bool m_details = true;
 		bool m_occlusion_culling = true;
+		bool m_dynamic_lod = false;
 		std::function<void(float)> m_load_progress;
 		OcclusionBuffer m_occlusion;
 		bool m_occlusion_ready = false; // m_occlusion holds the last Draw's view

@@ -429,8 +429,7 @@ no rules of its own.
    Anonymous, Roleplaying, Allow trading with, Receive Guild Invites (msg_invite_guild reads it),
    Fast Drop, the music and sound volumes, kept in my-client.ini; Load UI Skin, 34). The Display
    page (SyncDisplayPage, DisplayPageWndNotification, DisplayPageOnProcessFrame: names, sky, particles,
-   clip plane, the windows' global fades) is done; still to do there: Video Modes (CVideoModesWnd)
-   and Level of Detail's effect (s3dSetDynamicLOD: models are always drawn whole); Gamma does
+   clip plane, the windows' global fades, Video Modes and Level of Detail, 14) is done; Gamma does
    nothing, as in eqgame windowed. The Mouse page (SyncMousePage, MousePageWndNotification: Invert Y
    Axis, Look Spring, Mouse Look and the sensitivity; `frontend_preview ... mouse`) is done. Still to
    do: the reverb's drugged room (23) while drunk at 40 and
@@ -479,8 +478,7 @@ no rules of its own.
    - ExecuteCmd's (@0054050c) commands not done yet (the page's "No"):
      - 77, voice input (`InitializeVoiceRecognition` @0055785c; with /voice, /microphone and
        /vrdelay, see 35: kept out unless asked).
-     - 106, the video modes window (`CVideoModesWnd::Activate`), and 110, the music player window (34
-       for both).
+     - 110, the music player window (34). (106, the video modes window, is done: 34.)
      - Old UI only, nothing to do: 81..84, the chat line's cursor (`EQ_TextIO`'s; the new UI's edit box
        has its own keys, done), 62 Backdrop, 89 Lock windows (`[Defaults] LockWindows`, eqstr
        12376 and 12363) and 96 Toggle chat window (`HideChatWin`) return at once in the new UI.
@@ -826,12 +824,12 @@ no rules of its own.
     - ~~Load UI skin~~: done (`frontend/loadskin_window.*`: `CLoadskinWnd`'s constructor, Activate,
       `UpdateSkinList` and `HandleWindowNotification`, from the options' button; /loadskin
       @004f8655, `FrontEnd::LoadSkin`; the reload is 1's).
-    - Video modes (`CVideoModesWnd` @0043b198: `VIDW_VideoResolutionsList`, the bit depth and
-      refresh rate combo boxes, `VIDW_AcceptButton`; `Init` @0043b408 lists the adapter's modes;
-      Accept changes the mode, asks eqstr 6682 for 15 s and goes back without a yes,
-      `CVideoModesWnd_RestoreOldMode` @0043bbe2; kept as `[VideoMode]` Width, Height,
-      BitsPerPixel and RefreshRate) from the options' button and Toggle video mode window (106).
-      Goes with 14.
+    - ~~Video modes~~: done (`frontend/video_modes_window.*`: `CVideoModesWnd`'s constructor,
+      `Init`, `AddVideoModeToAvailableResolutions`, `UpdateSelection` and `WndNotification`'s
+      Accept, `FrontEnd::ChangeVideoMode` and `VideoModeChanged` with eqstr 6682's 15 s and
+      `RestoreOldMode`; from the options' button and Toggle video mode window, 106;
+      `frontend_preview ... videomodes`). Kept as my-client.ini's `[Display]` Width and Height;
+      `[VideoMode]` BitsPerPixel and RefreshRate aren't kept (a window has the desktop's).
     - ~~Bug report and feedback~~: done (`frontend/bug_report.*`: `CBugReportWnd`'s
       `ResetPositionAndUIState` and `WndNotification`, `OP_Bug`; `CFeedbackWnd`, `OP_Feedback`;
       both checked live). Still to do: the target box with a target checked live (only the
@@ -1075,12 +1073,24 @@ no rules of its own.
       speed of 1 turned; ours 0.25 degrees and 0.6 of a 512th a pixel, with eqgame's limits), by the
       frame rather than the mouse message, and its 8 and 3 on a horse and a steered boat.
     - SPA 87 (magnification) as it lands or fades (under 2).
-14. **Graphics options:** fullscreen or windowed, resolution changes, gamma, anisotropic filtering,
-    MSAA, draw distance and level of detail. eqgame's side of it: `CDisplay::ChangeVideoMode`
-    (@004acc0f, with `CDisplay_SupportsVidMode` @004acac4 and `UpdateCameraAfterModeSwitch`
-    @004acb64), the video modes window (34), /viewport's rectangle read again for the
-    new size, and
-    `s3dSetDynamicLOD` (5).
+14. ~~**Graphics options**~~: done as eqgame with TAKP's eqw.dll and eqgame.dll has them. Video
+    modes (34) change the resolution in the game: `ChangeVideoMode` (`DeactivateMainUI`, eqw's
+    0x4644 as the host's `TakeVideoModeRequest`: the DIB, `D3d11Device::Resize` and the window;
+    `CXWndManager`'s screen size with the windows left where they are, `ReadViewportSettingFromINI`,
+    `ActivateMainUI`). The window as eqw's `SetClientSize` places it: framed and centered, or the
+    whole monitor without a frame when the resolution is the monitor's; `[Display] FullScreenMode`
+    (eqw's) and Alt+Enter in the game (eqgame.dll's `ProcessKeyDown` detour) stretch it over the
+    monitor (DXGI's stretch, `StretchBlt` in software, the mouse scaled back). Level of Detail
+    (`setLOD`, `s3dSetDynamicLOD(on, 1, 100)`): `isSpriteOutsideViewingDistance` (@10047c70) on
+    the zone's placed objects, doors and spawns (`render::OutsideLodDistance`). The draw distance is
+    the clip plane (5). Still to do:
+    - `s3dAdjustDMSpriteMeshDetail` (@100159b0), the other half of the dynamic LOD: a mesh's own
+      detail steps (the 0x36 fragment's mesh ops, not read by `WldFile::ReadMesh`) by its distance.
+    - A spawn whose skeleton has no bounding radius (ours 0) is always drawn; eqgfx divides by it.
+    - eqw's per-resolution window offsets (`[EqwOffsets]`): the window is centered at every change.
+    - The video modes window's Init runs once, as the UI's made; a monitor change after isn't seen.
+    - Gamma only does something full screen in eqgame (eqw's `EnableGammaRamp` hack aside): nothing.
+    - Anisotropic filtering and MSAA aren't eqgame's (its eqgfx_dx8 has neither): out unless asked.
 15. ~~**Screenshots.**~~ Done (`frontend/screenshot.*`, `FrontEnd::SaveScreenshot`,
     `D3d11Device::Present`'s capture): ExecuteCmd 78 says eqstr 12374 and `CaptureScreenshot`
     (@004aa6d1) writes the frame as `EQ%06d.bmp`, the next number free, next to our exe. Still to

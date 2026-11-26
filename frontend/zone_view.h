@@ -532,6 +532,8 @@ public:
 	// The options' Sky (DAT_00798ae0): 0 3D sky off (CDisplay's sky type 0), 1 one layer, 2 both
 	// (t3dSetSkyDualLayer).
 	void SetSkyMode(int mode) { m_sky_mode = mode; }
+	// The options' Level of Detail (setLOD's s3dSetDynamicLOD): far, small actors not drawn.
+	void SetDynamicLod(bool on) { m_dynamic_lod = on; }
 	// The options' Spell Particles: density (0, 0.25, 0.5, 1), opacity (0..1), near clip plane.
 	void SetSpellParticles(float density, float opacity, float near_clip)
 	{
@@ -648,6 +650,7 @@ private:
 	render::ZoneScene m_zone;
 	render::Sky m_sky;
 	int m_sky_mode = 2;
+	bool m_dynamic_lod = true;
 	float m_clip_plane = 4;
 	render::CharacterModels m_models;
 	bool m_velious_textures = true;

@@ -178,6 +178,7 @@ add_library(eqfrontend STATIC
     frontend/alarm_window.cpp
     frontend/help_window.cpp
     frontend/loadskin_window.cpp
+    frontend/video_modes_window.cpp
     frontend/tracking.cpp
     frontend/disciplines.cpp
     frontend/duel.cpp

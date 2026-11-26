@@ -201,7 +201,9 @@ WeatherSounds=1
   set, the GUI tries the current folder, then the exe's folder.
 - `Server` is the login server. It isn't read from `eqhost.txt`, so you can't hit the live TAKP
   server by accident.
-- `Width` and `Height` are the game resolution, which is the window's size (default 1920x1080).
+- `Width` and `Height` are the game resolution, which is the window's size (default 1920x1080);
+  the monitor's own size is the whole monitor without a frame. The Video Modes window changes it
+  in the game. `FullScreenMode=1` stretches it over the monitor (Alt+Enter toggles it in the game).
 - `Renderer` is `d3d11` (the GPU draws the 3D views and presents the window) or `software` (the
   CPU rasterizer, with GDI presenting, capped near 60 fps). If Direct3D 11 or `d3dcompiler_47.dll`
   isn't available, the GUI uses the software renderer and says why in `my-client.log`.
@@ -785,7 +787,7 @@ build/eqclient -u USER -p PASS [options]
 
 ```
 build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|train|ground|commands|group|duel|bazaar|raid|guild|skills|aa]]
-build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez|cameras|packets|spells|switches|itemdisplay|slash|mouse|friends|chatwindows|multiline|inspect|tracking|breath|ladder]]
+build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez|cameras|packets|spells|switches|itemdisplay|slash|mouse|friends|chatwindows|multiline|inspect|tracking|breath|ladder|videomodes]]
 ```
 
 This drives the real front-end code with scripted input and writes PNG snapshots. Text is drawn
@@ -2120,8 +2122,24 @@ details and the nearest spawns at the top left and the radar at the top right.
     a name only when its kind's switch is on, players' (ours too) by the first, NPCs' and corpses'
     by the second. Both on by default.
   - Level of Detail (`DAT_00798ae8`, on): `setLOD` says 6650 or 6651 and calls eqgfx's
-    `s3dSetDynamicLOD(on, 1, 100)`.
-  - Video Modes: `CVideoModesWnd::Activate`.
+    `s3dSetDynamicLOD(on, 1, 100)`. With it on, `renderSprite` leaves out an actor that
+    `isSpriteOutsideViewingDistance` (@10047c70) finds far and small: 400 or more along the view
+    and (that distance - 100) / (the lens's cotangent of half its angle * its scaled bounding radius)
+    over 25. Ours: `render::OutsideLodDistance` on the placed objects, doors and spawns. The other
+    half, `s3dAdjustDMSpriteMeshDetail`'s mesh detail steps (the 0x36 mesh ops), isn't ours.
+  - Video Modes: `CVideoModesWnd::Activate` (`frontend/video_modes_window.*`). Init lists the
+    adapter's modes of 640x480 and up, 32-bit (A8R8G8B8, X8R8G8B8) or 16-bit (R5G6B5, X1R5G5B5),
+    a row a resolution with its refresh rates ("%1Hz" 6628, 0 "Default" 6629) and formats ("32bit"
+    6627, "16bit(565)" 6626, "16bit(555)" 6625) in the combo boxes. Accept keeps the mode we're in,
+    runs `DeactivateMainUI`, has eqw switch (`SendMessageA` 0x4644), sets the window manager's
+    screen size (windows aren't moved), reads the viewport for the new size, writes `[VideoMode]`,
+    redoes the camera's aspect, `ActivateMainUI`, then asks 6682 for 15 s; No or no answer is
+    `CVideoModesWnd_RestoreOldMode`, the same with the old mode and no question. Ours: the host
+    switches between frames (`FrontEnd::TakeVideoModeRequest`, `VideoModeChanged`), keeps it as
+    `[Display]` Width and Height, and places the window as TAKP's eqw does (`SetClientSize`): framed
+    and centered, the whole monitor without a frame when the mode is the monitor's size, or
+    stretched over it in full screen mode (`[Display] FullScreenMode`, Alt+Enter in the game:
+    eqgame.dll's `ProcessKeyDown` detour, scan 0x1c with Alt and not Shift or Ctrl, in game state 5).
   - Sky (`DAT_00798ae0`, 1 by default): 0 sets `CDisplay`+0x12, the sky type, to 0 (no 3D sky; also at
     `SetFog`), 1 the zone's with `t3dSetSkyDualLayer(0)`, 2 with `(1)`: `t3dPaintSky` draws the
     LAYERn1 dome always and the LAYERn3 cloud layer only with the dual layer.

@@ -307,6 +307,7 @@ namespace render
 						next += m.positions.size();
 					}
 				}
+				size_t first_mesh = m_meshes.size();
 				for (const auto &m : meshes)
 					AddMesh(m, transform, true, lights, lighting, m_meshes, m_collision, m_collision_exposure);
 				++m_object_count;
@@ -324,6 +325,10 @@ namespace render
 					if (skeleton_index >= 0 && m_object_models.ReadSkeleton(skeleton_index, skeleton))
 						radius = std::max(radius, skeleton.bounding_radius);
 					known = radii.emplace(actor, radius).first;
+				}
+				for (size_t m = first_mesh; m < m_meshes.size(); ++m) {
+					m_meshes[m].actor_position = transform.translation;
+					m_meshes[m].actor_radius = known->second * transform.scale;
 				}
 				ZoneObject object;
 				object.actor = placement.actor;
@@ -612,6 +617,14 @@ namespace render
 			}
 			m_meshes_in_view = m_order.size();
 		}
+
+		// renderSprite's isSpriteOutsideViewingDistance with Level of Detail on: a placed object
+		// small for how far along the view it is isn't drawn.
+		if (m_dynamic_lod)
+			for (size_t m = 0; m < m_meshes.size(); ++m)
+				if (!m_hidden[m] && m_meshes[m].actor_radius >= 0 &&
+				    OutsideLodDistance(renderer.CurrentCamera(), m_meshes[m].actor_position, m_meshes[m].actor_radius))
+					m_hidden[m] = 2;
 
 		// A light reaches a mesh when their spheres meet (the client: when its sphere reaches
 		// the mesh's region).
@@ -1042,6 +1055,9 @@ namespace render
 		uint32_t set = ~0u;
 		for (const Door &door : m_doors) {
 			if (door.hidden || !renderer.SphereVisible(door.center, door.placed_radius) || !InView(door.center, door.placed_radius))
+				continue;
+			if (m_dynamic_lod && OutsideLodDistance(renderer.CurrentCamera(), door.placement.translation,
+			                         door.radius * door.placement.scale))
 				continue;
 			for (const StaticMesh &mesh : door.placed) {
 				uint32_t mask = 0;

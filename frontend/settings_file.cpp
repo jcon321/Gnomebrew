@@ -24,9 +24,13 @@ namespace
 		{"Login", "User", "", "The account name, filled in at the login screen; kept from the last login."},
 
 		{"Display", "Width", "1920",
-			"The game resolution: the window's size in pixels, shrunk to fit the screen if it's too big.\n"
-			"--size WxH overrides it."},
+			"The game resolution: the window's size in pixels, shrunk to fit the screen if it's too big;\n"
+			"the monitor's own size is the whole monitor, without a frame (as eqw does). The Video Modes\n"
+			"window (Options, Display) changes it and keeps it here. --size WxH overrides it."},
 		{"Display", "Height", "1080", ""},
+		{"Display", "FullScreenMode", "0",
+			"1: the game resolution stretched over the whole monitor (eqw's FullScreenMode). Alt+Enter in\n"
+			"the game toggles it (eqgame.dll's), not kept."},
 		{"Display", "Renderer", "d3d11",
 			"d3d11: the GPU draws the 3D views and presents the window. software: the CPU rasterizer and\n"
 			"GDI, about 60 fps. d3d11 falls back to software when Direct3D 11 or d3dcompiler_47.dll isn't\n"

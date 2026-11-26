@@ -221,6 +221,7 @@ struct D3d11Device::State
 	ComPtr<ID3D11Device> device;
 	ComPtr<ID3D11DeviceContext> context;
 	ComPtr<IDXGISwapChain> swap_chain;
+	UINT swap_chain_flags = 0;
 	ComPtr<ID3D11RenderTargetView> back_buffer;
 	ComPtr<ID3D11Texture2D> depth;
 	ComPtr<ID3D11DepthStencilView> depth_view;
@@ -247,10 +248,56 @@ struct D3d11Device::State
 	ComPtr<ID3D11Buffer> vertex_buffer, index_buffer;
 	size_t vertex_capacity = 0, index_capacity = 0;
 
+	// What's the size of the window: the back buffer's view, the depth buffer and the canvas's texture.
+	bool MakeSizedTargets(std::string &error);
+	bool MakeCanvasTexture();
+
 	ID3D11ShaderResourceView *TextureView(const render::Texture *texture);
 	ID3D11Buffer *StaticBuffer(const render::StaticVertices &pool);
 	bool Upload(ComPtr<ID3D11Buffer> &buffer, size_t &capacity, UINT bind, const void *data, size_t bytes);
 };
+
+bool D3d11Device::State::MakeSizedTargets(std::string &error)
+{
+	ComPtr<ID3D11Texture2D> back;
+	if (FAILED(swap_chain->GetBuffer(0, IID_PPV_ARGS(&back))) ||
+	    FAILED(device->CreateRenderTargetView(back.Get(), nullptr, &back_buffer))) {
+		error = "couldn't get the swap chain's back buffer";
+		return false;
+	}
+	D3D11_TEXTURE2D_DESC depth_desc{};
+	depth_desc.Width = static_cast<UINT>(width);
+	depth_desc.Height = static_cast<UINT>(height);
+	depth_desc.MipLevels = 1;
+	depth_desc.ArraySize = 1;
+	depth_desc.Format = DXGI_FORMAT_R32_TYPELESS; // D32_FLOAT to draw, floats when copied back
+	depth_desc.SampleDesc.Count = 1;
+	depth_desc.Usage = D3D11_USAGE_DEFAULT;
+	depth_desc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+	D3D11_DEPTH_STENCIL_VIEW_DESC view_desc{};
+	view_desc.Format = DXGI_FORMAT_D32_FLOAT;
+	view_desc.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
+	if (FAILED(device->CreateTexture2D(&depth_desc, nullptr, &depth)) ||
+	    FAILED(device->CreateDepthStencilView(depth.Get(), &view_desc, &depth_view))) {
+		error = "couldn't create the depth buffer";
+		return false;
+	}
+	return true;
+}
+
+bool D3d11Device::State::MakeCanvasTexture()
+{
+	D3D11_TEXTURE2D_DESC desc{};
+	desc.Width = static_cast<UINT>(width);
+	desc.Height = static_cast<UINT>(height);
+	desc.MipLevels = desc.ArraySize = 1;
+	desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+	desc.SampleDesc.Count = 1;
+	desc.Usage = D3D11_USAGE_DEFAULT; // updated a band at a time (UpdateSubresource)
+	desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+	return SUCCEEDED(device->CreateTexture2D(&desc, nullptr, &canvas_texture)) &&
+	       SUCCEEDED(device->CreateShaderResourceView(canvas_texture.Get(), nullptr, &canvas_view));
+}
 
 ID3D11ShaderResourceView *D3d11Device::State::TextureView(const render::Texture *texture)
 {
@@ -392,6 +439,7 @@ namespace
 		struct DepthCopy
 		{
 			ComPtr<ID3D11Texture2D> texture;
+			int texture_width = 0, texture_height = 0; // the device's size it was made at
 			uint64_t frame = 0; // 0: never written
 			int view_x = 0, view_y = 0, width = 0, height = 0;
 			render::Vec3 eye, right, up, forward;
@@ -747,6 +795,8 @@ namespace
 			if (i != m_mapped && (slot < 0 || m_depth[i].frame < m_depth[slot].frame))
 				slot = i;
 		DepthCopy &copy = m_depth[slot];
+		if (copy.texture && (copy.texture_width != m.width || copy.texture_height != m.height))
+			copy.texture.Reset(); // the device was resized (a video mode change)
 		if (!copy.texture) {
 			D3D11_TEXTURE2D_DESC desc{};
 			desc.Width = static_cast<UINT>(m.width);
@@ -759,6 +809,8 @@ namespace
 			desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
 			if (FAILED(m.device->CreateTexture2D(&desc, nullptr, &copy.texture)))
 				return;
+			copy.texture_width = m.width;
+			copy.texture_height = m.height;
 		}
 		m.context->CopyResource(copy.texture.Get(), m.depth.Get());
 		copy.frame = m_frame;
@@ -870,6 +922,16 @@ D3d11Device::~D3d11Device()
 		m->context->ClearState();
 }
 
+int D3d11Device::Width() const
+{
+	return m->width;
+}
+
+int D3d11Device::Height() const
+{
+	return m->height;
+}
+
 const std::string &D3d11Device::AdapterName() const
 {
 	return m->adapter;
@@ -962,6 +1024,7 @@ bool D3d11Device::Create(HWND window, int width, int height, bool vsync, std::st
 			ComPtr<IDXGISwapChain1> chain;
 			if (SUCCEEDED(factory2->CreateSwapChainForHwnd(m->device.Get(), window, &desc, nullptr, nullptr, &chain))) {
 				m->swap_chain = chain;
+				m->swap_chain_flags = desc.Flags;
 				m->tearing = desc.Flags != 0;
 				break;
 			}
@@ -991,30 +1054,8 @@ bool D3d11Device::Create(HWND window, int width, int height, bool vsync, std::st
 		return false;
 	}
 
-	ComPtr<ID3D11Texture2D> back;
-	if (FAILED(m->swap_chain->GetBuffer(0, IID_PPV_ARGS(&back))) ||
-	    FAILED(m->device->CreateRenderTargetView(back.Get(), nullptr, &m->back_buffer))) {
+	if (!m->MakeSizedTargets(error)) {
 		FreeLibrary(compiler);
-		error = "couldn't get the swap chain's back buffer";
-		return false;
-	}
-
-	D3D11_TEXTURE2D_DESC depth_desc{};
-	depth_desc.Width = static_cast<UINT>(width);
-	depth_desc.Height = static_cast<UINT>(height);
-	depth_desc.MipLevels = 1;
-	depth_desc.ArraySize = 1;
-	depth_desc.Format = DXGI_FORMAT_R32_TYPELESS; // D32_FLOAT to draw, floats when copied back
-	depth_desc.SampleDesc.Count = 1;
-	depth_desc.Usage = D3D11_USAGE_DEFAULT;
-	depth_desc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
-	D3D11_DEPTH_STENCIL_VIEW_DESC depth_view{};
-	depth_view.Format = DXGI_FORMAT_D32_FLOAT;
-	depth_view.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
-	if (FAILED(m->device->CreateTexture2D(&depth_desc, nullptr, &m->depth)) ||
-	    FAILED(m->device->CreateDepthStencilView(m->depth.Get(), &depth_view, &m->depth_view))) {
-		FreeLibrary(compiler);
-		error = "couldn't create the depth buffer";
 		return false;
 	}
 
@@ -1147,16 +1188,47 @@ bool D3d11Device::Create(HWND window, int width, int height, bool vsync, std::st
 	made = made && SUCCEEDED(device->CreateTexture2D(&white_desc, &white_data, &white_texture)) &&
 	       SUCCEEDED(device->CreateShaderResourceView(white_texture.Get(), nullptr, &m->white));
 
-	D3D11_TEXTURE2D_DESC canvas_desc = white_desc;
-	canvas_desc.Width = static_cast<UINT>(width);
-	canvas_desc.Height = static_cast<UINT>(height);
-	canvas_desc.Usage = D3D11_USAGE_DEFAULT; // updated a band at a time (UpdateSubresource)
-	canvas_desc.CPUAccessFlags = 0;
-	made = made && SUCCEEDED(device->CreateTexture2D(&canvas_desc, nullptr, &m->canvas_texture)) &&
-	       SUCCEEDED(device->CreateShaderResourceView(m->canvas_texture.Get(), nullptr, &m->canvas_view));
+	made = made && m->MakeCanvasTexture();
 
 	if (!made) {
 		error = "couldn't create the pipeline states";
+		return false;
+	}
+	return true;
+}
+
+bool D3d11Device::Resize(int width, int height, std::string &error)
+{
+	if (m->lost) {
+		error = "the device is lost";
+		return false;
+	}
+	if (width == m->width && height == m->height)
+		return true;
+	// Everything that holds the old buffers goes before ResizeBuffers.
+	m->context->OMSetRenderTargets(0, nullptr, nullptr);
+	ID3D11ShaderResourceView *none = nullptr;
+	m->context->PSSetShaderResources(0, 1, &none);
+	m->back_buffer.Reset();
+	m->depth_view.Reset();
+	m->depth.Reset();
+	m->canvas_view.Reset();
+	m->canvas_texture.Reset();
+	m->context->Flush();
+	m->canvas = nullptr;
+	HRESULT hr = m->swap_chain->ResizeBuffers(0, static_cast<UINT>(width), static_cast<UINT>(height), DXGI_FORMAT_UNKNOWN,
+		m->swap_chain_flags);
+	if (FAILED(hr)) {
+		error = "ResizeBuffers failed (" + HresultText(hr) + ")";
+		m->lost = true;
+		return false;
+	}
+	m->width = width;
+	m->height = height;
+	if (!m->MakeSizedTargets(error) || !m->MakeCanvasTexture()) {
+		if (error.empty())
+			error = "couldn't make the canvas texture";
+		m->lost = true;
 		return false;
 	}
 	return true;

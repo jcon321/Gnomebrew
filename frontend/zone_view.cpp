@@ -1874,6 +1874,7 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 	m_renderer->SetSceneLights(light.sun_direction, light.sun_color, scene_lights);
 	m_renderer->SetVertexLight({1, 1, 1}, light.ambient, light.special);
 	m_zone.SetOcclusionCulling(!m_debug_draw.no_culling);
+	m_zone.SetDynamicLod(m_dynamic_lod);
 	m_zone.Draw(*m_renderer, now_ms, scene_lights, true);
 	m_renderer->SetVertexLight({1, 1, 1}, {0, 0, 0});
 	m_times.zone = since(start);
@@ -2647,6 +2648,12 @@ void ZoneView::DrawSpawns(uint64_t now_ms)
 		view.distance = render::Length(center - m_camera_position);
 		if (view.distance > far_plane + height || !m_renderer->SphereVisible(center, height * 0.75f) ||
 			!m_zone.InView(center, height * 0.75f))
+			continue;
+		// Level of Detail: renderSprite's isSpriteOutsideViewingDistance on the actor's location
+		// and scaled bounding radius (not where it's tilted or attached: those are the same place).
+		if (m_dynamic_lod &&
+		    render::OutsideLodDistance(m_renderer->CurrentCamera(),
+		        view.Feet() + render::Vec3{0, 0, model.OriginOverFeet()}, model.BoundingRadius()))
 			continue;
 		render::Transform placement;
 		placement.rotation = render::AxisAngle({0, 0, 1}, render::HeadingToRadians(view.actor.Heading()));

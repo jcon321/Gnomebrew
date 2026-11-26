@@ -30,6 +30,12 @@ public:
 	void Frame(Canvas &canvas, const std::vector<Piece> &pieces);
 	// The canvas was drawn some other way this frame: all of it to draw next time.
 	void Forget(Canvas &canvas);
+	// The canvas was made again (a new size): nothing kept is on it.
+	void Invalidate()
+	{
+		m_valid = false;
+		m_kept.clear();
+	}
 	// Of the last Frame: the pixels cleared and drawn again, and the pieces drawn (not recorded).
 	size_t RedrawnPixels() const { return m_redrawn_pixels; }
 	size_t RedrawnPieces() const { return m_redrawn_pieces; }

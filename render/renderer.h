@@ -92,6 +92,12 @@ namespace render
 	// as eqgfx's at 4:3; 90 is 63.3 degrees there, 88 at 16:9.
 	float LensFov(float view_angle, float aspect);
 
+	// eqgfx's dynamic level of detail (s3dSetDynamicLOD(on, 1, 100), the options' Level of Detail):
+	// isSpriteOutsideViewingDistance (@10047c70), whether renderSprite leaves an actor at `position`
+	// with a scaled bounding radius of `radius` undrawn: 400 or more along the view, and its distance
+	// past 100 over the radius times the lens (the half angle's cotangent) more than 25.
+	bool OutsideLodDistance(const Camera &camera, const Vec3 &position, float radius);
+
 	// A one-pixel line clipped to a width x height surface (debug overlays).
 	void DrawLine(uint32_t *pixels, int stride, int width, int height, float x0, float y0, float x1, float y1, uint32_t color);
 

@@ -55,6 +55,12 @@ namespace
 		FrontEnd *frontend = nullptr;
 		D3d11Device *gpu = nullptr; // null: GDI presents the DIB
 		FILE *log = nullptr;
+		// eqw's window: the client area the game resolution (the surface's size), or the whole
+		// monitor without a frame when the resolution is the monitor's or full screen mode stretches
+		// it there (eqw's FullScreenMode, Alt+Enter in the game: eqgame.dll's ProcessKeyDown detour).
+		bool stretch = false;
+		bool alt_enter = false; // the Alt+Enter down was ours: its up too
+		int client_w = 0, client_h = 0; // the window's client area (WM_SIZE)
 	};
 
 	App g_app;
@@ -97,11 +103,32 @@ namespace
 			std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
 	}
 
-	// Moves the real cursor to (x, y) in the window's client area.
+	// The client area's pixels to the game's, and back: one to one, unless the window stretches the
+	// game resolution over the monitor.
+	void ClientToGame(int &x, int &y)
+	{
+		const Surface &s = g_app.surface;
+		if (g_app.client_w > 0 && g_app.client_h > 0 && (g_app.client_w != s.width || g_app.client_h != s.height)) {
+			x = static_cast<int>(static_cast<long long>(x) * s.width / g_app.client_w);
+			y = static_cast<int>(static_cast<long long>(y) * s.height / g_app.client_h);
+		}
+	}
+
+	void GameToClient(int &x, int &y)
+	{
+		const Surface &s = g_app.surface;
+		if (s.width > 0 && s.height > 0 && g_app.client_w > 0 && (g_app.client_w != s.width || g_app.client_h != s.height)) {
+			x = static_cast<int>((static_cast<long long>(x) * g_app.client_w + g_app.client_w / 2) / s.width);
+			y = static_cast<int>((static_cast<long long>(y) * g_app.client_h + g_app.client_h / 2) / s.height);
+		}
+	}
+
+	// Moves the real cursor to (x, y) in the game's pixels.
 	void PlaceCursor(int x, int y)
 	{
 		g_app.mouse_x = x;
 		g_app.mouse_y = y;
+		GameToClient(x, y);
 		POINT point{x, y};
 		ClientToScreen(g_app.window, &point);
 		POINT now{};
@@ -134,6 +161,7 @@ namespace
 		event.type = type;
 		event.x = static_cast<short>(LOWORD(lparam));
 		event.y = static_cast<short>(HIWORD(lparam));
+		ClientToGame(event.x, event.y);
 		event.shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
 		event.ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
 		event.alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
@@ -191,7 +219,87 @@ namespace
 	void Present(HDC window_dc)
 	{
 		const Surface &surface = g_app.surface;
+		if (g_app.client_w > 0 && g_app.client_h > 0 && (g_app.client_w != surface.width || g_app.client_h != surface.height)) {
+			SetStretchBltMode(window_dc, HALFTONE);
+			StretchBlt(window_dc, 0, 0, g_app.client_w, g_app.client_h, surface.dc, 0, 0, surface.width, surface.height, SRCCOPY);
+			return;
+		}
 		BitBlt(window_dc, 0, 0, surface.width, surface.height, surface.dc, 0, 0, SRCCOPY);
+	}
+
+	// The window's monitor (MONITORINFOEXW: its rectangle and its device, for its modes).
+	bool WindowMonitor(MONITORINFOEXW &info)
+	{
+		HMONITOR monitor = MonitorFromWindow(g_app.window, MONITOR_DEFAULTTONEAREST);
+		info = {};
+		info.cbSize = sizeof(info);
+		return GetMonitorInfoW(monitor, &info) != FALSE;
+	}
+
+	const DWORD WindowedStyle = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VISIBLE;
+	const DWORD FullScreenStyle = WS_POPUP | WS_VISIBLE;
+
+	// eqw's SetClientSize: the client area width x height in a frame, centered on the monitor and
+	// kept on it, or with the size the monitor's (or full screen mode on) the monitor without one.
+	void PlaceWindow(int width, int height)
+	{
+		MONITORINFOEXW monitor;
+		RECT full{0, 0, width + 100, height + 100};
+		if (WindowMonitor(monitor))
+			full = monitor.rcMonitor;
+		int full_w = full.right - full.left, full_h = full.bottom - full.top;
+		bool full_screen = g_app.stretch || (width == full_w && height == full_h);
+		DWORD style = full_screen ? FullScreenStyle : WindowedStyle;
+		RECT rect = full_screen ? full : RECT{0, 0, width, height};
+		AdjustWindowRect(&rect, style, FALSE);
+		int w = rect.right - rect.left, h = rect.bottom - rect.top;
+		int x = full_screen ? rect.left : full.left + (full_w - w) / 2;
+		int y = full_screen ? rect.top : full.top + (full_h - h) / 2;
+		if (!full_screen) {
+			x = std::clamp(x, static_cast<int>(full.left) - w + 256, static_cast<int>(full.right) - 256);
+			y = std::clamp(y, static_cast<int>(full.top) - 20, static_cast<int>(full.bottom) - 256);
+		}
+		SetWindowLongW(g_app.window, GWL_STYLE, static_cast<LONG>(style));
+		SetWindowPos(g_app.window, HWND_TOP, x, y, w, h, SWP_FRAMECHANGED | SWP_NOZORDER | SWP_SHOWWINDOW);
+		RECT client{};
+		GetClientRect(g_app.window, &client);
+		g_app.client_w = client.right - client.left;
+		g_app.client_h = client.bottom - client.top;
+	}
+
+	// eqgfx's mode list (what the Video Modes window lists): the monitor's display modes, 32-bit
+	// as X8R8G8B8 and 16-bit as R5G6B5, a frequency of 0 or 1 the default.
+	std::vector<VideoMode> DisplayModes()
+	{
+		std::vector<VideoMode> modes;
+		MONITORINFOEXW monitor;
+		const wchar_t *device = WindowMonitor(monitor) ? monitor.szDevice : nullptr;
+		DEVMODEW dm{};
+		dm.dmSize = sizeof(dm);
+		for (DWORD i = 0; EnumDisplaySettingsW(device, i, &dm); ++i) {
+			if (dm.dmBitsPerPel != 32 && dm.dmBitsPerPel != 16)
+				continue;
+			VideoMode mode;
+			mode.width = static_cast<int>(dm.dmPelsWidth);
+			mode.height = static_cast<int>(dm.dmPelsHeight);
+			mode.refresh = dm.dmDisplayFrequency > 1 ? static_cast<int>(dm.dmDisplayFrequency) : 0;
+			mode.format = dm.dmBitsPerPel == 32 ? 0x16 : 0x17;
+			modes.push_back(mode);
+		}
+		return modes;
+	}
+
+	VideoMode CurrentDisplayMode()
+	{
+		VideoMode mode;
+		MONITORINFOEXW monitor;
+		DEVMODEW dm{};
+		dm.dmSize = sizeof(dm);
+		if (WindowMonitor(monitor) && EnumDisplaySettingsW(monitor.szDevice, ENUM_CURRENT_SETTINGS, &dm)) {
+			mode.refresh = dm.dmDisplayFrequency > 1 ? static_cast<int>(dm.dmDisplayFrequency) : 0;
+			mode.format = dm.dmBitsPerPel == 16 ? 0x17 : 0x16;
+		}
+		return mode;
 	}
 
 	LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
@@ -209,16 +317,22 @@ namespace
 			if ((wparam & 0xfff0) == SC_KEYMENU && lparam == 0)
 				return 0;
 			break;
+		case WM_SIZE:
+			g_app.client_w = LOWORD(lparam);
+			g_app.client_h = HIWORD(lparam);
+			break;
 		case WM_MOUSEMOVE:
 			// /mousespeed: the cursor goes on as far again, inside the window (GetMouseInputData's
 			// __Mouse, held to the screen). Where it lands comes as a move of its own from there.
 			if (int speed = g_app.frontend ? g_app.frontend->CursorSpeed() : 1;
 				speed > 1 && g_app.tracking_mouse && !g_app.grabbed && GetForegroundWindow() == window) {
 				int x = static_cast<short>(LOWORD(lparam)), y = static_cast<short>(HIWORD(lparam));
+				ClientToGame(x, y);
 				int to_x = std::clamp(g_app.mouse_x + (x - g_app.mouse_x) * speed, 0, std::max(g_app.surface.width - 1, 0));
 				int to_y = std::clamp(g_app.mouse_y + (y - g_app.mouse_y) * speed, 0, std::max(g_app.surface.height - 1, 0));
 				if (to_x != x || to_y != y) {
 					PlaceCursor(to_x, to_y);
+					GameToClient(to_x, to_y);
 					lparam = MAKELPARAM(to_x, to_y);
 				}
 			}
@@ -295,6 +409,21 @@ namespace
 			}
 			if (wparam == VK_F4 || wparam == VK_SPACE)
 				break;
+			// eqgame.dll's ProcessKeyDown detour: Alt+Enter (no Shift or Ctrl) in the game toggles eqw's
+			// full screen mode, and the key goes no further.
+			if (message == WM_SYSKEYDOWN && wparam == VK_RETURN && !(lparam & (1 << 30)) &&
+			    !(GetKeyState(VK_SHIFT) & 0x8000) && !(GetKeyState(VK_CONTROL) & 0x8000) && g_app.frontend &&
+			    g_app.frontend->CurrentScreen() == FrontEnd::Screen::Zone) {
+				g_app.stretch = !g_app.stretch;
+				g_app.alt_enter = true;
+				Log(std::string("full screen mode ") + (g_app.stretch ? "on" : "off"));
+				PlaceWindow(g_app.surface.width, g_app.surface.height);
+				return 0;
+			}
+			if ((message == WM_SYSKEYUP || message == WM_KEYUP) && wparam == VK_RETURN && g_app.alt_enter) {
+				g_app.alt_enter = false;
+				return 0;
+			}
 			[[fallthrough]];
 		case WM_KEYDOWN:
 		case WM_KEYUP: {
@@ -336,9 +465,12 @@ namespace
 		return DefWindowProcW(window, message, wparam, lparam);
 	}
 
-	// The game resolution: the requested size, shrunk to fit the work area with the frame.
+	// The game resolution: the requested size, shrunk to fit the work area with the frame; the
+	// monitor's own size stays (the window is then the monitor, without a frame).
 	void PickResolution(int &width, int &height, DWORD style)
 	{
+		if (width == GetSystemMetrics(SM_CXSCREEN) && height == GetSystemMetrics(SM_CYSCREEN))
+			return;
 		RECT work{};
 		SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
 		RECT frame{0, 0, 0, 0};
@@ -410,6 +542,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	int height = GetPrivateProfileIntW(L"Display", L"Height", 1080, ini.c_str());
 	std::wstring renderer = IniString(ini, L"Display", L"Renderer");
 	bool vsync = GetPrivateProfileIntW(L"Display", L"VSync", 1, ini.c_str()) != 0;
+	g_app.stretch = GetPrivateProfileIntW(L"Display", L"FullScreenMode", 0, ini.c_str()) != 0;
 	int last_character = GetPrivateProfileIntW(L"Defaults", L"LastCharSel", 0, ini.c_str());
 	// CEverQuest::CEverQuest: anything but 0..4 is 4 (0..7 with Zeal's levels).
 	int show_names = GetPrivateProfileIntW(L"Defaults", L"ShowNamesLevel", 4, ini.c_str());
@@ -553,7 +686,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	else
 		Log("spells_en.txt not found; the item display won't name spells");
 
-	DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
+	DWORD style = WindowedStyle & ~WS_VISIBLE;
 	PickResolution(width, height, style);
 	Log("resolution " + std::to_string(width) + "x" + std::to_string(height) + ", 640x480 screens at native size");
 	if (!CreateSurface(g_app.surface, width, height)) {
@@ -644,6 +777,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	else
 		Log("sound off (Sound=0)");
 
+	ui.video_modes = DisplayModes;
+	ui.video_mode = CurrentDisplayMode;
+
 	FontTextRenderer text;
 	{
 		std::string regular, bold, font_error;
@@ -668,11 +804,41 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 			return 1;
 		}
 	}
+	PlaceWindow(width, height);
 	ShowWindow(g_app.window, show);
 
 	Canvas canvas(g_app.surface.pixels, g_app.surface.width, g_app.surface.height, g_app.surface.width);
 	if (gpu)
 		canvas.Track(gpu->CanvasDrawn());
+	// A video mode the front end asked for, between frames (eqw's 0x4644): the surface, the swap
+	// chain and the window that size, then the front end told what it got.
+	auto change_mode = [&](VideoMode mode) {
+		Surface surface;
+		std::string mode_error;
+		bool made = CreateSurface(surface, mode.width, mode.height);
+		if (made && gpu && !gpu->Resize(mode.width, mode.height, mode_error)) {
+			Log("video mode " + std::to_string(mode.width) + "x" + std::to_string(mode.height) + ": " + mode_error);
+			DestroySurface(surface);
+			made = false;
+		}
+		if (made) {
+			DestroySurface(g_app.surface);
+			g_app.surface = surface;
+			Log("video mode " + std::to_string(mode.width) + "x" + std::to_string(mode.height) + " " +
+				std::to_string(mode.BitsPerPixel()) + " bit " + std::to_string(mode.refresh) + " Hz");
+		}
+		else {
+			mode.width = g_app.surface.width;
+			mode.height = g_app.surface.height;
+		}
+		if (gpu)
+			gpu->SetCanvas(g_app.surface.pixels, g_app.surface.width, g_app.surface.height, g_app.surface.width);
+		canvas = Canvas(g_app.surface.pixels, g_app.surface.width, g_app.surface.height, g_app.surface.width);
+		if (gpu)
+			canvas.Track(gpu->CanvasDrawn());
+		PlaceWindow(g_app.surface.width, g_app.surface.height);
+		frontend.VideoModeChanged(mode);
+	};
 	MSG message{};
 	bool running = true;
 	bool gpu_lost_logged = false;
@@ -715,6 +881,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 				gpu_lost_logged = true;
 			}
 			frontend.SetPresentMs(present_ms(), gpu->UploadMs());
+			if (VideoMode mode; frontend.TakeVideoModeRequest(mode))
+				change_mode(mode);
 			continue;
 		}
 		if (frontend.TakeScreenshotRequest())
@@ -723,6 +891,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 		Present(dc);
 		ReleaseDC(g_app.window, dc);
 		frontend.SetPresentMs(present_ms());
+		if (VideoMode mode; frontend.TakeVideoModeRequest(mode))
+			change_mode(mode);
 
 		// About 60 frames a second; input wakes the loop early.
 		uint64_t spent = NowMs() - now;

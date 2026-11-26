@@ -53,6 +53,7 @@
 #include "alarm_window.h"
 #include "help_window.h"
 #include "loadskin_window.h"
+#include "video_modes_window.h"
 #include "tracking.h"
 #include "duel.h"
 #include "bazaar_search.h"
@@ -127,6 +128,10 @@ struct GameData
 	// The host's vsync, for the debug menu: whether it's on, and how to change it; unset without one.
 	bool vsync = false;
 	std::function<void(bool)> set_vsync;
+	// The host's video modes (eqgfx's mode list, for the Video Modes window) and the one it's in;
+	// unset without a host that can change them.
+	std::function<std::vector<VideoMode>()> video_modes;
+	std::function<VideoMode()> video_mode;
 	// The host's sound: the mix our sound plays into (unset: none), and its volumes.
 	audio::Mixer *mixer = nullptr;
 	audio::EqSound::Settings sound;
@@ -170,6 +175,20 @@ public:
 	// ExecuteCmd 78's screenshot (DAT_00798ac4): the host, its frame drawn and not yet shown, hands
 	// the frame over (0xXXRRGGBB, top down) when one's asked for (asking once, whatever comes of it).
 	bool TakeScreenshotRequest() { return std::exchange(m_screenshot, false); }
+	// The Video Modes window's Accept, or the old mode put back (CVideoModesWnd_RestoreOldMode): the
+	// host, its frame shown, makes the window and its buffers that size (the SendMessageA 0x4644 eqw
+	// takes), then says what it did with VideoModeChanged. Asked once.
+	bool TakeVideoModeRequest(VideoMode &mode)
+	{
+		if (!m_mode_request.pending)
+			return false;
+		m_mode_request.pending = false;
+		mode = m_mode_request.mode;
+		return true;
+	}
+	// The mode's in (or the host couldn't: the size it's still at): the rest of WndNotification's
+	// Accept, or of RestoreOldMode.
+	void VideoModeChanged(const VideoMode &mode);
 	void SaveScreenshot(const uint32_t *pixels, int width, int height, int stride);
 	void SetUpdateMs(double ms) { m_update_ms = ms; } // how long the host's Update took this frame
 
@@ -218,6 +237,7 @@ public:
 	AlarmWindow &AlarmForTests() { return m_alarm; }
 	HelpWindow &HelpForTests() { return m_help_window; }
 	LoadskinWindow &LoadskinForTests() { return m_loadskin; }
+	VideoModesWindow &VideoModesForTests() { return m_video_modes; }
 	Containers &ContainersForTests() { return m_containers; }
 	const std::string &SkinName() const { return m_skin_name; } // the skin the UI is built from
 	const SidlTextures *UiTextures() const { return m_ui.textures; }
@@ -422,7 +442,7 @@ private:
 	// here, the windows' fades in the layout's [Main]).
 	bool m_npc_name_sprites = true; // DAT_0063d6cc: m_npc_names, or /shownpcnames's until the next zone
 	bool m_pc_names = true, m_npc_names = true; // __PCNames, DAT_00798af8: the name sprites over players', NPCs' heads
-	bool m_level_of_detail = true;              // DAT_00798ae8 (s3dSetDynamicLOD: not ours)
+	bool m_level_of_detail = true;              // DAT_00798ae8 (s3dSetDynamicLOD: ZoneView::SetDynamicLod)
 	int m_sky = 2;                              // DAT_00798ae0: 0 off, 1 one layer, 2 two (eqgame's 1; ours both)
 	int m_particle_density = 3;                 // DAT_00798ae4: 0 off .. 3 high
 	float m_spell_density = 1, m_spell_opacity = 1, m_spell_near_clip = 2; // _DAT_007f6f6c, 70, 74
@@ -961,6 +981,18 @@ private:
 	bool m_face_picking = false; // Activated
 	HelpWindow m_help_window; // CHelpWnd and its pages
 	LoadskinWindow m_loadskin; // CLoadskinWnd
+	VideoModesWindow m_video_modes; // CVideoModesWnd
+	// A mode change waiting for the host (TakeVideoModeRequest), and whether it asks to keep it
+	// (Accept's 6682) or is the old one put back. The old mode: DAT_005fe990, 994, 998, 0063ae8c.
+	struct ModeRequest
+	{
+		bool pending = false, confirm = false, asking = false;
+		VideoMode mode;
+	};
+	ModeRequest m_mode_request;
+	VideoMode m_old_mode;
+	void ChangeVideoMode(const VideoMode &mode, bool confirm);
+	VideoMode CurrentVideoMode() const;
 	bool m_report_allowed = false; // DAT_00798550 1: /report not used since OP_SendExpZonein
 	Tracking m_tracking;      // CTrackingWnd, /trackplayers, /tracksort, /trackfilter, DoPassageOfTime's tracking
 	Duel m_duel;              // /duel, /decline, msg_duel

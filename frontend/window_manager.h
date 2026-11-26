@@ -75,6 +75,12 @@ public:
 
 	// Forgets every window. The layout is for a screen this size.
 	void Reset(const SidlDefinitions *defs, SidlTextures *textures, int screen_width, int screen_height);
+	// A video mode change: CXWndManager's ScreenWidth and ScreenHeight, the windows left where they are.
+	void SetScreenSize(int screen_width, int screen_height)
+	{
+		m_width = screen_width;
+		m_height = screen_height;
+	}
 	// Builds a window from its <Screen>, where the UI files put it (laid out for 640x480, so
 	// moved for this resolution as LoadIniInfo's ConvertToRes does). Null if there's no such screen.
 	// `name` (default: the screen's) is what the other calls, the clicks and the layout's

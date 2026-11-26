@@ -4485,6 +4485,83 @@ namespace
 		return 0;
 	}
 
+	// Replay "videomodes": the Video Modes window with a made-up adapter, Accept, the host's switch
+	// (TakeVideoModeRequest, VideoModeChanged), No to the question and the old mode back; then
+	// Accept and Yes, and the window toggled by its command.
+	int VideoModesTest(FrontEnd &frontend, Harness &h)
+	{
+		WindowManager &windows = frontend.Windows();
+		VideoModesWindow &video = frontend.VideoModesForTests();
+		auto dump = [&](const char *when) {
+			SidlWindow *w = windows.Find(VideoModesWindow::Screen);
+			if (!w)
+				return;
+			const SidlWindow::Control *list = w->Find("VIDW_VideoResolutionsList");
+			const SidlWindow::Control *rate = w->Find("VIDW_RefreshRateCombobox");
+			const SidlWindow::Control *depth = w->Find("VIDW_BitDepthCombobox");
+			std::string rows, rates, depths;
+			for (const auto &row : list->rows)
+				rows += (rows.empty() ? "" : ", ") + row[0];
+			for (const auto &c : rate->choices)
+				rates += (rates.empty() ? "" : ", ") + c;
+			for (const auto &c : depth->choices)
+				depths += (depths.empty() ? "" : ", ") + c;
+			printf("[preview] video %s: %s, rows [%s] selected %d; rates [%s] choice %d; depths [%s] choice %d; screen %dx%d\n",
+				when, windows.Shown(VideoModesWindow::Screen) ? "shown" : "hidden", rows.c_str(), list->selected_row,
+				rates.c_str(), rate->choice, depths.c_str(), depth->choice, frontend.ScreenWidth(), frontend.ScreenHeight());
+		};
+		auto click = [&](const char *window, const char *id) {
+			SidlWindow *w = windows.Find(window);
+			const SidlWindow::Control *c = w ? w->Find(id) : nullptr;
+			if (!c)
+				return;
+			int x = c->rect.x + c->rect.w / 2, y = c->rect.y + c->rect.h / 2;
+			frontend.OnEvent({InputEvent::Type::MouseMove, x, y});
+			frontend.OnEvent({InputEvent::Type::MouseDown, x, y});
+			frontend.OnEvent({InputEvent::Type::MouseUp, x, y});
+			frontend.Update(NowMs());
+		};
+		auto host = [&](const char *snapshot) {
+			VideoMode mode;
+			if (!frontend.TakeVideoModeRequest(mode)) {
+				printf("[preview] video: no mode asked for\n");
+				return;
+			}
+			printf("[preview] video: host switches to %dx%d %d bit %d Hz\n", mode.width, mode.height, mode.BitsPerPixel(),
+				mode.refresh);
+			frontend.VideoModeChanged(mode);
+			h.RunUntil([] { return false; }, 300);
+			const SidlWindow *d = windows.Find("ConfirmationDialogBox");
+			const SidlWindow::Control *t = d ? d->Find("TextOutput") : nullptr;
+			printf("[preview] video: screen %dx%d, question %s '%s'\n", frontend.ScreenWidth(), frontend.ScreenHeight(),
+				windows.Shown("ConfirmationDialogBox") ? "up" : "down", t ? t->text.c_str() : "");
+			h.Snapshot(snapshot);
+		};
+		video.Activate();
+		dump("opened");
+		h.Snapshot("v0-videomodes");
+		SidlWindow::Control *list = windows.Find(VideoModesWindow::Screen)->Find("VIDW_VideoResolutionsList");
+		list->selected_row = 1; // 1920x1080
+		video.Click(VideoModesWindow::Screen, "VIDW_VideoResolutionsList");
+		dump("1920x1080 picked");
+		windows.Find(VideoModesWindow::Screen)->Find("VIDW_RefreshRateCombobox")->choice = 1;
+		click(VideoModesWindow::Screen, "VIDW_AcceptButton");
+		host("v1-1920x1080");
+		click("ConfirmationDialogBox", "No_Button");
+		host("v2-restored");
+		dump("after No");
+		list->selected_row = 2; // 800x600
+		video.Click(VideoModesWindow::Screen, "VIDW_VideoResolutionsList");
+		click(VideoModesWindow::Screen, "VIDW_AcceptButton");
+		host("v3-800x600");
+		click("ConfirmationDialogBox", "Yes_Button");
+		VideoMode none;
+		printf("[preview] video after Yes: %s, screen %dx%d\n",
+			frontend.TakeVideoModeRequest(none) ? "a mode asked for" : "kept", frontend.ScreenWidth(), frontend.ScreenHeight());
+		h.Snapshot("v4-kept");
+		return 0;
+	}
+
 	// Replay "options": the Options window's keyboard page, and keys through the keymap.
 	int OptionsTest(FrontEnd &frontend, Harness &h, const std::string &settings_ini)
 	{
@@ -5165,6 +5242,15 @@ int main(int argc, char **argv)
 	if (spells.Load(eq_dir + "/spells_en.txt"))
 		ui.spells = &spells;
 
+	// "videomodes": a made-up adapter's modes, as the host's.
+	if (replay && argc >= 7 && std::string(argv[6]) == "videomodes") {
+		ui.video_modes = [] {
+			return std::vector<VideoMode>{{1280, 720, 60, 0x16}, {1920, 1080, 60, 0x16}, {1920, 1080, 144, 0x16},
+				{1920, 1080, 60, 0x17}, {800, 600, 0, 0x16}, {640, 480, 60, 0x18}, {320, 240, 60, 0x16}};
+		};
+		ui.video_mode = [] { return VideoMode{0, 0, 60, 0x16}; };
+		config.settings_ini = std::string(argv[2]) + "/my-client.ini";
+	}
 	// Arial (or Liberation Sans) through FreeType when it's found, else boxes.
 	BoxTextRenderer boxes;
 	FontTextRenderer fonts;
@@ -5458,6 +5544,8 @@ int main(int argc, char **argv)
 		}
 		if (argc >= 7 && std::string(argv[6]) == "options")
 			return OptionsTest(frontend, h, config.settings_ini);
+		if (argc >= 7 && std::string(argv[6]) == "videomodes")
+			return VideoModesTest(frontend, h);
 		// The window menu: a right press on the player window off its controls, Background's
 		// submenu, Tint Color, a swatch and Accept; then Texture off, and Lock.
 		if (const SidlWindow *player = where("PlayerWindow")) {

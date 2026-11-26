@@ -2289,7 +2289,7 @@ namespace
 		{BazaarWindow::Screen, false}, {BazaarSearch::Screen, false}, {InspectWindow::Screen, false},
 		{PlayerNotes::Screen, false}, {Tracking::Screen, false}, {"BreathWindow", false},
 		{BugReport::Screen, false}, {Feedback::Screen, false}, {AlarmWindow::Screen, false},
-		{LoadskinWindow::Screen, false}, {FacePick::Screen, false},
+		{LoadskinWindow::Screen, false}, {FacePick::Screen, false}, {VideoModesWindow::Screen, false},
 	};
 
 	// The selector's buttons (EQUI_SelectorWnd.xml) and the windows they open and close.
@@ -2770,6 +2770,11 @@ void FrontEnd::BuildZoneWindows(bool reload, bool use_ini)
 	loadskin_host.skins = [this] { return SidlSkinNames(m_ui.eq_dir); };
 	loadskin_host.loadskin = [this](const std::string &text) { LoadSkin(text); };
 	m_loadskin.Attach(m_windows, std::move(loadskin_host));
+	VideoModesWindow::Host video_host;
+	video_host.modes = m_ui.video_modes;
+	video_host.current = [this] { return CurrentVideoMode(); };
+	video_host.accept = [this](const VideoMode &mode) { ChangeVideoMode(mode, true); };
+	m_video_modes.Attach(m_windows, m_ui.eqstr, std::move(video_host));
 	m_windows.CheckChildren(false);
 	KeyMapUpdated();
 	m_windows.TakeChanged();
@@ -2874,6 +2879,55 @@ void FrontEnd::ActivateMainUI()
 	m_alarm.Activate();
 	if (!m_ui_message.empty())
 		ChatOut(m_ui_message, ChatType::Red);
+}
+
+VideoMode FrontEnd::CurrentVideoMode() const
+{
+	VideoMode mode = m_ui.video_mode ? m_ui.video_mode() : VideoMode{};
+	mode.width = m_game_width;
+	mode.height = m_game_height;
+	return mode;
+}
+
+void FrontEnd::ChangeVideoMode(const VideoMode &mode, bool confirm)
+{
+	// CVideoModesWnd::WndNotification's Accept: the mode we're in kept, DeactivateMainUI, and the
+	// switch (the host's, between frames). RestoreOldMode is the same with the kept mode and no
+	// question after.
+	if (m_mode_request.pending || (confirm && m_mode_request.asking))
+		return;
+	if (confirm)
+		m_old_mode = CurrentVideoMode();
+	DeactivateMainUI();
+	m_mode_request.pending = true;
+	m_mode_request.confirm = confirm;
+	m_mode_request.mode = mode;
+}
+
+void FrontEnd::VideoModeChanged(const VideoMode &mode)
+{
+	// CXWndManager's ScreenWidth and ScreenHeight, ReadViewportSettingFromINI, the mode written to
+	// the ini ([VideoMode] in eqclient.ini, our [Display]), UpdateCameraAfterModeSwitch (the view
+	// takes its rectangle's aspect each frame), ActivateMainUI, and for Accept the 15 s question.
+	SetGameResolution(mode.width, mode.height);
+	m_windows.SetScreenSize(m_game_width, m_game_height);
+	m_retained_ui.Invalidate();
+	if (m_windows_built)
+		ReadViewport();
+	SaveSetting("Display", "Width", m_game_width);
+	SaveSetting("Display", "Height", m_game_height);
+	ActivateMainUI();
+	bool confirm = m_mode_request.confirm;
+	m_mode_request.confirm = false;
+	if (!confirm)
+		return;
+	// CConfirmationDialog::Activate(0x1f, 15000, 6682): No, or no answer, is RestoreOldMode.
+	m_mode_request.asking = AskInGame(EqString(6682, "Do you want to use this mode? (You have 15 seconds to decide.)"),
+		15000, [this](bool yes) {
+			m_mode_request.asking = false;
+			if (!yes)
+				ChangeVideoMode(m_old_mode, false);
+		});
 }
 
 void FrontEnd::ReloadUI(bool use_ini)
@@ -3224,7 +3278,7 @@ void FrontEnd::HandleWindowClicks()
 		    m_text_entry.Click(click.window, click.control) || m_bug_report.Click(click.window, click.control) ||
 		    m_feedback.Click(click.window, click.control) || m_alarm.Click(click.window, click.control) ||
 		    m_help_window.Click(click.window, click.control) || m_loadskin.Click(click.window, click.control) ||
-		    FacePickClick(click.window, click.control))
+		    m_video_modes.Click(click.window, click.control) || FacePickClick(click.window, click.control))
 			continue;
 		// CInventoryWnd::WndNotification: the Alt. Adv. button opens the AA window, or closes it.
 		if (click.window == "InventoryWindow" && click.control == "IW_AltAdvBtn") {
@@ -5307,11 +5361,12 @@ void FrontEnd::SetDisplayOption(OptionsWindow::Host::Display setting, float valu
 		SaveSetting("Defaults", "NPCNames", m_npc_names ? 1 : 0);
 		break;
 	case Display::LevelOfDetail:
-		// setLOD: said (6650, 6651), then s3dSetDynamicLOD (not ours: models are drawn whole).
+		// setLOD: said (6650, 6651), then s3dSetDynamicLOD(on, 1, 100) (ApplyDisplayOptions).
 		m_level_of_detail = value != 0;
 		ChatOut(m_level_of_detail ? EqString(6650, "Level of Detail *ON*") : EqString(6651, "Level of Detail *OFF*"),
 			ChatType::Default);
 		SaveSetting("Defaults", "LevelOfDetail", m_level_of_detail ? 1 : 0);
+		ApplyDisplayOptions();
 		break;
 	case Display::Sky: // the sky type (0 none), t3dSetSkyDualLayer
 		m_sky = std::clamp(static_cast<int>(value), 0, 2);
@@ -5355,7 +5410,7 @@ void FrontEnd::SetDisplayOption(OptionsWindow::Host::Display setting, float valu
 	case Display::WindowAlpha: m_windows.SetGlobalAlpha(static_cast<int>(value)); break;
 	case Display::FadeToAlpha: m_windows.SetGlobalFadeTo(static_cast<int>(value)); break;
 	case Display::VideoModes:
-		// CVideoModesWnd::Activate: not ours yet (TODO).
+		m_video_modes.Activate(); // DisplayPageWndNotification: CVideoModesWnd::Activate
 		break;
 	}
 }
@@ -5400,6 +5455,7 @@ void FrontEnd::ApplyDisplayOptions()
 	m_zone_view->SetShowOldSpellEffects(m_show_spell_effects);
 	m_zone_view->SetShowGrass(m_show_grass);
 	m_zone_view->SetSkyMode(m_sky);
+	m_zone_view->SetDynamicLod(m_level_of_detail);
 	m_zone_view->SetClipPlane(m_clip_plane);
 	m_zone_view->SetSpellParticles(m_spell_density, m_spell_opacity, m_spell_near_clip);
 }
@@ -7031,6 +7087,15 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 	case KeyMap::TogglePetInfoWin: toggle("PetInfoWindow"); break;
 	case KeyMap::ToggleOptionsWin: toggle("OptionsWindow"); break;
 	case KeyMap::ToggleSelectorWin: toggle("SelectorWindow"); break;
+	case KeyMap::ToggleVideoModeWin:
+		// ExecuteCmd 0x6a: CVideoModesWnd::Activate, or its Deactivate (vtable 0x88).
+		if (down && in_zone) {
+			if (!m_windows.Shown(VideoModesWindow::Screen))
+				m_video_modes.Activate();
+			else
+				m_video_modes.Deactivate();
+		}
+		break;
 	case KeyMap::ToggleCompassWin: toggle("CompassWindow"); break;
 	case KeyMap::ToggleHelpWin:
 		// ExecuteCmd 0x68: closed, CHelpWnd_SetFile("help\\help.html") and Activate; open, Deactivate.

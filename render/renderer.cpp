@@ -43,6 +43,18 @@ namespace render
 		++m_light_generation;
 	}
 
+	bool OutsideLodDistance(const Camera &camera, const Vec3 &position, float radius)
+	{
+		float depth = Dot(position - camera.position, Normalize(camera.forward));
+		if (depth < 400)
+			return false;
+		float lens = 1.0f / std::tan(camera.horizontal_fov * 0.5f);
+		float size = lens * radius;
+		// eqgfx divides by a radius of 0 too (and so never draws it that far out); ours is 0 only
+		// where we don't know it, so that's drawn.
+		return size > 0 && (depth - 100) / size > 25;
+	}
+
 	bool Renderer::SphereVisible(const Vec3 &center, float radius) const
 	{
 		Vec3 d = center - Eye();
