@@ -5280,6 +5280,29 @@ int main(int argc, char **argv)
 			fprintf(stderr, "[preview] %s\n", replay_error.c_str());
 			return 1;
 		}
+		if (argc >= 7 && std::string(argv[6]) == "reload") {
+			// The zone loaded twice without leaving the world (as a zone line does): the second time
+			// InitWorld's global models are already there (FrontEnd's, ZoneView::SetWorldModels).
+			for (int pass = 1; pass <= 2; ++pass) {
+				if (pass == 2 && !frontend.StartReplay(argv[4], replay_error)) {
+					fprintf(stderr, "[preview] %s\n", replay_error.c_str());
+					return 1;
+				}
+				uint64_t started = NowMs();
+				h.RunUntil([&] { return frontend.ZoneScene() && frontend.ZoneScene()->Loaded(); }, 60000);
+				printf("[preview] reload: pass %d loaded in %llu ms\n", pass,
+					static_cast<unsigned long long>(NowMs() - started));
+				h.RunUntil([&] { return frontend.Zone().GetState() == ZoneSession::State::InZone; });
+				h.RunUntil([] { return false; }, 2000);
+				if (const ZoneView *view = frontend.ZoneScene()) {
+					ZoneView::DebugStats stats = view->Stats();
+					printf("[preview] reload: pass %d: %zu of %zu spawns drawn, %zu built, %zu models\n", pass,
+						stats.spawns_drawn, stats.spawns, stats.spawns_built, stats.models_cached);
+				}
+				h.Snapshot("reload" + std::to_string(pass));
+			}
+			return 0;
+		}
 		if (cameras_test) {
 			// The loading screen part way: its picture, bar and line.
 			auto loading = [&](int at_least) {

@@ -1256,8 +1256,18 @@ no rules of its own.
     then the game ends, as eqgame's does (it has no reconnect). Still to do: `ProcessGameLoop`'s
     "Couldn't connect to network, creating dummy" when the first `WorldAuthenticate` fails (ours:
     eqmain's dialog, then the start screen).
-20. **Speed and stability:** load zones in the background, cache assets, catch crashes and write a
-    crash dump, tests for the file and data parsers.
+20. ~~**Speed and stability**~~: done. Zones load on `ZoneView`'s thread behind the loading
+    screen; InitWorld's global models are loaded once for the world and kept from zone to zone
+    (`m_world_models`, `CharacterModels::AddZone` swapping only the zone's own: a zone reloaded
+    in 1.1 s rather than 1.9 s, `frontend_preview ... reload`); a crash writes a minidump
+    (`frontend/win32_crash.*`); `parser_tests` (`tests/parser_tests.cpp`, ctest) covers the file
+    and data parsers. Still to do:
+    - The other InitWorld-once files a zone still reads again: the spell effects
+      (`SpellEffects::Load`), `gequip.s3d`'s weather sprites, and `sky.s3d` (`render::Sky::Load`).
+    - Tests of the WLD fragments (skeletons, animations, regions, lights) on made-up data, and of
+      DDS and the spell file's columns; today those run only against a real install
+      (`MYCLIENT_EQDIR`), and only `ReadMesh` of them.
+    - The crash handler checked on Windows (no crash has been made to happen yet).
 44. **What stays out**, so the decompile's function list (8128 in eqgame.exe, 5431 past the
     unwind stubs) isn't combed for it again. Ask before taking any of it up:
     - The old UI (`DAT_008092d8` 0, /newui): `EQ_Main` and its 17 subclasses (`draw`,

@@ -860,6 +860,9 @@ private:
 	void AnswerTellAfk(const std::string &sender, const std::string &text); // msg_new_text's AFK reply
 	std::time_t m_started_at = std::time(nullptr); // WinMain's, for /played's session time
 	std::unique_ptr<ZoneView> m_zone_view;
+	// InitWorld's global models, loaded by the first zone after the world's entered and kept for the
+	// zones after it (ZoneView::SetWorldModels); gone back at character select.
+	std::shared_ptr<render::CharacterModels> m_world_models;
 	uint32_t m_my_look_serial = 0; // ZoneSpawn::look_serial our model was built for
 	bool m_zone_error_logged = false;
 	bool m_zoning = false; // through a zone line: from the zone's approval until the next zone is in

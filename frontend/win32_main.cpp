@@ -20,6 +20,7 @@
 #include "win32_audio.h"
 #include "win32_d3d11.h"
 #include "win32_strings.h"
+#include "win32_crash.h"
 #include "font_text.h"
 
 #include <windows.h>
@@ -530,6 +531,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	std::wstring exe_dir = ExeDirectory();
 	std::wstring ini = exe_dir + L"\\my-client.ini";
 	g_app.log = _wfopen((exe_dir + L"\\my-client.log").c_str(), L"w");
+	InstallCrashHandler(exe_dir + L"\\crashes", Log);
 
 	// Settings: ini first, then command line.
 	std::string settings_error;

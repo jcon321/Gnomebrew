@@ -32,8 +32,9 @@ tools/cross-check-windows.sh        # once: configures build-win/ with cmake/llv
 ninja -C build-win                  # eqclient_gui.exe, eqclient.exe
 ```
 
-After any source change, build both. The user tests by copying `build-win/eqclient_gui.exe` to
-Windows, so tell them it's ready. Visual Studio 2022 also builds the folder directly on Windows.
+After any source change, build both, and run `ctest --test-dir build` (`parser_tests`; set
+`MYCLIENT_EQDIR=../TAKP-Client/TAKPv2-1` for the real-file checks too). The user tests by copying
+`build-win/eqclient_gui.exe` to Windows, so tell them it's ready. Visual Studio 2022 also builds the folder directly on Windows.
 
 ## Headless testing
 

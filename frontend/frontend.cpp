@@ -256,6 +256,7 @@ void FrontEnd::EnterStart()
 	m_world.Close();
 	m_zone.Close();
 	m_zone_view.reset();
+	m_world_models.reset();
 	m_weather.Kill(m_sound.get()); // StopWorldDisplay; then eqgame is gone, and its weather
 	m_weather = Weather();
 	m_entering_world = false;
@@ -1468,6 +1469,7 @@ void FrontEnd::EnterCharacterSelect()
 	m_screen = Screen::CharacterSelect;
 	m_submitting = false;
 	m_entering_world = false;
+	m_world_models.reset(); // the world is left: InitWorld again when it's entered
 	if (m_config.char_select_anim_window && m_charselect_view && !m_anim_window) {
 		auto window = std::make_unique<CharSelectAnimWindow>();
 		window->SetAllAnimations(m_config.char_select_emotes);
@@ -5834,6 +5836,10 @@ void FrontEnd::HandleZoneEvents(const std::vector<ZoneSession::Event> &events)
 			m_zone_view->SetCameraSetup(&m_camera);
 			m_zone_view->SetVeliousTextures(m_config.velious_textures);
 			m_zone_view->SetLuclinModels(m_config.luclin_models);
+			// InitWorld loads the global models once, as the world's entered; zone lines keep them.
+			if (!m_world_models)
+				m_world_models = std::make_shared<render::CharacterModels>();
+			m_zone_view->SetWorldModels(m_world_models);
 			m_zone_view->SetSpellFile(m_ui.spells);
 			m_zone_view->SetFallDamage([this](float fall) { return TakeFallDamage(fall); });
 			m_zone_view->SetBlind(m_blind);

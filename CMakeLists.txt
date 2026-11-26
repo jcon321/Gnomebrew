@@ -211,9 +211,22 @@ target_include_directories(eqfrontend PUBLIC frontend)
 target_link_libraries(eqfrontend PUBLIC eqcore eqrender eqaudio freetype)
 target_compile_options(eqfrontend PRIVATE ${MYCLIENT_WARNINGS})
 
+# parser_tests: the file and data parsers (tests/parser_tests.cpp); ctest runs it where it can.
+# MYCLIENT_EQDIR in the environment adds checks against a real EQ install.
+enable_testing()
+add_executable(parser_tests tests/parser_tests.cpp)
+target_link_libraries(parser_tests PRIVATE eqfrontend)
+target_compile_options(parser_tests PRIVATE ${MYCLIENT_WARNINGS})
+if(MINGW)
+    target_link_options(parser_tests PRIVATE -static)
+endif()
+if(NOT CMAKE_CROSSCOMPILING)
+    add_test(NAME parser_tests COMMAND parser_tests)
+endif()
+
 if(WIN32)
     # Direct3D 11 draws the 3D views and presents; d3dcompiler_47.dll is loaded at runtime.
-    add_executable(eqclient_gui WIN32 frontend/win32_main.cpp frontend/win32_strings.cpp frontend/win32_d3d11.cpp
+    add_executable(eqclient_gui WIN32 frontend/win32_main.cpp frontend/win32_strings.cpp frontend/win32_crash.cpp frontend/win32_d3d11.cpp
         frontend/win32_audio.cpp)
     target_link_libraries(eqclient_gui PRIVATE eqfrontend gdi32 user32 shell32 winmm d3d11 dxgi)
     target_compile_options(eqclient_gui PRIVATE ${MYCLIENT_WARNINGS})

@@ -55,7 +55,13 @@ No dependencies beyond the Windows SDK.
 sudo apt install -y build-essential cmake ninja-build
 cmake -S . -B build -G Ninja
 cmake --build build
+ctest --test-dir build      # parser_tests; MYCLIENT_EQDIR=<EQ folder> adds checks on the real files
 ```
+
+`parser_tests` (`tests/parser_tests.cpp`) checks the file and data parsers against inputs it makes
+itself: INI, XML, inflate (stored, fixed and dynamic Huffman blocks), PFS archives, BMP, TGA, DES,
+`eqstr_en.txt` and `eqtext.txt`, packet logs and UTF-8. With `MYCLIENT_EQDIR` set it also opens
+`global_chr.s3d` and reads every mesh in its WLD, and loads the strings, spells and `EQUI.xml`.
 
 ### Checking the Windows build from Linux
 
@@ -66,6 +72,11 @@ to catch errors before a Visual Studio build. Its `.exe` files only depend on sy
 they also run as-is on Windows 10+.
 
 ## Running the GUI
+
+A crash (an unhandled exception on any thread, `std::terminate`, `abort`) writes a minidump to
+`crashes\eqclient_gui-<date>-<time>.dmp` next to the exe (`frontend/win32_crash.*`, dbghelp's
+`MiniDumpWriteDump`), says so in `my-client.log` and a message box, and ends the process. Open
+it in Visual Studio or WinDbg with the exe and its `.pdb`.
 
 All settings live in `my-client.ini` next to `eqclient_gui.exe`. The EQ folder is only read for
 assets; its `eqclient.ini` is never used. The first run writes the file with a comment on every
@@ -787,7 +798,7 @@ build/eqclient -u USER -p PASS [options]
 
 ```
 build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|createluclin|explore|shop|train|ground|commands|group|duel|bazaar|raid|guild|skills|aa]]
-build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez|cameras|packets|spells|switches|itemdisplay|slash|mouse|friends|chatwindows|multiline|inspect|tracking|breath|ladder|videomodes]]
+build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez|cameras|packets|spells|switches|itemdisplay|slash|mouse|friends|chatwindows|multiline|inspect|tracking|breath|ladder|videomodes|reload]]
 ```
 
 This drives the real front-end code with scripted input and writes PNG snapshots. Text is drawn
@@ -1923,6 +1934,10 @@ the rejection).
   with its progress, `ZoneView::LoadProgress`) runs those across the bar's first quarter, then the
   zone's own files ("Loading <zone>", `ZoneScene::Load`'s meshes and objects) to the end, and
   takes no input meanwhile (`DoMainLoop`'s `FlushMouse` and `FlushKey`); see Custom changes.
+  InitWorld runs as the world's entered, not at a zone line, and so do ours: the global models
+  (`FrontEnd`'s `m_world_models`, `ZoneView::SetWorldModels`) load with the first zone and stay
+  for the next ones, which swap only their own `<zone>_chr` files (`CharacterModels::AddZone`);
+  back at character select they go.
 - **Losing the connection** (`FrontEnd::ShowLostConnection`): eqgame checks `connection_connected`
   on the zone and world connections wherever it waits for them (`DoMainLoop`,
   `GetZoneInfoFromNetwork`, `initializeNetworkGame`, `DoCharacterSelection`,

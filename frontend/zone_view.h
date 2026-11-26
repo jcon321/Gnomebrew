@@ -96,6 +96,13 @@ public:
 	void SetVeliousTextures(bool on) { m_velious_textures = on; }
 	// The Luclin player models to use (my-client.ini's UseLuclin*); before StartLoading.
 	void SetLuclinModels(const render::LuclinModels &models) { m_luclin = models; }
+	// Before StartLoading: the models to load into, or that are already loaded (their global files
+	// Opened), shared with the zones before and after this one.
+	void SetWorldModels(std::shared_ptr<render::CharacterModels> models)
+	{
+		if (models)
+			m_models = std::move(models);
+	}
 	void SetPlayerPosition(float x, float y, float z, float heading);
 	// HitBySpell's moves (gate, the teleports, Shadow Step): there (the server's x, y and z of our
 	// center), off any boat; `drop`: onto the floor under it (GetPlayerFloorHeight's, which leaves
@@ -338,10 +345,10 @@ public:
 	void SetHiddenSpawns(std::set<uint16_t> ids) { m_hidden = std::move(ids); }
 	// What the models tell the mounts, once loaded (CharacterModels' LuclinPcModels, IsLuclin and
 	// HasOwnModel).
-	bool LuclinPcModels() const { return m_loaded && m_models.LuclinPcModels(); }
+	bool LuclinPcModels() const { return m_loaded && m_models->LuclinPcModels(); }
 	bool IsLuclinModel(uint16_t race, uint8_t gender);
-	render::CharacterModels *Models() { return m_loaded ? &m_models : nullptr; } // what CFacePick asks
-	bool HasOwnModel(uint16_t race, uint8_t gender) const { return m_loaded && m_models.HasOwnModel(race, gender); }
+	render::CharacterModels *Models() { return m_loaded ? m_models.get() : nullptr; } // what CFacePick asks
+	bool HasOwnModel(uint16_t race, uint8_t gender) const { return m_loaded && m_models->HasOwnModel(race, gender); }
 	// The name sprites the last Render drew: their head point's screen position, nearest first.
 	std::vector<NameTag> NameTags(float yon) const;
 	// s3dGetWorldVisibleActorList (flags 0x11): the spawns drawn last frame (in the view and the
@@ -652,7 +659,9 @@ private:
 	int m_sky_mode = 2;
 	bool m_dynamic_lod = true;
 	float m_clip_plane = 4;
-	render::CharacterModels m_models;
+	// The world's models (InitWorld's global files and the zone's own), the FrontEnd's to keep from
+	// zone to zone; one of its own unless SetWorldModels gives them.
+	std::shared_ptr<render::CharacterModels> m_models = std::make_shared<render::CharacterModels>();
 	bool m_velious_textures = true;
 	render::LuclinModels m_luclin;
 	std::unique_ptr<render::Renderer> m_renderer;

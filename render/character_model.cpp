@@ -390,6 +390,8 @@ namespace render
 		m_items.clear();
 		m_armor.clear();
 		m_animation_sets.clear();
+		m_zone_sources = 0;
+		m_opened = false;
 		m_velious_textures = velious_textures;
 		m_old_skeletons = luclin.old_skeletons;
 		// InitWorld's CEverQuest_DoLoadScreenProgressBar calls, "Loading %s" of each part.
@@ -513,6 +515,7 @@ namespace render
 		report(percent, items);
 		report(percent + 3, items);
 		AddSource(m_sources, eq_dir, "global3_chr");
+		m_opened = true;
 		return true;
 	}
 
@@ -524,10 +527,14 @@ namespace render
 		m_zone = zone;
 		m_objects.reset();
 		m_objects_tried = false;
+		m_sources.erase(m_sources.begin(), m_sources.begin() + static_cast<long>(std::min(m_zone_sources, m_sources.size())));
+		m_zone_sources = 0;
+		m_animation_sets.clear(); // some came from the last zone's skeletons
 		size_t before = m_sources.size();
 		for (const std::string &name : {zone + "_chr", zone + "_chr2", zone + "2_chr"})
 			AddSource(m_sources, eq_dir, name);
 		std::rotate(m_sources.begin(), m_sources.begin() + static_cast<long>(before), m_sources.end());
+		m_zone_sources = m_sources.size() - before;
 		return m_sources.size() > before;
 	}
 

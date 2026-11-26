@@ -220,8 +220,10 @@ namespace render
 		using Progress = std::function<void(int percent, const char *what)>;
 		bool Open(const std::string &eq_dir, std::string &error, bool creatures = false, bool velious_textures = true,
 			const LuclinModels &luclin = {}, const Progress &progress = nullptr);
-		// A zone's own models, <zone>_chr.s3d and friends, searched first.
+		// A zone's own models, <zone>_chr.s3d and friends, searched first. The last zone's go (and the
+		// animations found with them), so one Open serves zone after zone, as InitWorld's files do.
 		bool AddZone(const std::string &eq_dir, const std::string &zone);
+		bool Opened() const { return m_opened; } // Open has loaded the global files
 		std::unique_ptr<CharacterModel> Build(const CharacterAppearance &appearance, std::string &error);
 		// An item's model on its own, from its actor ("IT63_ACTORDEF" or "IT63"): one bone, scale 1,
 		// no animations (something on the ground). Null when there's no such item model.
@@ -282,6 +284,8 @@ namespace render
 		std::unique_ptr<Source> m_objects;             // <zone>_obj.s3d, once BuildObject wants it
 		std::string m_eq_dir, m_zone;                  // AddZone's, for m_objects
 		bool m_objects_tried = false;
+		size_t m_zone_sources = 0; // AddZone's, at the front of m_sources
+		bool m_opened = false;
 		bool m_velious_textures = false;
 		bool m_old_skeletons = true;
 		bool m_luclin_pc_models = false;

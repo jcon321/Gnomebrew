@@ -138,7 +138,9 @@ void ZoneView::Load()
 	m_zone.SetLoadProgress([this, &zone_text](float fraction) {
 		SetLoadProgress(GlobalShare + static_cast<int>(fraction * (98 - GlobalShare)), zone_text);
 	});
-	if (!m_models.Open(m_eq_dir, error, true, m_velious_textures, m_luclin, global))
+	// InitWorld's global files, once for the world (FrontEnd's, SetWorldModels): a zone after the
+	// first only swaps the zone's own (AddZone).
+	if (!m_models->Opened() && !m_models->Open(m_eq_dir, error, true, m_velious_textures, m_luclin, global))
 		m_error = error;
 	else if (!m_zone.Load(m_eq_dir, m_info.short_name, error, lighting))
 		m_error = error;
@@ -147,7 +149,7 @@ void ZoneView::Load()
 	m_zone.SetLoadProgress(nullptr);
 	SetLoadProgress(99, zone_text);
 	if (m_error.empty())
-		m_models.AddZone(m_eq_dir, m_info.short_name);
+		m_models->AddZone(m_eq_dir, m_info.short_name);
 	std::string effects_error;
 	m_doors.LoadTeleportTable(m_eq_dir, m_info.short_name); // StartWorldDisplay's msg_teleport_index
 	if (m_error.empty() && !m_spell_effects.Load(m_eq_dir, effects_error))
@@ -1411,9 +1413,9 @@ void ZoneView::DrawGroundItems(uint64_t now_ms)
 			// model that isn't there is IT63's (a bag), as CreateActor's fallback for these.
 			view.placed = true;
 			std::string error;
-			view.model = m_models.BuildItem(view.model_name, error);
+			view.model = m_models->BuildItem(view.model_name, error);
 			if (!view.model)
-				view.model = m_models.BuildItem("IT63", error);
+				view.model = m_models->BuildItem("IT63", error);
 			float floor_z;
 			view.feet = view.at;
 			if (m_zone.FloorBelow(view.at + render::Vec3{0, 0, 1}, 1000, floor_z))
@@ -1442,7 +1444,7 @@ render::CharacterModel *ZoneView::MissileModel(const std::string &name)
 	auto it = m_missile_models.find(name);
 	if (it == m_missile_models.end()) {
 		std::string error;
-		it = m_missile_models.emplace(name, m_models.BuildItem(name, error)).first;
+		it = m_missile_models.emplace(name, m_models->BuildItem(name, error)).first;
 	}
 	return it->second.get();
 }
@@ -2202,16 +2204,16 @@ std::unique_ptr<render::CharacterModel> ZoneView::BuildModel(const render::Chara
 	const std::string &object, std::string &error)
 {
 	if (!render::IsObjectRace(appearance.race))
-		return m_models.Build(appearance, error);
+		return m_models->Build(appearance, error);
 	// CreatePlayerActor: the object's actor definition, or when the world hasn't it (none found:
 	// an empty tag) HUF_ACTORDEF for gender 1, else HUM_ACTORDEF.
 	if (!object.empty())
-		if (auto model = m_models.BuildObject(object, error))
+		if (auto model = m_models->BuildObject(object, error))
 			return model;
 	render::CharacterAppearance human = appearance;
 	human.race = 1;
 	human.gender = appearance.gender == 1 ? 1 : 0;
-	return m_models.Build(human, error);
+	return m_models->Build(human, error);
 }
 
 bool ZoneView::NearestActorTagAt(const render::Vec3 &at, int type, bool small, std::string &tag) const
@@ -2716,7 +2718,7 @@ bool ZoneView::IsLuclinModel(uint16_t race, uint8_t gender)
 	uint32_t key = static_cast<uint32_t>(race) << 8 | gender;
 	auto it = m_luclin_models.find(key);
 	if (it == m_luclin_models.end())
-		it = m_luclin_models.emplace(key, m_models.IsLuclin(race, gender)).first;
+		it = m_luclin_models.emplace(key, m_models->IsLuclin(race, gender)).first;
 	return it->second;
 }
 
