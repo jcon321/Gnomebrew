@@ -1,8 +1,8 @@
 #pragma once
 
-// Text drawing is the one platform-specific piece of rendering. On Windows it's
-// GDI with Arial, the same CreateFontA calls eqmain makes (win32_text.cpp).
-// The Linux preview tool substitutes placeholder boxes.
+// Text drawing: FontTextRenderer (font_text.cpp) draws Arial through FreeType on every platform,
+// laid out as eqmain's and eqgfx's GDI fonts are. The Linux preview tool falls back to
+// placeholder boxes when it finds no Arial or Liberation Sans.
 
 #include "canvas.h"
 
@@ -18,8 +18,8 @@ struct TextSize
 };
 
 // What drawing text has cost since it was last cleared (the debug menu's Performance figures):
-// the time in Draw, DrawWrapped and DrawScaled, the calls, and how many of them rasterized text
-// with GDI (not from a cache).
+// the time in Draw, DrawWrapped and DrawScaled, the calls, and how many glyphs were rasterized
+// (not from a cache).
 struct TextStats
 {
 	double ms = 0;
@@ -35,7 +35,7 @@ public:
 	TextStats stats;
 
 	// height is CreateFont's lfHeight in pixels. weight 0 is one of eqmain's fonts (default weight),
-	// drawn by GDI a string at a time. Any other weight is one of eqgfx's cached fonts, the in-game
+	// drawn a string at a time. Any other weight is one of eqgfx's cached fonts, the in-game
 	// SIDL fonts (100 or 700, SidlFontWeight), built and drawn glyph by glyph as eqgfx does.
 	virtual TextSize Measure(const std::string &utf8, int height, int weight = 0) = 0;
 	// Top-left aligned, transparent background.

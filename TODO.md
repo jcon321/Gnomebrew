@@ -251,8 +251,8 @@ no rules of its own.
      (EQ_Note::SendTextRequestMsg's OP_ReadBook; CNoteWnd's SetNote, checked live; CBookWnd's
      pages, buttons and keys in `frontend/book_window.*`, checked through the preview with a
      zone's book text). Still to do
-     for books: check the lines' fit against the TAKP client on Windows (the preview's box font is
-     wider than Arial), DrawFormattedText's own wrapping in place of measuring the line whole, and
+     for books: check the lines' fit against the TAKP client on Windows (the preview draws Liberation
+     Sans, with Arial's widths, when it finds it), DrawFormattedText's own wrapping in place of measuring the line whole, and
      keyboard focus (the window takes Left and Right while it's on top, not while it has the focus).
    - Item display: alt+click or the right button held on an inventory slot shows its item
      (`frontend/item_display.*`, eqgame's SetItem text with spells_en.txt's spell names); letting
@@ -1231,8 +1231,14 @@ no rules of its own.
 16. ~~**Packet record and replay.**~~ Done: `[Debug] RecordPackets=1` (GUI) or `--record DIR`
     (console) records; `--replay FILE` plays back in the GUI, console and `frontend_preview`.
 17. **A Linux GUI host** (SDL2 with OpenGL or Vulkan), since the front end is already portable.
-18. **Text rendering** off GDI (`win32_text`), onto a font renderer that works on both platforms
-    (needed for 17).
+18. ~~**Text rendering**~~ off GDI: done (`frontend/font_text.*`, FreeType 2.14.2 vendored in
+    `third_party/freetype`), on Windows and in `frontend_preview` (Arial, or Liberation Sans, found
+    by `FontTextRenderer::FindArial`; boxes without either). GDI's layout kept: lfHeight through
+    the VDMX table, v35 hinting, hdmx advances, eqgfx's 4-bit glyph cells cut to their advance.
+    Still to do: ClearType (eqmain's DEFAULT_QUALITY strings are per-channel on a ClearType
+    desktop; ours are greyscale); GDI's synthetic bold when there's no bold file; font linking for
+    characters Arial lacks; widths checked against GDI on Windows (`GetTextExtentPoint32W` and
+    `tmHeight` for heights 12, 14 and 25, both weights).
 19. ~~**Connection handling**~~: done (`FrontEnd::ShowLostConnection`; the sessions' `Error` reasons):
     `CEverQuest_DisplayScreen`'s "YOU HAVE BEEN DISCONNECTED." (12353) for 3 s on a lost zone or
     world connection past server select, "THE SERVER IS NOT RESPONDING." (12354) for 2 s when the

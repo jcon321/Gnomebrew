@@ -19,7 +19,8 @@
 #include "settings_file.h"
 #include "win32_audio.h"
 #include "win32_d3d11.h"
-#include "win32_text.h"
+#include "win32_strings.h"
+#include "font_text.h"
 
 #include <windows.h>
 #include <shellapi.h>
@@ -643,8 +644,19 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 	else
 		Log("sound off (Sound=0)");
 
-	GdiTextRenderer text;
-	text.AddSurface(g_app.surface.dc, g_app.surface.pixels, g_app.surface.width, g_app.surface.height);
+	FontTextRenderer text;
+	{
+		std::string regular, bold, font_error;
+		if (!FontTextRenderer::FindArial(regular, bold)) {
+			Fatal(L"Couldn't find Arial (arial.ttf) in the Windows Fonts folder.");
+			return 1;
+		}
+		if (!text.Open(regular, bold, font_error)) {
+			Fatal(Widen(font_error));
+			return 1;
+		}
+		Log("text: " + regular + (bold.empty() ? std::string() : ", " + bold));
+	}
 	FrontEnd frontend(art, strings, text, config, ui);
 	frontend.log = Log;
 	frontend.SetGameResolution(width, height);

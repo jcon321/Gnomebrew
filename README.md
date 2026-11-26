@@ -22,17 +22,19 @@ audio/      portable sound: the mix (WAV, MP3, positional voices), XMI music and
 render/     portable 3D: renderer interface, software rasterizer, textures, zone scenes, sky, skeletons, race models,
             particle clouds and the spell particle system
 frontend/   the front end: canvas, widgets, screens, SIDL UI engine, character select scene, character creation (portable)
-            + win32_main.cpp / win32_text.cpp / win32_d3d11.cpp / win32_audio.cpp (Windows host, Direct3D 11
-            renderer, waveOut and MIDI out)
+            + win32_main.cpp / win32_strings.cpp / win32_d3d11.cpp / win32_audio.cpp (Windows host, Direct3D 11
+            renderer, waveOut and MIDI out); font_text.cpp draws text with FreeType on both
 tools/      frontend_preview, scene_preview and sound_preview (Linux), cross-check-windows.sh
 third_party/rdplib/  vendored rdplib (MIT, by solar), unmodified
 third_party/minimp3/  vendored minimp3.h (CC0, lieff/minimp3 @ea99364), unmodified: the MP3 music
 third_party/tinysoundfont/  vendored tsf.h (MIT, schellingb/TinySoundFont @853a0a1), unmodified: the SoundFont synth
+third_party/freetype/  vendored FreeType 2.14.2 (FTL), trimmed to the TrueType driver, SFNT and the smooth
+            renderer, built with its own config (README.my-client): the text
 cmake/      llvm-mingw.cmake (Linux -> Windows cross toolchain)
 ```
 
 The core and the front-end logic are portable, so both compile and run on Linux too. Only the
-window, input, GDI text, Direct3D and sound output glue is Windows-specific.
+window, input, Direct3D and sound output glue is Windows-specific. Text is FreeType on both.
 
 ## Building
 
@@ -786,8 +788,9 @@ build/frontend_preview EQDIR OUTDIR [HOST:PORT USER PASSWORD [charselect|create|
 build/frontend_preview EQDIR OUTDIR --replay FILE [SECONDS [options|settings|mounts|mountsluclin|mountshorse|pet|boats|death|rez|cameras|packets|spells|switches|itemdisplay|slash|mouse|friends|chatwindows|multiline|inspect|tracking|breath|ladder]]
 ```
 
-This drives the real front-end code with scripted input and writes PNG snapshots. Text is
-drawn as outline boxes, since there's no GDI. With a login server it logs in, snapshots server
+This drives the real front-end code with scripted input and writes PNG snapshots. Text is drawn
+with Arial or Liberation Sans (same metrics) when `FontTextRenderer::FindArial` finds one
+(`MYCLIENT_FONT_DIR`, then the usual font folders), else as outline boxes. With a login server it logs in, snapshots server
 select and character select, and presses Enter World (add `charselect` after the password to stop
 at character select instead, or `shop` to stand by the nearest merchant, open its shop with the
 right button, sell the first thing worth anything and buy it back, then camp; or `train`, as
@@ -1004,7 +1007,11 @@ Layouts, art names, fonts and colors come from the `eqmain.dll` decompile (TAKP-
   index. This code looks strings up by their `KEY` names instead.
 - **Fonts:** GDI Arial, from `CreateFontA` in `initializeGraphicsAndFonts`. Heights are 25
   (buttons and fields), 14 (labels and lists) and 12. Button labels in a group shrink together
-  until all fit (`drawTextWithVerticalAdjustment`).
+  until all fit (`drawTextWithVerticalAdjustment`). Ours draw through FreeType
+  (`frontend/font_text.*`) from Arial's own files (`arial.ttf`, `arialbd.ttf` for weight 600 and
+  up) as GDI lays them out: a positive lfHeight is the cell, the biggest ppem whose VDMX yMax - yMin
+  fits it (else usWinAscent + usWinDescent scaled), glyphs hinted by the TrueType bytecode (v35)
+  and advanced by their hdmx widths. Coverage is greyscale, not ClearType's per channel.
 
 ## Character select (SIDL)
 
@@ -1212,11 +1219,10 @@ send their vertices once per frame rather than once per material, with tints as 
 still drawn on the CPU into the canvas, which is blended over the 3D view each frame. The canvas's
 top byte is how much of the view shows through: a GPU view sets its block to `0xff000000`, drawing
 writes 0, and alpha blends and darkening scale it, so the chat backdrop and the SIDL windows
-look the same as before. GDI doesn't know about that byte, so text that lands on the view is drawn
-white on black into a scratch DIB and blended in by its coverage. Name tags behind walls read the
+look the same as before. Text blends its coverage into the colors and takes as much off that byte. Name tags behind walls read the
 depth buffer back a few frames late (the newest copy the GPU has finished, without waiting).
 Only what was drawn on goes up: every draw marks the 64x16 tiles it touches in a `CanvasDirty`
-(the GDI text renderer each string's box), Finish clears only the tiles drawn on last frame (all
+(the text renderer each string's box), Finish clears only the tiles drawn on last frame (all
 of its block when the block moved or the last frame didn't clear it), and Present uploads each run
 of tiles drawn on this frame or the last (`UpdateSubresource`).
 In the zone the 2D drawing is kept on the canvas from frame to frame (`frontend/retained_ui.cpp`):

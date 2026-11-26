@@ -46,7 +46,8 @@ There's no GUI on Linux, so check changes with the tools (full flags in `README.
 - **Record / replay:** `--record DIR` writes the zone session to a `.eqr` packet log.
   `build/frontend_preview ../TAKP-Client/TAKPv2-1 OUTDIR --replay FILE.eqr [SECONDS]` plays it back
   without a server through the real front end. It writes PNG snapshots and prints what the windows
-  hold, which is how in-zone UI work is checked. Text is drawn as boxes because there's no GDI.
+  hold, which is how in-zone UI work is checked. Text is real (FreeType) when Arial or Liberation
+  Sans is found (`MYCLIENT_FONT_DIR` or the system font folders), else boxes.
 - **Front end against a server:** `build/frontend_preview EQDIR OUTDIR HOST:PORT USER PASS
   [charselect|create]`.
 - **3D:** `build/scene_preview EQDIR OUT.png ...` renders character select, a free camera, or a

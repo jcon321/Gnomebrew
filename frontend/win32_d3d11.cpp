@@ -1,6 +1,7 @@
 #include "win32_d3d11.h"
 
-#include "win32_text.h"
+#include "win32_strings.h"
+#include "canvas.h"
 
 #include <d3d11.h>
 #include <d3dcompiler.h>

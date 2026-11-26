@@ -22,6 +22,29 @@ endif()
 set(RDPLIB_BUILD_SHARED OFF CACHE BOOL "" FORCE)
 add_subdirectory(third_party/rdplib)
 
+# Vendored FreeType (FTL): the text renderer's TrueType fonts, hinted and antialiased. Only the
+# TrueType driver, SFNT and the smooth renderer (third_party/freetype/README.my-client).
+add_library(freetype STATIC
+    third_party/freetype/src/base/ftsystem.c
+    third_party/freetype/src/base/ftinit.c
+    third_party/freetype/src/base/ftdebug.c
+    third_party/freetype/src/base/ftbase.c
+    third_party/freetype/src/truetype/truetype.c
+    third_party/freetype/src/sfnt/sfnt.c
+    third_party/freetype/src/smooth/smooth.c
+)
+target_include_directories(freetype SYSTEM PUBLIC third_party/freetype/include)
+target_include_directories(freetype SYSTEM PUBLIC third_party/freetype/config)
+target_compile_definitions(freetype PRIVATE FT2_BUILD_LIBRARY)
+target_compile_definitions(freetype PUBLIC
+    "FT_CONFIG_OPTIONS_H=<my_ftoption.h>" "FT_CONFIG_MODULES_H=<my_ftmodule.h>")
+set_target_properties(freetype PROPERTIES C_STANDARD 99)
+if(MSVC)
+    target_compile_options(freetype PRIVATE /w)
+else()
+    target_compile_options(freetype PRIVATE -w)
+endif()
+
 # core: networking, crypto and asset formats. Portable (Linux and Windows).
 add_library(eqcore STATIC
     core/rdp_session.cpp
@@ -97,8 +120,8 @@ target_include_directories(eqrender PUBLIC render)
 target_link_libraries(eqrender PUBLIC eqcore Threads::Threads)
 target_compile_options(eqrender PRIVATE ${MYCLIENT_WARNINGS})
 
-# frontend: the login/server-select screens. The logic and drawing are portable;
-# only the window, GDI text and input glue (win32_main.cpp) are Windows-specific.
+# frontend: the login/server-select screens. The logic and drawing are portable (text too:
+# FreeType); only the window and input glue (win32_main.cpp) are Windows-specific.
 add_library(eqfrontend STATIC
     frontend/canvas.cpp
     frontend/retained_ui.cpp
@@ -181,14 +204,15 @@ add_library(eqfrontend STATIC
     frontend/settings_file.cpp
     frontend/key_map.cpp
     frontend/options_window.cpp
+    frontend/font_text.cpp
 )
 target_include_directories(eqfrontend PUBLIC frontend)
-target_link_libraries(eqfrontend PUBLIC eqcore eqrender eqaudio)
+target_link_libraries(eqfrontend PUBLIC eqcore eqrender eqaudio freetype)
 target_compile_options(eqfrontend PRIVATE ${MYCLIENT_WARNINGS})
 
 if(WIN32)
     # Direct3D 11 draws the 3D views and presents; d3dcompiler_47.dll is loaded at runtime.
-    add_executable(eqclient_gui WIN32 frontend/win32_main.cpp frontend/win32_text.cpp frontend/win32_d3d11.cpp
+    add_executable(eqclient_gui WIN32 frontend/win32_main.cpp frontend/win32_strings.cpp frontend/win32_d3d11.cpp
         frontend/win32_audio.cpp)
     target_link_libraries(eqclient_gui PRIVATE eqfrontend gdi32 user32 shell32 winmm d3d11 dxgi)
     target_compile_options(eqclient_gui PRIVATE ${MYCLIENT_WARNINGS})

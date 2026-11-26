@@ -33,6 +33,7 @@
 #include "eqstr.h"
 #include "spell_file.h"
 #include "frontend.h"
+#include "font_text.h"
 #include "inventory.h"
 #include "opcodes.h"
 #include "png_writer.h"
@@ -5164,7 +5165,22 @@ int main(int argc, char **argv)
 	if (spells.Load(eq_dir + "/spells_en.txt"))
 		ui.spells = &spells;
 
-	BoxTextRenderer text;
+	// Arial (or Liberation Sans) through FreeType when it's found, else boxes.
+	BoxTextRenderer boxes;
+	FontTextRenderer fonts;
+	TextRenderer *text_renderer = &boxes;
+	{
+		std::string regular, bold, font_error;
+		if (!FontTextRenderer::FindArial(regular, bold))
+			printf("[preview] no Arial or Liberation Sans found (MYCLIENT_FONT_DIR): text drawn as boxes\n");
+		else if (!fonts.Open(regular, bold, font_error))
+			printf("[preview] %s: text drawn as boxes\n", font_error.c_str());
+		else {
+			text_renderer = &fonts;
+			printf("[preview] text: %s\n", regular.c_str());
+		}
+	}
+	TextRenderer &text = *text_renderer;
 	FrontEnd frontend(art, strings, text, config, ui);
 	frontend.log = [](const std::string &line) { printf("%s\n", line.c_str()); };
 	frontend.SetGameResolution(1280, 720); // character select is drawn at this size

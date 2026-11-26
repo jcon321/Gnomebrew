@@ -1,0 +1,11 @@
+FreeType 2.14.2 (https://freetype.org), trimmed for my-client's text renderer
+(frontend/font_text.*): include/ as released, and src/base, src/truetype, src/sfnt and
+src/smooth. Built by the top-level CMakeLists.txt as the `freetype` static library with
+config/my_ftoption.h (FT_CONFIG_OPTIONS_H: the upstream ftoption.h with the lines marked
+"my-client: off" turned off, among them TT_CONFIG_OPTION_SUBPIXEL_HINTING, so the TrueType
+hinter is the v35 interpreter, full hinting as GDI does it) and config/my_ftmodule.h
+(FT_CONFIG_MODULES_H).
+
+Licensed under the FreeType License (FTL.TXT); see LICENSE.TXT.
+Portions of this software are copyright (C) The FreeType Project (www.freetype.org).
+All rights reserved.

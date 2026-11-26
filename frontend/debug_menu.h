@@ -51,7 +51,7 @@ public:
 	{
 		double zone = 0, models = 0, submit = 0, tags = 0, ui = 0, present = 0;
 		// Of the UI: the windows, this menu's own card and radar, and the text drawn in it (and how
-		// many strings GDI rasterized rather than took from a cache). Of Present: the canvas upload.
+		// many glyphs were rasterized rather than taken from a cache). Of Present: the canvas upload.
 		double ui_windows = 0, ui_debug = 0, ui_text = 0, ui_rasterized = 0, upload = 0;
 		double update = 0; // FrontEnd::Update, before the frame's drawing
 		double ui_redrawn = 0; // percent of the screen the UI cleared and drew again (100 unless kept)
