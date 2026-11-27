@@ -190,7 +190,7 @@ FrontEnd::FrontEnd(FrontEndArt &art, const EqText &strings, TextRenderer &text, 
 			};
 			m_pc_names = number("Defaults", "PCNames", 1, 0, 1) == 1;
 			m_npc_names = m_npc_name_sprites = number("Defaults", "NPCNames", 1, 0, 1) == 1;
-			m_level_of_detail = number("Defaults", "LevelOfDetail", 1, 0, 1) == 1;
+			m_level_of_detail = number("Defaults", "LevelOfDetail", 0, 0, 1) == 1; // off to start with (eqgame: on)
 			m_sky = number("Defaults", "Sky", 2, 0, 2); // both layers to start with (eqgame: 1)
 			m_particle_density = number("Defaults", "ParticleDensity", 3, 0, 3); // 3
 			m_gamma = real("Gamma", 3, 1, 8);                                     // 4 if out of range

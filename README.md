@@ -2136,7 +2136,7 @@ details and the nearest spawns at the top left and the radar at the top right.
     (`DAT_00798af8`; TAKP's names for the two NPC functions are swapped): `SetNameSpriteState` shows
     a name only when its kind's switch is on, players' (ours too) by the first, NPCs' and corpses'
     by the second. Both on by default.
-  - Level of Detail (`DAT_00798ae8`, on): `setLOD` says 6650 or 6651 and calls eqgfx's
+  - Level of Detail (`DAT_00798ae8`, on in eqgame, off to start with in ours): `setLOD` says 6650 or 6651 and calls eqgfx's
     `s3dSetDynamicLOD(on, 1, 100)`. With it on, `renderSprite` leaves out an actor that
     `isSpriteOutsideViewingDistance` (@10047c70) finds far and small: 400 or more along the view
     and (that distance - 100) / (the lens's cotangent of half its angle * its scaled bounding radius)

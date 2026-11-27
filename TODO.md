@@ -1082,7 +1082,8 @@ no rules of its own.
     (eqw's) and Alt+Enter in the game (eqgame.dll's `ProcessKeyDown` detour) stretch it over the
     monitor (DXGI's stretch, `StretchBlt` in software, the mouse scaled back). Level of Detail
     (`setLOD`, `s3dSetDynamicLOD(on, 1, 100)`): `isSpriteOutsideViewingDistance` (@10047c70) on
-    the zone's placed objects, doors and spawns (`render::OutsideLodDistance`). The draw distance is
+    the zone's placed objects, doors and spawns (`render::OutsideLodDistance`), off by default
+    (`[Defaults] LevelOfDetail=0`; eqgame's is on). The draw distance is
     the clip plane (5). Still to do:
     - `s3dAdjustDMSpriteMeshDetail` (@100159b0), the other half of the dynamic LOD: a mesh's own
       detail steps (the 0x36 fragment's mesh ops, not read by `WldFile::ReadMesh`) by its distance.

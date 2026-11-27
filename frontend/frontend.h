@@ -442,7 +442,7 @@ private:
 	// here, the windows' fades in the layout's [Main]).
 	bool m_npc_name_sprites = true; // DAT_0063d6cc: m_npc_names, or /shownpcnames's until the next zone
 	bool m_pc_names = true, m_npc_names = true; // __PCNames, DAT_00798af8: the name sprites over players', NPCs' heads
-	bool m_level_of_detail = true;              // DAT_00798ae8 (s3dSetDynamicLOD: ZoneView::SetDynamicLod)
+	bool m_level_of_detail = false;             // DAT_00798ae8 (s3dSetDynamicLOD: ZoneView::SetDynamicLod)
 	int m_sky = 2;                              // DAT_00798ae0: 0 off, 1 one layer, 2 two (eqgame's 1; ours both)
 	int m_particle_density = 3;                 // DAT_00798ae4: 0 off .. 3 high
 	float m_spell_density = 1, m_spell_opacity = 1, m_spell_near_clip = 2; // _DAT_007f6f6c, 70, 74

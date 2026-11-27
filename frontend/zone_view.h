@@ -657,7 +657,7 @@ private:
 	render::ZoneScene m_zone;
 	render::Sky m_sky;
 	int m_sky_mode = 2;
-	bool m_dynamic_lod = true;
+	bool m_dynamic_lod = false;
 	float m_clip_plane = 4;
 	// The world's models (InitWorld's global files and the zone's own), the FrontEnd's to keep from
 	// zone to zone; one of its own unless SetWorldModels gives them.
