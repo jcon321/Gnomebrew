@@ -9,7 +9,7 @@ namespace render
 		m_numbers.clear();
 		std::vector<uint8_t> data;
 		WldFile wld;
-		if (!m_archive.Open(eq_dir + "/sky.s3d") || !m_archive.Read("sky.wld", data) || !wld.Load(std::move(data))) {
+		if (!m_archive.Open(eq_dir + "/sky.s3d", true) || !m_archive.Read("sky.wld", data) || !wld.Load(std::move(data))) {
 			error = "Couldn't read sky.s3d";
 			return false;
 		}
@@ -48,7 +48,7 @@ namespace render
 					if (t.material == m)
 						batch.indices.insert(batch.indices.end(), {t.v[0], t.v[1], t.v[2]});
 				if (layer == 1 && !batch.frames.empty())
-					m_horizon = batch.frames[0]->levels.back()[0] & 0xffffff; // the dome's average color
+					m_horizon = batch.frames[0]->average & 0xffffff; // the dome's average color
 				out.batches.push_back(std::move(batch));
 			}
 			m_layers.push_back(std::move(out));

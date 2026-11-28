@@ -108,6 +108,7 @@ bool PfsArchive::Bytes(size_t offset, size_t size, std::vector<uint8_t> &out) co
 		return true;
 	}
 	out.resize(size);
+	std::lock_guard<std::mutex> lock(*m_file_mutex);
 	m_file->clear();
 	m_file->seekg(static_cast<std::streamoff>(offset));
 	m_file->read(reinterpret_cast<char *>(out.data()), static_cast<std::streamsize>(size));

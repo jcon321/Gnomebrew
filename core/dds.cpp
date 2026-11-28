@@ -97,6 +97,19 @@ namespace
 	}
 }
 
+void DecodeDxtBlock(int kind, const uint8_t *block, uint32_t texels[16])
+{
+	if (kind == 1)
+		ColorBlock(block, texels, true);
+	else {
+		ColorBlock(block + 8, texels, false);
+		if (kind == 3)
+			AlphaDxt3(block, texels);
+		else
+			AlphaDxt5(block, texels);
+	}
+}
+
 bool DecodeDds(const std::vector<uint8_t> &d, Image &image)
 {
 	if (d.size() < 128 || std::memcmp(d.data(), "DDS ", 4) != 0)
@@ -112,6 +125,7 @@ bool DecodeDds(const std::vector<uint8_t> &d, Image &image)
 	image.height = static_cast<int>(height);
 	image.pixels.assign(static_cast<size_t>(width) * height, 0);
 	image.has_alpha = false;
+	image.dxt = 0;
 	const uint8_t *data = d.data() + 128;
 	size_t available = d.size() - 128;
 
@@ -125,6 +139,7 @@ bool DecodeDds(const std::vector<uint8_t> &d, Image &image)
 			kind = 5;
 		else
 			return false;
+		image.dxt = static_cast<uint8_t>(kind);
 		size_t block_size = kind == 1 ? 8 : 16;
 		uint32_t bw = (width + 3) / 4, bh = (height + 3) / 4;
 		if (static_cast<size_t>(bw) * bh * block_size > available)
@@ -133,15 +148,7 @@ bool DecodeDds(const std::vector<uint8_t> &d, Image &image)
 			for (uint32_t bx = 0; bx < bw; ++bx) {
 				const uint8_t *block = data + (static_cast<size_t>(by) * bw + bx) * block_size;
 				uint32_t texels[16];
-				if (kind == 1)
-					ColorBlock(block, texels, true);
-				else {
-					ColorBlock(block + 8, texels, false);
-					if (kind == 3)
-						AlphaDxt3(block, texels);
-					else
-						AlphaDxt5(block, texels);
-				}
+				DecodeDxtBlock(kind, block, texels);
 				for (int i = 0; i < 16; ++i) {
 					uint32_t x = bx * 4 + i % 4, y = by * 4 + i / 4;
 					if (x < width && y < height) {

@@ -290,7 +290,7 @@ namespace render
 	{
 		auto source = std::make_unique<Source>();
 		std::vector<uint8_t> data;
-		if (!source->archive.Open(eq_dir + "/" + name + ".s3d"))
+		if (!source->archive.Open(eq_dir + "/" + name + ".s3d", true)) // read as it's asked for
 			return false;
 		if (!source->archive.Read(name + ".wld", data) || !source->wld.Load(std::move(data)))
 			return false;
@@ -300,6 +300,16 @@ namespace render
 		source->name = name;
 		to.push_back(std::move(source));
 		return true;
+	}
+
+	size_t CharacterModel::Bytes() const
+	{
+		auto size = [](const auto &v) { return v.capacity() * sizeof(v[0]); };
+		size_t bytes = size(m_positions) + size(m_normals) + size(m_bones) + size(m_uvs) + size(m_solid) +
+		               size(m_bone_matrices) + size(m_intensity) + size(m_vertices);
+		for (const Batch &batch : m_batches)
+			bytes += size(batch.indices);
+		return bytes;
 	}
 
 	void CharacterModels::ForEachTexture(const std::function<void(const Texture &)> &fn) const

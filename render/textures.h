@@ -50,11 +50,14 @@ namespace render
 		std::map<std::string, std::unique_ptr<Texture>> m_cache; // lowercase name + mask flag
 		std::vector<std::string> m_missing;
 		uint8_t m_mask_reference = 0x80;
-		load_stats::Bytes m_bytes{load_stats::texel_bytes}; // the cache's texels
 	};
 
 	// A texture of a decoded picture (rows top first, as v = 0); `soft` as Build's.
 	std::unique_ptr<Texture> MakeTexture(const Image &image, bool soft = false);
+	// A GPU renderer draws the textures (the host's, before any is loaded): those that came as DXT
+	// are kept block compressed rather than decoded (Texture::blocks), for the renderer to upload
+	// as they are. Off, every texture keeps its decoded levels for the software Rasterizer.
+	void SetGpuTextures(bool on);
 
 	struct MaterialInfo
 	{

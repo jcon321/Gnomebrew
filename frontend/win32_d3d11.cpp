@@ -303,29 +303,48 @@ bool D3d11Device::State::MakeCanvasTexture()
 
 ID3D11ShaderResourceView *D3d11Device::State::TextureView(const render::Texture *texture)
 {
-	if (!texture || texture->levels.empty())
+	if (!texture)
 		return white.Get();
 	auto *gpu = static_cast<GpuTexture *>(texture->device_texture.get());
 	if (gpu && gpu->device == device.Get())
 		return gpu->view.Get();
 
+	// The texture's levels as they are: block compressed (BC1, BC3) when it came as DXT, else
+	// B8G8R8A8 (0xAARRGGBB in memory order).
+	bool compressed = !texture->blocks.empty();
+	size_t count = compressed ? texture->blocks.size() : texture->levels.size();
+	if (count == 0)
+		return white.Get();
 	auto start = std::chrono::steady_clock::now();
-	std::vector<D3D11_SUBRESOURCE_DATA> data(texture->levels.size());
+	std::vector<D3D11_SUBRESOURCE_DATA> data(count);
+	int block_bytes = texture->block_format == 1 ? 8 : 16;
 	int64_t bytes = 0;
-	for (size_t i = 0; i < data.size(); ++i) {
+	for (size_t i = 0; i < count; ++i) {
 		int w = std::max(1, texture->width >> i), h = std::max(1, texture->height >> i);
-		if (texture->levels[i].size() != static_cast<size_t>(w) * h)
-			return white.Get();
-		data[i].pSysMem = texture->levels[i].data();
-		data[i].SysMemPitch = static_cast<UINT>(w) * 4;
-		bytes += static_cast<int64_t>(w) * h * 4;
+		if (compressed) {
+			size_t pitch = static_cast<size_t>((w + 3) / 4) * block_bytes, size = pitch * ((h + 3) / 4);
+			if (texture->blocks[i].size() != size)
+				return white.Get();
+			data[i].pSysMem = texture->blocks[i].data();
+			data[i].SysMemPitch = static_cast<UINT>(pitch);
+			bytes += static_cast<int64_t>(size);
+		}
+		else {
+			if (texture->levels[i].size() != static_cast<size_t>(w) * h)
+				return white.Get();
+			data[i].pSysMem = texture->levels[i].data();
+			data[i].SysMemPitch = static_cast<UINT>(w) * 4;
+			bytes += static_cast<int64_t>(w) * h * 4;
+		}
 	}
 	D3D11_TEXTURE2D_DESC desc{};
 	desc.Width = static_cast<UINT>(texture->width);
 	desc.Height = static_cast<UINT>(texture->height);
-	desc.MipLevels = static_cast<UINT>(data.size());
+	desc.MipLevels = static_cast<UINT>(count);
 	desc.ArraySize = 1;
-	desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM; // 0xAARRGGBB in memory order
+	desc.Format = !compressed ? DXGI_FORMAT_B8G8R8A8_UNORM
+	              : texture->block_format == 1 ? DXGI_FORMAT_BC1_UNORM
+	                                           : DXGI_FORMAT_BC3_UNORM;
 	desc.SampleDesc.Count = 1;
 	desc.Usage = D3D11_USAGE_IMMUTABLE;
 	desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
@@ -337,6 +356,9 @@ ID3D11ShaderResourceView *D3d11Device::State::TextureView(const render::Texture 
 	made->device = device.Get();
 	made->bytes.Set(bytes);
 	texture->device_texture = made;
+	// Only the GPU's copy is drawn from now on (nothing falls back to the software Rasterizer):
+	// ours goes.
+	texture->Release();
 	load_stats::textures_uploaded.Add(load_stats::MicrosSince(start));
 	return made->view.Get();
 }

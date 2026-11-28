@@ -29,6 +29,7 @@
 
 #include "animations.h"
 #include "ini_file.h"
+#include "load_stats.h"
 #include <filesystem>
 #include "eqstr.h"
 #include "spell_file.h"
@@ -5296,8 +5297,11 @@ int main(int argc, char **argv)
 				h.RunUntil([] { return false; }, 2000);
 				if (const ZoneView *view = frontend.ZoneScene()) {
 					ZoneView::DebugStats stats = view->Stats();
-					printf("[preview] reload: pass %d: %zu of %zu spawns drawn, %zu built, %zu models\n", pass,
-						stats.spawns_drawn, stats.spawns, stats.spawns_built, stats.models_cached);
+					printf("[preview] reload: pass %d: %zu of %zu spawns drawn, %zu built, %zu models (%zu KB); "
+					       "archives %lld KB, textures %lld KB\n", pass, stats.spawns_drawn, stats.spawns,
+						stats.spawns_built, stats.models_cached, stats.models_bytes / 1024,
+						static_cast<long long>(load_stats::archive_bytes.load() / 1024),
+						static_cast<long long>(load_stats::texel_bytes.load() / 1024));
 				}
 				h.Snapshot("reload" + std::to_string(pass));
 			}

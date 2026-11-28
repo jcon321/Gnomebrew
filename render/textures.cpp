@@ -1,9 +1,11 @@
 #include "textures.h"
 
 #include "bitmap.h"
+#include "block_compress.h"
 #include "dds.h"
 
 #include <algorithm>
+#include <atomic>
 
 namespace render
 {
@@ -16,6 +18,8 @@ namespace render
 				++shift;
 			return shift;
 		}
+
+		std::atomic<bool> g_gpu_textures{false}; // SetGpuTextures
 
 		// Nearest-neighbour resample to a power of two, then box-filtered mips down to 1x1: the color
 		// averaged over the opaque texels (masked edges don't darken), or with `soft` weighted by
@@ -94,8 +98,34 @@ namespace render
 				w = nw;
 				h = nh;
 			}
+			texture->average = texture->levels.back()[0];
+			// Under a GPU renderer, what came as DXT stays block compressed: BC1 when it's opaque,
+			// else BC3 (a DXT1's one-bit alpha too, so its mips keep their soft edges).
+			int64_t bytes = 0;
+			if (g_gpu_textures && image.dxt && texture->width >= 4 && texture->height >= 4) {
+				auto format = image.dxt == 1 && !image.has_alpha ? block_compress::Format::BC1 : block_compress::Format::BC3;
+				texture->block_format = static_cast<uint8_t>(format);
+				w = texture->width;
+				h = texture->height;
+				for (const auto &level : texture->levels) {
+					texture->blocks.push_back(block_compress::Compress(level.data(), w, h, format));
+					bytes += static_cast<int64_t>(texture->blocks.back().size());
+					w = std::max(1, w / 2);
+					h = std::max(1, h / 2);
+				}
+				texture->levels = {};
+			}
+			else
+				for (const auto &level : texture->levels)
+					bytes += static_cast<int64_t>(level.size() * sizeof(uint32_t));
+			texture->bytes.Set(bytes);
 			return texture;
 		}
+	}
+
+	void SetGpuTextures(bool on)
+	{
+		g_gpu_textures = on;
 	}
 
 	std::unique_ptr<Texture> MakeTexture(const Image &image, bool soft)
@@ -171,6 +201,7 @@ namespace render
 			out.width = std::max(base.width, over.width);
 			out.height = std::max(base.height, over.height);
 			out.has_alpha = base.has_alpha;
+			out.dxt = base.dxt && over.dxt ? 5 : 0; // both came as DXT: kept so (Build)
 			out.pixels.resize(static_cast<size_t>(out.width) * out.height);
 			for (int y = 0; y < out.height; ++y) {
 				for (int x = 0; x < out.width; ++x) {
@@ -193,13 +224,8 @@ namespace render
 		std::chrono::steady_clock::time_point start)
 	{
 		const Texture *result = texture.get();
-		if (texture) {
-			int64_t bytes = 0;
-			for (const auto &level : texture->levels)
-				bytes += static_cast<int64_t>(level.size() * sizeof(uint32_t));
-			m_bytes.Add(bytes);
+		if (texture)
 			load_stats::textures_decoded.Add(load_stats::MicrosSince(start));
-		}
 		m_cache.emplace(key, std::move(texture));
 		return result;
 	}

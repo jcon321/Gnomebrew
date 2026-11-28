@@ -20,6 +20,7 @@
 #include "win32_audio.h"
 #include "win32_d3d11.h"
 #include "win32_strings.h"
+#include "textures.h"
 #include "win32_crash.h"
 #include "font_text.h"
 
@@ -726,6 +727,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show)
 			ui.vsync = vsync;
 			ui.set_vsync = [device](bool on) { device->SetVSync(on); };
 			g_app.gpu = device;
+			render::SetGpuTextures(true); // textures that came as DXT stay so, for the GPU
 		}
 		else {
 			Log("Direct3D 11 unavailable (" + gpu_error + "); using the software renderer");

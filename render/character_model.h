@@ -143,6 +143,7 @@ namespace render
 		void SolidTriangles(const Transform &placement, uint64_t time_ms, const std::string &animation, bool loop,
 			std::vector<Vec3> &out) const;
 		bool HasSolidTriangles() const { return !m_solid.empty(); }
+		size_t Bytes() const; // what its geometry and Draw's scratch hold (not its textures or animations)
 
 	private:
 		friend class CharacterModels;

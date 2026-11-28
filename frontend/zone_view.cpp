@@ -1332,6 +1332,8 @@ ZoneView::DebugStats ZoneView::Stats() const
 		stats.spawns_drawn += actor.drawn ? 1 : 0;
 	}
 	stats.models_cached = m_model_cache.size();
+	for (const auto &[key, model] : m_model_cache)
+		stats.models_bytes += model ? model->Bytes() : 0;
 	stats.heading = m_heading;
 	stats.velocity = m_movement.Velocity();
 	stats.on_ground = m_movement.OnGround();

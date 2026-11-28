@@ -5,6 +5,7 @@
 // Direct3D 11 renderer (frontend/win32_d3d11.cpp). Both take world-space
 // triangles a batch at a time between Begin and Finish and share the camera math.
 
+#include "load_stats.h"
 #include "math3d.h"
 #include "point_lights.h"
 
@@ -20,11 +21,26 @@ namespace render
 	{
 		int width = 0, height = 0; // level 0
 		int width_shift = 0, height_shift = 0;
-		std::vector<std::vector<uint32_t>> levels;
+		// The mip chain as the software Rasterizer samples it. Under a GPU renderer
+		// (SetGpuTextures), one that came as DXT keeps `blocks` in its place, the same levels
+		// compressed (block_compress, `block_format` 1 BC1, 3 BC3); and the renderer lets both go
+		// once its own copy is made (Release).
+		mutable std::vector<std::vector<uint32_t>> levels;
+		mutable std::vector<std::vector<uint8_t>> blocks;
+		uint8_t block_format = 0;
 		bool has_alpha = false;
-		// The GPU copy, made by the Direct3D renderer the first time it draws the texture
-		// and released with it.
+		uint32_t average = 0; // the 1x1 mip's texel: the whole texture's color
+		// The GPU copy, made by the Direct3D renderer (Renderer::Prepare, or the first time it draws
+		// the texture) and released with it.
 		mutable std::shared_ptr<void> device_texture;
+		mutable load_stats::Bytes bytes{load_stats::texel_bytes}; // levels' and blocks'
+
+		void Release() const
+		{
+			levels = {};
+			blocks = {};
+			bytes.Set(0);
+		}
 	};
 
 	enum class Blend : uint8_t

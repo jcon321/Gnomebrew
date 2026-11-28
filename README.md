@@ -699,8 +699,9 @@ additions of ours, or ones taken from TAKP's eqgame.dll or Zeal rather than stoc
 - **Hitch log and memory rows:** a frame in the world that takes 50 ms or more writes a `hitch:` line
   to `my-client.log` with what it loaded (spawn models built, textures decoded and made on the GPU,
   `core/load_stats.h`) and the debug menu's frame parts; the first in a zone says "(entering the
-  zone)". The debug menu's PERFORMANCE section shows the looks cached and a Memory row: archives
-  held whole, decoded textures, their GPU copies.
+  zone)". The debug menu's PERFORMANCE section shows the looks cached (and their geometry) and a
+  Memory row: archives held whole, textures in memory (decoded or block compressed, until the GPU
+  has them), their GPU copies.
 - **Netstat texts held:** eqgame defers the netstat's texts only in the frames `DrawNetStatus` runs,
   so they blink out between packets; ours stay up with the last ones taken (see Toggle netstat).
 - **`/shownames` 5, 6 and 7:** Zeal's levels (title and first name; title, first and last; first
@@ -1955,8 +1956,16 @@ the rejection).
   builds a spawn's model the first frame it's tracked, and `ZoneView::PrepareTextures` has the
   renderer make the GPU copies (`Renderer::Prepare`) of everything loaded by the first frame in the
   zone. A model's textures are decoded as it's built (`TextureCache`), not every one of a file's as it
-  loads: ours are kept decoded to 32-bit, so making all the global files' would about double the
-  memory (South Qeynos with the Luclin models: 536 MB to 1080 MB at its peak).
+  loads: making all the global files' (about 13,500 textures, some 800 MB decoded) would cost far more
+  memory than eqgame's, which keeps them as the files have them.
+- **How textures are kept:** TAKP's DDS textures are DXT1 or DXT5 with no mips (eqgfx's D3DX makes
+  them). Under Direct3D (`render::SetGpuTextures`) one that came as DXT is kept block compressed:
+  our box-filtered mips, each level compressed again (`core/block_compress.*`: BC1 when it's opaque,
+  else BC3, so a DXT1's one-bit alpha keeps its mips' soft edges; along the colors' principal axis,
+  refined by least squares, about 59 dB from the original on average), and uploaded as BC1 or BC3.
+  The rest stay B8G8R8A8. Once the GPU's copy is made ours goes (`Texture::Release`); the software
+  Rasterizer keeps the decoded levels. The `.s3d` and `.pak` archives are read as they're asked
+  for (`PfsArchive`'s lazy mode), not held whole (South Qeynos settled at 385 MB rather than 514).
 - **Losing the connection** (`FrontEnd::ShowLostConnection`): eqgame checks `connection_connected`
   on the zone and world connections wherever it waits for them (`DoMainLoop`,
   `GetZoneInfoFromNetwork`, `initializeNetworkGame`, `DoCharacterSelection`,

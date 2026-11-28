@@ -457,6 +457,7 @@ public:
 		const char *renderer = ""; // Renderer::Name
 		size_t spawns_drawn = 0, spawns_built = 0, spawns = 0; // models drawn, built, spawns tracked
 		size_t models_cached = 0;                               // distinct spawn models loaded
+		size_t models_bytes = 0;                                // their geometry (CharacterModel::Bytes)
 		float heading = 0;                                      // 0..512, 0 north, 128 west
 		render::Vec3 velocity;                                  // per tick, world space
 		bool on_ground = true;

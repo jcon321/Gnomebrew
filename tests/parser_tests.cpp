@@ -3,15 +3,19 @@
 // its own; a failed check prints where and the run ends non-zero.
 
 #include "bitmap.h"
+#include "block_compress.h"
+#include "dds.h"
 #include "des.h"
 #include "eqstr.h"
 #include "eqtext.h"
 #include "font_text.h"
 #include "inflate.h"
+#include "load_stats.h"
 #include "ini_file.h"
 #include "packet_log.h"
 #include "pfs.h"
 #include "spell_file.h"
+#include "textures.h"
 #include "tga.h"
 #include "wld.h"
 #include "xml.h"
@@ -336,6 +340,52 @@ TEST(BmpDecodes)
 	CHECK(!DecodeBmp(truncated, image));
 }
 
+TEST(BlockCompressRoundTrips)
+{
+	// A 8x4 level: a flat block, and a gradient of four evenly spaced colors (what a block's
+	// palette holds) with a masked (0/255) alpha. BC1 keeps the flat color to its 565 precision
+	// and the gradient close; BC3 keeps a binary alpha exactly.
+	std::vector<uint32_t> texels(8 * 4);
+	for (int y = 0; y < 4; ++y)
+		for (int x = 0; x < 8; ++x) {
+			uint32_t t = static_cast<uint32_t>(x - 4) * 45;
+			texels[static_cast<size_t>(y) * 8 + x] =
+				x < 4 ? 0xff336699u : ((x + y) % 3 ? 0xff000000u : 0u) | (40 + t) << 16 | (200 - t) << 8 | 0x80u;
+		}
+	auto close = [](uint32_t a, uint32_t b, int tolerance) {
+		for (int s = 0; s < 24; s += 8)
+			if (std::abs(static_cast<int>((a >> s) & 0xff) - static_cast<int>((b >> s) & 0xff)) > tolerance)
+				return false;
+		return true;
+	};
+	for (block_compress::Format format : {block_compress::Format::BC1, block_compress::Format::BC3}) {
+		std::vector<uint8_t> blocks = block_compress::Compress(texels.data(), 8, 4, format);
+		int bytes = block_compress::BlockBytes(format);
+		CHECK(blocks.size() == static_cast<size_t>(2 * bytes));
+		uint32_t out[2][16];
+		for (int b = 0; b < 2; ++b)
+			DecodeDxtBlock(format == block_compress::Format::BC1 ? 1 : 5, blocks.data() + b * bytes, out[b]);
+		bool flat = true, gradient = true, alpha = true;
+		for (int i = 0; i < 16; ++i) {
+			uint32_t want = texels[static_cast<size_t>(i / 4) * 8 + 4 + i % 4];
+			flat = flat && close(out[0][i], 0xff336699u, 4) && (out[0][i] >> 24) == 0xff;
+			gradient = gradient && close(out[1][i], want, 12);
+			if (format == block_compress::Format::BC3)
+				alpha = alpha && (out[1][i] >> 24) == (want >> 24);
+		}
+		CHECK(flat);
+		CHECK(gradient);
+		CHECK(alpha);
+	}
+	// A level smaller than a block (a mip's 2x1): one block, its edge texels repeated.
+	uint32_t tiny[2] = {0xffff0000u, 0xff0000ffu};
+	std::vector<uint8_t> one = block_compress::Compress(tiny, 2, 1, block_compress::Format::BC1);
+	uint32_t out[16];
+	CHECK(one.size() == 8);
+	DecodeDxtBlock(1, one.data(), out);
+	CHECK(close(out[0], tiny[0], 8) && close(out[1], tiny[1], 8) && close(out[3], tiny[1], 8));
+}
+
 TEST(TgaDecodesRawAndRle)
 {
 	auto header = [](uint8_t type, int bpp, bool top_down) {
@@ -461,6 +511,35 @@ TEST(RealFilesWhenThere)
 		return;
 	}
 	std::string dir = eq_dir;
+	{
+		// A Luclin zone's DXT texture through the cache as a GPU renderer has them: block compressed
+		// with its mips (no decoded levels), counted, and gone once Release says so.
+		PfsArchive zone;
+		CHECK(zone.Open(dir + "/dawnshroud.s3d", true));
+		std::string dds;
+		for (const std::string &name : zone.Names())
+			if (name.size() > 4 && name.compare(name.size() - 4, 4, ".dds") == 0) {
+				dds = name;
+				break;
+			}
+		CHECK(!dds.empty());
+		render::SetGpuTextures(true);
+		int64_t before = load_stats::texel_bytes.load();
+		{
+			render::TextureCache cache;
+			cache.AddArchive(&zone);
+			const render::Texture *texture = cache.Get(dds, false);
+			render::SetGpuTextures(false);
+			CHECK(texture && texture->levels.empty() && (texture->block_format == 1 || texture->block_format == 3));
+			CHECK(texture && texture->blocks.size() == static_cast<size_t>(std::max(texture->width_shift, texture->height_shift) + 1));
+			CHECK(texture && texture->blocks.back().size() == static_cast<size_t>(texture->block_format == 1 ? 8 : 16));
+			CHECK(load_stats::texel_bytes.load() > before);
+			if (texture)
+				texture->Release();
+			CHECK(load_stats::texel_bytes.load() == before);
+		}
+		render::SetGpuTextures(false);
+	}
 	PfsArchive global;
 	CHECK(global.Open(dir + "/global_chr.s3d", true));
 	std::vector<uint8_t> data;

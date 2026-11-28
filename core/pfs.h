@@ -12,6 +12,7 @@
 #include <fstream>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -42,6 +43,7 @@ private:
 	std::vector<uint8_t> m_data;
 	load_stats::Bytes m_data_bytes{load_stats::archive_bytes}; // m_data's
 	std::unique_ptr<std::ifstream> m_file; // lazy
+	std::unique_ptr<std::mutex> m_file_mutex = std::make_unique<std::mutex>(); // its seek and read, from any thread
 	size_t m_size = 0;
 	std::map<std::string, Entry> m_entries; // lowercase name -> entry
 };

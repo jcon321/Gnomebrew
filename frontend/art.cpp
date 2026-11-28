@@ -13,7 +13,7 @@ bool FrontEndArt::Open(const std::string &eq_dir, std::string &error)
 
 	for (int i = 1; i <= 17; ++i) {
 		auto archive = std::make_unique<PfsArchive>();
-		if (archive->Open(base + "eqfeart" + std::to_string(i) + ".pak"))
+		if (archive->Open(base + "eqfeart" + std::to_string(i) + ".pak", true))
 			m_archives.push_back(std::move(archive));
 	}
 	if (m_archives.empty()) {

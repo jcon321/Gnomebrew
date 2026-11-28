@@ -63,6 +63,7 @@ add_library(eqcore STATIC
     core/tga.cpp
     core/xml.cpp
     core/dds.cpp
+    core/block_compress.cpp
     core/wld.cpp
     core/creation_rules.cpp
     core/inventory.cpp

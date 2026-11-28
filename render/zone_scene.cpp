@@ -226,7 +226,7 @@ namespace render
 		};
 
 		std::string base = eq_dir + "/" + zone;
-		if (!m_zone_archive.Open(base + ".s3d")) {
+		if (!m_zone_archive.Open(base + ".s3d", true)) {
 			error = "Couldn't open " + base + ".s3d";
 			return false;
 		}
@@ -242,7 +242,7 @@ namespace render
 		if (m_zone_archive.Read("lights.wld", data) && lights_wld.Load(std::move(data)))
 			m_lights = lights_wld.Lights();
 		const std::vector<WldLight> &lights = m_lights;
-		bool have_objects = m_object_archive.Open(base + "_obj.s3d");
+		bool have_objects = m_object_archive.Open(base + "_obj.s3d", true);
 		if (have_objects) {
 			m_textures.AddArchive(&m_object_archive);
 			if (!m_object_archive.Read(zone + "_obj.wld", data) || !m_object_models.Load(std::move(data))) {

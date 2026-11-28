@@ -11,6 +11,7 @@ struct Image
 	int height = 0;
 	std::vector<uint32_t> pixels; // row-major, top row first, 0xAARRGGBB
 	bool has_alpha = false;       // true when any pixel is not fully opaque
+	uint8_t dxt = 0;              // decoded from DXT1, 3 or 5 (DecodeDds); 0 otherwise
 
 	uint32_t At(int x, int y) const { return pixels[static_cast<size_t>(y) * width + x]; }
 };
