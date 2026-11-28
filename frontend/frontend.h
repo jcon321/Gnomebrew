@@ -25,6 +25,7 @@
 #include "game_values.h"
 #include "game_windows.h"
 #include "key_map.h"
+#include "load_stats.h"
 #include "loading_screen.h"
 #include "name_sprites.h"
 #include "login_client.h"
@@ -72,6 +73,7 @@
 #include "widgets.h"
 
 #include <array>
+#include <chrono>
 #include <ctime>
 #include <functional>
 #include <map>
@@ -890,6 +892,11 @@ private:
 	LostConnection m_lost;
 	void ShowLostConnection(bool not_responding);
 	DebugMenu m_debug;
+	// LogHitch's last frame: when it ended, what had loaded by then, and whether it was in the world.
+	void LogHitch(bool world, const DebugMenu::FrameTimes &times);
+	std::chrono::steady_clock::time_point m_hitch_last;
+	load_stats::Snapshot m_hitch_loads;
+	bool m_hitch_world = false;
 	WindowManager m_windows;
 	bool m_windows_built = false;
 	std::string m_ui_layout_path;

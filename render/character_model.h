@@ -224,6 +224,8 @@ namespace render
 		// animations found with them), so one Open serves zone after zone, as InitWorld's files do.
 		bool AddZone(const std::string &eq_dir, const std::string &zone);
 		bool Opened() const { return m_opened; } // Open has loaded the global files
+		// Every texture the models built so far have loaded, for the renderer's Prepare.
+		void ForEachTexture(const std::function<void(const Texture &)> &fn) const;
 		std::unique_ptr<CharacterModel> Build(const CharacterAppearance &appearance, std::string &error);
 		// An item's model on its own, from its actor ("IT63_ACTORDEF" or "IT63"): one bone, scale 1,
 		// no animations (something on the ground). Null when there's no such item model.

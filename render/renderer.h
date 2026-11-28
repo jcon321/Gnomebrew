@@ -106,6 +106,10 @@ namespace render
 	public:
 		virtual ~Renderer() = default;
 		virtual const char *Name() const = 0;
+		// Whatever the renderer makes of a texture to draw it (the GPU's copy), made now rather than
+		// the first time it's drawn: a zone's textures as it's entered, as eqgfx makes them when
+		// t3dLoadWorldFile reads the file. Nothing to do for the software Rasterizer.
+		virtual void Prepare(const Texture &) {}
 
 		virtual void Begin(int width, int height, const Camera &camera);
 		// Between these, Draw adds background (the sky): positions are relative to the

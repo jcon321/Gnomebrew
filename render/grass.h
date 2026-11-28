@@ -24,6 +24,12 @@ namespace render
 		void Draw(Renderer &renderer, const Vec3 &camera, const Vec3 &ambient) const;
 		size_t Count() const { return m_blades.size(); }
 		size_t Drawn() const { return m_drawn; } // the last Draw's
+		template <typename Fn> void ForEachTexture(Fn &&fn) const
+		{
+			for (const auto &texture : m_textures)
+				if (texture)
+					fn(*texture);
+		}
 
 	private:
 		struct Blade

@@ -70,12 +70,11 @@ namespace
 	}
 }
 
-void NetStatus::Draw(Canvas &canvas, TextRenderer &text, int x, int y, const RdpStats &stats, bool texts)
+void NetStatus::Draw(Canvas &canvas, TextRenderer &text, int x, int y, const RdpStats &stats)
 {
 	constexpr int Column = 0x20, BarTop = 0xe, Font = 14; // Arial 14 (DAT_0063d3b0)
 	auto write = [&](int column, const std::string &s, Shade shade) {
-		if (texts)
-			text.Draw(canvas, x + column * Column, y, s, Font, TextColor(shade), 0);
+		text.Draw(canvas, x + column * Column, y, s, Font, TextColor(shade), 0);
 	};
 	auto number = [](const char *format, auto value) {
 		char s[32];

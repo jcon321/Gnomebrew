@@ -135,15 +135,14 @@ namespace render
 		if (it != m_cache.end())
 			return it->second.get();
 
+		auto start = std::chrono::steady_clock::now();
 		std::unique_ptr<Texture> texture;
 		Image image;
 		if (Load(name, masked, image))
 			texture = Build(image);
 		else
 			m_missing.push_back(name);
-		const Texture *result = texture.get();
-		m_cache.emplace(key, std::move(texture));
-		return result;
+		return Keep(key, std::move(texture), start);
 	}
 
 	const Texture *TextureCache::GetLayered(const std::string &name, const std::string &layer, bool masked)
@@ -155,6 +154,7 @@ namespace render
 		if (it != m_cache.end())
 			return it->second.get();
 
+		auto start = std::chrono::steady_clock::now();
 		std::unique_ptr<Texture> texture;
 		Image base, over;
 		if (!Load(name, masked, base)) {
@@ -186,9 +186,29 @@ namespace render
 			}
 			texture = Build(out);
 		}
+		return Keep(key, std::move(texture), start);
+	}
+
+	const Texture *TextureCache::Keep(const std::string &key, std::unique_ptr<Texture> texture,
+		std::chrono::steady_clock::time_point start)
+	{
 		const Texture *result = texture.get();
+		if (texture) {
+			int64_t bytes = 0;
+			for (const auto &level : texture->levels)
+				bytes += static_cast<int64_t>(level.size() * sizeof(uint32_t));
+			m_bytes.Add(bytes);
+			load_stats::textures_decoded.Add(load_stats::MicrosSince(start));
+		}
 		m_cache.emplace(key, std::move(texture));
 		return result;
+	}
+
+	void TextureCache::ForEach(const std::function<void(const Texture &)> &fn) const
+	{
+		for (const auto &[key, texture] : m_cache)
+			if (texture)
+				fn(*texture);
 	}
 
 	bool TextureCache::Exists(const std::string &name) const

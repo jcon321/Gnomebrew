@@ -8,6 +8,7 @@
 #include "game_windows.h"
 #include "ini_file.h"
 #include "inventory.h"
+#include "load_stats.h"
 #include "skills.h"
 #include "spell_casting.h"
 #include "zone_names.h"
@@ -7041,10 +7042,21 @@ void FrontEnd::ExecuteCmd(int cmd, bool down, int typed)
 		AddZoneLog(m_run ? "You are now running." : "You are now walking.", ZoneGrey);
 		break;
 	case KeyMap::HistoryUp:
-	case KeyMap::HistoryDown:
-		if (ChatWindow *chat = m_chats.Typing())
+	case KeyMap::HistoryDown: {
+		// ExecuteCmd 0x4f and 0x50 with no input taking the keys: the active chat window's
+		// (GetActiveChatWindow) ScrollChatHistoryUp or HandleKeyboardInput, then its input given the
+		// focus (LAB_00541b71). While typing, the window's own input.
+		if (!down)
+			break;
+		ChatWindow *chat = m_chats.Typing();
+		if (!chat && ActiveChat().Attached()) {
+			OpenChat(ActiveChat().InputText());
+			chat = m_chats.Typing();
+		}
+		if (chat)
 			chat->History(cmd == KeyMap::HistoryUp);
 		break;
+	}
 	case KeyMap::SpellBook:
 		// The book opened, or closed when it's open (DeactivateSpellBook through the window's 0x88).
 		if (m_spell_book.Activated())
@@ -7777,20 +7789,20 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 				c.Blit(m_art.Get("cursor.bmp"), m_mouse_x, m_mouse_y, true);
 		}});
 
-	// RealRender_World's netstat, over the windows and the cursor (the deferred 2D's order): drawn anew
-	// as a packet's come since, or once none has for 1 s, its texts only then. Neither with the UI hidden
-	// (__ScreenMode 3).
+	// RealRender_World's netstat, over the windows and the cursor (the deferred 2D's order): taken anew
+	// as a packet's come since, or once none has for 1 s. Not with the UI hidden (__ScreenMode 3).
+	// eqgame defers its texts only in those frames, so they blink out between packets; ours stay, the
+	// last ones taken (asked for).
 	if (m_net_status && world && !m_ui_hidden) {
 		RdpStats stats;
 		if (m_net_stats_for_tests ? m_net_stats_for_tests(stats) : m_zone.NetworkStats(stats)) {
-			bool texts = !m_net_drawn || stats.last_arrival_ms != m_net_stats.last_arrival_ms ||
-			             stats.arrival_age_ms > NetStatus::RefreshMs;
-			if (texts)
+			if (!m_net_drawn || stats.last_arrival_ms != m_net_stats.last_arrival_ms ||
+			    stats.arrival_age_ms > NetStatus::RefreshMs)
 				m_net_stats = stats;
 			m_net_drawn = true;
 			int x = (m_viewport_set ? m_viewport.x : 0) + 5, y = (m_viewport_set ? m_viewport.y : 0) + 5;
-			pieces.push_back({NetStatusPiece, [this, x, y, texts](Canvas &c) {
-				NetStatus::Draw(c, m_text, x, y, m_net_stats, texts);
+			pieces.push_back({NetStatusPiece, [this, x, y](Canvas &c) {
+				NetStatus::Draw(c, m_text, x, y, m_net_stats);
 			}});
 		}
 	}
@@ -7822,4 +7834,33 @@ void FrontEnd::RenderZone(Canvas &canvas, uint64_t now_ms)
 	times.ui_rasterized = m_text.stats.rasterized - text_before.rasterized;
 	times.ui_redrawn = retained ? 100.0 * static_cast<double>(m_retained_ui.RedrawnPixels()) / std::max(width * height, 1) : 100;
 	m_debug.Frame(times);
+	LogHitch(world, times);
+}
+
+void FrontEnd::LogHitch(bool world, const DebugMenu::FrameTimes &times)
+{
+	// A frame in the world that took HitchMs or more since the last one (ours): to my-client.log, with
+	// what it loaded (load_stats) and where its time went. The first one in a zone is its entering
+	// (the textures made ready, the spawns' models built).
+	using Clock = std::chrono::steady_clock;
+	constexpr double HitchMs = 50;
+	Clock::time_point now = Clock::now();
+	load_stats::Snapshot loads = load_stats::Snapshot::Now();
+	if (world && m_hitch_last != Clock::time_point{}) {
+		double ms = std::chrono::duration<double, std::milli>(now - m_hitch_last).count();
+		if (ms >= HitchMs) {
+			load_stats::Snapshot d = loads - m_hitch_loads;
+			char line[400];
+			std::snprintf(line, sizeof line,
+				"hitch%s: %.0f ms; %llu models built %.0f ms, %llu textures decoded %.0f ms, %llu uploaded %.0f ms; "
+				"update %.0f zone %.0f models %.0f submit %.0f tags %.0f ui %.0f present %.0f ms",
+				m_hitch_world ? "" : " (entering the zone)", ms, static_cast<unsigned long long>(d.built), d.built_us / 1000.0,
+				static_cast<unsigned long long>(d.decoded), d.decoded_us / 1000.0, static_cast<unsigned long long>(d.uploaded),
+				d.uploaded_us / 1000.0, times.update, times.zone, times.models, times.submit, times.tags, times.ui, times.present);
+			Log(line);
+		}
+	}
+	m_hitch_last = now;
+	m_hitch_loads = loads;
+	m_hitch_world = world;
 }

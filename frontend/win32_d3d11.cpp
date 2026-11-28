@@ -2,6 +2,7 @@
 
 #include "win32_strings.h"
 #include "canvas.h"
+#include "load_stats.h"
 
 #include <d3d11.h>
 #include <d3dcompiler.h>
@@ -175,6 +176,7 @@ float4 CompositePS(float4 position : SV_Position) : SV_Target
 	{
 		ID3D11Device *device = nullptr;
 		ComPtr<ID3D11ShaderResourceView> view;
+		load_stats::Bytes bytes{load_stats::gpu_bytes};
 	};
 
 	// A vertex on the GPU: render::Vertex with its color as it is (the shader lights it).
@@ -307,13 +309,16 @@ ID3D11ShaderResourceView *D3d11Device::State::TextureView(const render::Texture 
 	if (gpu && gpu->device == device.Get())
 		return gpu->view.Get();
 
+	auto start = std::chrono::steady_clock::now();
 	std::vector<D3D11_SUBRESOURCE_DATA> data(texture->levels.size());
+	int64_t bytes = 0;
 	for (size_t i = 0; i < data.size(); ++i) {
 		int w = std::max(1, texture->width >> i), h = std::max(1, texture->height >> i);
 		if (texture->levels[i].size() != static_cast<size_t>(w) * h)
 			return white.Get();
 		data[i].pSysMem = texture->levels[i].data();
 		data[i].SysMemPitch = static_cast<UINT>(w) * 4;
+		bytes += static_cast<int64_t>(w) * h * 4;
 	}
 	D3D11_TEXTURE2D_DESC desc{};
 	desc.Width = static_cast<UINT>(texture->width);
@@ -330,7 +335,9 @@ ID3D11ShaderResourceView *D3d11Device::State::TextureView(const render::Texture 
 	    FAILED(device->CreateShaderResourceView(resource.Get(), nullptr, &made->view)))
 		return white.Get();
 	made->device = device.Get();
+	made->bytes.Set(bytes);
 	texture->device_texture = made;
+	load_stats::textures_uploaded.Add(load_stats::MicrosSince(start));
 	return made->view.Get();
 }
 
@@ -391,6 +398,7 @@ namespace
 		~D3d11Renderer() override { Unmap(); }
 
 		const char *Name() const override { return "Direct3D 11"; }
+		void Prepare(const render::Texture &texture) override { m.TextureView(&texture); }
 		void Begin(int width, int height, const render::Camera &camera) override;
 		void Draw(const render::Vertex *vertices, size_t vertex_count, const uint32_t *indices, size_t index_count,
 			const render::Material &material, bool reuse_vertices = false) override;

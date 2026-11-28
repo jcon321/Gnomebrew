@@ -302,6 +302,15 @@ namespace render
 		return true;
 	}
 
+	void CharacterModels::ForEachTexture(const std::function<void(const Texture &)> &fn) const
+	{
+		for (const auto *list : {&m_sources, &m_items, &m_armor})
+			for (const auto &source : *list)
+				source->textures.ForEach(fn);
+		if (m_objects)
+			m_objects->textures.ForEach(fn);
+	}
+
 	bool CharacterModels::Skipped(const Source &source, const std::string &code) const
 	{
 		return m_old_skeletons && code == "SKE" && (source.name == "global6_chr" || source.name == "global6_chr2");

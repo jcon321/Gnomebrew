@@ -33,6 +33,8 @@ bool PfsArchive::Open(const std::string &path, bool lazy)
 	m_path = path;
 	m_entries.clear();
 	m_data.clear();
+	m_data.shrink_to_fit();
+	m_data_bytes.Set(0);
 	m_file.reset();
 
 	auto file = std::make_unique<std::ifstream>(path, std::ios::binary);
@@ -46,6 +48,7 @@ bool PfsArchive::Open(const std::string &path, bool lazy)
 	else {
 		m_data.assign(std::istreambuf_iterator<char>(*file), std::istreambuf_iterator<char>());
 		m_size = m_data.size();
+		m_data_bytes.Set(static_cast<int64_t>(m_data.size()));
 	}
 
 	uint32_t dir_offset = 0, count = 0;

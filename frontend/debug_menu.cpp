@@ -1,5 +1,6 @@
 #include "debug_menu.h"
 
+#include "load_stats.h"
 #include "world_client.h"
 
 #include <algorithm>
@@ -373,7 +374,12 @@ void DebugMenu::DrawCard(Canvas &canvas, TextRenderer &text, const ZoneSession &
 			if (!m_times.slowest.empty())
 				row(Format("Slowest window %s %.1f ms (worst)", m_times.slowest.c_str(), m_times.slowest_ms));
 			row(Format("%zuk triangles   %s", (stats.triangles + 500) / 1000, stats.renderer));
-			row(Format("Models %zu drawn, %zu built, %zu spawns", stats.spawns_drawn, stats.spawns_built, stats.spawns));
+			row(Format("Models %zu drawn, %zu built, %zu spawns, %zu looks", stats.spawns_drawn, stats.spawns_built,
+				stats.spawns, stats.models_cached));
+			// What's held (load_stats): the archives read whole, the decoded textures and their GPU copies.
+			auto mb = [](const std::atomic<int64_t> &bytes) { return static_cast<double>(bytes.load()) / (1024.0 * 1024.0); };
+			row(Format("Memory: archives %.0f  textures %.0f  GPU %.0f MB", mb(load_stats::archive_bytes),
+				mb(load_stats::texel_bytes), mb(load_stats::gpu_bytes)));
 			if (!m_draw.no_culling)
 				row(Format("Zone meshes %zu in view, %zu hidden", stats.meshes_in_view, stats.meshes_hidden));
 		}

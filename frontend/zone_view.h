@@ -588,7 +588,7 @@ private:
 	struct SpawnView;
 	void PoseSpawn(SpawnView &view, const ZoneSpawn &spawn, uint64_t now_ms);
 	// The model built (or rebuilt) for a spawn near enough to be seen.
-	void ResolveModel(SpawnView &view, const ZoneSpawn &spawn, bool near);
+	void ResolveModel(SpawnView &view, const ZoneSpawn &spawn);
 	// The horse's <tag>RIDER_DAG where it's posed now (world space); false without one.
 	bool RiderDag(const SpawnView &horse, render::Transform &out) const;
 	// PlayAnimationTrack2's riding animation for a horse going `speed` with run speed `run`.
@@ -793,6 +793,8 @@ private:
 	uint8_t m_my_light = 0; // our ZoneSpawn::light
 	render::Grass m_grass;
 	bool m_show_grass = false, m_grass_read = false;
+	bool m_textures_prepared = false; // PrepareTextures has run since the last textures were read
+	void PrepareTextures();
 	uint8_t m_my_lit = 0;   // what of it ChangeLight made
 	bool m_dynamic_lights = true;
 	uint16_t m_my_id = 0;

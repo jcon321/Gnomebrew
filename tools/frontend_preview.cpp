@@ -4288,7 +4288,7 @@ namespace
 		net.last_ping_ms = 87;
 		net.input_rate = 2048;
 		h.Snapshot("k3-netstat");
-		h.Snapshot("k3-netstat-same-arrival"); // the bars only
+		h.Snapshot("k3-netstat-same-arrival"); // the same, texts and all
 		net.last_arrival_ms = 1001;
 		net.arrival_age_ms = 4000;
 		net.sequence_history = 0xffffff0000ffffffull;

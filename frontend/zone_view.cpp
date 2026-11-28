@@ -2,6 +2,7 @@
 
 #include "actor_tags.h"
 #include "animations.h"
+#include "load_stats.h"
 #include "name_sprites.h"
 #include "spell_file.h"
 
@@ -101,6 +102,7 @@ void ZoneView::SetShowGrass(bool on)
 	if (on && m_loaded && !m_grass_read) {
 		m_grass_read = true;
 		m_grass.Load(m_eq_dir, m_info.short_name);
+		m_textures_prepared = false; // its textures too
 	}
 }
 
@@ -637,7 +639,7 @@ void ZoneView::DriveHorse(uint64_t now_ms)
 		m_movement.OnGround(), m_movement.BodyEnvironment(), m_movement.FeetEnvironment());
 	ZoneSpawn spawn = m_horse_spawn;
 	spawn.size = m_height;
-	ResolveModel(view, spawn, true);
+	ResolveModel(view, spawn);
 	if (view.model)
 		view.actor.Animate(spawn, *view.model, ms, now_ms);
 	render::Transform dag;
@@ -1807,6 +1809,21 @@ render::Camera ZoneView::MakeCamera(float &distance) const
 	return camera;
 }
 
+void ZoneView::PrepareTextures()
+{
+	// What the loader read, made ready to draw (the GPU's copies) before the first frame needs
+	// them, here as the renderer's thread: the zone's, the sky's, the grass's, the weather's and
+	// every model file's. The ones already made (the global models' after the first zone) cost
+	// nothing.
+	m_textures_prepared = true;
+	auto prepare = [this](const render::Texture &texture) { m_renderer->Prepare(texture); };
+	m_zone.Textures().ForEach(prepare);
+	m_sky.Textures().ForEach(prepare);
+	m_grass.ForEachTexture(prepare);
+	m_effect_textures.ForEach(prepare);
+	m_models->ForEachTexture(prepare);
+}
+
 void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 {
 	if (!m_loaded || !m_error.empty()) {
@@ -1815,6 +1832,8 @@ void ZoneView::Render(Canvas &canvas, uint64_t now_ms)
 	}
 	if (m_loader.joinable())
 		m_loader.join();
+	if (!m_textures_prepared)
+		PrepareTextures();
 	PlacePlayer();
 	UpdateMissiles(now_ms);
 
@@ -2193,7 +2212,9 @@ std::shared_ptr<render::CharacterModel> ZoneView::SpawnModel(const ZoneSpawn &sp
 		appearance.tint[k] = spawn.colors[k];
 	}
 	std::string error;
+	auto start = std::chrono::steady_clock::now();
 	std::shared_ptr<render::CharacterModel> model = BuildModel(appearance, object, error);
+	load_stats::models_built.Add(load_stats::MicrosSince(start));
 	if (!model && m_missing_models.insert(render::ActorTag(spawn.race, spawn.gender)).second)
 		fprintf(stderr, "[zone view] %s (race %u)\n", error.c_str(), spawn.race);
 	m_model_cache[key] = model;
@@ -2413,9 +2434,7 @@ void ZoneView::UpdateSpawns(const std::map<uint16_t, ZoneSpawn> &spawns, uint16_
 			bool placed = view.actor.Placed() && view.last_ms != 0;
 			move.from = view.Feet();
 			move.from_heading = view.actor.Heading();
-			PoseSpawn(view, spawn, now_ms);
-			if (id == m_vehicle_pending) // its model now, wherever the camera is: we go onto it
-				ResolveModel(view, spawn, true);
+			PoseSpawn(view, spawn, now_ms); // its model too, which a boat we're going onto needs
 			// The boat we steer goes where our steering has it (ProcessControls on pinstCharSpawn);
 			// the zone doesn't send us its updates.
 			if (id == m_driven)
@@ -2480,7 +2499,7 @@ void ZoneView::UpdateSpawns(const std::map<uint16_t, ZoneSpawn> &spawns, uint16_
 		}
 		else
 			view.actor.Ride(horse.Feet(), horse.actor.Heading(), RidingAnimation(spawn->speed, horse.run_speed));
-		ResolveModel(view, *spawn, render::Length(view.Feet() - m_camera_position) < FarPlane() + 50);
+		ResolveModel(view, *spawn);
 		if (view.model)
 			view.actor.Animate(*spawn, *view.model, ms, now_ms);
 		if (m_sound)
@@ -2608,19 +2627,20 @@ void ZoneView::PoseSpawn(SpawnView &view, const ZoneSpawn &spawn, uint64_t now_m
 	view.center_height = size / 5 * 3.125f;
 	view.size = size;
 
-	// Build the model once they're close enough to be seen (and again when their look changes).
 	// Up close they move with the floor and the water under them; far off they just carry on.
 	float range = FarPlane() + 50;
 	bool near = render::Length(view.Feet() - m_camera_position) < range;
 	view.actor.Step(m_zone, ms, near, now_ms);
-	ResolveModel(view, spawn, near);
+	ResolveModel(view, spawn);
 	if (view.model)
 		view.actor.Animate(spawn, *view.model, ms, now_ms);
 }
 
-void ZoneView::ResolveModel(SpawnView &view, const ZoneSpawn &spawn, bool near)
+void ZoneView::ResolveModel(SpawnView &view, const ZoneSpawn &spawn)
 {
-	if ((near && !view.resolved) || (view.resolved && spawn.look_serial != view.look_serial)) {
+	// The model as the spawn arrives, wherever it is (EQPlayer::EQPlayer's CreatePlayerActor, and
+	// CEverQuest_CreateInitialActors for those there as we enter), and again when its look changes.
+	if (!view.resolved || spawn.look_serial != view.look_serial) {
 		std::string key = SpawnModelKey(spawn);
 		// Races 142 and 143: the nearest object's model where the spawn is as it's built.
 		std::string object;

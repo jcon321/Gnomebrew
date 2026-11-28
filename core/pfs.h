@@ -6,6 +6,8 @@
 // 0x61580AC9 (0xFFFFFFFF in TAKP's repacked files) holds the file names, in the same order as the other entries
 // sorted by offset.
 
+#include "load_stats.h"
+
 #include <cstdint>
 #include <fstream>
 #include <map>
@@ -38,6 +40,7 @@ private:
 
 	std::string m_path;
 	std::vector<uint8_t> m_data;
+	load_stats::Bytes m_data_bytes{load_stats::archive_bytes}; // m_data's
 	std::unique_ptr<std::ifstream> m_file; // lazy
 	size_t m_size = 0;
 	std::map<std::string, Entry> m_entries; // lowercase name -> entry

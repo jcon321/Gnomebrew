@@ -40,7 +40,8 @@ public:
 	std::string InputText() const; // what's typed in it so far
 	// A key while it's open; true when it took it. A line sent with Enter comes back in `line`.
 	bool OnKey(const InputEvent &event, std::string &line);
-	// The keymap's History, up and down, while it's open: a line sent before into the input.
+	// The keymap's History, up and down, while it's open (FrontEnd opens the active window's first
+	// when none is): a line sent before into the input.
 	void History(bool up);
 	void OnChar(uint32_t ch);
 	// CEditWnd::AddItemTag: an item's tag on the end of the input, which opens for it; not past

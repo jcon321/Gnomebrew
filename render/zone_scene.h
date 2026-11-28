@@ -134,6 +134,7 @@ namespace render
 		int DoorHit(const Vec3 &from, const Vec3 &direction, float range, float &distance) const;
 
 		size_t TriangleCount() const;
+		const TextureCache &Textures() const { return m_textures; } // what Load read, for Renderer::Prepare
 		const std::vector<Vec3> &SolidTriangles() const { return m_collision; } // 3 vertices each
 		size_t ObjectCount() const { return m_object_count; }
 		const std::vector<ZoneObject> &Objects() const { return m_objects; }

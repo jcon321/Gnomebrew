@@ -1262,7 +1262,23 @@ no rules of its own.
     (`m_world_models`, `CharacterModels::AddZone` swapping only the zone's own: a zone reloaded
     in 1.1 s rather than 1.9 s, `frontend_preview ... reload`); a crash writes a minidump
     (`frontend/win32_crash.*`); `parser_tests` (`tests/parser_tests.cpp`, ctest) covers the file
-    and data parsers. Still to do:
+    and data parsers. Spawn models are built as each spawn arrives (`ZoneView::ResolveModel`, as
+    `CreatePlayerActor` from `EQPlayer::EQPlayer` and `CEverQuest_CreateInitialActors`), so a zone's
+    are made as it's entered rather than as you come into range, and the GPU copies of what's
+    loaded are made on the first frame (`ZoneView::PrepareTextures`, `Renderer::Prepare`). A slow
+    frame writes a `hitch:` line to `my-client.log` and the debug menu shows a Memory row
+    (`core/load_stats.h`). Still to do:
+    - Memory: well over eqgame's (about 200 MB). Textures are decoded to 32-bit with a mip chain
+      and kept in RAM after their GPU copy is made (`render::Texture::levels`); drop that copy
+      under Direct3D (the software Rasterizer still needs it; check nothing else reads texels).
+      Keep DXT1/3/5 compressed on the GPU (BC1..3) with the file's own mips (`core/dds.h` reads
+      the top level only). Open the global and zone archives lazily (`PfsArchive`'s lazy mode;
+      `CharacterModels::AddSource`, `ZoneScene::Load` hold them whole). Share a model's geometry
+      between spawns that differ only in tints and equipment (`m_model_cache` keeps a copy per
+      look). Then each global file's textures could be made as it loads, as eqgfx does
+      (`t3dLoadWorldFile` -> `t3dDefineBMInfo`); decoded as now that doubles the memory.
+    - Spell effects' textures are still read and made the first time an effect plays
+      (`SpellEffects`' `m_textures`).
     - The other InitWorld-once files a zone still reads again: the spell effects
       (`SpellEffects::Load`), `gequip.s3d`'s weather sprites, and `sky.s3d` (`render::Sky::Load`).
     - Tests of the WLD fragments (skeletons, animations, regions, lights) on made-up data, and of

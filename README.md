@@ -423,7 +423,8 @@ eqgame's `OP_MoveItem`.
 - The chat window keeps the last 400 lines in eqgame's colors (from `[TextColors]` in
   `my-client.ini`, or the built-in ones), with a scrollbar and the wheel. Enter or `/` opens its
   input line, and the keymap's History up and down (Shift+Up and Shift+Down) bring back the last 40
-  lines sent. Commands are looked up in eqgame's own
+  lines sent; with the input closed they open the active window's (`ExecuteCmd` 0x4f/0x50:
+  `GetActiveChatWindow`, the history step, then `SetFocus` on its edit). Commands are looked up in eqgame's own
   table, in its order, so abbreviations work as they do there (`/g` is /gsay, `/s` is /split).
   So far: /say (or `'`), /channel, /tell (/msg, /send), /reply, /gsay, /guildsay, /shout,
   /auction, /ooc, /emote (`:`, /me), /hail, /target, /assist, /consider, /location, /time,
@@ -695,6 +696,13 @@ additions of ours, or ones taken from TAKP's eqgame.dll or Zeal rather than stoc
   keeps the old zone's last frame, "LOADING, PLEASE WAIT..." in the chat.
 - **Extended nameplate distance** (`EnableExtendedNameplateDistance=1`): names show as far as the zone
   is drawn, as TAKP's eqgame.dll and Zeal do, not eqgame's 70 units.
+- **Hitch log and memory rows:** a frame in the world that takes 50 ms or more writes a `hitch:` line
+  to `my-client.log` with what it loaded (spawn models built, textures decoded and made on the GPU,
+  `core/load_stats.h`) and the debug menu's frame parts; the first in a zone says "(entering the
+  zone)". The debug menu's PERFORMANCE section shows the looks cached and a Memory row: archives
+  held whole, decoded textures, their GPU copies.
+- **Netstat texts held:** eqgame defers the netstat's texts only in the frames `DrawNetStatus` runs,
+  so they blink out between packets; ours stay up with the last ones taken (see Toggle netstat).
 - **`/shownames` 5, 6 and 7:** Zeal's levels (title and first name; title, first and last; first
   name and guild) on top of eqgame's 0..4.
 - **Shift+click linking:** Shift+click on an inventory item while typing puts its link in the chat
@@ -1938,6 +1946,17 @@ the rejection).
   (`FrontEnd`'s `m_world_models`, `ZoneView::SetWorldModels`) load with the first zone and stay
   for the next ones, which swap only their own `<zone>_chr` files (`CharacterModels::AddZone`);
   back at character select they go.
+- **When models and textures are made:** eqgame makes a spawn's actor as the spawn arrives
+  (`CDisplay::CreatePlayerActor` from `EQPlayer::EQPlayer`, and `CEverQuest_CreateInitialActors` for
+  everyone there as the zone's entered), wherever it is, not as it comes into view. EQMac sends the
+  whole zone's spawns on entering (`OP_ZoneSpawns`), so they're all made behind the loading screen.
+  eqgfx makes each bitmap's texture as `t3dLoadWorldFile` reads the file (`loadGameObjectFromFile` ->
+  `t3dDefineBMInfo` -> `createTextureResource`), not when it's first drawn. Ours: `ZoneView::ResolveModel`
+  builds a spawn's model the first frame it's tracked, and `ZoneView::PrepareTextures` has the
+  renderer make the GPU copies (`Renderer::Prepare`) of everything loaded by the first frame in the
+  zone. A model's textures are decoded as it's built (`TextureCache`), not every one of a file's as it
+  loads: ours are kept decoded to 32-bit, so making all the global files' would about double the
+  memory (South Qeynos with the Luclin models: 536 MB to 1080 MB at its peak).
 - **Losing the connection** (`FrontEnd::ShowLostConnection`): eqgame checks `connection_connected`
   on the zone and world connections wherever it waits for them (`DoMainLoop`,
   `GetZoneInfoFromNetwork`, `initializeNetworkGame`, `DoCharacterSelection`,
@@ -2047,7 +2066,9 @@ details and the nearest spawns at the top left and the radar at the top right.
   first the newest on the right, the other on the left), in A1R5G5B5: ticks every 8 pixels, (highest
   sequence number) % 8 in (7 less that in the first), and three rows of the packets that came: full
   color (255, or 200 for green) between 3/4 rows in a run, 3/4 between halves at its ends, half all
-  over for one alone. Ours in `frontend/net_status.*`, from `RdpSession::Stats`.
+  over for one alone. Ours in `frontend/net_status.*`, from `RdpSession::Stats`; its texts stay up
+  every frame as the overlay does (the last ones `DrawNetStatus` would have written), rather than
+  blinking out between packets.
 - **Clip plane in and out** (`ExecuteCmd` 75 and 76, Shift+- and Shift+=): with the chat line shut,
   in control or not, the Display page's slider (`DAT_00798b28`) one down or up in 0..20, the far
   clip (`_DAT_00799660`) that * 0.2 held to 0.1..4, and `saveOptions`.

@@ -13,6 +13,7 @@ namespace render
 	public:
 		bool Load(const std::string &eq_dir, int type, std::string &error);
 		bool Loaded() const { return !m_layers.empty(); }
+		const TextureCache &Textures() const { return m_textures; } // for Renderer::Prepare
 		// Draws into a pass whose camera sits at the origin. `dual`: t3dSetSkyDualLayer, the cloud
 		// layer (LAYERn3) too (t3dPaintSky draws it only then).
 		void Draw(Renderer &renderer, uint64_t now_ms, bool dual = true);

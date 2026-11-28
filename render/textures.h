@@ -7,8 +7,11 @@
 #include "bitmap.h"
 #include "pfs.h"
 #include "renderer.h"
+#include "load_stats.h"
 #include "wld.h"
 
+#include <chrono>
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -35,13 +38,19 @@ namespace render
 		const Texture *GetLayered(const std::string &name, const std::string &layer, bool masked);
 		bool Exists(const std::string &name) const;
 		const std::vector<std::string> &Missing() const { return m_missing; }
+		// Every texture loaded so far (the renderer's Prepare, ahead of drawing them).
+		void ForEach(const std::function<void(const Texture &)> &fn) const;
 
 	private:
+		// Into the cache under `key` (null: missing), counted (load_stats) from `start`.
+		const Texture *Keep(const std::string &key, std::unique_ptr<Texture> texture,
+			std::chrono::steady_clock::time_point start);
 		bool Load(const std::string &name, bool masked, Image &image) const; // as drawn: v = 0 the bottom row
 		std::vector<const PfsArchive *> m_archives;
 		std::map<std::string, std::unique_ptr<Texture>> m_cache; // lowercase name + mask flag
 		std::vector<std::string> m_missing;
 		uint8_t m_mask_reference = 0x80;
+		load_stats::Bytes m_bytes{load_stats::texel_bytes}; // the cache's texels
 	};
 
 	// A texture of a decoded picture (rows top first, as v = 0); `soft` as Build's.
